@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.local
+.env*.local
+.auth-bootstrap.txt
+node_modules/
+.next/
+dist/
+coverage/
+npm-debug.log*
+node_modules/

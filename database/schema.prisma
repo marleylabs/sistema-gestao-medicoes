@@ -1,0 +1,162 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuario          String    @unique
+  nome             String
+  senhaHash        String    @map("senha_hash")
+  perfil           String    @default("USUARIO")
+  ativo            Boolean   @default(true)
+  tentativasFalhas Int       @default(0) @map("tentativas_falhas")
+  bloqueadoAte     DateTime? @map("bloqueado_ate") @db.Timestamptz
+  ultimoLoginAt    DateTime? @map("ultimo_login_at") @db.Timestamptz
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@index([ativo])
+  @@map("usuarios")
+}
+
+model Projeto {
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigoProjeto   String     @unique @map("codigo_projeto")
+  tituloPrimario  String?    @map("titulo_primario")
+  centroCusto     String?    @map("centro_custo")
+  localizacao     String?
+  contrato        String?
+  medicoes        Medicao[]
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime   @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@map("projetos")
+}
+
+model Profissional {
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome                     String    @unique
+  codigo                   String?   @unique
+  nomeCompleto             String?   @map("nome_completo")
+  cpf                      String?
+  razaoSocial              String?   @map("razao_social")
+  cnpj                     String?
+  email                    String?
+  statusColaborador        String?   @map("status_colaborador")
+  funcao                   String?
+  medicoesComoCoordenador  Medicao[] @relation("MedicoesCoordenador")
+  medicoesComoProfissional Medicao[] @relation("MedicoesProfissional")
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@map("profissionais")
+}
+
+model Medicao {
+  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  numeroMedicao        String        @map("numero_medicao")
+  idProjeto            String        @map("id_projeto") @db.Uuid
+  idCoordenador        String?       @map("id_coordenador") @db.Uuid
+  idProfissional       String?       @map("id_profissional") @db.Uuid
+  projeto              Projeto       @relation(fields: [idProjeto], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  coordenador          Profissional? @relation("MedicoesCoordenador", fields: [idCoordenador], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  profissional         Profissional? @relation("MedicoesProfissional", fields: [idProfissional], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  mesclado             String?
+  numeroDocumento      String?       @map("numero_documento")
+  evidencia            String?
+  dataCadastro         DateTime?     @map("data_cadastro") @db.Date
+  formato              String?
+  quantidade           Decimal       @default(0) @db.Decimal(14, 4)
+  multiplicador        Decimal       @default(0) @db.Decimal(14, 4)
+  equivalenteA1Horas   Decimal       @default(0) @map("equivalente_a1_horas") @db.Decimal(14, 4)
+  porcentagemRevisao   Decimal?      @map("porcentagem_revisao") @db.Decimal(8, 4)
+  emissaoInicial       Decimal?      @map("emissao_inicial") @db.Decimal(8, 4)
+  retornoVale          Decimal?      @map("retorno_vale") @db.Decimal(8, 4)
+  encerramento         Decimal?      @db.Decimal(8, 4)
+  arquivamento         Decimal?      @db.Decimal(8, 4)
+  medidoHoras          Decimal       @default(0) @map("medido_horas") @db.Decimal(14, 4)
+  itemQqp              String?       @map("item_qqp")
+  valorUnitario        Decimal       @default(0) @map("valor_unitario") @db.Decimal(16, 4)
+  valorBruto           Decimal       @default(0) @map("valor_bruto") @db.Decimal(16, 4)
+  valorTotal           Decimal       @default(0) @map("valor_total") @db.Decimal(16, 4)
+  obs                  String?
+  valorReajuste        Decimal       @default(0) @map("valor_reajuste") @db.Decimal(16, 4)
+  ciclo                String?
+  referencia           String?
+  percentualEmissao    Decimal?      @map("percentual_emissao") @db.Decimal(8, 4)
+  tipo2                String?
+  condicao             String?
+  valorMedicao         Decimal       @default(0) @map("valor_medicao") @db.Decimal(16, 4)
+  sourceRowHash        String        @unique @map("source_row_hash")
+  rawPayload           Json          @default("{}") @map("raw_payload")
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime      @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@index([numeroMedicao])
+  @@index([dataCadastro])
+  @@index([idProjeto])
+  @@index([idCoordenador])
+  @@index([idProfissional])
+  @@map("medicoes")
+}
+
+model MapaPagamentoContexto {
+  id              Int      @id @default(1)
+  mesReferencia   String?  @map("mes_referencia")
+  producaoLabel   String?  @map("producao_label")
+  producaoInicio  DateTime? @map("producao_inicio") @db.Date
+  producaoFim     DateTime? @map("producao_fim") @db.Date
+  atoLabel        String?  @map("ato_label")
+  atoCiclo        String?  @map("ato_ciclo")
+  contratos       Json     @default("[]")
+  rateio          Json     @default("[]")
+  updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@map("mapa_pagamento_contexto")
+}
+
+model MapaPagamentoItem {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ordem           Int
+  ato             String?
+  projetistaCodigo String? @map("projetista_codigo")
+  responsavel     String?
+  cpfCnpj         String?  @map("cpf_cnpj")
+  razaoSocial     String?  @map("razao_social")
+  intrSossego     Decimal  @default(0) @map("intr_sossego") @db.Decimal(16, 4)
+  salobo          Decimal  @default(0) @db.Decimal(16, 4)
+  acg             Decimal  @default(0) @db.Decimal(16, 4)
+  escadasAlumar   Decimal  @default(0) @map("escadas_alumar") @db.Decimal(16, 4)
+  valor           Decimal  @default(0) @db.Decimal(16, 4)
+  rev             Decimal  @default(0) @db.Decimal(16, 4)
+  status          String?
+  sourceRowHash   String   @unique @map("source_row_hash")
+  rawPayload      Json     @default("{}") @map("raw_payload")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@index([projetistaCodigo])
+  @@index([ato])
+  @@map("mapa_pagamento_itens")
+}
+
+model BmAuxMedicao {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  responsavelCodigo String   @map("responsavel_codigo")
+  ciclo             String?
+  equivalenteRevisado Decimal @default(0) @map("equivalente_revisado") @db.Decimal(14, 4)
+  valorMedicao      Decimal  @default(0) @map("valor_medicao") @db.Decimal(16, 4)
+  sourceRowHash     String   @unique @map("source_row_hash")
+  rawPayload        Json     @default("{}") @map("raw_payload")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@index([responsavelCodigo])
+  @@index([ciclo])
+  @@map("bm_aux_medicoes")
+}
