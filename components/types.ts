@@ -31,9 +31,11 @@ export type MapaPagamentoItem = {
   salobo: number;
   acg: number;
   escadasAlumar: number;
+  horas: number;
   valor: number;
   rev: number;
   status: string | null;
+  updatedAt: string | null;
 };
 
 export type Medicao = {

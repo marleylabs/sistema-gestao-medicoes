@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
   title: "Medições e Pagamentos",
   description: "Acompanhamento financeiro e operacional por ciclo.",
+  icons: { icon: "/logo.png", apple: "/logo.png" },
 };
 
 export default function RootLayout({
@@ -13,7 +15,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

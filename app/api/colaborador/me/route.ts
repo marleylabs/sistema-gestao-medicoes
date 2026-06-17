@@ -52,17 +52,24 @@ export async function GET() {
         quantidade: true,
         valorMedicao: true,
         equivalenteA1Horas: true,
+        percentualEmissao: true,
+        numeroDocumento: true,
+        tipo2: true,
+        condicao: true,
+        obs: true,
         projeto: {
           select: {
             codigoProjeto: true,
             tituloPrimario: true,
+            contrato: true,
           },
         },
       },
-      orderBy: [{ dataCadastro: "desc" }, { createdAt: "desc" }],
+      orderBy: [{ dataCadastro: "asc" }, { createdAt: "asc" }],
     }),
-    prisma.sgcAprovacaoMedicao.findUnique({
+    prisma.sgcAprovacaoMedicao.findFirst({
       where: { colaboradorCodigo: codigo },
+      orderBy: { createdAt: "desc" },
     }),
   ]);
 
@@ -87,31 +94,46 @@ export async function GET() {
         }
       : null,
     pagamento: pagamento ? serializeMapaPagamentoItem(pagamento) : null,
-    documentos: documentos.map((documento) => ({
-      id: documento.id,
-      projetoReferente: documento.projeto.codigoProjeto,
-      tituloPrimario: documento.projeto.tituloPrimario,
-      dataCadastro: dateOnly(documento.dataCadastro),
-      formato: documento.formato,
-      quantidade: toNumber(documento.quantidade),
-      equivalenteA1Horas: toNumber(documento.equivalenteA1Horas),
-      valorMedicao: toNumber(documento.valorMedicao),
-    })),
+    documentos: documentos.map((documento) => {
+      const a1eq  = toNumber(documento.equivalenteA1Horas);
+      const pct   = toNumber(documento.percentualEmissao ?? 0);
+      const preco = parseFloat(documento.condicao ?? "0") || 0;
+      return {
+        id: documento.id,
+        projetoReferente: documento.projeto.codigoProjeto,
+        tituloPrimario: documento.projeto.tituloPrimario,
+        contrato: documento.projeto.contrato,
+        dataCadastro: dateOnly(documento.dataCadastro),
+        formato: documento.formato,
+        quantidade: toNumber(documento.quantidade),
+        equivalenteA1Horas: a1eq,
+        valorMedicao: toNumber(documento.valorMedicao),
+        percentualEmissao: pct,
+        numeroDocumento: documento.numeroDocumento,
+        tipo2: documento.tipo2,
+        condicao: documento.condicao,
+        obs: documento.obs ?? null,
+        precoUnitario: preco,
+        valorMedido: a1eq * preco * pct,
+      };
+    }),
     sgc: sgc
       ? {
           status: sgc.status,
           revisaoNumero: sgc.revisaoNumero,
           revisaoLabel: sgc.revisaoNumero > 0 ? `Rev. ${sgc.revisaoNumero}` : null,
           pontosDiscordancia: sgc.pontosDiscordancia,
+          respostaAdmin: sgc.respostaAdmin,
           aprovadoAt: sgc.aprovadoAt?.toISOString() ?? null,
           revisaoSolicitadaAt: sgc.revisaoSolicitadaAt?.toISOString() ?? null,
           reenviadoAt: sgc.reenviadoAt?.toISOString() ?? null,
         }
       : {
-          status: "PENDENTE",
+          status: "AGUARDANDO_ENVIO",
           revisaoNumero: 0,
           revisaoLabel: null,
           pontosDiscordancia: null,
+          respostaAdmin: null,
           aprovadoAt: null,
           revisaoSolicitadaAt: null,
           reenviadoAt: null,

@@ -19,10 +19,12 @@ export async function PUT(request: NextRequest) {
   if (admin.response) return admin.response;
 
   const payload = await request.json();
+  const ciclo = text(payload.ciclo) ?? "2605";
+
   const contexto = await prisma.mapaPagamentoContexto.upsert({
-    where: { id: 1 },
+    where: { ciclo },
     create: {
-      id: 1,
+      ciclo,
       mesReferencia: text(payload.mesReferencia),
       producaoLabel: text(payload.producaoLabel),
       producaoInicio: dateValue(payload.producaoInicio),
@@ -44,7 +46,7 @@ export async function PUT(request: NextRequest) {
   });
 
   return NextResponse.json({
-    id: contexto.id,
+    ciclo: contexto.ciclo,
     mesReferencia: contexto.mesReferencia,
     producaoLabel: contexto.producaoLabel,
     producaoInicio: contexto.producaoInicio?.toISOString().slice(0, 10) ?? null,
@@ -54,10 +56,11 @@ export async function PUT(request: NextRequest) {
   });
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   const admin = await requireAdmin();
   if (admin.response) return admin.response;
 
-  await prisma.mapaPagamentoContexto.deleteMany({ where: { id: 1 } });
+  const ciclo = request.nextUrl.searchParams.get("ciclo")?.trim() ?? "2605";
+  await prisma.mapaPagamentoContexto.deleteMany({ where: { ciclo } });
   return NextResponse.json({ ok: true });
 }

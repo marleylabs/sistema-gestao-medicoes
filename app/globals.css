@@ -1,36 +1,30 @@
 @import "tailwindcss";
 
 :root {
-  --background: #F5F5F5;
-  --foreground: #1A1A1A;
-  --muted: #1A1A1A;
-  --line: #d8dee8;
-  --panel: #ffffff;
-  --accent: #AF1B1B;
-  --accent-strong: #8C1616;
-  --warning: #AF1B1B;
-  --danger: #AF1B1B;
+  --brand:           #AF1B1B;
+  --brand-dark:      #8C1616;
+  --primary:         #2563EB;
+  --primary-hover:   #1D4ED8;
+  --success:         #16A34A;
+  --warning:         #F59E0B;
+  --danger:          #DC2626;
+  --background:      #F5F5F5;
+  --surface:         #FFFFFF;
+  --text:            #1A1A1A;
+  --muted:           #555555;
+  --border:          #E5E7EB;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
   background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text);
+  font-family: "Inter", Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
+button, input, select, textarea { font: inherit; }
+button, [role="button"], select, label[for], summary { cursor: pointer; }
+button:disabled, [role="button"][aria-disabled="true"], select:disabled { cursor: not-allowed; opacity: 0.5; }

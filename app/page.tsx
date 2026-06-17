@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { ColaboradorApp } from "@/components/colaborador-app";
 import { MedicoesApp } from "@/components/medicoes-app";
@@ -7,5 +8,9 @@ export default async function Home() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.perfil === "COLABORADOR") return <ColaboradorApp user={user} />;
-  return <MedicoesApp user={user} />;
+  return (
+    <Suspense>
+      <MedicoesApp user={user} />
+    </Suspense>
+  );
 }

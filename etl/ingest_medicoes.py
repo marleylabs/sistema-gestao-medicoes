@@ -318,15 +318,15 @@ def reflect_tables(engine):
     )
 
 
-def clear_imported_database(conn) -> None:
+def clear_imported_database(conn, ciclo: str) -> None:
+    # Deleta apenas os itens do ciclo sendo reimportado; outros ciclos são preservados.
+    conn.execute(text(f"delete from mapa_pagamento_itens where ciclo = '{ciclo}'"))
     conn.execute(
         text(
             """
             truncate table
                 medicoes,
                 bm_aux_medicoes,
-                mapa_pagamento_itens,
-                mapa_pagamento_contexto,
                 projetos,
                 profissionais
             restart identity cascade
@@ -513,7 +513,27 @@ def build_payment_map_status(
     }
 
 
-def build_payment_map_context(excel_path: Path, sheet_name: str) -> dict[str, Any]:
+def derive_ciclo_from_mes_referencia(mes_referencia: str | None) -> str | None:
+    """Deriva o ciclo YYMM a partir de strings como 'Maio de 2026' ou 'Maio/2026'."""
+    if not mes_referencia:
+        return None
+    meses = {
+        "janeiro": "01", "fevereiro": "02", "março": "03", "marco": "03",
+        "abril": "04", "maio": "05", "junho": "06",
+        "julho": "07", "agosto": "08", "setembro": "09",
+        "outubro": "10", "novembro": "11", "dezembro": "12",
+    }
+    texto = mes_referencia.lower().strip()
+    mes_num = next((v for k, v in meses.items() if k in texto), None)
+    import re
+    ano_match = re.search(r"\d{4}", texto)
+    if not mes_num or not ano_match:
+        return None
+    ano = ano_match.group()[-2:]  # últimos 2 dígitos
+    return f"{ano}{mes_num}"
+
+
+def build_payment_map_context(excel_path: Path, sheet_name: str, ciclo: str | None = None) -> dict[str, Any]:
     workbook = load_workbook(excel_path, read_only=True, data_only=True, keep_vba=True)
     sheet = workbook[sheet_name]
     contract_columns = range(7, 12)
@@ -537,9 +557,13 @@ def build_payment_map_context(excel_path: Path, sheet_name: str) -> dict[str, An
             }
         )
 
+    mes_referencia = clean_text(sheet["H1"].value)
+    if not ciclo:
+        ciclo = derive_ciclo_from_mes_referencia(mes_referencia) or "2605"
+
     return {
-        "id": 1,
-        "mes_referencia": clean_text(sheet["H1"].value),
+        "ciclo": ciclo,
+        "mes_referencia": mes_referencia,
         "producao_label": clean_text(sheet["G2"].value),
         "producao_inicio": clean_date(sheet["H2"].value),
         "producao_fim": clean_date(sheet["K2"].value),
@@ -649,7 +673,7 @@ def read_payment_map_items(excel_path: Path, sheet_name: str) -> pd.DataFrame:
     )
 
 
-def build_payment_map_item(row: pd.Series, ordem: int, canonical_codes: dict[str, str]) -> dict[str, Any] | None:
+def build_payment_map_item(row: pd.Series, ordem: int, canonical_codes: dict[str, str], ciclo: str = "2605") -> dict[str, Any] | None:
     raw = extract(row, PAYMENT_MAP_ITEM_COLUMNS)
     projetista_codigo = clean_text(raw["projetista_codigo"])
     if not projetista_codigo:
@@ -667,6 +691,7 @@ def build_payment_map_item(row: pd.Series, ordem: int, canonical_codes: dict[str
         ato = "PRODUÇÃO"
 
     payload = {
+        "ciclo": ciclo,
         "ordem": ordem,
         "ato": ato,
         "projetista_codigo": projetista_codigo,
@@ -683,7 +708,7 @@ def build_payment_map_item(row: pd.Series, ordem: int, canonical_codes: dict[str
     }
     raw_payload = safe_raw_payload(row, "unnamed_")
     payload["raw_payload"] = raw_payload
-    payload["source_row_hash"] = source_hash({"ordem": ordem, **raw_payload})
+    payload["source_row_hash"] = source_hash({"ciclo": ciclo, "ordem": ordem, **raw_payload})
     return payload
 
 
@@ -766,7 +791,7 @@ def upsert_bm_aux_measurement(conn, bm_aux_medicoes, data: dict[str, Any]) -> No
 def upsert_payment_map_context(conn, mapa_pagamento_contexto, data: dict[str, Any]) -> None:
     stmt = insert(mapa_pagamento_contexto).values(**data)
     stmt = stmt.on_conflict_do_update(
-        index_elements=[mapa_pagamento_contexto.c.id],
+        index_elements=[mapa_pagamento_contexto.c.ciclo],
         set_={
             "mes_referencia": stmt.excluded.mes_referencia,
             "producao_label": stmt.excluded.producao_label,
@@ -828,6 +853,7 @@ def ingest(
     database_url: str,
     create_schema: bool,
     full_refresh: bool,
+    ciclo: str | None = None,
 ) -> dict[str, int]:
     engine = create_engine(database_url, future=True)
     if create_schema:
@@ -845,7 +871,8 @@ def ingest(
     canonical_codes = build_canonical_professional_codes(base_df)
 
     projetos, profissionais, medicoes, mapa_pagamento_contexto, mapa_pagamento_itens, bm_aux_medicoes = reflect_tables(engine)
-    payment_context = build_payment_map_context(excel_path, payment_map_sheet_name)
+    payment_context = build_payment_map_context(excel_path, payment_map_sheet_name, ciclo=ciclo)
+    ciclo_efetivo = payment_context["ciclo"]
     base_loaded = 0
     payment_status_loaded = 0
     payment_items_loaded = 0
@@ -857,7 +884,7 @@ def ingest(
 
     with engine.begin() as conn:
         if full_refresh:
-            clear_imported_database(conn)
+            clear_imported_database(conn, ciclo_efetivo)
 
         upsert_payment_map_context(conn, mapa_pagamento_contexto, payment_context)
 
@@ -877,7 +904,7 @@ def ingest(
             payment_status_loaded += 1
 
         for index, row in payment_map_items_df.iterrows():
-            payment_item = build_payment_map_item(row, index + 1, canonical_codes)
+            payment_item = build_payment_map_item(row, index + 1, canonical_codes, ciclo=ciclo_efetivo)
             if not payment_item:
                 continue
             upsert_payment_map_item(conn, mapa_pagamento_itens, payment_item)
@@ -913,6 +940,9 @@ def ingest(
             id_profissional = upsert_professional(conn, profissionais, extract(row, PROFESSIONAL_COLUMNS))
             id_coordenador = upsert_professional(conn, profissionais, extract(row, COORDINATOR_COLUMNS))
             measurement = build_measurement(row)
+            # Usa o ciclo efetivo como fallback quando a coluna CICLO está vazia na planilha
+            if not measurement.get("ciclo"):
+                measurement["ciclo"] = ciclo_efetivo
             measurement.update(
                 {
                     "id_projeto": id_projeto,
@@ -970,6 +1000,11 @@ def parse_args() -> argparse.Namespace:
         help="Não limpa o banco antes da carga. Use apenas para cargas incrementais controladas.",
     )
     parser.add_argument(
+        "--ciclo",
+        default=None,
+        help="Ciclo no formato YYMM (ex: 2606). Se omitido, deriva automaticamente do campo 'Mês referência' da planilha.",
+    )
+    parser.add_argument(
         "--database-url",
         default=os.getenv("ETL_DATABASE_URL") or os.getenv("DATABASE_URL"),
         help="URL PostgreSQL. Ex: postgresql+psycopg2://usuario:senha@localhost:5432/medicoes",
@@ -992,6 +1027,7 @@ def main() -> None:
         args.database_url,
         args.create_schema,
         not args.append,
+        ciclo=args.ciclo,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

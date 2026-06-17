@@ -6,6 +6,8 @@ import { toNumber } from "@/lib/format";
 export async function GET(request: NextRequest) {
   const codigo = request.nextUrl.searchParams.get("codigo")?.trim();
   const contrato = request.nextUrl.searchParams.get("contrato")?.trim();
+  const ciclo = request.nextUrl.searchParams.get("ciclo")?.trim() || "2605";
+  const mapaCicloFilter = Prisma.sql`and mpi.ciclo = ${ciclo}`;
   const codigoFilter = codigo ? Prisma.sql`and pr.codigo = ${codigo}` : Prisma.empty;
   const bmAuxCodigoFilter = codigo ? Prisma.sql`and b.responsavel_codigo = ${codigo}` : Prisma.empty;
   const contratoFilter = contrato
@@ -144,6 +146,7 @@ export async function GET(request: NextRequest) {
         ) as producao_ativos
       from mapa_pagamento_itens mpi
       where 1 = 1
+      ${mapaCicloFilter}
       ${mapaCodigoFilter}
       ${mapaContratoFilter}
     `,
@@ -244,11 +247,12 @@ export async function GET(request: NextRequest) {
       limit 8
     `,
     prisma.mapaPagamentoContexto.findUnique({
-      where: { id: 1 },
+      where: { ciclo },
     }),
     prisma.$queryRaw<
       Array<{
         total_pagamentos: unknown;
+        total_horas: unknown;
         intr_sossego: unknown;
         salobo: unknown;
         acg: unknown;
@@ -259,6 +263,7 @@ export async function GET(request: NextRequest) {
       with pagamentos as (
         select
           mpi.valor,
+          mpi.horas,
           mpi.intr_sossego,
           mpi.salobo,
           mpi.acg,
@@ -272,6 +277,7 @@ export async function GET(request: NextRequest) {
           ) as total_participacao
         from mapa_pagamento_itens mpi
         where mpi.valor > 0
+        and mpi.ciclo = ${ciclo}
         ${mapaCodigoFilter}
       )
       select
@@ -308,6 +314,7 @@ export async function GET(request: NextRequest) {
             else 0
           end
         ), 0) as escadas_alumar,
+        coalesce(sum(horas), 0) as total_horas,
         coalesce(sum(valor) filter (
           where total_participacao = 0
             and lower(coalesce(ato, '')) not in (
@@ -319,6 +326,7 @@ export async function GET(request: NextRequest) {
         ), 0) as nao_alocado
       from pagamentos
     `,
+
   ]);
 
   const mapa = mapaFinanceiro[0];
@@ -350,7 +358,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     cards: {
       totalMedido,
-      totalHoras: toNumber(totals[0]?.total_horas as any),
+      totalHoras: toNumber(mapa?.total_horas as any),
       atosAtivos: Number(colaboradoresAtivos[0]?.atos_ativos ?? 0),
       producaoAtivos: Number(colaboradoresAtivos[0]?.producao_ativos ?? 0),
       totalRegistros: Number(totals[0]?.total_registros ?? 0),

@@ -11,4 +11,5 @@ RUN pip install --no-cache-dir -r etl/requirements.txt
 COPY etl ./etl
 COPY database ./database
 
-CMD ["python", "etl/ingest_medicoes.py", "--excel", "/data/source.xlsm", "--create-schema", "--base-sheet", "BASE", "--payment-map-sheet", "MAPA PAGTO", "--bm-aux-sheet", "BM AUX"]
+EXPOSE 4000
+CMD ["python", "etl/server.py"]

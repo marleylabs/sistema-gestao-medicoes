@@ -28,15 +28,16 @@ services:
     environment:
       ETL_DATABASE_URL: postgresql+psycopg://medicoes_app:medicoes_app_dev@postgres:5432/medicoes
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
-    volumes:
-      - type: bind
-        source: ${EXCEL_SOURCE_PATH}
-        target: /data/source.xlsm
-        read_only: true
     depends_on:
       postgres:
         condition: service_healthy
-    restart: "no"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
 
   web:
     build:
@@ -53,13 +54,14 @@ services:
       AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD}
       AUTH_BOOTSTRAP_NAME: ${AUTH_BOOTSTRAP_NAME:-Administrador}
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      ETL_SERVER_URL: http://medicoes-etl:4000
     ports:
       - "${WEB_PORT:-3000}:3000"
     depends_on:
       postgres:
         condition: service_healthy
       etl:
-        condition: service_completed_successfully
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s

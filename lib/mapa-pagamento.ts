@@ -3,6 +3,7 @@ import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
 import { parseDecimal, toNumber } from "@/lib/format";
 
 type PaymentPayload = {
+  ciclo?: unknown;
   ordem?: unknown;
   ato?: unknown;
   projetistaCodigo?: unknown;
@@ -13,6 +14,7 @@ type PaymentPayload = {
   salobo?: unknown;
   acg?: unknown;
   escadasAlumar?: unknown;
+  horas?: unknown;
   valor?: unknown;
   rev?: unknown;
   status?: unknown;
@@ -42,9 +44,11 @@ export function serializeMapaPagamentoItem(item: any) {
     salobo: toNumber(item.salobo),
     acg: toNumber(item.acg),
     escadasAlumar: toNumber(item.escadasAlumar),
+    horas: toNumber(item.horas),
     valor: toNumber(item.valor),
     rev: toNumber(item.rev),
     status: item.status,
+    updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : (item.updatedAt ?? null),
   };
 }
 
@@ -65,6 +69,7 @@ export function mapaPagamentoData(payload: PaymentPayload, sourceRowHash?: strin
   };
 
   return {
+    ciclo: text(payload.ciclo) ?? "2605",
     ordem: Number(payload.ordem ?? 0),
     ato: text(payload.ato),
     projetistaCodigo: text(payload.projetistaCodigo),
@@ -75,6 +80,7 @@ export function mapaPagamentoData(payload: PaymentPayload, sourceRowHash?: strin
     salobo: parseDecimal(payload.salobo),
     acg: parseDecimal(payload.acg),
     escadasAlumar: parseDecimal(payload.escadasAlumar),
+    horas: parseDecimal(payload.horas),
     valor: parseDecimal(payload.valor),
     rev: parseDecimal(payload.rev),
     status: text(payload.status),

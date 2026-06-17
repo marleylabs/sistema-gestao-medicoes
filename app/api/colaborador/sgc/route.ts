@@ -23,16 +23,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
   }
 
-  const current = await prisma.sgcAprovacaoMedicao.findUnique({
+  // Fetch the most recent SGC record for this collaborator
+  const current = await prisma.sgcAprovacaoMedicao.findFirst({
     where: { colaboradorCodigo: user.usuario },
-    select: { status: true },
+    orderBy: { createdAt: "desc" },
+    select: { status: true, ciclo: true },
   });
+
   if (current && current.status !== "PENDENTE") {
     return NextResponse.json(
       { error: "A medição já foi enviada para validação. Aguarde o reenvio da equipe de Medição." },
       { status: 409 },
     );
   }
+
+  const ciclo = current?.ciclo ?? "2605";
 
   const profissional = await prisma.profissional.findUnique({
     where: { codigo: user.usuario },
@@ -41,9 +46,10 @@ export async function POST(request: NextRequest) {
 
   const status = action === "APROVAR" ? "APROVADO" : "REVISAO_SOLICITADA";
   const sgc = await prisma.sgcAprovacaoMedicao.upsert({
-    where: { colaboradorCodigo: user.usuario },
+    where: { colaboradorCodigo_ciclo: { colaboradorCodigo: user.usuario, ciclo } },
     create: {
       colaboradorCodigo: user.usuario,
+      ciclo,
       colaboradorNome: profissional?.nomeCompleto || profissional?.nome || user.nome,
       status,
       pontosDiscordancia: action === "SOLICITAR_REVISAO" ? pontosDiscordancia : null,

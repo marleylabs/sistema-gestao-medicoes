@@ -1,320 +1,514 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Banknote, CheckCircle2, ChevronDown, FileText, LogOut, RefreshCw, UserRound } from "lucide-react";
-import { Button, IconButton, Textarea } from "@/components/ui";
+import {
+  AlertTriangle,
+  Banknote,
+  CheckCircle2,
+  ChevronDown,
+  Clock,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  RefreshCw,
+  UserRound,
+  History,
+} from "lucide-react";
+import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
+import { AppShell } from "@/components/app-shell";
+import { Badge, Button, Card, IconButton, Textarea } from "@/components/ui";
 import type { AuthUser } from "@/lib/session";
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-const percent = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 });
+const percent  = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 });
 
 type ColaboradorData = {
   usuario: {
-    codigo: string;
-    nome: string;
-    cpf: string | null;
-    cnpj: string | null;
-    razaoSocial: string | null;
-    email: string | null;
-    funcao: string | null;
-    statusColaborador: string | null;
+    codigo: string; nome: string; cpf: string | null; cnpj: string | null;
+    razaoSocial: string | null; email: string | null; funcao: string | null; statusColaborador: string | null;
   };
-  alocacao: {
-    ato: string | null;
-    intrSossego: number;
-    salobo: number;
-    acg: number;
-    escadasAlumar: number;
-  } | null;
-  pagamento: {
-    valor: number;
-    rev: number;
-    responsavel: string | null;
-    razaoSocial: string | null;
-  } | null;
+  alocacao: { ato: string | null; intrSossego: number; salobo: number; acg: number; escadasAlumar: number; } | null;
+  pagamento: { valor: number; rev: number; responsavel: string | null; razaoSocial: string | null; } | null;
   documentos: Array<{
-    id: string;
-    projetoReferente: string;
-    tituloPrimario: string | null;
-    dataCadastro: string | null;
-    formato: string | null;
-    quantidade: number;
-    equivalenteA1Horas: number;
-    valorMedicao: number;
+    id: string; projetoReferente: string; tituloPrimario: string | null;
+    dataCadastro: string | null; formato: string | null; quantidade: number;
+    equivalenteA1Horas: number; valorMedicao: number; percentualEmissao: number;
+    numeroDocumento: string | null; contrato: string | null; tipo2: string | null;
+    condicao: string | null; precoUnitario: number; valorMedido: number; obs: string | null;
   }>;
   sgc: {
-    status: string;
-    revisaoNumero: number;
-    revisaoLabel: string | null;
-    pontosDiscordancia: string | null;
-    aprovadoAt: string | null;
-    revisaoSolicitadaAt: string | null;
-    reenviadoAt: string | null;
+    status: string; revisaoNumero: number; revisaoLabel: string | null;
+    pontosDiscordancia: string | null; respostaAdmin: string | null;
+    aprovadoAt: string | null; revisaoSolicitadaAt: string | null; reenviadoAt: string | null;
   };
 };
 
-function dateLabel(value: string | null) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T00:00:00`));
+function dateLabel(v: string | null) {
+  if (!v) return "–";
+  return new Intl.DateTimeFormat("pt-BR").format(new Date(`${v}T00:00:00`));
 }
 
-function ratio(value: number) {
-  return value ? percent.format(value) : "-";
+function ratio(v: number) { return v ? percent.format(v) : "–"; }
+
+function statusConfig(status: string) {
+  if (status === "APROVADO")           return { label: "Medição aprovada",      badge: "success" as const };
+  if (status === "REVISAO_SOLICITADA") return { label: "Revisão solicitada",    badge: "warning" as const };
+  if (status === "AGUARDANDO_ENVIO")   return { label: "Aguardando envio do BM", badge: "neutral" as const };
+  return                                      { label: "Pendente de validação", badge: "neutral" as const };
 }
 
-function statusText(status: string) {
-  if (status === "APROVADO") return "Medição aprovada";
-  if (status === "REVISAO_SOLICITADA") return "Revisão solicitada";
-  return "Pendente de validação";
-}
+// ─── InfoCard ─────────────────────────────────────────────────────────────────
 
-function InfoCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+function InfoCard({ title, icon, iconBg, iconColor, children }: {
+  title: string; icon: React.ReactNode; iconBg: string; iconColor: string; children: React.ReactNode;
+}) {
   return (
-    <section className="rounded-lg border border-[#d8dee8] bg-white p-4">
-      <div className="mb-4 flex items-center gap-2">
-        <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-[#F5F5F5] text-[#AF1B1B]">{icon}</span>
-        <h2 className="text-base font-bold text-[#1A1A1A]">{title}</h2>
+    <Card className="p-5">
+      <div className="mb-4 flex items-center gap-2.5">
+        <span className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${iconBg} ${iconColor}`}>{icon}</span>
+        <h2 className="text-sm font-bold text-[#1A1A1A]">{title}</h2>
       </div>
       {children}
-    </section>
+    </Card>
   );
 }
 
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
+function FieldRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div>
-      <div className="text-xs font-bold uppercase text-[#1A1A1A]">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-[#1A1A1A]">{value || "-"}</div>
+    <div className="flex items-start justify-between gap-3 py-2 border-b border-[#F3F4F6] last:border-0">
+      <span className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF] shrink-0">{label}</span>
+      <span className="text-sm font-medium text-[#1A1A1A] text-right">{value || "–"}</span>
     </div>
   );
 }
 
+// ─── ColaboradorApp ───────────────────────────────────────────────────────────
+
+type MedicaoAprovada = BmData & { id: string };
+
+type Section = "portal" | "medicoes";
+
 export function ColaboradorApp({ user }: { user: AuthUser }) {
-  const [data, setData] = useState<ColaboradorData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [documentsOpen, setDocumentsOpen] = useState(false);
-  const [revisionOpen, setRevisionOpen] = useState(false);
-  const [pontosDiscordancia, setPontosDiscordancia] = useState("");
-  const [message, setMessage] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [section, setSection]               = useState<Section>("portal");
+  const [data, setData]                     = useState<ColaboradorData | null>(null);
+  const [loading, setLoading]               = useState(true);
+  const [medicoes, setMedicoes]             = useState<MedicaoAprovada[]>([]);
+  const [medLoading, setMedLoading]         = useState(false);
+  const [documentsOpen, setDocumentsOpen]   = useState(false);
+  const [revisionOpen, setRevisionOpen]     = useState(false);
+  const [pontos, setPontos]                 = useState("");
+  const [message, setMessage]               = useState<{ text: string; type: "success" | "info" } | null>(null);
+  const [saving, setSaving]                 = useState(false);
+
   const canValidate = data?.sgc.status === "PENDENTE";
+  const { label: statusLabel, badge: statusBadge } = data ? statusConfig(data.sgc.status) : { label: "", badge: "neutral" as const };
 
   const contratos = useMemo(() => {
     if (!data?.alocacao) return [];
-    return [
+    return ([
       ["Intr. Sossego", data.alocacao.intrSossego],
-      ["Salobo", data.alocacao.salobo],
-      ["ACG", data.alocacao.acg],
-      ["Escadas Alumar", data.alocacao.escadasAlumar],
-    ].filter(([, value]) => Number(value) > 0);
+      ["Salobo",        data.alocacao.salobo],
+      ["ACG",           data.alocacao.acg],
+      ["Escadas Alumar",data.alocacao.escadasAlumar],
+    ] as [string, number][]).filter(([, v]) => v > 0);
   }, [data]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const response = await fetch("/api/colaborador/me");
-    setData(await response.json());
+    const res = await fetch("/api/colaborador/me");
+    setData(await res.json());
     setLoading(false);
+  }, []);
+
+  const loadMedicoes = useCallback(async () => {
+    setMedLoading(true);
+    const res = await fetch("/api/colaborador/medicoes");
+    const json = await res.json();
+    setMedicoes(json.medicoes ?? []);
+    setMedLoading(false);
   }, []);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
-    window.location.assign("/login");
+    location.assign("/login");
   }
 
   async function sendSgc(action: "APROVAR" | "SOLICITAR_REVISAO") {
     setSaving(true);
-    setMessage("");
-    const response = await fetch("/api/colaborador/sgc", {
+    setMessage(null);
+    const res = await fetch("/api/colaborador/sgc", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, pontosDiscordancia }),
+      body: JSON.stringify({ action, pontosDiscordancia: pontos }),
     });
-    const payload = await response.json().catch(() => ({}));
+    const payload = await res.json().catch(() => ({}));
     setSaving(false);
-    if (!response.ok) {
-      setMessage(payload.error ?? "Não foi possível atualizar a validação.");
+    if (!res.ok) {
+      setMessage({ text: payload.error ?? "Não foi possível atualizar a validação.", type: "info" });
       return;
     }
     setRevisionOpen(false);
-    setPontosDiscordancia("");
-    setMessage(action === "APROVAR" ? "Medição aprovada com sucesso." : "Solicitação de revisão enviada para a equipe de Medição.");
+    setPontos("");
+    setMessage({
+      text: action === "APROVAR"
+        ? "Medição aprovada com sucesso."
+        : "Solicitação de revisão enviada para a equipe de Medição.",
+      type: "success",
+    });
     await loadData();
   }
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { if (section === "medicoes") loadMedicoes(); }, [section, loadMedicoes]);
 
   if (loading || !data) {
-    return <main className="min-h-screen bg-[#F5F5F5] p-6 text-sm text-[#1A1A1A]">Carregando ambiente do colaborador...</main>;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F5F5F5]">
+        <div className="flex items-center gap-3 text-sm text-[#555555]">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#2563EB]" />
+          Carregando ambiente do colaborador…
+        </div>
+      </div>
+    );
   }
 
+  const navItems = [
+    { id: "portal",   label: "Portal",           icon: <LayoutDashboard size={17} /> },
+    { id: "medicoes", label: "Minhas Medições",  icon: <History size={17} /> },
+  ];
+
+  const topBar = (
+    <div className="flex items-center gap-2">
+      <Button variant="secondary" onClick={loadData} className="hidden sm:inline-flex">
+        <RefreshCw size={14} />
+        Atualizar
+      </Button>
+      <div className="hidden text-right md:block">
+        <p className="text-sm font-semibold text-[#1A1A1A]">{user.nome}</p>
+        <p className="text-xs text-[#555555]">{user.usuario}</p>
+      </div>
+      <IconButton onClick={logout} title="Sair"><LogOut size={15} /></IconButton>
+    </div>
+  );
+
+  const aguardando = data.sgc.status === "AGUARDANDO_ENVIO";
+
+  const TITLES: Record<Section, string> = { portal: "Portal do Colaborador", medicoes: "Minhas Medições" };
+
   return (
-    <main className="min-h-screen bg-[#F5F5F5]">
-      <header className="sticky top-0 z-40 border-b border-[#d8dee8] bg-white/95 shadow-sm backdrop-blur">
-        <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold text-[#1A1A1A]">Portal do Colaborador</h1>
-            <p className="text-xs text-[#1A1A1A]">Validação SGC da medição do ciclo</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button onClick={loadData} className="hidden sm:inline-flex">
-              <RefreshCw size={16} />
-              Atualizar
-            </Button>
-            <div className="hidden text-right md:block">
-              <div className="text-sm font-semibold text-[#1A1A1A]">{user.nome}</div>
-              <div className="text-xs text-[#1A1A1A]">{user.usuario}</div>
-            </div>
-            <IconButton onClick={logout} title="Sair da plataforma">
-              <LogOut size={17} />
-            </IconButton>
-          </div>
-        </div>
-      </header>
+    <AppShell activeSection={section} onNavigate={(id) => setSection(id as Section)} navItems={navItems} pageTitle={TITLES[section]} topBarRight={topBar}>
+      <div className="grid gap-5">
 
-      <div className="grid gap-5 px-4 py-6 sm:px-6 lg:px-8">
-        <section className="rounded-lg border border-[#d8dee8] bg-white p-5">
-          <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+        {/* ── Portal ── */}
+        {/* ── Aguardando envio ── */}
+        {section === "portal" && aguardando && (
+          <Card className="p-10 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#F3F4F6] text-[#9CA3AF]">
+              <Clock size={30} />
+            </div>
+            <h2 className="text-lg font-bold text-[#1A1A1A]">Aguardando o envio do BM</h2>
+            <p className="mt-2 text-sm text-[#555555]">
+              Sua medição ainda não foi disponibilizada pela equipe de Medição.
+              <br />
+              Assim que for enviada, você poderá visualizar e validar os dados aqui.
+            </p>
+            <p className="mt-4 text-xs text-[#9CA3AF]">
+              Caso tenha dúvidas, entre em contato com a equipe responsável.
+            </p>
+          </Card>
+        )}
+
+        {/* ── Conteúdo visível após envio do BM ── */}
+        {section === "portal" && !aguardando && <>
+        <Card className="p-6">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
             <div>
-              <div className="text-sm font-semibold text-[#AF1B1B]">Sistema SGC</div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-[#AF1B1B]">SISTEMA APROVAÇÃO</p>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-xl font-bold text-[#1A1A1A]">{statusText(data.sgc.status)}</h2>
-                {data.sgc.revisaoLabel ? (
-                  <span className="rounded-md bg-[#F5F5F5] px-2 py-1 text-xs font-bold text-[#AF1B1B]">{data.sgc.revisaoLabel}</span>
-                ) : null}
+                <h2 className="text-xl font-bold text-[#1A1A1A]">{statusLabel}</h2>
+                {data.sgc.revisaoLabel && <Badge variant="brand">{data.sgc.revisaoLabel}</Badge>}
               </div>
-              <p className="mt-1 text-sm text-[#1A1A1A]">Confira os dados apresentados e registre sua conformidade ou pontos de discordância.</p>
+              <p className="mt-1.5 text-sm text-[#555555]">
+                Confira os dados apresentados e registre sua conformidade ou pontos de discordância.
+              </p>
             </div>
-            <span className="inline-flex w-fit rounded-md bg-[#F5F5F5] px-3 py-1 text-sm font-bold text-[#AF1B1B]">{data.sgc.status}</span>
+            <Badge variant={statusBadge} className="shrink-0 px-3 py-1 text-xs">
+              {data.sgc.status}
+            </Badge>
           </div>
 
-          {message ? <div className="mt-4 rounded-md bg-[#F5F5F5] px-3 py-2 text-sm font-semibold text-[#AF1B1B]">{message}</div> : null}
-          {data.sgc.pontosDiscordancia ? (
-            <div className="mt-4 rounded-md border border-[#AF1B1B] bg-[#F5F5F5] p-3">
-              <div className="text-sm font-bold text-[#AF1B1B]">Pontos de discordância enviados</div>
+          {/* Feedback message */}
+          {message && (
+            <div className={`mt-4 rounded-lg px-4 py-3 text-sm font-medium ${message.type === "success" ? "bg-[#F0FDF4] text-[#16A34A]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
+              {message.text}
+            </div>
+          )}
+
+          {/* Previous discordance */}
+          {data.sgc.pontosDiscordancia && (
+            <div className="mt-4 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] p-4">
+              <p className="text-sm font-bold text-[#DC2626]">Pontos de discordância enviados</p>
               <p className="mt-1 text-sm text-[#1A1A1A]">{data.sgc.pontosDiscordancia}</p>
             </div>
-          ) : null}
+          )}
 
+          {/* Resposta do admin */}
+          {data.sgc.respostaAdmin && (
+            <div className="mt-3 rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-[#2563EB]">Resposta da equipe de Medição</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-[#1A1A1A]">{data.sgc.respostaAdmin}</p>
+            </div>
+          )}
+
+          {/* Link para Minhas Medições quando aprovado */}
+          {data.sgc.status === "APROVADO" && (
+            <div className="mt-5 flex items-center justify-between rounded-lg border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-3">
+              <p className="text-sm text-[#15803D]">Acesse <strong>Minhas Medições</strong> para ver todos os detalhes desta aprovação.</p>
+              <Button variant="success" className="shrink-0" onClick={() => setSection("medicoes")}>
+                <History size={14} />
+                Ver medições
+              </Button>
+            </div>
+          )}
+
+          {/* Actions */}
           {canValidate ? (
-            <div className="mt-5 grid gap-3 sm:grid-cols-[minmax(180px,240px)_minmax(220px,280px)]">
-              <Button className="h-11 bg-[#16A34A] text-base shadow-sm hover:bg-[#15803D] focus:ring-[#16A34A]/40" onClick={() => sendSgc("APROVAR")} disabled={saving}>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Button variant="success" className="h-10 px-6" onClick={() => sendSgc("APROVAR")} disabled={saving}>
                 <CheckCircle2 size={16} />
-                Aprovar
+                Aprovar medição
               </Button>
               <Button
-                className="h-11 border-[#F2C94C] bg-[#F2C94C] text-[#1A1A1A] shadow-sm hover:bg-[#E0B83F] focus:ring-[#F2C94C]/40"
-                onClick={() => setRevisionOpen((value) => !value)}
+                variant="ghost"
+                className="h-10 border border-[#F59E0B] bg-[#FFFBEB] px-6 text-[#D97706] hover:bg-[#FEF3C7]"
+                onClick={() => setRevisionOpen((v) => !v)}
                 disabled={saving}
               >
-                <AlertTriangle size={17} />
+                <AlertTriangle size={16} />
                 Solicitar revisão
               </Button>
             </div>
           ) : (
-            <div className="mt-5 rounded-md border border-[#d8dee8] bg-[#F5F5F5] px-3 py-2 text-sm font-semibold text-[#1A1A1A]">
+            <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-sm text-[#555555]">
               {data.sgc.status === "REVISAO_SOLICITADA"
-                ? "A solicitação foi enviada. Aguarde a equipe de Medição reenviar a medição revisada."
+                ? "Solicitação enviada. Aguarde a equipe de Medição reenviar a medição revisada."
                 : "A medição já foi aprovada para este ciclo."}
             </div>
           )}
 
-          {canValidate && revisionOpen ? (
-            <div className="mt-5 grid gap-3 rounded-lg border border-[#AF1B1B] bg-[#F5F5F5] p-4">
-              <div>
-                <h3 className="text-base font-bold text-[#1A1A1A]">Solicitação de revisão</h3>
-                <p className="mt-1 text-sm text-[#1A1A1A]">Descreva os pontos de discordância para que a equipe de Medição possa analisar.</p>
-              </div>
-              <label className="grid gap-1 text-sm font-semibold text-[#1A1A1A]">
-                <span>Pontos de Discordância</span>
+          {/* Revision form */}
+          {canValidate && revisionOpen && (
+            <div className="mt-5 rounded-xl border border-[#F59E0B] bg-[#FFFBEB] p-5">
+              <h3 className="text-sm font-bold text-[#1A1A1A]">Solicitação de revisão</h3>
+              <p className="mt-1 text-sm text-[#555555]">Descreva os pontos de discordância para análise da equipe de Medição.</p>
+              <div className="mt-3">
                 <Textarea
                   className="min-h-28 bg-white"
-                  value={pontosDiscordancia}
-                  onChange={(event) => setPontosDiscordancia(event.target.value)}
+                  value={pontos}
+                  onChange={(e) => setPontos(e.target.value)}
                   placeholder="Descreva onde e por que os dados estão incorretos."
                 />
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <Button className="bg-[#16A34A] hover:bg-[#15803D] focus:ring-[#16A34A]/40" onClick={() => sendSgc("SOLICITAR_REVISAO")} disabled={saving}>
-                  Enviar revisão
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant="success" onClick={() => sendSgc("SOLICITAR_REVISAO")} disabled={saving}>
+                  {saving ? "Enviando…" : "Enviar revisão"}
                 </Button>
-                <Button className="border-[#cfd7e3] bg-white text-[#1A1A1A] hover:bg-[#eef1f5]" onClick={() => setRevisionOpen(false)} disabled={saving}>
-                  Cancelar
-                </Button>
+                <Button variant="ghost" onClick={() => setRevisionOpen(false)} disabled={saving}>Cancelar</Button>
               </div>
             </div>
-          ) : null}
-        </section>
+          )}
+        </Card>
 
-        <div className="grid gap-4 xl:grid-cols-3">
-          <InfoCard title="Dados pessoais" icon={<UserRound size={18} />}>
-            <div className="grid gap-3">
-              <Field label="Código" value={data.usuario.codigo} />
-              <Field label="Nome" value={data.usuario.nome} />
-              <Field label="CPF / CNPJ" value={data.usuario.cpf || data.usuario.cnpj} />
-              <Field label="Razão social" value={data.usuario.razaoSocial} />
-              <Field label="E-mail" value={data.usuario.email} />
-              <Field label="Função" value={data.usuario.funcao} />
+        {/* ── Info cards e documentos (ocultos quando aprovado) ── */}
+
+        <div className={`grid gap-4 xl:grid-cols-3 ${data.sgc.status === "APROVADO" ? "hidden" : ""}`}>
+          <InfoCard title="Dados pessoais" icon={<UserRound size={17} />} iconBg="bg-[#EFF6FF]" iconColor="text-[#2563EB]">
+            <div>
+              <FieldRow label="Código"       value={data.usuario.codigo} />
+              <FieldRow label="Nome"         value={data.usuario.nome} />
+              <FieldRow label="CPF / CNPJ"   value={data.usuario.cpf || data.usuario.cnpj} />
+              <FieldRow label="Razão social" value={data.usuario.razaoSocial} />
+              <FieldRow label="E-mail"       value={data.usuario.email} />
+              <FieldRow label="Função"       value={data.usuario.funcao} />
             </div>
           </InfoCard>
 
-          <InfoCard title="Alocação" icon={<FileText size={18} />}>
-            <div className="grid gap-3">
-              <Field label="Alocação principal" value={data.alocacao?.ato} />
-              <Field label="Contratos" value={contratos.length ? contratos.map(([label, value]) => `${label}: ${ratio(Number(value))}`).join(" | ") : "-"} />
-              <Field label="Atuação" value={data.usuario.statusColaborador} />
+          <InfoCard title="Alocação" icon={<FileText size={17} />} iconBg="bg-[#FFFBEB]" iconColor="text-[#D97706]">
+            <div>
+              <FieldRow label="Alocação principal" value={data.alocacao?.ato} />
+              <FieldRow
+                label="Contratos"
+                value={contratos.length ? contratos.map(([l, v]) => `${l}: ${ratio(v)}`).join(" · ") : "–"}
+              />
+              <FieldRow label="Atuação" value={data.usuario.statusColaborador} />
             </div>
           </InfoCard>
 
-          <InfoCard title="Informações de pagamento" icon={<Banknote size={18} />}>
-            <div className="grid gap-3">
-              <Field label="Valor previsto" value={currency.format(data.pagamento?.valor ?? 0)} />
-              <Field label="Revisão" value={data.pagamento?.rev ? currency.format(data.pagamento.rev) : "-"} />
-              <Field label="Responsável" value={data.pagamento?.responsavel} />
-              <Field label="Empresa" value={data.pagamento?.razaoSocial} />
+          <InfoCard title="Informações de pagamento" icon={<Banknote size={17} />} iconBg="bg-[#F0FDF4]" iconColor="text-[#16A34A]">
+            <div>
+              <FieldRow label="Valor previsto" value={currency.format(data.pagamento?.valor ?? 0)} />
+              <FieldRow label="Revisão"        value={data.pagamento?.rev ? currency.format(data.pagamento.rev) : "–"} />
+              <FieldRow label="Responsável"    value={data.pagamento?.responsavel} />
+              <FieldRow label="Empresa"        value={data.pagamento?.razaoSocial} />
             </div>
           </InfoCard>
         </div>
 
-        <section className="overflow-hidden rounded-lg border border-[#d8dee8] bg-white">
+        {/* ── Documents (oculto quando aprovado) ── */}
+        <Card className={`overflow-hidden ${data.sgc.status === "APROVADO" ? "hidden" : ""}`}>
           <button
-            className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
-            onClick={() => setDocumentsOpen((value) => !value)}
+            className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[#FAFAFA]"
+            onClick={() => setDocumentsOpen((v) => !v)}
           >
             <div>
-              <h2 className="text-lg font-bold text-[#1A1A1A]">Documentos da Medição do Ciclo</h2>
-              <p className="text-sm text-[#1A1A1A]">{data.documentos.length} documentos vinculados ao código {data.usuario.codigo}.</p>
+              <h2 className="text-sm font-bold text-[#1A1A1A]">Documentos da Medição do Ciclo</h2>
+              <p className="mt-0.5 text-sm text-[#555555]">
+                {data.documentos.length} documentos vinculados ao código {data.usuario.codigo}.
+              </p>
             </div>
-            <ChevronDown className={documentsOpen ? "rotate-180 transition" : "transition"} size={19} />
+            <ChevronDown className={`shrink-0 text-[#9CA3AF] transition-transform duration-200 ${documentsOpen ? "rotate-180" : ""}`} size={18} />
           </button>
 
-          {documentsOpen ? (
-            <div className="overflow-auto border-t border-[#d8dee8]">
-              <table className="w-full min-w-[820px] border-collapse text-sm">
-                <thead className="bg-[#F5F5F5]">
-                  <tr>
-                    <th className="border-b border-[#d8dee8] px-3 py-3 text-left text-xs font-bold uppercase text-[#1A1A1A]">Projeto referente</th>
-                    <th className="border-b border-[#d8dee8] px-3 py-3 text-left text-xs font-bold uppercase text-[#1A1A1A]">Título primário</th>
-                    <th className="border-b border-[#d8dee8] px-3 py-3 text-left text-xs font-bold uppercase text-[#1A1A1A]">Data de cadastro</th>
-                    <th className="border-b border-[#d8dee8] px-3 py-3 text-left text-xs font-bold uppercase text-[#1A1A1A]">Formato</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.documentos.map((documento) => (
-                    <tr key={documento.id} className="border-b border-[#edf1f6] last:border-0">
-                      <td className="px-3 py-3 font-semibold text-[#1A1A1A]">{documento.projetoReferente}</td>
-                      <td className="px-3 py-3 text-[#1A1A1A]">{documento.tituloPrimario ?? "-"}</td>
-                      <td className="px-3 py-3 text-[#1A1A1A]">{dateLabel(documento.dataCadastro)}</td>
-                      <td className="px-3 py-3 text-[#1A1A1A]">{documento.formato ?? "-"}</td>
+          {documentsOpen && (() => {
+            const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+            const fmtN = (v: number) => new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(v);
+            const fmtP = (v: number) => new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(v);
+            const hasObs = data.documentos.some((d) => d.obs);
+            const headers = ["SE", "NR VALE / Projeto", "CTO", "Formato", "A1eq / HH", "% Emissão", "Tipo DG/DOC/HH", "Preço Unit.", "Valor Medido", "Total", ...(hasObs ? ["Observação"] : [])];
+            return (
+              <div className="overflow-auto border-t border-[#E5E7EB]">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#F9FAFB]">
+                      {headers.map((h) => (
+                        <th key={h} className="whitespace-nowrap border-b border-[#E5E7EB] px-4 py-2.5 text-left font-semibold uppercase tracking-wide text-[#555555]">{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {data.documentos.map((d, i) => {
+                      const valorMedido = d.valorMedido ?? (d.equivalenteA1Horas * (parseFloat(d.condicao ?? "0") || 0) * d.percentualEmissao);
+                      return (
+                        <tr key={d.id} className={`border-b border-[#F3F4F6] last:border-0 hover:bg-[#FAFAFA] ${i % 2 !== 0 ? "bg-[#FAFAFA]" : ""}`}>
+                          <td className="px-4 py-3 font-medium text-[#1A1A1A]">{d.projetoReferente}</td>
+                          <td className="px-4 py-3 text-[#555555]">{d.numeroDocumento ?? "–"}</td>
+                          <td className="px-4 py-3 text-[#555555]">{d.contrato ?? "–"}</td>
+                          <td className="px-4 py-3 text-[#555555]">{d.formato ?? "–"}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{fmtN(d.equivalenteA1Horas)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{d.percentualEmissao ? fmtP(d.percentualEmissao) : "100%"}</td>
+                          <td className="px-4 py-3 text-[#555555]">{d.tipo2 ?? "–"}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{d.precoUnitario ? currency.format(d.precoUnitario) : (d.condicao ?? "–")}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{currency.format(valorMedido)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#1A1A1A]">{currency.format(valorMedido)}</td>
+                          {hasObs && <td className="px-4 py-3 text-[#555555]">{d.obs ?? ""}</td>}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {data.documentos.length > 0 && (() => {
+                    const total = data.documentos.reduce((s, d) => s + (d.valorMedido ?? 0), 0);
+                    return (
+                      <tfoot>
+                        <tr className="border-t-2 border-[#E5E7EB] bg-[#F9FAFB]">
+                          <td colSpan={8} className="px-4 py-2.5 text-right text-xs font-bold text-[#555555]">Total medido:</td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-xs font-bold text-[#1A1A1A]">{currency.format(total)}</td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-xs font-bold text-[#1A1A1A]">{currency.format(total)}</td>
+                          {hasObs && <td />}
+                        </tr>
+                      </tfoot>
+                    );
+                  })()}
+                </table>
+              </div>
+            );
+          })()}
+        </Card>
+        </>}
+
+        {/* ── Minhas Medições ── */}
+        {section === "medicoes" && (
+          medLoading ? (
+            <div className="flex items-center justify-center py-20 text-sm text-[#555555]">
+              <div className="flex items-center gap-3">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#2563EB]" />
+                Carregando medições…
+              </div>
             </div>
-          ) : null}
-        </section>
+          ) : medicoes.length === 0 ? (
+            <Card className="p-10 text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#F3F4F6] text-[#9CA3AF]">
+                <History size={30} />
+              </div>
+              <h2 className="text-lg font-bold text-[#1A1A1A]">Nenhuma medição aprovada</h2>
+              <p className="mt-2 text-sm text-[#555555]">
+                As medições aparecerão aqui após aprovação pela equipe de Medição.
+              </p>
+            </Card>
+          ) : (
+            <div className="grid gap-5">
+              {medicoes.map((med) => (
+                <MedicaoAprovadaCard key={med.id} med={med} />
+              ))}
+            </div>
+          )
+        )}
       </div>
-    </main>
+    </AppShell>
+  );
+}
+
+// ─── MedicaoAprovadaCard ──────────────────────────────────────────────────────
+
+function MedicaoAprovadaCard({ med }: { med: MedicaoAprovada }) {
+  const cur = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+  const [bmOpen, setBmOpen] = useState(false);
+
+  const aprovadoLabel = med.aprovadoAt
+    ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(med.aprovadoAt))
+    : "–";
+
+  const totalValor = (med.pagamento?.valor ?? 0) + (med.pagamento?.rev ?? 0);
+
+  return (
+    <Card className="overflow-hidden">
+      {/* Header */}
+      <div className="border-b border-[#BBF7D0] bg-[#F0FDF4] px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[#16A34A]/10 text-[#16A34A]">
+              <CheckCircle2 size={18} />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-bold text-[#15803D]">Medição Aprovada — Ciclo {med.ciclo}</p>
+                {med.revisaoLabel && <Badge variant="success" className="shrink-0">{med.revisaoLabel}</Badge>}
+              </div>
+              <p className="text-xs text-[#16A34A]">Aprovado em {aprovadoLabel}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">Valor total</p>
+            <p className="text-base font-bold text-[#1A1A1A]">{cur.format(totalValor)}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Dropdown do Boletim */}
+      <button
+        className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-[#FAFAFA]"
+        onClick={() => setBmOpen((v) => !v)}
+      >
+        <span className="text-sm font-medium text-[#555555]">
+          {bmOpen ? "Ocultar" : "Ver"} Boletim de Medição
+        </span>
+        <ChevronDown className={`shrink-0 text-[#9CA3AF] transition-transform duration-200 ${bmOpen ? "rotate-180" : ""}`} size={16} />
+      </button>
+
+      {bmOpen && (
+        <div className="border-t border-[#E5E7EB] p-5">
+          <BoletimMedicao data={med} />
+        </div>
+      )}
+    </Card>
   );
 }

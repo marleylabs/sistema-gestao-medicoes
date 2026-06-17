@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { decryptSensitive } from "@/lib/encryption";
 import { toNumber } from "@/lib/format";
 import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
@@ -14,8 +14,10 @@ export async function GET() {
     return NextResponse.json({ error: "Acesso restrito ao perfil Medição." }, { status: 403 });
   }
 
+  const ciclo = request.nextUrl.searchParams.get("ciclo")?.trim() || "2605";
+
   const alertas = await prisma.sgcAprovacaoMedicao.findMany({
-    where: { status: "REVISAO_SOLICITADA" },
+    where: { status: "REVISAO_SOLICITADA", ciclo },
     orderBy: { revisaoSolicitadaAt: "desc" },
     take: 20,
   });
@@ -39,6 +41,7 @@ export async function GET() {
         }),
         prisma.mapaPagamentoItem.findFirst({
           where: {
+            ciclo,
             projetistaCodigo: alerta.colaboradorCodigo,
             valor: { gt: 0 },
           },
@@ -63,14 +66,15 @@ export async function GET() {
       const totalHoras = documentos.reduce((total, documento) => total + toNumber(documento.equivalenteA1Horas), 0);
 
       return {
-      id: alerta.id,
-      colaboradorCodigo: alerta.colaboradorCodigo,
-      colaboradorNome: alerta.colaboradorNome,
-      status: alerta.status,
-      revisaoNumero: alerta.revisaoNumero,
-      proximaRevisaoLabel: `Rev. ${alerta.revisaoNumero + 1}`,
-      pontosDiscordancia: alerta.pontosDiscordancia,
-      revisaoSolicitadaAt: alerta.revisaoSolicitadaAt?.toISOString() ?? null,
+        id: alerta.id,
+        colaboradorCodigo: alerta.colaboradorCodigo,
+        colaboradorNome: alerta.colaboradorNome,
+        status: alerta.status,
+        revisaoNumero: alerta.revisaoNumero,
+        proximaRevisaoLabel: `Rev. ${alerta.revisaoNumero + 1}`,
+        pontosDiscordancia: alerta.pontosDiscordancia,
+        respostaAdmin: alerta.respostaAdmin,
+        revisaoSolicitadaAt: alerta.revisaoSolicitadaAt?.toISOString() ?? null,
         colaborador: {
           codigo: profissional?.codigo ?? alerta.colaboradorCodigo,
           nome: profissional?.nomeCompleto || profissional?.nome || alerta.colaboradorNome,

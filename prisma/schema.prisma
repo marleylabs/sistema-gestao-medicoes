@@ -26,11 +26,13 @@ model Usuario {
 
 model SgcAprovacaoMedicao {
   id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  colaboradorCodigo    String    @unique @map("colaborador_codigo")
+  colaboradorCodigo    String    @map("colaborador_codigo")
+  ciclo                String    @default("2605")
   colaboradorNome      String?   @map("colaborador_nome")
   status               String    @default("PENDENTE")
   revisaoNumero        Int       @default(0) @map("revisao_numero")
   pontosDiscordancia   String?   @map("pontos_discordancia")
+  respostaAdmin        String?   @map("resposta_admin")
   aprovadoAt           DateTime? @map("aprovado_at") @db.Timestamptz
   revisaoSolicitadaAt  DateTime? @map("revisao_solicitada_at") @db.Timestamptz
   reenviadoAt          DateTime? @map("reenviado_at") @db.Timestamptz
@@ -38,7 +40,9 @@ model SgcAprovacaoMedicao {
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
+  @@unique([colaboradorCodigo, ciclo], name: "colaboradorCodigo_ciclo", map: "sgc_aprovacoes_medicao_codigo_ciclo_key")
   @@index([status])
+  @@index([ciclo])
   @@index([revisaoSolicitadaAt])
   @@map("sgc_aprovacoes_medicao")
 }
@@ -125,22 +129,23 @@ model Medicao {
 }
 
 model MapaPagamentoContexto {
-  id              Int      @id @default(1)
-  mesReferencia   String?  @map("mes_referencia")
-  producaoLabel   String?  @map("producao_label")
+  ciclo           String    @id
+  mesReferencia   String?   @map("mes_referencia")
+  producaoLabel   String?   @map("producao_label")
   producaoInicio  DateTime? @map("producao_inicio") @db.Date
   producaoFim     DateTime? @map("producao_fim") @db.Date
-  atoLabel        String?  @map("ato_label")
-  atoCiclo        String?  @map("ato_ciclo")
-  contratos       Json     @default("[]")
-  rateio          Json     @default("[]")
-  updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz
+  atoLabel        String?   @map("ato_label")
+  atoCiclo        String?   @map("ato_ciclo")
+  contratos       Json      @default("[]")
+  rateio          Json      @default("[]")
+  updatedAt       DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
   @@map("mapa_pagamento_contexto")
 }
 
 model MapaPagamentoItem {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ciclo           String   @default("2605")
   ordem           Int
   ato             String?
   projetistaCodigo String? @map("projetista_codigo")
@@ -151,6 +156,7 @@ model MapaPagamentoItem {
   salobo          Decimal  @default(0) @db.Decimal(16, 4)
   acg             Decimal  @default(0) @db.Decimal(16, 4)
   escadasAlumar   Decimal  @default(0) @map("escadas_alumar") @db.Decimal(16, 4)
+  horas           Decimal  @default(0) @db.Decimal(14, 4)
   valor           Decimal  @default(0) @db.Decimal(16, 4)
   rev             Decimal  @default(0) @db.Decimal(16, 4)
   status          String?
@@ -159,6 +165,7 @@ model MapaPagamentoItem {
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
+  @@index([ciclo])
   @@index([projetistaCodigo])
   @@index([ato])
   @@map("mapa_pagamento_itens")

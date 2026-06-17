@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { Database, Eye, EyeOff, LockKeyhole, LogIn, UserRound } from "lucide-react";
+import { Eye, EyeOff, LockKeyhole, LogIn, UserRound } from "lucide-react";
 import { Button, Input } from "@/components/ui";
 
 export function LoginForm() {
@@ -35,8 +35,9 @@ export function LoginForm() {
       <section className="flex items-center justify-center px-6 py-10">
         <div className="w-full max-w-md">
           <div className="mb-8 flex items-center gap-3">
-            <span className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-[#AF1B1B] text-white">
-              <Database size={22} />
+            <span className="inline-flex h-11 w-11 overflow-hidden rounded-lg">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.png" alt="PMF - PROJETA" className="h-full w-full object-cover" />
             </span>
             <div>
               <div className="text-lg font-bold text-[#1A1A1A]">Medições e Pagamentos</div>
