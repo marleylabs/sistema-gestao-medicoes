@@ -23,8 +23,14 @@ body {
   color: var(--text);
   font-family: "Inter", Arial, Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
+  font-size: 11px;
 }
 
 button, input, select, textarea { font: inherit; }
+
+/* ── Tamanho de fonte base: 11px para todo conteúdo não-título ── */
+.text-sm   { font-size: 11px !important; }
+.text-xs   { font-size: 10px !important; }
+.text-base { font-size: 13px !important; }
 button, [role="button"], select, label[for], summary { cursor: pointer; }
 button:disabled, [role="button"][aria-disabled="true"], select:disabled { cursor: not-allowed; opacity: 0.5; }

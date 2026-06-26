@@ -1,4 +1,5 @@
 import { jwtVerify, SignJWT } from "jose";
+import { prisma } from "@/lib/prisma";
 
 export const SESSION_COOKIE = "medicoes_session";
 export const SESSION_DURATION_SECONDS = 8 * 60 * 60;
@@ -38,11 +39,14 @@ export async function verifySessionToken(token: string | undefined): Promise<Aut
     if (!payload.sub || typeof payload.usuario !== "string" || typeof payload.nome !== "string" || typeof payload.perfil !== "string") {
       return null;
     }
+    // Refresh perfil from DB so changes take effect without re-login
+    const dbUser = await prisma.usuario.findUnique({ where: { id: payload.sub }, select: { perfil: true, ativo: true } });
+    if (!dbUser || !dbUser.ativo) return null;
     return {
       id: payload.sub,
       usuario: payload.usuario,
       nome: payload.nome,
-      perfil: payload.perfil,
+      perfil: dbUser.perfil,
     };
   } catch {
     return null;

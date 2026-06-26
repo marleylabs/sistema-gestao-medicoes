@@ -1,7 +1,7 @@
 "use client";
 
 import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
-import { Banknote, CalendarRange, Clock3, Edit3, HardHat, Trash2, UserCheck } from "lucide-react";
+import { Banknote, Clock3, Edit3, HardHat, Trash2, UserCheck, Users } from "lucide-react";
 import type { DashboardData } from "@/components/types";
 import { Badge, BlurValue, Button, Card, Input, SectionHeader } from "@/components/ui";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
@@ -11,6 +11,7 @@ const number   = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 });
 const percent  = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 2 });
 
 function dateLabel(value: string) {
+  if (!value) return "–";
   return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T00:00:00`));
 }
 
@@ -111,6 +112,67 @@ export function Dashboard({ data }: { data: DashboardData | null }) {
   );
 }
 
+// ─── TiposPrecos ──────────────────────────────────────────────────────────────
+
+function TiposPrecos({ itens }: { itens: DashboardData["tiposPrecos"] }) {
+  if (!itens.length) {
+    return (
+      <Card className="p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB]">
+            <Users size={16} />
+          </span>
+          <h3 className="text-sm font-bold text-[#1A1A1A]">Tipos e Preços por colaborador</h3>
+        </div>
+        <p className="text-sm text-[#555555]">Nenhum documento cadastrado.</p>
+      </Card>
+    );
+  }
+
+  const porColaborador = itens.reduce<Record<string, { nome: string; docs: Array<{ tipo2: string; condicao: string }> }>>((acc, r) => {
+    if (!acc[r.codigo]) acc[r.codigo] = { nome: r.nome, docs: [] };
+    acc[r.codigo].docs.push({ tipo2: r.tipo2, condicao: r.condicao });
+    return acc;
+  }, {});
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-[#E5E7EB] px-5 py-3.5">
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB]">
+          <Users size={14} />
+        </span>
+        <h3 className="text-sm font-bold text-[#1A1A1A]">Tipos e Preços por colaborador</h3>
+      </div>
+      <div className="overflow-auto max-h-[260px]">
+        <table className="w-full border-collapse text-sm">
+          <thead className="sticky top-0 bg-[#F9FAFB]">
+            <tr>
+              {["Colaborador", "Tipo DG/DOC/HH", "Preço Unit."].map((h, i) => (
+                <th key={h} className={`border-b border-[#E5E7EB] px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-[#555555] ${i > 0 ? "text-right" : "text-left"}`}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(porColaborador).map(([codigo, { nome, docs }], gi) =>
+              docs.map((doc, di) => (
+                <tr key={`${codigo}-${di}`} className={`border-b border-[#F3F4F6] last:border-0 ${(gi + di) % 2 === 0 ? "" : "bg-[#FAFAFA]"}`}>
+                  <td className="px-4 py-2.5 font-medium text-[#1A1A1A]">{nome}</td>
+                  <td className="px-4 py-2.5 text-right text-[#555555]">{doc.tipo2}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-[#1A1A1A]">
+                    <BlurValue>{currency.format(parseFloat(doc.condicao) || 0)}</BlurValue>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 // ─── MapaPagamentoResumo ──────────────────────────────────────────────────────
 
 type ContextForm = {
@@ -148,7 +210,7 @@ export function MapaPagamentoResumo({
   const [saving, setSaving] = useState(false);
 
   // Datas derivadas automaticamente do ciclo (fallback quando não há dados manuais)
-  const datas = cicloToDates(ciclo);
+  const datas = /^\d{4}$/.test(ciclo) ? cicloToDates(ciclo) : { atoInicio: "", atoFim: "", producaoInicio: "", producaoFim: "" };
 
   const producaoInicio = contexto?.producaoInicio || datas.producaoInicio;
   const producaoFim    = contexto?.producaoFim    || datas.producaoFim;
@@ -157,7 +219,7 @@ export function MapaPagamentoResumo({
 
   useEffect(() => {
     setForm({
-      mesReferencia: contexto?.mesReferencia ?? cicloToMesReferencia(ciclo),
+      mesReferencia: contexto?.mesReferencia ?? (/^\d{4}$/.test(ciclo) ? cicloToMesReferencia(ciclo) : ""),
       producaoLabel: contexto?.producaoLabel ?? "MEDIÇÃO:",
       producaoInicio: contexto?.producaoInicio ?? datas.producaoInicio,
       producaoFim: contexto?.producaoFim ?? datas.producaoFim,
@@ -198,44 +260,18 @@ export function MapaPagamentoResumo({
 
   if (!contexto) {
     return (
-      <Card className="p-5">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-[#555555]">Configuração do ciclo não cadastrada.</p>
-          {isAdmin && (
-            <Button onClick={() => setEditing(true)}>
-              <Edit3 size={15} />
-              Adicionar ciclo
-            </Button>
-          )}
-        </div>
-        {editing && (
-          <div className="mt-4">
-            <ContextEditor form={form} setForm={setForm} saving={saving} onCancel={() => setEditing(false)} onSave={saveContext} />
-          </div>
-        )}
-      </Card>
+      <section className="grid min-w-0 gap-5">
+        <TiposPrecos itens={data?.tiposPrecos ?? []} />
+      </section>
     );
   }
 
   return (
     <section className="grid min-w-0 gap-5">
       <SectionHeader
-        title="Configuração do ciclo"
-        description="Períodos de apuração e distribuição financeira por contrato."
-        action={
-          isAdmin ? (
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setEditing((v) => !v)} disabled={saving}>
-                <Edit3 size={15} />
-                {editing ? "Cancelar" : "Alterar"}
-              </Button>
-              <Button variant="danger" onClick={deleteContext} disabled={saving}>
-                <Trash2 size={15} />
-                Excluir
-              </Button>
-            </div>
-          ) : undefined
-        }
+        title="Visão financeira"
+        description="Tipos, preços por colaborador e distribuição de valor medido por contrato."
+        action={undefined}
       />
 
       {editing && (
@@ -243,29 +279,8 @@ export function MapaPagamentoResumo({
       )}
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        {/* Periods */}
-        <Card className="p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB]">
-              <CalendarRange size={16} />
-            </span>
-            <h3 className="text-sm font-bold text-[#1A1A1A]">Períodos de apuração</h3>
-          </div>
-          <div className="grid gap-2">
-            <div className="flex items-center justify-between rounded-lg bg-[#F5F5F5] px-4 py-3">
-              <span className="text-xs font-semibold uppercase tracking-wide text-[#555555]">Produção</span>
-              <span className="text-sm font-semibold text-[#1A1A1A]">
-                {dateLabel(producaoInicio)} a {dateLabel(producaoFim)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between rounded-lg bg-[#F5F5F5] px-4 py-3">
-              <span className="text-xs font-semibold uppercase tracking-wide text-[#555555]">ATO</span>
-              <span className="text-sm font-semibold text-[#1A1A1A]">
-                {dateLabel(atoInicio)} a {dateLabel(atoFim)}
-              </span>
-            </div>
-          </div>
-        </Card>
+        {/* Tipos e Preços por colaborador */}
+        <TiposPrecos itens={data?.tiposPrecos ?? []} />
 
         {/* Contracts table */}
         <Card className="overflow-hidden">

@@ -126,4 +126,10 @@ export type DashboardData = {
     totalHoras: number;
     totalRegistros: number;
   }>;
+  tiposPrecos: Array<{
+    nome: string;
+    codigo: string;
+    tipo2: string;
+    condicao: string;
+  }>;
 };

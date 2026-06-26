@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useRef, useMemo, useState } from "react";
-import { Edit3, MessageCircle, Plus, Search, Send, Trash2, X } from "lucide-react";
+import { ArrowRight, Edit3, MessageCircle, Plus, Search, Send, Trash2, X } from "lucide-react";
 import { Badge, BlurValue, Button, Card, Field, IconButton, Input, Select } from "@/components/ui";
 import type { MapaPagamentoItem, Profissional } from "@/components/types";
 
@@ -137,6 +137,23 @@ export function MapaPagamentoTable({
 
   return (
     <Card className="overflow-hidden">
+      {/* ── Fluxo do processo ── */}
+      <div className="border-b border-[#E5E7EB] bg-[#FAFAFA] px-5 py-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-[#9CA3AF]">Fluxo Medição</span>
+          {[
+            { label: "Envio do BM",  bg: "bg-[#F3F4F6]",  color: "text-[#555555]" },
+            { label: "Validação",    bg: "bg-[#FFFBEB]",   color: "text-[#D97706]" },
+            { label: "Conclusão",    bg: "bg-[#F0FDF4]",   color: "text-[#16A34A]" },
+          ].map((s, i, arr) => (
+            <div key={i} className="flex items-center gap-1">
+              <span className={`rounded-lg ${s.bg} px-2.5 py-1 text-[11px] font-semibold ${s.color}`}>{s.label}</span>
+              {i < arr.length - 1 && <ArrowRight size={12} className="text-[#9CA3AF]" />}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ── Toolbar ── */}
       <div className="border-b border-[#E5E7EB] bg-white px-5 py-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
@@ -247,16 +264,17 @@ export function MapaPagamentoTable({
               const temAlteracao = isRevisaoEnvio && revisao?.revisaoSolicitadaAt && item.updatedAt
                 ? new Date(item.updatedAt) > new Date(revisao.revisaoSolicitadaAt)
                 : true;
-              const podeEnviar = isAdmin && onEnviarBm && ["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA"].includes(sgcStatusValue) && temAlteracao;
               const enviando = enviandoCodigo === codigo;
-              const isAprovado = sgcStatusValue === "APROVADO";
+              const isConcluido = ["APROVADO", "AGUARDANDO_NF", "PAGO"].includes(sgcStatusValue);
+              const isAguardandoNf = sgcStatusValue === "AGUARDANDO_NF";
               const isPendente = sgcStatusValue === "PENDENTE";
+              const podeEnviar = isAdmin && onEnviarBm && ["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA"].includes(sgcStatusValue) && temAlteracao && !isConcluido;
 
               return (
                 <tr
                   key={item.id}
                   className={`border-b last:border-0 transition-colors ${
-                    isAprovado
+                    isConcluido
                       ? "border-[#BBF7D0] bg-[#F0FDF4] hover:bg-[#DCFCE7]"
                       : isPendente
                       ? "border-[#D1D5DB] bg-[#E5E7EB] hover:bg-[#D1D5DB]"
@@ -269,13 +287,13 @@ export function MapaPagamentoTable({
                   <td className="px-4 py-3 font-semibold text-[#1A1A1A]">
                     <div className="flex items-center gap-2">
                       {item.responsavel ?? item.projetistaCodigo ?? "–"}
-                      {isAprovado && (
-                        <Badge variant="success" className="shrink-0">Aprovado</Badge>
+                      {isConcluido && (
+                        <Badge variant="success" className="shrink-0">Concluído</Badge>
                       )}
                       {isPendente && (
                         <Badge variant="neutral" className="shrink-0">Aguardando</Badge>
                       )}
-                      {!isAprovado && !isPendente && hasRevisao && (
+                      {!isConcluido && !isPendente && hasRevisao && (
                         <Badge variant="warning" className="shrink-0">Revisão</Badge>
                       )}
                     </div>
@@ -732,8 +750,8 @@ function PaymentModal({
   }, [onCancel]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-0 sm:p-4 sm:items-center backdrop-blur-sm">
+      <div className="w-full max-w-5xl overflow-hidden rounded-none sm:rounded-2xl border-0 sm:border border-[#E5E7EB] bg-white shadow-2xl min-h-screen sm:min-h-0">
 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#E5E7EB] px-6 py-4">

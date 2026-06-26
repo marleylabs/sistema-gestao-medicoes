@@ -319,20 +319,11 @@ def reflect_tables(engine):
 
 
 def clear_imported_database(conn, ciclo: str) -> None:
-    # Deleta apenas os itens do ciclo sendo reimportado; outros ciclos são preservados.
-    conn.execute(text(f"delete from mapa_pagamento_itens where ciclo = '{ciclo}'"))
-    conn.execute(
-        text(
-            """
-            truncate table
-                medicoes,
-                bm_aux_medicoes,
-                projetos,
-                profissionais
-            restart identity cascade
-            """
-        )
-    )
+    # Delete seletivo por ciclo — preserva dados de outros ciclos.
+    # projetos e profissionais são master data compartilhado entre ciclos: nunca deletar.
+    conn.execute(text("DELETE FROM medicoes WHERE ciclo = :ciclo"), {"ciclo": ciclo})
+    conn.execute(text("DELETE FROM bm_aux_medicoes WHERE ciclo = :ciclo"), {"ciclo": ciclo})
+    conn.execute(text("DELETE FROM mapa_pagamento_itens WHERE ciclo = :ciclo"), {"ciclo": ciclo})
 
 
 def upsert_project(conn, projetos, data: dict[str, Any]) -> int:
@@ -514,7 +505,9 @@ def build_payment_map_status(
 
 
 def derive_ciclo_from_mes_referencia(mes_referencia: str | None) -> str | None:
-    """Deriva o ciclo YYMM a partir de strings como 'Maio de 2026' ou 'Maio/2026'."""
+    """Deriva o ciclo YYMM a partir de strings como 'Maio de 2026' ou 'Maio/2026'.
+    Retorna None se não conseguir derivar com certeza — nunca usa fallback silencioso."""
+    import re
     if not mes_referencia:
         return None
     meses = {
@@ -525,12 +518,16 @@ def derive_ciclo_from_mes_referencia(mes_referencia: str | None) -> str | None:
     }
     texto = mes_referencia.lower().strip()
     mes_num = next((v for k, v in meses.items() if k in texto), None)
-    import re
-    ano_match = re.search(r"\d{4}", texto)
-    if not mes_num or not ano_match:
+    # Busca o último grupo de 4 dígitos que representa um ano razoável (2020-2099)
+    anos = re.findall(r"\b(20[2-9]\d)\b", texto)
+    if not mes_num or not anos:
         return None
-    ano = ano_match.group()[-2:]  # últimos 2 dígitos
-    return f"{ano}{mes_num}"
+    ano = anos[-1][-2:]  # últimos 2 dígitos do ano mais recente encontrado
+    ciclo = f"{ano}{mes_num}"
+    # Validação básica: YYMM onde MM entre 01-12
+    if not re.fullmatch(r"\d{2}(0[1-9]|1[0-2])", ciclo):
+        return None
+    return ciclo
 
 
 def build_payment_map_context(excel_path: Path, sheet_name: str, ciclo: str | None = None) -> dict[str, Any]:
@@ -559,7 +556,12 @@ def build_payment_map_context(excel_path: Path, sheet_name: str, ciclo: str | No
 
     mes_referencia = clean_text(sheet["H1"].value)
     if not ciclo:
-        ciclo = derive_ciclo_from_mes_referencia(mes_referencia) or "2605"
+        ciclo = derive_ciclo_from_mes_referencia(mes_referencia)
+    if not ciclo:
+        raise ValueError(
+            f"Não foi possível derivar o ciclo a partir de '{mes_referencia}'. "
+            "Informe o ciclo explicitamente (ex: 2606) no campo da interface."
+        )
 
     return {
         "ciclo": ciclo,

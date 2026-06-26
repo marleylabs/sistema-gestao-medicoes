@@ -42,12 +42,7 @@ export async function POST(request: NextRequest) {
 
   await prisma.usuario.update({
     where: { id: user.id },
-    data: {
-      tentativasFalhas: 0,
-      bloqueadoAte: null,
-      ultimoLoginAt: now,
-      updatedAt: now,
-    },
+    data: { tentativasFalhas: 0, bloqueadoAte: null, ultimoLoginAt: now, updatedAt: now },
   });
 
   const token = await createSessionToken({
@@ -58,6 +53,7 @@ export async function POST(request: NextRequest) {
   });
   const response = NextResponse.json({
     user: { usuario: user.usuario, nome: user.nome, perfil: user.perfil },
+    requirePasswordChange: (user as any).primeiroLogin === true,
   });
   response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions);
   return response;

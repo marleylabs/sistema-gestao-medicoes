@@ -7,7 +7,8 @@ export async function GET(request: NextRequest) {
   const codigo = request.nextUrl.searchParams.get("codigo")?.trim();
   const contrato = request.nextUrl.searchParams.get("contrato")?.trim();
   const ciclo = request.nextUrl.searchParams.get("ciclo")?.trim() || "2605";
-  const mapaCicloFilter = Prisma.sql`and mpi.ciclo = ${ciclo}`;
+  const isGeral = ciclo === "GERAL";
+  const mapaCicloFilter = isGeral ? Prisma.empty : Prisma.sql`and mpi.ciclo = ${ciclo}`;
   const codigoFilter = codigo ? Prisma.sql`and pr.codigo = ${codigo}` : Prisma.empty;
   const bmAuxCodigoFilter = codigo ? Prisma.sql`and b.responsavel_codigo = ${codigo}` : Prisma.empty;
   const contratoFilter = contrato
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest) {
                 `
             : Prisma.empty;
 
-  const [totals, colaboradoresAtivos, porCiclo, porProjeto, contexto, mapaFinanceiro] = await Promise.all([
+  const [totals, colaboradoresAtivos, porCiclo, porProjeto, contexto, mapaFinanceiro, tiposPrecos] = await Promise.all([
     prisma.$queryRaw<
       Array<{
         total_medido: unknown;
@@ -246,7 +247,7 @@ export async function GET(request: NextRequest) {
       order by total_medido desc
       limit 8
     `,
-    prisma.mapaPagamentoContexto.findUnique({
+    isGeral ? Promise.resolve(null) : prisma.mapaPagamentoContexto.findUnique({
       where: { ciclo },
     }),
     prisma.$queryRaw<
@@ -277,7 +278,7 @@ export async function GET(request: NextRequest) {
           ) as total_participacao
         from mapa_pagamento_itens mpi
         where mpi.valor > 0
-        and mpi.ciclo = ${ciclo}
+        ${isGeral ? Prisma.empty : Prisma.sql`and mpi.ciclo = ${ciclo}`}
         ${mapaCodigoFilter}
       )
       select
@@ -326,17 +327,59 @@ export async function GET(request: NextRequest) {
         ), 0) as nao_alocado
       from pagamentos
     `,
-
+    prisma.$queryRaw<Array<{ nome: string; codigo: string; tipo2: string; condicao: string }>>`
+      select distinct
+        coalesce(pr.nome_completo, pr.nome) as nome,
+        pr.codigo,
+        m.tipo2,
+        m.condicao
+      from medicoes m
+      join profissionais pr on pr.id = m.id_profissional
+      where m.tipo2 is not null and m.tipo2 != ''
+        and m.condicao is not null and m.condicao != ''
+        ${codigoFilter}
+      order by nome, m.tipo2
+    `,
   ]);
 
   const mapa = mapaFinanceiro[0];
-  const distribuicaoCompleta = [
-    { contrato: "Intr. Sossego", valor: toNumber(mapa?.intr_sossego as any) },
-    { contrato: "Salobo", valor: toNumber(mapa?.salobo as any) },
-    { contrato: "ACG", valor: toNumber(mapa?.acg as any) },
-    { contrato: "Escadas Alumar", valor: toNumber(mapa?.escadas_alumar as any) },
-    { contrato: "Não alocado", valor: toNumber(mapa?.nao_alocado as any) },
-  ];
+
+  // Ler contratos ativos do banco
+  const contratosAtivos = await prisma.$queryRaw<Array<{ nome: string; coluna_mapa: string | null }>>`
+    SELECT nome, coluna_mapa FROM contratos WHERE ativo = true ORDER BY nome ASC
+  `;
+
+  // Para contratos sem coluna_mapa, somar por ato direto
+  const colunasConhecidas = new Set(["intr_sossego", "salobo", "acg", "escadas_alumar"]);
+  const contratosSemColuna = contratosAtivos.filter((c) => !c.coluna_mapa || !colunasConhecidas.has(c.coluna_mapa));
+
+  const valorPorAto: Record<string, number> = {};
+  if (contratosSemColuna.length > 0) {
+    const nomes = contratosSemColuna.map((c) => c.nome);
+    const rows = await prisma.$queryRaw<Array<{ ato: string; total: unknown }>>`
+      SELECT ato, COALESCE(SUM(valor), 0) as total
+      FROM mapa_pagamento_itens
+      WHERE valor > 0
+        AND ato = ANY(${nomes}::text[])
+        ${ciclo && ciclo !== "GERAL" ? Prisma.sql`AND ciclo = ${ciclo}` : Prisma.empty}
+      GROUP BY ato
+    `;
+    for (const r of rows) valorPorAto[r.ato] = toNumber(r.total as any);
+  }
+
+  const colunaParaValor: Record<string, number> = {
+    intr_sossego:   toNumber(mapa?.intr_sossego as any),
+    salobo:         toNumber(mapa?.salobo as any),
+    acg:            toNumber(mapa?.acg as any),
+    escadas_alumar: toNumber(mapa?.escadas_alumar as any),
+  };
+
+  const distribuicaoCompleta = contratosAtivos.map((c) => ({
+    contrato: c.nome,
+    valor: c.coluna_mapa && colunasConhecidas.has(c.coluna_mapa)
+      ? colunaParaValor[c.coluna_mapa] ?? 0
+      : valorPorAto[c.nome] ?? 0,
+  }));
   const distribuicao = contrato
     ? distribuicaoCompleta.filter((item) => item.contrato === contrato)
     : distribuicaoCompleta;
@@ -390,6 +433,12 @@ export async function GET(request: NextRequest) {
       totalMedido: toNumber(item.total_medido as any),
       totalHoras: toNumber(item.total_horas as any),
       totalRegistros: Number(item.total_registros),
+    })),
+    tiposPrecos: tiposPrecos.map((r) => ({
+      nome: r.nome,
+      codigo: r.codigo,
+      tipo2: r.tipo2,
+      condicao: r.condicao,
     })),
   });
 }

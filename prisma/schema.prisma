@@ -12,7 +12,9 @@ model Usuario {
   usuario          String    @unique
   nome             String
   senhaHash        String    @map("senha_hash")
-  perfil           String    @default("USUARIO")
+  senhaTemporaria  String?   @map("senha_temporaria")
+  primeiroLogin    Boolean   @default(false) @map("primeiro_login")
+  perfil           String    @default("MEDICAO")
   ativo            Boolean   @default(true)
   tentativasFalhas Int       @default(0) @map("tentativas_falhas")
   bloqueadoAte     DateTime? @map("bloqueado_ate") @db.Timestamptz
@@ -25,22 +27,32 @@ model Usuario {
 }
 
 model SgcAprovacaoMedicao {
-  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  colaboradorCodigo    String    @map("colaborador_codigo")
-  ciclo                String    @default("2605")
-  colaboradorNome      String?   @map("colaborador_nome")
-  status               String    @default("PENDENTE")
-  revisaoNumero        Int       @default(0) @map("revisao_numero")
-  pontosDiscordancia   String?   @map("pontos_discordancia")
-  respostaAdmin        String?   @map("resposta_admin")
-  aprovadoAt           DateTime? @map("aprovado_at") @db.Timestamptz
-  revisaoSolicitadaAt  DateTime? @map("revisao_solicitada_at") @db.Timestamptz
-  reenviadoAt          DateTime? @map("reenviado_at") @db.Timestamptz
-  resolvidoAt          DateTime? @map("resolvido_at") @db.Timestamptz
-  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt            DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  colaboradorCodigo       String    @map("colaborador_codigo")
+  ciclo                   String    @default("2605")
+  colaboradorNome         String?   @map("colaborador_nome")
+  status                  String    @default("PENDENTE")
+  revisaoNumero           Int       @default(0) @map("revisao_numero")
+  pontosDiscordancia      String?   @map("pontos_discordancia")
+  respostaAdmin           String?   @map("resposta_admin")
+  aprovadoAt              DateTime? @map("aprovado_at") @db.Timestamptz
+  revisaoSolicitadaAt     DateTime? @map("revisao_solicitada_at") @db.Timestamptz
+  reenviadoAt             DateTime? @map("reenviado_at") @db.Timestamptz
+  resolvidoAt             DateTime? @map("resolvido_at") @db.Timestamptz
+  nfArquivo               Bytes?    @map("nf_arquivo")
+  nfArquivoNome           String?   @map("nf_arquivo_nome")
+  nfCarregadoAt           DateTime? @map("nf_carregado_at") @db.Timestamptz
+  pagoAt                  DateTime? @map("pago_at") @db.Timestamptz
+  comprovanteArquivo      Bytes?    @map("comprovante_arquivo")
+  comprovanteArquivoNome  String?   @map("comprovante_arquivo_nome")
+  comprovanteCarregadoAt  DateTime? @map("comprovante_carregado_at") @db.Timestamptz
+  salvoAt                 DateTime? @map("salvo_at") @db.Timestamptz
+  observacaoColaborador   String?   @map("observacao_colaborador")
+  voltadoAt               DateTime? @map("voltado_at") @db.Timestamptz
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
-  @@unique([colaboradorCodigo, ciclo], name: "colaboradorCodigo_ciclo", map: "sgc_aprovacoes_medicao_codigo_ciclo_key")
+  @@unique([colaboradorCodigo, ciclo], map: "sgc_aprovacoes_medicao_codigo_ciclo_key")
   @@index([status])
   @@index([ciclo])
   @@index([revisaoSolicitadaAt])
@@ -89,6 +101,7 @@ model Medicao {
   projeto            Projeto       @relation(fields: [idProjeto], references: [id], onDelete: Restrict, onUpdate: Cascade)
   coordenador        Profissional? @relation("MedicoesCoordenador", fields: [idCoordenador], references: [id], onDelete: SetNull, onUpdate: Cascade)
   profissional       Profissional? @relation("MedicoesProfissional", fields: [idProfissional], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  ciclo              String?
   mesclado           String?
   numeroDocumento    String?       @map("numero_documento")
   evidencia          String?
@@ -109,7 +122,6 @@ model Medicao {
   valorTotal         Decimal       @default(0) @map("valor_total") @db.Decimal(16, 4)
   obs                String?
   valorReajuste      Decimal       @default(0) @map("valor_reajuste") @db.Decimal(16, 4)
-  ciclo              String?
   referencia         String?
   percentualEmissao  Decimal?      @map("percentual_emissao") @db.Decimal(8, 4)
   tipo2              String?
@@ -125,45 +137,46 @@ model Medicao {
   @@index([idProjeto])
   @@index([idCoordenador])
   @@index([idProfissional])
+  @@index([ciclo])
   @@map("medicoes")
 }
 
 model MapaPagamentoContexto {
-  ciclo           String    @id
-  mesReferencia   String?   @map("mes_referencia")
-  producaoLabel   String?   @map("producao_label")
-  producaoInicio  DateTime? @map("producao_inicio") @db.Date
-  producaoFim     DateTime? @map("producao_fim") @db.Date
-  atoLabel        String?   @map("ato_label")
-  atoCiclo        String?   @map("ato_ciclo")
-  contratos       Json      @default("[]")
-  rateio          Json      @default("[]")
-  updatedAt       DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  ciclo          String    @id
+  mesReferencia  String?   @map("mes_referencia")
+  producaoLabel  String?   @map("producao_label")
+  producaoInicio DateTime? @map("producao_inicio") @db.Date
+  producaoFim    DateTime? @map("producao_fim") @db.Date
+  atoLabel       String?   @map("ato_label")
+  atoCiclo       String?   @map("ato_ciclo")
+  contratos      Json      @default("[]")
+  rateio         Json      @default("[]")
+  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
   @@map("mapa_pagamento_contexto")
 }
 
 model MapaPagamentoItem {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  ciclo           String   @default("2605")
-  ordem           Int
-  ato             String?
-  projetistaCodigo String? @map("projetista_codigo")
-  responsavel     String?
-  cpfCnpj         String?  @map("cpf_cnpj")
-  razaoSocial     String?  @map("razao_social")
-  intrSossego     Decimal  @default(0) @map("intr_sossego") @db.Decimal(16, 4)
-  salobo          Decimal  @default(0) @db.Decimal(16, 4)
-  acg             Decimal  @default(0) @db.Decimal(16, 4)
-  escadasAlumar   Decimal  @default(0) @map("escadas_alumar") @db.Decimal(16, 4)
-  horas           Decimal  @default(0) @db.Decimal(14, 4)
-  valor           Decimal  @default(0) @db.Decimal(16, 4)
-  rev             Decimal  @default(0) @db.Decimal(16, 4)
-  status          String?
-  sourceRowHash   String   @unique @map("source_row_hash")
-  rawPayload      Json     @default("{}") @map("raw_payload")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ciclo            String   @default("2605")
+  ordem            Int
+  ato              String?
+  projetistaCodigo String?  @map("projetista_codigo")
+  responsavel      String?
+  cpfCnpj          String?  @map("cpf_cnpj")
+  razaoSocial      String?  @map("razao_social")
+  intrSossego      Decimal  @default(0) @map("intr_sossego") @db.Decimal(16, 4)
+  salobo           Decimal  @default(0) @db.Decimal(16, 4)
+  acg              Decimal  @default(0) @db.Decimal(16, 4)
+  escadasAlumar    Decimal  @default(0) @map("escadas_alumar") @db.Decimal(16, 4)
+  horas            Decimal  @default(0) @db.Decimal(14, 4)
+  valor            Decimal  @default(0) @db.Decimal(16, 4)
+  rev              Decimal  @default(0) @db.Decimal(16, 4)
+  status           String?
+  sourceRowHash    String   @unique @map("source_row_hash")
+  rawPayload       Json     @default("{}") @map("raw_payload")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
   @@index([ciclo])
   @@index([projetistaCodigo])
@@ -172,17 +185,70 @@ model MapaPagamentoItem {
 }
 
 model BmAuxMedicao {
-  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  responsavelCodigo String   @map("responsavel_codigo")
-  ciclo             String?
-  equivalenteRevisado Decimal @default(0) @map("equivalente_revisado") @db.Decimal(14, 4)
-  valorMedicao      Decimal  @default(0) @map("valor_medicao") @db.Decimal(16, 4)
-  sourceRowHash     String   @unique @map("source_row_hash")
-  rawPayload        Json     @default("{}") @map("raw_payload")
-  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt         DateTime @default(now()) @map("updated_at") @db.Timestamptz
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  responsavelCodigo   String   @map("responsavel_codigo")
+  ciclo               String?
+  equivalenteRevisado Decimal  @default(0) @map("equivalente_revisado") @db.Decimal(14, 4)
+  valorMedicao        Decimal  @default(0) @map("valor_medicao") @db.Decimal(16, 4)
+  sourceRowHash       String   @unique @map("source_row_hash")
+  rawPayload          Json     @default("{}") @map("raw_payload")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
   @@index([responsavelCodigo])
   @@index([ciclo])
   @@map("bm_aux_medicoes")
+}
+
+model Contrato {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome       String    @unique
+  codigo     String?
+  descricao  String?
+  gestor     String?
+  fiscal     String?
+  dataInicio DateTime? @map("data_inicio") @db.Date
+  dataFim    DateTime? @map("data_fim") @db.Date
+  valorTotal Decimal?  @map("valor_total") @db.Decimal(18, 2)
+  colunaMapa String?   @map("coluna_mapa")
+  ativo      Boolean   @default(true)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@index([ativo])
+  @@map("contratos")
+}
+
+model SgcLog {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sgcId             String?   @map("sgc_id") @db.Uuid
+  colaboradorCodigo String    @map("colaborador_codigo")
+  ciclo             String?
+  usuarioId         String?   @map("usuario_id") @db.Uuid
+  usuarioNome       String?   @map("usuario_nome")
+  acao              String
+  statusAnterior    String?   @map("status_anterior")
+  statusNovo        String?   @map("status_novo")
+  telaOrigem        String?   @map("tela_origem")
+  observacao        String?
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([sgcId])
+  @@index([colaboradorCodigo, ciclo])
+  @@index([createdAt(sort: Desc)])
+  @@map("sgc_logs")
+}
+
+model EtlExecucao {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ciclo         String?
+  iniciadoAt    DateTime  @default(now()) @map("iniciado_at") @db.Timestamptz
+  finalizadoAt  DateTime? @map("finalizado_at") @db.Timestamptz
+  status        String    @default("RUNNING")
+  rowsProcessed Int?      @map("rows_processed")
+  resultado     Json?
+  erro          String?
+
+  @@index([ciclo])
+  @@map("etl_execucoes")
 }

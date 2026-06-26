@@ -16,7 +16,7 @@ export async function GET() {
   const codigo = user.usuario;
 
   const aprovacoes = await prisma.sgcAprovacaoMedicao.findMany({
-    where: { colaboradorCodigo: codigo, status: "APROVADO" },
+    where: { colaboradorCodigo: codigo, status: { in: ["APROVADO", "AGUARDANDO_NF", "PAGO"] } },
     orderBy: { aprovadoAt: "desc" },
   });
 
@@ -51,9 +51,14 @@ export async function GET() {
       return {
         id: sgc.id,
         ciclo: sgc.ciclo,
+        status: sgc.status,
         revisaoNumero: sgc.revisaoNumero,
         revisaoLabel: sgc.revisaoNumero > 0 ? `Rev. ${sgc.revisaoNumero}` : null,
         aprovadoAt: sgc.aprovadoAt?.toISOString() ?? null,
+        nfArquivoNome: (sgc as any).nfArquivoNome ?? null,
+        nfCarregadoAt: (sgc as any).nfCarregadoAt?.toISOString() ?? null,
+        comprovanteArquivoNome: (sgc as any).comprovanteArquivoNome ?? null,
+        comprovanteCarregadoAt: (sgc as any).comprovanteCarregadoAt?.toISOString() ?? null,
         colaborador: {
           nome: profissional?.nomeCompleto || profissional?.nome || codigo,
           cpf: decryptSensitive(profissional?.cpf),
@@ -71,11 +76,11 @@ export async function GET() {
           ato: pagamento.ato,
           valor: toNumber(pagamento.valor),
           rev: toNumber(pagamento.rev),
-          horas: toNumber(pagamento.horas),
-          intrSossego: toNumber(pagamento.intrSossego),
-          salobo: toNumber(pagamento.salobo),
-          acg: toNumber(pagamento.acg),
-          escadasAlumar: toNumber(pagamento.escadasAlumar),
+          horas: toNumber((pagamento as any).horas),
+          intrSossego: toNumber((pagamento as any).intrSossego),
+          salobo: toNumber((pagamento as any).salobo),
+          acg: toNumber((pagamento as any).acg),
+          escadasAlumar: toNumber((pagamento as any).escadasAlumar),
           razaoSocial: decryptSensitive(pagamento.razaoSocial),
           cpfCnpj: decryptSensitive(pagamento.cpfCnpj),
         } : null,

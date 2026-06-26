@@ -13,3 +13,14 @@ export async function requireAdmin() {
   }
   return { user, response: null };
 }
+
+export async function requireFinanceiro() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return { user: null, response: NextResponse.json({ error: "Não autenticado." }, { status: 401 }) };
+  }
+  if (!["MEDICAO", "ADMIN", "FINANCEIRO"].includes(user.perfil)) {
+    return { user, response: NextResponse.json({ error: "Acesso restrito." }, { status: 403 }) };
+  }
+  return { user, response: null };
+}

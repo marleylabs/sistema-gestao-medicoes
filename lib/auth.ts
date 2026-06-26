@@ -16,6 +16,11 @@ const scrypt = promisify(scryptCallback);
 export { createSessionToken, SESSION_COOKIE, verifySessionToken };
 export type { AuthUser };
 
+export function generateTempPassword(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
+
 export async function hashPassword(password: string) {
   const salt = randomBytes(16);
   const derivedKey = (await scrypt(password, salt, 64)) as Buffer;
@@ -62,8 +67,6 @@ export async function ensureDefaultAccessUsers() {
   const senhaHash = await hashPassword(temporaryPassword);
   const now = new Date();
 
-  await prisma.$executeRawUnsafe("update usuarios set perfil = 'MEDICAO', updated_at = now() where perfil = 'ADMIN'");
-
   const medicaoUsers = [
     { usuario: "ANDERSON MARLEY", nome: "Anderson Marley" },
     { usuario: "GABRIEL SOUSA", nome: "Gabriel Sousa" },
@@ -80,43 +83,43 @@ export async function ensureDefaultAccessUsers() {
       },
       update: {
         nome: medicaoUser.nome,
-        perfil: "MEDICAO",
         ativo: true,
         updatedAt: now,
+        // perfil is intentionally not overwritten — allow manual changes via Gestão de Usuários
       },
     });
   }
 
   const colaboradores = await prisma.profissional.findMany({
-    where: {
-      codigo: { not: null },
-    },
-    select: {
-      codigo: true,
-      nomeCompleto: true,
-      nome: true,
-    },
+    where: { codigo: { not: null } },
+    select: { codigo: true, nomeCompleto: true, nome: true },
   });
 
   for (const colaborador of colaboradores) {
     const usuario = colaborador.codigo?.trim();
     if (!usuario) continue;
     if (medicaoUsernames.has(usuario)) continue;
-    await prisma.usuario.upsert({
-      where: { usuario },
-      create: {
-        usuario,
-        nome: colaborador.nomeCompleto || colaborador.nome,
-        senhaHash,
-        perfil: "COLABORADOR",
-      },
-      update: {
-        nome: colaborador.nomeCompleto || colaborador.nome,
-        perfil: "COLABORADOR",
-        ativo: true,
-        updatedAt: now,
-      },
-    });
+
+    const existing = await prisma.usuario.findUnique({ where: { usuario } });
+    if (existing) {
+      await prisma.usuario.update({
+        where: { usuario },
+        data: { nome: colaborador.nomeCompleto || colaborador.nome, perfil: "COLABORADOR", ativo: true, updatedAt: now },
+      });
+    } else {
+      const tempPass = generateTempPassword();
+      const tempHash = await hashPassword(tempPass);
+      await prisma.usuario.create({
+        data: {
+          usuario,
+          nome: colaborador.nomeCompleto || colaborador.nome || usuario,
+          senhaHash: tempHash,
+          senhaTemporaria: tempPass,
+          primeiroLogin: true,
+          perfil: "COLABORADOR",
+        },
+      });
+    }
   }
 }
 

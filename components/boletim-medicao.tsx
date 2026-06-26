@@ -39,6 +39,8 @@ export type BmData = {
   revisaoNumero: number;
   revisaoLabel: string | null;
   aprovadoAt: string | null;
+  sgcId?: string | null;
+  nfArquivoNome?: string | null;
   colaborador: {
     nome: string; cpf: string | null; cnpj: string | null;
     razaoSocial: string | null; funcao: string | null;
@@ -117,6 +119,37 @@ export function BoletimMedicao({ data }: { data: BmData }) {
   const totalRev   = pagamento?.rev ?? 0;
   const totalMedicao = totalValor + totalRev;
 
+  // Condições Comerciais: soma valorMedido por tipo2 (DG → Desenhos, DOC → DOC, HH → HH)
+  function sumByTipo(t: string) {
+    return data.documentos
+      .filter((d) => (d.tipo2 ?? "").toUpperCase().trim() === t)
+      .reduce((s, d) => s + d.valorMedido, 0);
+  }
+  const ccDesenhos  = sumByTipo("DG");
+  const ccDoc       = sumByTipo("DOC");
+  const ccHhDocs    = sumByTipo("HH");
+  const ccDesenhosMc = ccDesenhos + sumByTipo("MC");
+
+  // Se pagamento.valor > soma dos docs → diferença é o valor FIXO (PJ ou CLT)
+  const docBasedTotal = ccDesenhos + ccDoc + ccHhDocs;
+  const fixoAmount    = Math.round(Math.max(0, totalValor - docBasedTotal) * 100) / 100;
+  const isPj          = !!(data.colaborador.cnpj && data.colaborador.cnpj.trim() !== "–");
+  const ccFixoPj      = isPj && fixoAmount > 0.01 ? fixoAmount : 0;
+  const ccFixoClt     = !isPj && fixoAmount > 0.01 ? fixoAmount : 0;
+  const ccGarClt      = 0;
+  const ccGarPj       = 0;
+  // HH: usa docs calculados; se não houver docs HH com preço, cai no pagamento.valor
+  const ccHh          = ccHhDocs > 0 ? ccHhDocs : (fixoAmount <= 0.01 ? totalValor : 0);
+
+  // INICIAL: soma equivalenteA1Horas por tipo2 (DG vs DOC)
+  function sumHrsByTipo(t: string) {
+    return data.documentos
+      .filter((d) => (d.tipo2 ?? "").toUpperCase().trim() === t)
+      .reduce((s, d) => s + d.equivalenteA1Horas, 0);
+  }
+  const inicialDg  = sumHrsByTipo("DG");
+  const inicialDoc = sumHrsByTipo("DOC");
+
   // rateio por contrato
   const totalPart = (pagamento?.intrSossego ?? 0) + (pagamento?.salobo ?? 0) + (pagamento?.acg ?? 0) + (pagamento?.escadasAlumar ?? 0);
   const pctSossego = totalPart > 0 ? (pagamento?.intrSossego ?? 0) / totalPart : 0;
@@ -165,7 +198,7 @@ export function BoletimMedicao({ data }: { data: BmData }) {
       </div>
 
       {/* BM content */}
-      <div ref={printRef} className="overflow-auto">
+      <div ref={printRef}>
         <table className="w-full min-w-[800px] border-collapse text-[10px]" style={{ fontFamily: "Arial, sans-serif" }}>
 
           {/* ── Linha 1: Título ── */}
@@ -220,8 +253,8 @@ export function BoletimMedicao({ data }: { data: BmData }) {
               </Td>
             </tr>
             <tr>
-              <Th>Cond. Fiza (CLT)</Th>
-              <Th>Cond. Fiza (PJ)</Th>
+              <Th>Cond. Fixa (CLT)</Th>
+              <Th>Cond. Fixa (PJ)</Th>
               <Th>Garantia (CLT)</Th>
               <Th>Garantia (PJ)</Th>
               <Th>Desenhos ou MC</Th>
@@ -229,13 +262,13 @@ export function BoletimMedicao({ data }: { data: BmData }) {
               <Th>HH</Th>
             </tr>
             <tr>
-              <Td className="text-center">R$0,00</Td>
-              <Td className="text-center">R$0,00</Td>
-              <Td className="text-center">R$0,00</Td>
-              <Td className="text-center">R$0,00</Td>
-              <Td className="text-center">R$0,00</Td>
-              <Td className="text-center">R$0,00</Td>
-              <Td className="text-center font-bold">{fmt(totalValor)}</Td>
+              <Td className="text-center">{fmt(ccFixoClt)}</Td>
+              <Td className="text-center">{fmt(ccFixoPj)}</Td>
+              <Td className="text-center">{fmt(ccGarClt)}</Td>
+              <Td className="text-center">{fmt(ccGarPj)}</Td>
+              <Td className="text-center">{fmt(ccDesenhosMc)}</Td>
+              <Td className="text-center">{fmt(ccDoc)}</Td>
+              <Td className="text-center font-bold">{fmt(ccHh)}</Td>
             </tr>
             <tr>
               <Th colSpan={3}>INICIAL</Th>
@@ -256,12 +289,12 @@ export function BoletimMedicao({ data }: { data: BmData }) {
             </tr>
             <tr>
               <Td colSpan={2} className="bg-[#F3F3F3]" />
-              <Td className="text-center">0,000</Td>
-              <Td className="text-center">0,000</Td>
-              <Td className="text-center">0,000</Td>
-              <Td className="text-center">0,000</Td>
+              <Td className="text-center">{fmtN(inicialDg)}</Td>
+              <Td className="text-center">{fmtN(inicialDoc)}</Td>
+              <Td className="text-center">{fmtN(inicialDg)}</Td>
+              <Td className="text-center">{fmtN(inicialDoc)}</Td>
               <Td className="text-center font-bold">{fmtN(totalHoras)}</Td>
-              <Td className="text-center">0,000</Td>
+              <Td className="text-center">{fmtN(totalHorasDocs)}</Td>
               <Td colSpan={4} />
             </tr>
 

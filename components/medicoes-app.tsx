@@ -5,9 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Bell,
   BellRing,
+  Building2,
   Eye,
   EyeOff,
   FileSearch,
+  FileText,
   History,
   LayoutDashboard,
   LogOut,
@@ -16,25 +18,38 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Upload,
+  Users,
+  Wallet,
   X,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Dashboard, MapaPagamentoResumo } from "@/components/dashboard";
 import { MapaPagamentoTable } from "@/components/mapa-pagamento-table";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
-import { Badge, Button, Card, IconButton, Select } from "@/components/ui";
+import { UsuariosPanel } from "@/components/usuarios-panel";
+import { FinanceiroPanel } from "@/components/financeiro-panel";
+import { ContratosPanel } from "@/components/contratos-panel";
+import { EquipePanel } from "@/components/equipe-panel";
+import { Badge, Button, Card, IconButton, SectionHeader, Select } from "@/components/ui";
 import { useBlur } from "@/components/providers";
 import type { DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
+import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
 import type { AuthUser } from "@/lib/session";
 
-type Section = "visao" | "historico" | "importar" | "evidencias";
+type Section = "visao" | "historico" | "importar" | "evidencias" | "usuarios" | "financeiro" | "contratos" | "equipe";
 
 const TITLES: Record<Section, string> = {
   visao: "Dashboard",
   historico: "Histórico de Medições",
   importar: "Importar Planilha",
   evidencias: "Evidências de Medição",
+  usuarios: "Gestão de Usuários",
+  financeiro: "Painel Financeiro",
+  contratos: "Contratos",
+  equipe: "Equipe de Medição",
 };
+
+const CICLO_GERAL = "GERAL";
 
 type CicloEntry = { ciclo: string; mesReferencia: string | null; updatedAt: string };
 
@@ -50,7 +65,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   const [seenIds, setSeenIds]               = useState<string[]>([]);
   const [selectedCodigo, setSelectedCodigo] = useState("");
   const [selectedContrato, setSelectedContrato] = useState("");
-  const [activeCiclo, setActiveCiclo]       = useState("2605");
+  const [activeCiclo, setActiveCiclo]       = useState(CICLO_GERAL);
   const [ciclos, setCiclos]                 = useState<CicloEntry[]>([]);
   const [novoCiclo, setNovoCiclo]           = useState("");
   const [criandoCiclo, setCriandoCiclo]     = useState(false);
@@ -58,17 +73,27 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const VALID_SECTIONS: Section[] = ["visao", "historico", "importar", "evidencias"];
+  const { blur, toggleBlur } = useBlur();
+  const isAdmin      = user.perfil === "MEDICAO" || user.perfil === "ADMIN";
+  const isFullAdmin  = user.perfil === "ADMIN";
+  const isMedicao    = user.perfil === "MEDICAO";
+  const isFinanceiro = user.perfil === "FINANCEIRO";
+  const isDP         = user.perfil === "DEPARTAMENTO_PESSOAL";
+
+  const VALID_SECTIONS: Section[] = isFinanceiro
+    ? ["financeiro"]
+    : isMedicao
+    ? ["visao", "evidencias"]
+    : isFullAdmin
+    ? ["visao", "historico", "importar", "evidencias", "usuarios", "financeiro", "contratos", "equipe"]
+    : ["visao", "historico", "importar", "evidencias", "usuarios", "financeiro", "contratos", "equipe"];
   const sectionParam = searchParams.get("section") as Section | null;
-  const section: Section = sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : "visao";
+  const section: Section = sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : (isFinanceiro ? "financeiro" : "visao");
   function setSection(s: Section) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("section", s);
     router.replace(`?${params.toString()}`);
   }
-
-  const { blur, toggleBlur } = useBlur();
-  const isAdmin = user.perfil === "MEDICAO" || user.perfil === "ADMIN";
   const hasUnread = sgcAlertas.some((a) => !seenIds.includes(a.id));
 
   const colaboradores = useMemo(() => profissionais.filter((p) => p.codigo), [profissionais]);
@@ -83,18 +108,16 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
     if (selectedCodigo) p.set("codigo", selectedCodigo);
     if (selectedContrato) p.set("contrato", selectedContrato);
     const res = await fetch(`/api/dashboard?${p}`);
-    setDashboard(await res.json());
+    if (res.ok) setDashboard(await res.json());
   }, [activeCiclo, selectedCodigo, selectedContrato]);
 
   const loadLookups = useCallback(async () => {
-    const [p, m, c] = await Promise.all([
+    const [p, m] = await Promise.all([
       fetch("/api/profissionais"),
       fetch(`/api/mapa-pagamento?ciclo=${activeCiclo}`),
-      fetch("/api/ciclos"),
     ]);
     setProfissionais(await p.json());
-    setMapaItens(await m.json());
-    if (c.ok) setCiclos(await c.json());
+    if (m.ok) setMapaItens(await m.json());
   }, [activeCiclo]);
 
   const refresh    = useCallback(async () => { await loadDashboard(); }, [loadDashboard]);
@@ -155,9 +178,16 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   }
 
   useEffect(() => {
-    loadLookups();
+    fetch("/api/ciclos").then(async (res) => {
+      if (!res.ok) return;
+      setCiclos(await res.json());
+    });
     const raw = localStorage.getItem("sgc_alertas_vistos");
     if (raw) { try { setSeenIds(JSON.parse(raw)); } catch { setSeenIds([]); } }
+  }, []);
+
+  useEffect(() => {
+    loadLookups();
   }, [loadLookups]);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -170,13 +200,22 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
 
   // ─── Nav items ───────────────────────────────────────────────────────────────
 
-  const navItems = [
-    { id: "visao", label: "Visão Geral", icon: <LayoutDashboard size={17} /> },
-    ...(isAdmin ? [
-      { id: "evidencias", label: "Evidências", icon: <FileSearch size={17} /> },
-      { id: "importar",   label: "Importar Planilha", icon: <Upload size={17} /> },
-    ] : []),
-  ];
+  const navItems = isFinanceiro
+    ? [{ id: "financeiro", label: "Financeiro", icon: <Wallet size={17} /> }]
+    : isMedicao
+    ? [
+        { id: "visao",      label: "Visão Geral", icon: <LayoutDashboard size={17} /> },
+        { id: "evidencias", label: "Evidências",  icon: <FileSearch size={17} /> },
+      ]
+    : [
+        { id: "visao",      label: "Visão Geral",      icon: <LayoutDashboard size={17} /> },
+        { id: "financeiro", label: "Financeiro",        icon: <Wallet size={17} /> },
+        { id: "evidencias", label: "Evidências",        icon: <FileSearch size={17} /> },
+        { id: "contratos",  label: "Contratos",         icon: <Building2 size={17} /> },
+        { id: "equipe",     label: "Equipe de Medição", icon: <Users size={17} /> },
+        { id: "usuarios",   label: "Usuários",          icon: <ShieldCheck size={17} /> },
+        { id: "importar",   label: "Importar Planilha", icon: <Upload size={17} />, bottom: true },
+      ];
 
   // ─── Top bar ─────────────────────────────────────────────────────────────────
 
@@ -211,7 +250,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
           )}
 
           {notifOpen && (
-            <div className="absolute right-0 top-11 z-50 w-[360px] overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-xl">
+            <div className="absolute right-0 top-11 z-50 w-[min(360px,calc(100vw-16px))] overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-xl">
               <div className="border-b border-[#E5E7EB] px-4 py-3">
                 <p className="text-sm font-bold text-[#1A1A1A]">Notificações SGC</p>
                 <p className="text-xs text-[#555555]">{sgcAlertas.length} solicitação(ões) pendente(s)</p>
@@ -253,7 +292,9 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
         </span>
         <div className="max-w-36 leading-tight">
           <p className="truncate text-sm font-semibold text-[#1A1A1A]">{user.nome}</p>
-          <p className="text-xs text-[#555555]">{isAdmin ? "Medição" : "Usuário"}</p>
+          <p className="text-xs text-[#555555]">
+            {isFinanceiro ? "Financeiro" : isFullAdmin ? "Administrador" : isMedicao ? "Medição" : isDP ? "Dep. Pessoal" : "Usuário"}
+          </p>
         </div>
       </div>
 
@@ -293,110 +334,182 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
     }
   }
 
-  const filtersBar = (
-    <Card className="mb-6 p-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex items-center gap-2.5 mr-2">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#F5F5F5] text-[#555555]">
-            <SlidersHorizontal size={15} />
-          </span>
-          <div>
-            <p className="text-sm font-semibold text-[#1A1A1A]">Filtros</p>
-            <p className="text-xs text-[#555555]">Refine por ciclo, colaborador e contrato</p>
-          </div>
-        </div>
+  const filtersBar = (() => {
+    const ctx = dashboard?.contextoMapa;
+    const datas = activeCiclo && activeCiclo !== CICLO_GERAL ? cicloToDates(activeCiclo) : { atoInicio: "", atoFim: "", producaoInicio: "", producaoFim: "" };
+    const fmtDate = (v: string | null | undefined) =>
+      v ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(v + "T12:00:00")) : "–";
+    const producaoInicio = ctx?.producaoInicio || datas.producaoInicio;
+    const producaoFim    = ctx?.producaoFim    || datas.producaoFim;
+    const atoInicio      = datas.atoInicio;
+    const atoFim         = datas.atoFim;
 
-        <div className="grid gap-1.5">
-          <span className="text-xs font-semibold text-[#555555]">Ciclo ativo</span>
-          <div className="flex items-center gap-1.5">
-            <Select
-              className="min-w-[150px]"
-              value={activeCiclo}
-              onChange={(e) => { setActiveCiclo(e.target.value); setSelectedCodigo(""); setSelectedContrato(""); }}
-            >
-              {ciclos.map((c) => (
-                <option key={c.ciclo} value={c.ciclo}>{c.ciclo}{c.mesReferencia ? ` – ${c.mesReferencia}` : ""}</option>
-              ))}
-              {!ciclos.find((c) => c.ciclo === activeCiclo) && (
-                <option value={activeCiclo}>{activeCiclo}</option>
-              )}
-            </Select>
-            {isAdmin && (
-              <div className="relative">
-                <IconButton
-                  title="Novo ciclo"
-                  onClick={() => { setNovoCicloOpen((v) => !v); setNovoCiclo(""); }}
-                  className={novoCicloOpen ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]" : ""}
+    async function saveContextDates(inicio: string, fim: string) {
+      const ctx2 = dashboard?.contextoMapa;
+      await fetch("/api/mapa-pagamento/contexto", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ciclo: activeCiclo,
+          mesReferencia: ctx2?.mesReferencia ?? cicloToMesReferencia(activeCiclo),
+          producaoLabel: ctx2?.producaoLabel ?? "MEDIÇÃO:",
+          producaoInicio: inicio,
+          producaoFim: fim,
+          atoLabel: ctx2?.atoLabel ?? "CICLO:",
+          atoCiclo: ctx2?.atoCiclo ?? activeCiclo,
+        }),
+      });
+      await refreshAll();
+    }
+
+    return (
+      <>
+        <p className="mb-2 text-sm font-semibold text-[#1A1A1A]">Filtros</p>
+        <Card className="mb-6 p-4">
+          <div className="flex flex-wrap items-end gap-4">
+
+            {/* Ciclo ativo */}
+            <div className="grid gap-1.5">
+              <span className="text-xs font-semibold text-[#555555]">Ciclo ativo</span>
+              <div className="flex items-center gap-1.5">
+                <Select
+                  className="min-w-[150px]"
+                  value={activeCiclo}
+                  onChange={(e) => { setActiveCiclo(e.target.value); setSelectedCodigo(""); setSelectedContrato(""); }}
                 >
-                  <Plus size={15} />
-                </IconButton>
-                {novoCicloOpen && (
-                  <div className="absolute left-0 top-10 z-40 w-64 rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-xl">
-                    <p className="mb-2 text-sm font-bold text-[#1A1A1A]">Novo ciclo</p>
-                    <p className="mb-3 text-xs text-[#555555]">Formato YYMM — ex: <strong>2606</strong></p>
-                    <input
-                      className="mb-3 h-9 w-full rounded-lg border border-[#E5E7EB] px-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
-                      placeholder="Ex: 2606"
-                      maxLength={4}
-                      value={novoCiclo}
-                      onChange={(e) => setNovoCiclo(e.target.value.replace(/\D/g, ""))}
-                      onKeyDown={(e) => e.key === "Enter" && criarCiclo()}
-                      autoFocus
-                    />
-                    <div className="flex gap-2">
-                      <Button
-                        variant="secondary"
-                        className="flex-1"
-                        onClick={() => { setNovoCicloOpen(false); setNovoCiclo(""); }}
-                      >
-                        Cancelar
-                      </Button>
-                      <Button
-                        className="flex-1"
-                        onClick={criarCiclo}
-                        disabled={criandoCiclo || novoCiclo.length !== 4}
-                      >
-                        {criandoCiclo ? "Criando…" : "Criar"}
-                      </Button>
-                    </div>
+                  <option value={CICLO_GERAL}>Geral</option>
+                  {ciclos.map((c) => (
+                    <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>
+                  ))}
+                  {!ciclos.find((c) => c.ciclo === activeCiclo) && activeCiclo !== CICLO_GERAL && (
+                    <option value={activeCiclo}>{activeCiclo}</option>
+                  )}
+                </Select>
+                {isAdmin && activeCiclo !== CICLO_GERAL && (
+                  <div className="relative">
+                    <IconButton
+                      title="Novo ciclo"
+                      onClick={() => { setNovoCicloOpen((v) => !v); setNovoCiclo(""); }}
+                      className={novoCicloOpen ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]" : ""}
+                    >
+                      <Plus size={15} />
+                    </IconButton>
+                    {novoCicloOpen && (
+                      <div className="absolute left-0 top-10 z-40 w-64 rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-xl">
+                        <p className="mb-2 text-sm font-bold text-[#1A1A1A]">Novo ciclo</p>
+                        <p className="mb-3 text-xs text-[#555555]">Formato YYMM — ex: <strong>2606</strong></p>
+                        <input
+                          className="mb-3 h-9 w-full rounded-lg border border-[#E5E7EB] px-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+                          placeholder="Ex: 2606"
+                          maxLength={4}
+                          value={novoCiclo}
+                          onChange={(e) => setNovoCiclo(e.target.value.replace(/\D/g, ""))}
+                          onKeyDown={(e) => e.key === "Enter" && criarCiclo()}
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <Button variant="secondary" className="flex-1" onClick={() => { setNovoCicloOpen(false); setNovoCiclo(""); }}>Cancelar</Button>
+                          <Button className="flex-1" onClick={criarCiclo} disabled={criandoCiclo || novoCiclo.length !== 4}>{criandoCiclo ? "Criando…" : "Criar"}</Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Divisor vertical — oculto no Geral */}
+            {activeCiclo !== CICLO_GERAL && <div className="hidden self-stretch border-l border-[#E5E7EB] sm:block" />}
+
+            {/* Produção + ATO — oculto no Geral */}
+            {activeCiclo !== CICLO_GERAL && (
+              <>
+                <div className="grid gap-1.5">
+                  <span className="text-xs font-semibold text-[#555555]">Produção</span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="date"
+                      className="h-9 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20"
+                      defaultValue={producaoInicio}
+                      key={producaoInicio}
+                      onBlur={(e) => { if (e.target.value && e.target.value !== producaoInicio) saveContextDates(e.target.value, producaoFim); }}
+                    />
+                    <span className="text-xs text-[#9CA3AF]">a</span>
+                    <input
+                      type="date"
+                      className="h-9 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20"
+                      defaultValue={producaoFim}
+                      key={producaoFim}
+                      onBlur={(e) => { if (e.target.value && e.target.value !== producaoFim) saveContextDates(producaoInicio, e.target.value); }}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-1.5">
+                  <span className="text-xs font-semibold text-[#555555]">ATO</span>
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex h-9 items-center rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-sm text-[#1A1A1A] whitespace-nowrap">{fmtDate(atoInicio)}</div>
+                    <span className="text-xs text-[#9CA3AF]">a</span>
+                    <div className="flex h-9 items-center rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-sm text-[#1A1A1A] whitespace-nowrap">{fmtDate(atoFim)}</div>
+                  </div>
+                </div>
+              </>
             )}
+
+            {/* Divisor vertical */}
+            <div className="hidden self-stretch border-l border-[#E5E7EB] sm:block" />
+
+            {/* Colaborador */}
+            <label className="grid w-full min-w-0 flex-1 gap-1.5 text-xs font-semibold text-[#555555] sm:min-w-[180px]">
+              Colaborador
+              <Select value={selectedCodigo} onChange={(e) => setSelectedCodigo(e.target.value)}>
+                <option value="">Todos os colaboradores</option>
+                {colaboradores.map((p) => (
+                  <option key={p.id} value={p.codigo ?? ""}>{p.codigo}</option>
+                ))}
+              </Select>
+            </label>
+
+            {/* Contrato */}
+            <label className="grid w-full min-w-0 flex-1 gap-1.5 text-xs font-semibold text-[#555555] sm:min-w-[180px]">
+              Contrato
+              <Select value={selectedContrato} onChange={(e) => setSelectedContrato(e.target.value)}>
+                <option value="">Todos os contratos</option>
+                {contratos.map((c) => <option key={c} value={c}>{c}</option>)}
+              </Select>
+            </label>
+
+            {/* Limpar */}
+            <Button
+              variant="ghost"
+              onClick={() => { setSelectedCodigo(""); setSelectedContrato(""); }}
+              className="shrink-0 self-end"
+            >
+              <X size={14} />
+              Limpar
+            </Button>
           </div>
-        </div>
-
-        <label className="grid min-w-[200px] flex-1 gap-1.5 text-xs font-semibold text-[#555555]">
-          Colaborador
-          <Select value={selectedCodigo} onChange={(e) => setSelectedCodigo(e.target.value)}>
-            <option value="">Todos os colaboradores</option>
-            {colaboradores.map((p) => (
-              <option key={p.id} value={p.codigo ?? ""}>{p.codigo}</option>
-            ))}
-          </Select>
-        </label>
-
-        <label className="grid min-w-[200px] flex-1 gap-1.5 text-xs font-semibold text-[#555555]">
-          Contrato
-          <Select value={selectedContrato} onChange={(e) => setSelectedContrato(e.target.value)}>
-            <option value="">Todos os contratos</option>
-            {contratos.map((c) => <option key={c} value={c}>{c}</option>)}
-          </Select>
-        </label>
-
-        <Button
-          variant="ghost"
-          onClick={() => { setSelectedCodigo(""); setSelectedContrato(""); }}
-          className="shrink-0"
-        >
-          <X size={14} />
-          Limpar
-        </Button>
-      </div>
-    </Card>
-  );
+        </Card>
+      </>
+    );
+  })();
 
   // ─── Render ──────────────────────────────────────────────────────────────────
+
+  if (isDP) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F5F5F5] p-6">
+        <div className="rounded-2xl border border-[#E5E7EB] bg-white p-10 text-center shadow-sm max-w-sm w-full">
+          <ShieldCheck size={40} className="mx-auto mb-4 text-[#9CA3AF]" />
+          <p className="text-base font-bold text-[#1A1A1A]">Acesso não disponível</p>
+          <p className="mt-2 text-sm text-[#555555]">O Departamento Pessoal ainda não tem acesso ao sistema.</p>
+          <button onClick={logout} className="mt-6 rounded-lg border border-[#E5E7EB] px-4 py-2 text-xs font-medium text-[#555555] hover:bg-[#F3F4F6]">
+            <LogOut size={13} className="mr-1 inline" />Sair
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <AppShell
@@ -406,7 +519,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       pageTitle={TITLES[section]}
       topBarRight={topBar}
     >
-      {section !== "importar" && section !== "evidencias" && filtersBar}
+      {section !== "importar" && section !== "evidencias" && section !== "usuarios" && section !== "financeiro" && section !== "contratos" && section !== "equipe" && filtersBar}
 
       {section === "visao" && (
         <div className="grid gap-6">
@@ -450,6 +563,22 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
 
       {section === "evidencias" && isAdmin && (
         <EvidenciasSection colaboradores={colaboradores} ciclos={ciclos} />
+      )}
+
+      {section === "financeiro" && (isAdmin || isFinanceiro) && (
+        <FinanceiroPanel ciclos={ciclos} />
+      )}
+
+      {section === "usuarios" && isAdmin && (
+        <UsuariosPanel />
+      )}
+
+      {section === "contratos" && isAdmin && (
+        <ContratosPanel />
+      )}
+
+      {section === "equipe" && isAdmin && (
+        <EquipePanel />
       )}
 
       {selectedAlerta && (
@@ -615,10 +744,10 @@ function SgcReviewModal({
   alerta, saving, onClose, onReenviar,
 }: { alerta: SgcAlerta; saving: boolean; onClose: () => void; onReenviar: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm">
-      <section className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-0 sm:p-4 sm:items-center backdrop-blur-sm">
+      <section className="w-full max-w-4xl overflow-hidden rounded-none sm:rounded-2xl border-0 sm:border border-[#E5E7EB] bg-white shadow-2xl min-h-screen sm:min-h-0 sm:max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-6 py-4">
+        <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-4 py-4 sm:px-6">
           <div>
             <h2 className="text-base font-bold text-[#1A1A1A]">Análise da solicitação SGC</h2>
             <p className="mt-0.5 text-sm text-[#555555]">Revise o comentário, ajuste a medição e reenvie para validação.</p>
@@ -627,7 +756,7 @@ function SgcReviewModal({
         </div>
 
         {/* Body */}
-        <div className="max-h-[calc(90vh-136px)] overflow-auto p-6">
+        <div className="overflow-auto p-4 sm:p-6 sm:max-h-[calc(90vh-136px)]">
           <div className="grid gap-4 lg:grid-cols-3">
             {[
               {
@@ -791,44 +920,66 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
 
   return (
     <div className="grid gap-6">
-      <Card className="p-6">
-        <div className="mb-5 flex items-center gap-3">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#FFF0F0] text-[#AF1B1B]">
-            <Upload size={18} />
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-base font-bold text-[#1A1A1A]">Importar Planilha</h1>
+          <p className="mt-0.5 text-xs text-[#555555]">Envie o arquivo .xlsm ou .xlsx para atualizar os dados da plataforma.</p>
+        </div>
+        {status?.running && (
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#EFF6FF] px-3 py-1.5 text-xs font-semibold text-[#2563EB]">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-[#2563EB]" />
+            Importando…
           </span>
-          <div>
-            <h2 className="text-base font-bold text-[#1A1A1A]">Importar planilha Excel</h2>
-            <p className="text-xs text-[#555555]">Envie o arquivo .xlsm ou .xlsx para atualizar os dados da plataforma.</p>
+        )}
+      </div>
+
+      {/* Upload card */}
+      <Card className="overflow-hidden">
+        <div className="border-b border-[#E5E7EB] px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#FFF0F0] text-[#AF1B1B]">
+              <Upload size={16} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-[#1A1A1A]">Arquivo Excel</p>
+              <p className="text-[11px] text-[#9CA3AF]">Formato aceito: .xlsm ou .xlsx</p>
+            </div>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="grid gap-4">
+        <form onSubmit={handleSubmit} className="grid gap-5 p-5">
           {/* File picker */}
-          <label className="grid gap-1.5 text-xs font-semibold text-[#555555]">
-            Arquivo (.xlsm / .xlsx)
-            <div
-              className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#E5E7EB] bg-[#FAFAFA] p-6 text-center transition hover:border-[#AF1B1B] hover:bg-[#FFF5F5]"
-              onClick={() => document.getElementById("etl-file-input")?.click()}
-            >
-              <Upload size={24} className="text-[#9CA3AF]" />
-              {file ? (
-                <span className="text-sm font-semibold text-[#1A1A1A]">{file.name}</span>
-              ) : (
-                <span className="text-sm text-[#9CA3AF]">Clique para selecionar o arquivo</span>
-              )}
-            </div>
-            <input
-              id="etl-file-input"
-              type="file"
-              accept=".xlsm,.xlsx"
-              className="hidden"
-              onChange={(e) => { setFile(e.target.files?.[0] ?? null); setMsg(null); }}
-            />
-          </label>
+          <div
+            className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#E5E7EB] bg-[#FAFAFA] py-8 text-center transition hover:border-[#AF1B1B] hover:bg-[#FFF5F5]"
+            onClick={() => document.getElementById("etl-file-input")?.click()}
+          >
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#F3F4F6] text-[#9CA3AF]">
+              <Upload size={20} />
+            </span>
+            {file ? (
+              <>
+                <span className="text-sm font-semibold text-[#AF1B1B]">{file.name}</span>
+                <span className="text-[11px] text-[#9CA3AF]">Clique para trocar o arquivo</span>
+              </>
+            ) : (
+              <>
+                <span className="text-sm font-semibold text-[#555555]">Clique para selecionar o arquivo</span>
+                <span className="text-[11px] text-[#9CA3AF]">.xlsm ou .xlsx</span>
+              </>
+            )}
+          </div>
+          <input
+            id="etl-file-input"
+            type="file"
+            accept=".xlsm,.xlsx"
+            className="hidden"
+            onChange={(e) => { setFile(e.target.files?.[0] ?? null); setMsg(null); }}
+          />
 
           {/* Ciclo selector */}
-          <label className="grid gap-1.5 text-xs font-semibold text-[#555555]">
-            Ciclo de destino
+          <div className="grid gap-1.5">
+            <p className="text-xs font-semibold text-[#555555]">Ciclo de destino</p>
             <div className="flex gap-2">
               <Select value={ciclo} onChange={(e) => setCiclo(e.target.value)} className="flex-1">
                 <option value="">Detectar automaticamente pela planilha</option>
@@ -841,38 +992,46 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
                 placeholder="Ou digite (ex: 2607)"
                 value={ciclo}
                 onChange={(e) => setCiclo(e.target.value)}
-                className="h-9 w-40 rounded-lg border border-[#E5E7EB] px-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+                className="h-9 w-40 rounded-lg border border-[#E5E7EB] px-3 text-xs outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
               />
             </div>
             <p className="text-[11px] text-[#9CA3AF]">Se deixar em branco, o ciclo será derivado do campo "Mês Referência" da planilha.</p>
-          </label>
+          </div>
 
           {msg && (
-            <div className={`rounded-lg px-4 py-3 text-sm font-medium ${msgColors[msg.type]}`}>{msg.text}</div>
+            <div className={`rounded-lg px-4 py-3 text-xs font-medium ${msgColors[msg.type]}`}>{msg.text}</div>
           )}
 
-          <Button type="submit" disabled={uploading || status?.running} className="w-full justify-center">
+          <button
+            type="submit"
+            disabled={uploading || status?.running}
+            className="w-full rounded-xl bg-[#AF1B1B] py-2.5 text-sm font-semibold text-white transition hover:bg-[#8C1616] disabled:opacity-50"
+          >
             {uploading ? "Enviando…" : status?.running ? "Importando…" : "Iniciar importação"}
-          </Button>
+          </button>
         </form>
       </Card>
 
       {/* Resultado */}
       {status && (status.lastResult || status.lastError) && (
-        <Card className="p-6">
-          <h3 className="mb-3 text-sm font-bold text-[#1A1A1A]">Último resultado</h3>
-          {status.lastError ? (
-            <pre className="overflow-auto rounded-lg bg-[#FEF2F2] p-3 text-xs text-[#B91C1C] whitespace-pre-wrap">{status.lastError}</pre>
-          ) : status.lastResult ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {Object.entries(status.lastResult).map(([key, val]) => (
-                <div key={key} className="rounded-lg bg-[#F9FAFB] p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-[#9CA3AF]">{key.replace(/_/g, " ")}</p>
-                  <p className="text-lg font-bold text-[#1A1A1A]">{val}</p>
-                </div>
-              ))}
-            </div>
-          ) : null}
+        <Card className="overflow-hidden">
+          <div className="border-b border-[#E5E7EB] px-5 py-4">
+            <p className="text-sm font-semibold text-[#1A1A1A]">Último resultado</p>
+          </div>
+          <div className="p-5">
+            {status.lastError ? (
+              <pre className="overflow-auto rounded-lg bg-[#FEF2F2] p-3 text-xs text-[#B91C1C] whitespace-pre-wrap">{status.lastError}</pre>
+            ) : status.lastResult ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {Object.entries(status.lastResult).map(([key, val]) => (
+                  <div key={key} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-[#9CA3AF]">{key.replace(/_/g, " ")}</p>
+                    <p className="mt-1 text-lg font-bold text-[#1A1A1A]">{val}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </Card>
       )}
     </div>
@@ -910,7 +1069,7 @@ function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissio
       const map = new Map<string, string>();
       for (const { ciclo, data } of [...results].reverse()) {
         for (const [codigo, entry] of Object.entries(data)) {
-          if (entry.status === "APROVADO") map.set(codigo, ciclo);
+          if (entry.status === "APROVADO" || entry.status === "AGUARDANDO_NF") map.set(codigo, ciclo);
         }
       }
       setAprovadosMap(map);
@@ -935,31 +1094,38 @@ function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissio
   }
 
   return (
-    <div className="grid gap-6">
-      <Card className="p-5">
-        <div className="mb-4 flex items-center gap-3">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#FFF0F0] text-[#AF1B1B]">
-            <FileSearch size={18} />
-          </span>
-          <div>
-            <h2 className="text-base font-bold text-[#1A1A1A]">Evidências de Medição</h2>
-            <p className="text-xs text-[#555555]">Visualize e imprima o Boletim de Medição de qualquer colaborador por ciclo.</p>
+    <div className="grid gap-6 mx-auto w-full" style={{ maxWidth: "80rem" }}>
+      <SectionHeader
+        title="Evidências de Medição"
+        description="Visualize e imprima o Boletim de Medição de qualquer colaborador por ciclo."
+      />
+
+      <Card className="overflow-hidden">
+        <div className="border-b border-[#E5E7EB] px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#FFF0F0] text-[#AF1B1B]">
+              <FileSearch size={16} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-[#1A1A1A]">Filtros</p>
+              <p className="text-[11px] text-[#9CA3AF]">Selecione o ciclo e o colaborador para visualizar o boletim</p>
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="grid gap-1.5 text-xs font-semibold text-[#555555]">
+        <div className="flex flex-wrap items-end gap-3 p-5">
+          <label className="grid w-full gap-1.5 text-xs font-semibold text-[#555555] sm:w-auto">
             Ciclo
-            <Select value={selectedCiclo} onChange={(e) => setSelectedCiclo(e.target.value)} className="min-w-[200px]">
+            <Select value={selectedCiclo} onChange={(e) => setSelectedCiclo(e.target.value)} className="sm:min-w-[200px]">
               <option value={TODOS}>Todos os ciclos</option>
               {ciclos.map((c) => (
-                <option key={c.ciclo} value={c.ciclo}>{c.ciclo}{c.mesReferencia ? ` – ${c.mesReferencia}` : ""}</option>
+                <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>
               ))}
             </Select>
           </label>
-          <label className="grid gap-1.5 text-xs font-semibold text-[#555555]">
+          <label className="grid w-full gap-1.5 text-xs font-semibold text-[#555555] sm:w-auto">
             Colaborador
-            <Select value={selectedCodigo} onChange={(e) => setSelectedCodigo(e.target.value)} className="min-w-[220px]" disabled={colaboradoresAprovados.length === 0}>
+            <Select value={selectedCodigo} onChange={(e) => setSelectedCodigo(e.target.value)} className="sm:min-w-[220px]" disabled={colaboradoresAprovados.length === 0}>
               <option value="">
                 {colaboradoresAprovados.length === 0 ? "Nenhuma aprovação encontrada" : "Selecione…"}
               </option>
@@ -974,13 +1140,18 @@ function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissio
         </div>
 
         {error && (
-          <div className="mt-4 rounded-lg bg-[#FEF2F2] px-4 py-3 text-sm text-[#B91C1C]">{error}</div>
+          <div className="mx-5 mb-5 rounded-lg bg-[#FEF2F2] px-4 py-3 text-xs text-[#B91C1C]">{error}</div>
         )}
       </Card>
 
       {bm && (
-        <Card className="p-6">
-          <BoletimMedicao data={bm} />
+        <Card>
+          <div className="border-b border-[#E5E7EB] px-5 py-4">
+            <p className="text-sm font-semibold text-[#1A1A1A]">Boletim de Medição</p>
+          </div>
+          <div className="p-5 overflow-x-auto">
+            <BoletimMedicao data={bm} />
+          </div>
         </Card>
       )}
     </div>

@@ -5,13 +5,14 @@ import { mapaPagamentoData, serializeMapaPagamentoItem } from "@/lib/mapa-pagame
 
 export async function GET(request: NextRequest) {
   const ciclo = request.nextUrl.searchParams.get("ciclo")?.trim() || "2605";
+  const isGeral = ciclo === "GERAL";
 
   const itens = await prisma.mapaPagamentoItem.findMany({
     where: {
-      ciclo,
+      ...(isGeral ? {} : { ciclo }),
       valor: { gt: 0 },
     },
-    orderBy: { ordem: "asc" },
+    orderBy: [{ ciclo: "desc" }, { ordem: "asc" }],
   });
 
   return NextResponse.json(itens.map(serializeMapaPagamentoItem));
