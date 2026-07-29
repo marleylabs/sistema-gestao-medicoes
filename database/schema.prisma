@@ -17,6 +17,7 @@ model Usuario {
   tentativasFalhas Int       @default(0) @map("tentativas_falhas")
   bloqueadoAte     DateTime? @map("bloqueado_ate") @db.Timestamptz
   ultimoLoginAt    DateTime? @map("ultimo_login_at") @db.Timestamptz
+  excluidoAt        DateTime? @map("excluido_at") @db.Timestamptz
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
@@ -113,6 +114,7 @@ model MapaPagamentoContexto {
   producaoFim     DateTime? @map("producao_fim") @db.Date
   atoLabel        String?  @map("ato_label")
   atoCiclo        String?  @map("ato_ciclo")
+  ativoMedicao    Boolean  @default(false) @map("ativo_medicao")
   contratos       Json     @default("[]")
   rateio          Json     @default("[]")
   updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz
@@ -128,10 +130,10 @@ model MapaPagamentoItem {
   responsavel     String?
   cpfCnpj         String?  @map("cpf_cnpj")
   razaoSocial     String?  @map("razao_social")
-  intrSossego     Decimal  @default(0) @map("intr_sossego") @db.Decimal(16, 4)
-  salobo          Decimal  @default(0) @db.Decimal(16, 4)
-  acg             Decimal  @default(0) @db.Decimal(16, 4)
-  escadasAlumar   Decimal  @default(0) @map("escadas_alumar") @db.Decimal(16, 4)
+  intrSossego     Decimal  @default(0) @map("intr_sossego") @db.Decimal(18, 8)
+  salobo          Decimal  @default(0) @db.Decimal(18, 8)
+  acg             Decimal  @default(0) @db.Decimal(18, 8)
+  escadasAlumar   Decimal  @default(0) @map("escadas_alumar") @db.Decimal(18, 8)
   valor           Decimal  @default(0) @db.Decimal(16, 4)
   rev             Decimal  @default(0) @db.Decimal(16, 4)
   status          String?

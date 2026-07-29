@@ -1,9 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { buildSgcChatMessages } from "@/lib/bm-log";
 import { decryptSensitive } from "@/lib/encryption";
 import { toNumber } from "@/lib/format";
 import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
+
+function avatarUrlByUserId(id: string, updatedAt: Date | null) {
+  return updatedAt ? `/api/usuario/avatar?userId=${encodeURIComponent(id)}&v=${updatedAt.getTime()}` : null;
+}
+
+function avatarUrlByUsuario(usuario: string, updatedAt: Date | null) {
+  return updatedAt ? `/api/usuario/avatar?usuario=${encodeURIComponent(usuario)}&v=${updatedAt.getTime()}` : null;
+}
+
+function isOnline(onlineAt: Date | null | undefined) {
+  return !!onlineAt && Date.now() - onlineAt.getTime() <= 2 * 60 * 1000;
+}
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
@@ -24,7 +37,7 @@ export async function GET(request: NextRequest) {
 
   const payload = await Promise.all(
     alertas.map(async (alerta) => {
-      const [profissional, pagamento, documentos] = await Promise.all([
+      const [profissional, pagamento, documentos, logs] = await Promise.all([
         prisma.profissional.findUnique({
           where: { codigo: alerta.colaboradorCodigo },
           select: {
@@ -48,7 +61,7 @@ export async function GET(request: NextRequest) {
           orderBy: { ordem: "asc" },
         }),
         prisma.medicao.findMany({
-          where: { profissional: { codigo: alerta.colaboradorCodigo } },
+          where: { ciclo, profissional: { codigo: alerta.colaboradorCodigo } },
           select: {
             id: true,
             dataCadastro: true,
@@ -60,7 +73,27 @@ export async function GET(request: NextRequest) {
           orderBy: [{ dataCadastro: "desc" }, { createdAt: "desc" }],
           take: 8,
         }),
+        prisma.sgcLog.findMany({
+          where: { sgcId: alerta.id },
+          select: { id: true, acao: true, observacao: true, usuarioId: true, tipoMensagem: true, audioMime: true, audioNome: true, usuarioNome: true, lidoAt: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
+        }),
       ]);
+      const chatUserIds = Array.from(new Set(logs.map((log) => log.usuarioId).filter((id): id is string => !!id)));
+      const usuariosChat = await prisma.usuario.findMany({
+        where: {
+          OR: [
+            { usuario: alerta.colaboradorCodigo },
+            ...(chatUserIds.length ? [{ id: { in: chatUserIds } }] : []),
+          ],
+        },
+        select: { id: true, usuario: true, avatarAtualizadoAt: true, onlineAt: true },
+      });
+      const fornecedorUsuario = usuariosChat.find((usuario) => usuario.usuario === alerta.colaboradorCodigo);
+      const fornecedorAvatarUrl = fornecedorUsuario ? avatarUrlByUsuario(fornecedorUsuario.usuario, fornecedorUsuario.avatarAtualizadoAt) : null;
+      const medicaoAvatarUrlsByUsuarioId = Object.fromEntries(
+        usuariosChat.map((usuario) => [usuario.id, avatarUrlByUserId(usuario.id, usuario.avatarAtualizadoAt)]),
+      );
 
       const totalMedido = documentos.reduce((total, documento) => total + toNumber(documento.valorMedicao), 0);
       const totalHoras = documentos.reduce((total, documento) => total + toNumber(documento.equivalenteA1Horas), 0);
@@ -74,6 +107,10 @@ export async function GET(request: NextRequest) {
         proximaRevisaoLabel: `Rev. ${alerta.revisaoNumero + 1}`,
         pontosDiscordancia: alerta.pontosDiscordancia,
         respostaAdmin: alerta.respostaAdmin,
+        observacaoColaborador: alerta.observacaoColaborador,
+        colaboradorAvatarUrl: fornecedorAvatarUrl,
+        colaboradorOnline: isOnline(fornecedorUsuario?.onlineAt),
+        mensagens: buildSgcChatMessages(alerta, logs, { fornecedorAvatarUrl, medicaoAvatarUrlsByUsuarioId }),
         revisaoSolicitadaAt: alerta.revisaoSolicitadaAt?.toISOString() ?? null,
         colaborador: {
           codigo: profissional?.codigo ?? alerta.colaboradorCodigo,

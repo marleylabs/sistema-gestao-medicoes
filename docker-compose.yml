@@ -55,6 +55,14 @@ services:
       AUTH_BOOTSTRAP_NAME: ${AUTH_BOOTSTRAP_NAME:-Administrador}
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
       ETL_SERVER_URL: http://medicoes-etl:4000
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      BM_EMAIL_TEST_TO: ${BM_EMAIL_TEST_TO:-tiprojeta@projetacs.com}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
     ports:
       - "${WEB_PORT:-3000}:3000"
     depends_on:

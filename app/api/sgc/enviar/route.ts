@@ -71,16 +71,18 @@ export async function POST(request: NextRequest) {
     telaOrigem: "Medições / Admin",
   });
 
-  // Send email notification
+  // Send email notification. During testing, BM_EMAIL_TEST_TO redirects all BM notices to a safe inbox.
   const emailRaw = profissional?.email;
   const email = decryptSensitive(emailRaw) ?? emailRaw;
+  const testEmail = process.env.BM_EMAIL_TEST_TO?.trim();
+  const emailDestino = testEmail || email;
   const nome = profissional?.nomeCompleto || profissional?.nome || colaboradorCodigo;
 
-  if (email) {
+  if (emailDestino) {
     const result = await sendEmail({
-      to: email,
+      to: emailDestino,
       subject: "Nova medição disponível para análise",
-      html: bmDisponivel(nome),
+      html: bmDisponivel(nome, { ciclo, colaboradorCodigo }),
     });
     await logBmAction({
       sgcId: sgc.id,
@@ -89,7 +91,9 @@ export async function POST(request: NextRequest) {
       usuarioId: admin.user?.id,
       usuarioNome: admin.user?.nome,
       acao: result.ok ? "EMAIL_ENVIADO" : "ERRO_EMAIL",
-      observacao: result.ok ? `Para: ${email}` : result.error,
+      observacao: result.ok
+        ? `Para: ${emailDestino}${testEmail && email ? ` | Destinatário real: ${email}` : ""}`
+        : result.error,
       telaOrigem: "Sistema",
     });
   }
@@ -98,5 +102,6 @@ export async function POST(request: NextRequest) {
     status: sgc.status,
     colaboradorCodigo: sgc.colaboradorCodigo,
     revisaoNumero: sgc.revisaoNumero,
+    emailNotificacao: emailDestino ? { to: emailDestino, teste: !!testEmail } : null,
   });
 }

@@ -2,12 +2,34 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 
+const CONTRATOS_PADRAO = [
+  { nome: "Intr. Sossego", colunaMapa: "intr_sossego" },
+  { nome: "Salobo", colunaMapa: "salobo" },
+  { nome: "ACG", colunaMapa: "acg" },
+  { nome: "Escadas Alumar", colunaMapa: "escadas_alumar" },
+];
+
+async function ensureContratosPadrao() {
+  const [{ count }] = await prisma.$queryRaw<Array<{ count: bigint }>>`SELECT COUNT(*)::bigint AS count FROM contratos`;
+  if (Number(count) > 0) return;
+
+  for (const contrato of CONTRATOS_PADRAO) {
+    await prisma.$executeRaw`
+      INSERT INTO contratos (nome, coluna_mapa, ativo)
+      VALUES (${contrato.nome}, ${contrato.colunaMapa}, true)
+      ON CONFLICT (nome) DO NOTHING
+    `;
+  }
+}
+
 export async function GET() {
   const auth = await requireAdmin();
   if (auth.response) return auth.response;
+  await ensureContratosPadrao();
+
   const contratos = await prisma.$queryRaw<object[]>`
     SELECT id, nome, codigo, descricao, gestor, fiscal,
-           data_inicio, data_fim, valor_total, ativo, created_at, updated_at
+           data_inicio, data_fim, valor_total, coluna_mapa, ativo, created_at, updated_at
     FROM contratos ORDER BY nome ASC
   `;
   return NextResponse.json(contratos);
@@ -35,7 +57,7 @@ export async function POST(request: NextRequest) {
       VALUES (${nome}, ${codigo}, ${descricao}, ${gestor}, ${fiscal},
               ${data_inicio}::date, ${data_fim}::date, ${valor_total})
       RETURNING id, nome, codigo, descricao, gestor, fiscal,
-                data_inicio, data_fim, valor_total, ativo, created_at, updated_at
+                data_inicio, data_fim, valor_total, coluna_mapa, ativo, created_at, updated_at
     `;
     return NextResponse.json(row, { status: 201 });
   } catch {

@@ -22,7 +22,7 @@ from sqlalchemy.dialects.postgresql import insert
 DEFAULT_SHEET = "Geral"
 DEFAULT_BASE_SHEET = "BASE"
 DEFAULT_PAYMENT_MAP_SHEET = "MAPA PAGTO"
-DEFAULT_BM_AUX_SHEET = "BM AUX"
+DEFAULT_BM_AUX_SHEET = "BM AUX"  # legado: parâmetro mantido, mas a aba não é mais carregada
 DEFAULT_EXCEL_PATH = r"C:\Users\anderson.marley\Desktop\2605 - ELABORAÇÃO DE BMS - ( PROJETISTAS ).xlsm"
 ENCRYPTED_PREFIX = "enc:v1"
 SENSITIVE_RAW_COLUMNS = {
@@ -80,13 +80,6 @@ PAYMENT_MAP_ITEM_COLUMNS = {
     "valor": ["VALOR"],
     "rev": ["REV"],
     "status": ["STATUS", "CONDIÇÃO"],
-}
-
-BM_AUX_COLUMNS = {
-    "responsavel_codigo": ["Responsavel", "Responsável"],
-    "ciclo": ["Ciclo", "CICLO"],
-    "equivalente_revisado": ["Equivalente_Revisado"],
-    "valor_medicao": ["VALOR DE MEDIÇÃO", "VALOR DA MEDIÇÃO", "Valor da Medição"],
 }
 
 MEASUREMENT_COLUMNS = {
@@ -319,11 +312,30 @@ def reflect_tables(engine):
 
 
 def clear_imported_database(conn, ciclo: str) -> None:
-    # Delete seletivo por ciclo — preserva dados de outros ciclos.
-    # projetos e profissionais são master data compartilhado entre ciclos: nunca deletar.
-    conn.execute(text("DELETE FROM medicoes WHERE ciclo = :ciclo"), {"ciclo": ciclo})
-    conn.execute(text("DELETE FROM bm_aux_medicoes WHERE ciclo = :ciclo"), {"ciclo": ciclo})
-    conn.execute(text("DELETE FROM mapa_pagamento_itens WHERE ciclo = :ciclo"), {"ciclo": ciclo})
+    # Substitui somente o ciclo carregado pela planilha.
+    # Os demais ciclos, cadastros compartilhados, usuários internos e contratos
+    # manuais são preservados para permitir histórico multi-ciclo.
+    params = {"ciclo": ciclo}
+    conn.execute(
+        text(
+            """
+            delete from sgc_logs
+            where ciclo = :ciclo
+               or sgc_id in (
+                    select id
+                    from sgc_aprovacoes_medicao
+                    where ciclo = :ciclo
+               )
+            """
+        ),
+        params,
+    )
+    conn.execute(text("delete from sgc_aprovacoes_medicao where ciclo = :ciclo"), params)
+    conn.execute(text("delete from medicoes where ciclo = :ciclo"), params)
+    conn.execute(text("delete from mapa_pagamento_itens where ciclo = :ciclo"), params)
+    conn.execute(text("delete from mapa_pagamento_contexto where ciclo = :ciclo"), params)
+    conn.execute(text("delete from bm_aux_medicoes where ciclo = :ciclo"), params)
+    conn.execute(text("delete from etl_execucoes where ciclo = :ciclo"), params)
 
 
 def upsert_project(conn, projetos, data: dict[str, Any]) -> int:
@@ -442,19 +454,12 @@ def build_base_professional(row: pd.Series) -> dict[str, Any] | None:
     }
 
 
-def build_positive_payment_codes(df: pd.DataFrame, bm_aux_df: pd.DataFrame) -> set[str]:
+def build_positive_payment_codes(df: pd.DataFrame) -> set[str]:
     positive_payment_codes: set[str] = set()
 
     for _, row in df.iterrows():
         codigo = clean_text(first_value(row, ["PROJETISTA"]))
         valor_medicao = clean_decimal(first_value(row, MEASUREMENT_COLUMNS["valor_medicao"]))
-        if codigo and has_positive_payment_value(valor_medicao):
-            positive_payment_codes.add(normalize_for_compare(codigo))
-
-    for _, row in bm_aux_df.iterrows():
-        raw = extract(row, BM_AUX_COLUMNS)
-        codigo = clean_text(raw["responsavel_codigo"])
-        valor_medicao = clean_decimal(raw["valor_medicao"])
         if codigo and has_positive_payment_value(valor_medicao):
             positive_payment_codes.add(normalize_for_compare(codigo))
 
@@ -675,6 +680,19 @@ def read_payment_map_items(excel_path: Path, sheet_name: str) -> pd.DataFrame:
     )
 
 
+def read_measurements_sheet(excel_path: Path, sheet_name: str) -> pd.DataFrame:
+    df = read_excel_header_region(
+        excel_path,
+        sheet_name,
+        required_headers={"Número da Medição", "Projeto Referente", "PROJETISTA"},
+        key_header="Número da Medição",
+    )
+    if not df.empty:
+        return df
+
+    return pd.read_excel(excel_path, sheet_name=sheet_name, dtype=object).dropna(how="all").reset_index(drop=True)
+
+
 def build_payment_map_item(row: pd.Series, ordem: int, canonical_codes: dict[str, str], ciclo: str = "2605") -> dict[str, Any] | None:
     raw = extract(row, PAYMENT_MAP_ITEM_COLUMNS)
     projetista_codigo = clean_text(raw["projetista_codigo"])
@@ -732,57 +750,6 @@ def upsert_payment_map_item(conn, mapa_pagamento_itens, data: dict[str, Any]) ->
             "valor": stmt.excluded.valor,
             "rev": stmt.excluded.rev,
             "status": stmt.excluded.status,
-            "raw_payload": stmt.excluded.raw_payload,
-            "updated_at": text("now()"),
-        },
-    )
-    conn.execute(stmt)
-
-
-def read_bm_aux_sheet(excel_path: Path, sheet_name: str) -> pd.DataFrame:
-    raw = pd.read_excel(excel_path, sheet_name=sheet_name, dtype=object)
-    raw = raw.dropna(how="all").reset_index(drop=True)
-    if raw.empty:
-        return raw
-
-    headers = [clean_text(value) or f"unnamed_{index + 1}" for index, value in enumerate(raw.iloc[0].tolist())]
-    df = raw.iloc[1:].copy()
-    df.columns = headers
-    return df.dropna(how="all").reset_index(drop=True)
-
-
-def build_bm_aux_measurement(row: pd.Series) -> dict[str, Any] | None:
-    raw = extract(row, BM_AUX_COLUMNS)
-    responsavel_codigo = clean_text(raw["responsavel_codigo"])
-    if not responsavel_codigo or not any(char.isalpha() for char in responsavel_codigo):
-        return None
-
-    ciclo = clean_text(raw["ciclo"])
-    valor_medicao = clean_decimal(raw["valor_medicao"])
-    if not has_positive_payment_value(valor_medicao):
-        return None
-
-    raw_payload = safe_raw_payload(row, "unnamed_")
-
-    return {
-        "responsavel_codigo": responsavel_codigo,
-        "ciclo": ciclo,
-        "equivalente_revisado": clean_decimal(raw["equivalente_revisado"]),
-        "valor_medicao": valor_medicao,
-        "source_row_hash": source_hash(raw_payload),
-        "raw_payload": raw_payload,
-    }
-
-
-def upsert_bm_aux_measurement(conn, bm_aux_medicoes, data: dict[str, Any]) -> None:
-    stmt = insert(bm_aux_medicoes).values(**data)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[bm_aux_medicoes.c.source_row_hash],
-        set_={
-            "responsavel_codigo": stmt.excluded.responsavel_codigo,
-            "ciclo": stmt.excluded.ciclo,
-            "equivalente_revisado": stmt.excluded.equivalente_revisado,
-            "valor_medicao": stmt.excluded.valor_medicao,
             "raw_payload": stmt.excluded.raw_payload,
             "updated_at": text("now()"),
         },
@@ -861,15 +828,13 @@ def ingest(
     if create_schema:
         load_schema(engine, Path(__file__).resolve().parents[1] / "database" / "schema.sql")
 
-    df = pd.read_excel(excel_path, sheet_name=sheet_name, dtype=object)
-    df = df.dropna(how="all").reset_index(drop=True)
+    df = read_measurements_sheet(excel_path, sheet_name)
     base_df = pd.read_excel(excel_path, sheet_name=base_sheet_name, dtype=object)
     base_df = base_df.dropna(how="all").reset_index(drop=True)
     payment_map_df = pd.read_excel(excel_path, sheet_name=payment_map_sheet_name, header=7, dtype=object)
     payment_map_df = payment_map_df.dropna(how="all").reset_index(drop=True)
     payment_map_items_df = read_payment_map_items(excel_path, payment_map_sheet_name)
-    bm_aux_df = read_bm_aux_sheet(excel_path, bm_aux_sheet_name)
-    positive_payment_codes = build_positive_payment_codes(df, bm_aux_df)
+    positive_payment_codes = build_positive_payment_codes(df)
     canonical_codes = build_canonical_professional_codes(base_df)
 
     projetos, profissionais, medicoes, mapa_pagamento_contexto, mapa_pagamento_itens, bm_aux_medicoes = reflect_tables(engine)
@@ -878,7 +843,6 @@ def ingest(
     base_loaded = 0
     payment_status_loaded = 0
     payment_items_loaded = 0
-    bm_aux_loaded = 0
     inserted_or_updated = 0
     source_hashes: set[str] = set()
     duplicate_source_rows = 0
@@ -912,13 +876,6 @@ def ingest(
             upsert_payment_map_item(conn, mapa_pagamento_itens, payment_item)
             payment_items_loaded += 1
 
-        for _, row in bm_aux_df.iterrows():
-            bm_aux_measurement = build_bm_aux_measurement(row)
-            if not bm_aux_measurement:
-                continue
-            upsert_bm_aux_measurement(conn, bm_aux_medicoes, bm_aux_measurement)
-            bm_aux_loaded += 1
-
         for _, row in df.iterrows():
             project_raw = extract(row, PROJECT_COLUMNS)
             codigo_projeto = clean_text(project_raw["codigo_projeto"])
@@ -942,9 +899,12 @@ def ingest(
             id_profissional = upsert_professional(conn, profissionais, extract(row, PROFESSIONAL_COLUMNS))
             id_coordenador = upsert_professional(conn, profissionais, extract(row, COORDINATOR_COLUMNS))
             measurement = build_measurement(row)
-            # Usa o ciclo efetivo como fallback quando a coluna CICLO está vazia na planilha
-            if not measurement.get("ciclo"):
-                measurement["ciclo"] = ciclo_efetivo
+            # O ciclo efetivo da carga é a fonte da verdade. Isso evita manter
+            # linhas antigas quando a planilha é atualizada com outro ciclo.
+            measurement["ciclo"] = ciclo_efetivo
+            measurement["source_row_hash"] = source_hash(
+                {"ciclo": ciclo_efetivo, **measurement["raw_payload"]}
+            )
             measurement.update(
                 {
                     "id_projeto": id_projeto,
@@ -980,8 +940,6 @@ def ingest(
         "payment_status_loaded": payment_status_loaded,
         "payment_map_items_rows_read": len(payment_map_items_df),
         "payment_map_items_loaded": payment_items_loaded,
-        "bm_aux_rows_read": len(bm_aux_df),
-        "bm_aux_rows_loaded": bm_aux_loaded,
         "rows_processed": inserted_or_updated,
         "rows_unique_by_source_hash": len(source_hashes),
         "rows_duplicate_by_source_hash": duplicate_source_rows,

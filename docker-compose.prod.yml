@@ -1,0 +1,79 @@
+name: medicoes-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: medicoes-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-medicoes}
+      POSTGRES_USER: ${POSTGRES_USER:-medicoes_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medicoes_app} -d ${POSTGRES_DB:-medicoes}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  etl:
+    build:
+      context: .
+      dockerfile: Dockerfile.etl
+    container_name: medicoes-etl
+    restart: unless-stopped
+    environment:
+      ETL_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-medicoes_app}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-medicoes}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: medicoes-web
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-medicoes_app}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-medicoes}
+      NODE_ENV: production
+      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      AUTH_BOOTSTRAP_USERNAME: ${AUTH_BOOTSTRAP_USERNAME}
+      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD}
+      AUTH_BOOTSTRAP_NAME: ${AUTH_BOOTSTRAP_NAME:-Administrador}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      ETL_SERVER_URL: http://medicoes-etl:4000
+      APP_URL: ${APP_URL}
+      BM_EMAIL_TEST_TO: ${BM_EMAIL_TEST_TO:-}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      etl:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  postgres_data:

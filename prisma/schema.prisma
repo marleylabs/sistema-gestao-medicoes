@@ -16,14 +16,66 @@ model Usuario {
   primeiroLogin    Boolean   @default(false) @map("primeiro_login")
   perfil           String    @default("MEDICAO")
   ativo            Boolean   @default(true)
+  avatarArquivo    Bytes?    @map("avatar_arquivo")
+  avatarMime       String?   @map("avatar_mime")
+  avatarAtualizadoAt DateTime? @map("avatar_atualizado_at") @db.Timestamptz
   tentativasFalhas Int       @default(0) @map("tentativas_falhas")
   bloqueadoAte     DateTime? @map("bloqueado_ate") @db.Timestamptz
   ultimoLoginAt    DateTime? @map("ultimo_login_at") @db.Timestamptz
+  onlineAt         DateTime? @map("online_at") @db.Timestamptz
+  excluidoAt        DateTime? @map("excluido_at") @db.Timestamptz
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
+  chatParticipantes ChatParticipante[]
+  chatMensagens     ChatMensagem[]
+
   @@index([ativo])
   @@map("usuarios")
+}
+
+model ChatConversa {
+  id            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  chave         String             @unique
+  tipo          String             @default("DIRETA")
+  titulo        String?
+  participantes ChatParticipante[]
+  mensagens     ChatMensagem[]
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime           @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@index([updatedAt(sort: Desc)])
+  @@map("chat_conversas")
+}
+
+model ChatParticipante {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversaId  String       @map("conversa_id") @db.Uuid
+  usuarioId   String       @map("usuario_id") @db.Uuid
+  ultimoLidoAt DateTime?   @map("ultimo_lido_at") @db.Timestamptz
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  conversa ChatConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  usuario  Usuario      @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([conversaId, usuarioId])
+  @@index([usuarioId])
+  @@map("chat_participantes")
+}
+
+model ChatMensagem {
+  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversaId String       @map("conversa_id") @db.Uuid
+  autorId    String       @map("autor_id") @db.Uuid
+  texto      String
+  origem     String?      @unique
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  conversa ChatConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  autor    Usuario      @relation(fields: [autorId], references: [id], onDelete: Cascade)
+
+  @@index([conversaId, createdAt])
+  @@map("chat_mensagens")
 }
 
 model SgcAprovacaoMedicao {
@@ -149,6 +201,7 @@ model MapaPagamentoContexto {
   producaoFim    DateTime? @map("producao_fim") @db.Date
   atoLabel       String?   @map("ato_label")
   atoCiclo       String?   @map("ato_ciclo")
+  ativoMedicao   Boolean   @default(false) @map("ativo_medicao")
   contratos      Json      @default("[]")
   rateio         Json      @default("[]")
   updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz
@@ -165,10 +218,10 @@ model MapaPagamentoItem {
   responsavel      String?
   cpfCnpj          String?  @map("cpf_cnpj")
   razaoSocial      String?  @map("razao_social")
-  intrSossego      Decimal  @default(0) @map("intr_sossego") @db.Decimal(16, 4)
-  salobo           Decimal  @default(0) @db.Decimal(16, 4)
-  acg              Decimal  @default(0) @db.Decimal(16, 4)
-  escadasAlumar    Decimal  @default(0) @map("escadas_alumar") @db.Decimal(16, 4)
+  intrSossego      Decimal  @default(0) @map("intr_sossego") @db.Decimal(18, 8)
+  salobo           Decimal  @default(0) @db.Decimal(18, 8)
+  acg              Decimal  @default(0) @db.Decimal(18, 8)
+  escadasAlumar    Decimal  @default(0) @map("escadas_alumar") @db.Decimal(18, 8)
   horas            Decimal  @default(0) @db.Decimal(14, 4)
   valor            Decimal  @default(0) @db.Decimal(16, 4)
   rev              Decimal  @default(0) @db.Decimal(16, 4)
@@ -231,6 +284,11 @@ model SgcLog {
   statusNovo        String?   @map("status_novo")
   telaOrigem        String?   @map("tela_origem")
   observacao        String?
+  tipoMensagem      String    @default("TEXTO") @map("tipo_mensagem")
+  audioArquivo      Bytes?    @map("audio_arquivo")
+  audioMime         String?   @map("audio_mime")
+  audioNome         String?   @map("audio_nome")
+  lidoAt            DateTime? @map("lido_at") @db.Timestamptz
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([sgcId])

@@ -1,12 +1,22 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { buildSgcChatMessages } from "@/lib/bm-log";
 import { decryptSensitive } from "@/lib/encryption";
 import { toNumber } from "@/lib/format";
 import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
+import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
 
 function dateOnly(value: Date | null) {
   return value?.toISOString().slice(0, 10) ?? null;
+}
+
+function avatarUrlByUserId(id: string, updatedAt: Date | null) {
+  return updatedAt ? `/api/usuario/avatar?userId=${encodeURIComponent(id)}&v=${updatedAt.getTime()}` : null;
+}
+
+function isOnline(onlineAt: Date | null | undefined) {
+  return !!onlineAt && Date.now() - onlineAt.getTime() <= 2 * 60 * 1000;
 }
 
 export async function GET() {
@@ -19,7 +29,8 @@ export async function GET() {
   }
 
   const codigo = user.usuario;
-  const [profissional, pagamento, documentos, sgc] = await Promise.all([
+  const cicloAtivo = await getCicloAtivoMedicao();
+  const [profissional, pagamento, documentos, sgc, currentUsuario, usuariosMedicaoOnline] = await Promise.all([
     prisma.profissional.findUnique({
       where: { codigo },
       select: {
@@ -36,6 +47,7 @@ export async function GET() {
     }),
     prisma.mapaPagamentoItem.findFirst({
       where: {
+        ciclo: cicloAtivo,
         projetistaCodigo: codigo,
         valor: { gt: 0 },
       },
@@ -43,6 +55,7 @@ export async function GET() {
     }),
     prisma.medicao.findMany({
       where: {
+        ciclo: cicloAtivo,
         profissional: { codigo },
       },
       select: {
@@ -68,15 +81,45 @@ export async function GET() {
       orderBy: [{ dataCadastro: "asc" }, { createdAt: "asc" }],
     }),
     prisma.sgcAprovacaoMedicao.findFirst({
-      where: { colaboradorCodigo: codigo },
+      where: { colaboradorCodigo: codigo, ciclo: cicloAtivo },
       orderBy: { createdAt: "desc" },
+    }),
+    prisma.usuario.findUnique({
+      where: { id: user.id },
+      select: { id: true, avatarAtualizadoAt: true },
+    }),
+    prisma.usuario.findMany({
+      where: { perfil: { in: ["MEDICAO", "ADMIN"] }, ativo: true },
+      select: { onlineAt: true },
     }),
   ]);
 
+  const fornecedorAvatarUrl = currentUsuario ? avatarUrlByUserId(currentUsuario.id, currentUsuario.avatarAtualizadoAt) : null;
+  const logs = sgc
+    ? await prisma.sgcLog.findMany({
+        where: { sgcId: sgc.id },
+        select: { id: true, acao: true, observacao: true, usuarioId: true, tipoMensagem: true, audioMime: true, audioNome: true, usuarioNome: true, lidoAt: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      })
+    : [];
+  const medicaoUserIds = Array.from(new Set(logs.filter((log) => log.acao === "RESPONDER_REVISAO").map((log) => log.usuarioId).filter((id): id is string => !!id)));
+  const medicaoUsuarios = medicaoUserIds.length
+    ? await prisma.usuario.findMany({
+        where: { id: { in: medicaoUserIds } },
+        select: { id: true, avatarAtualizadoAt: true },
+      })
+    : [];
+  const medicaoAvatarUrlsByUsuarioId = Object.fromEntries(
+    medicaoUsuarios.map((usuario) => [usuario.id, avatarUrlByUserId(usuario.id, usuario.avatarAtualizadoAt)]),
+  );
+  const mensagens = sgc ? buildSgcChatMessages(sgc, logs, { fornecedorAvatarUrl, medicaoAvatarUrlsByUsuarioId }) : [];
+
   return NextResponse.json({
+    cicloAtivo,
     usuario: {
       codigo,
       nome: profissional?.nomeCompleto || profissional?.nome || user.nome,
+      avatarUrl: fornecedorAvatarUrl,
       cpf: decryptSensitive(profissional?.cpf),
       cnpj: decryptSensitive(profissional?.cnpj),
       razaoSocial: profissional?.razaoSocial ?? null,
@@ -119,21 +162,29 @@ export async function GET() {
     }),
     sgc: sgc
       ? {
+          id: sgc.id,
           status: sgc.status,
           revisaoNumero: sgc.revisaoNumero,
           revisaoLabel: sgc.revisaoNumero > 0 ? `Rev. ${sgc.revisaoNumero}` : null,
           pontosDiscordancia: sgc.pontosDiscordancia,
           respostaAdmin: sgc.respostaAdmin,
+          observacaoColaborador: sgc.observacaoColaborador,
+          medicaoOnline: usuariosMedicaoOnline.some((usuario) => isOnline(usuario.onlineAt)),
+          mensagens,
           aprovadoAt: sgc.aprovadoAt?.toISOString() ?? null,
           revisaoSolicitadaAt: sgc.revisaoSolicitadaAt?.toISOString() ?? null,
           reenviadoAt: sgc.reenviadoAt?.toISOString() ?? null,
         }
       : {
+          id: null,
           status: "AGUARDANDO_ENVIO",
           revisaoNumero: 0,
           revisaoLabel: null,
           pontosDiscordancia: null,
           respostaAdmin: null,
+          observacaoColaborador: null,
+          medicaoOnline: false,
+          mensagens: [],
           aprovadoAt: null,
           revisaoSolicitadaAt: null,
           reenviadoAt: null,

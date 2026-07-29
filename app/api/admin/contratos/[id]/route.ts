@@ -36,7 +36,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         updated_at  = now()
       WHERE id = ${id}::uuid
       RETURNING id, nome, codigo, descricao, gestor, fiscal,
-                data_inicio, data_fim, valor_total, ativo, created_at, updated_at
+                data_inicio, data_fim, valor_total, coluna_mapa, ativo, created_at, updated_at
     `;
     if (!rows.length) return NextResponse.json({ error: "Contrato não encontrado." }, { status: 404 });
     return NextResponse.json(rows[0]);

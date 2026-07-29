@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logBmAction } from "@/lib/bm-log";
+import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
 
-type Action = "SALVAR" | "ENVIAR" | "VOLTAR" | "CANCELAR" | "SOLICITAR_REVISAO";
+type Action = "SALVAR" | "ENVIAR" | "SOLICITAR_REVISAO" | "RESPONDER_MEDICAO";
 
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
@@ -14,14 +15,20 @@ export async function POST(request: NextRequest) {
   const action: Action = payload?.action;
   const observacao: string = typeof payload?.observacao === "string" ? payload.observacao.trim() : "";
   const pontosDiscordancia: string = typeof payload?.pontosDiscordancia === "string" ? payload.pontosDiscordancia.trim() : "";
+  const respostaFornecedor: string = typeof payload?.respostaFornecedor === "string" ? payload.respostaFornecedor.trim() : "";
 
-  const allowed: Action[] = ["SALVAR", "ENVIAR", "VOLTAR", "CANCELAR", "SOLICITAR_REVISAO"];
+  const allowed: Action[] = ["SALVAR", "ENVIAR", "SOLICITAR_REVISAO", "RESPONDER_MEDICAO"];
   if (!allowed.includes(action)) {
     return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
   }
 
+  const cicloAtivo = await getCicloAtivoMedicao();
   const existing = await prisma.sgcAprovacaoMedicao.findFirst({
-    where: { colaboradorCodigo: user.usuario, status: { notIn: ["AGUARDANDO_ENVIO", "CANCELADO"] } },
+    where: {
+      colaboradorCodigo: user.usuario,
+      ciclo: cicloAtivo,
+      status: { notIn: ["AGUARDANDO_ENVIO", "CANCELADO"] },
+    },
     orderBy: { createdAt: "desc" },
   });
 
@@ -68,36 +75,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, status: updated.status });
   }
 
-  // ── VOLTAR ────────────────────────────────────────────────────────────────────
-  if (action === "VOLTAR") {
-    if (existing.status !== "AGUARDANDO_NF") {
-      return NextResponse.json({ error: "Somente medições em 'Aguardando NF' podem ser retornadas." }, { status: 409 });
+  // ── RESPONDER_MEDICAO ────────────────────────────────────────────────────────
+  if (action === "RESPONDER_MEDICAO") {
+    if (existing.status !== "REVISAO_SOLICITADA") {
+      return NextResponse.json({ error: "A resposta só pode ser enviada enquanto a revisão estiver em análise." }, { status: 409 });
     }
-    if (existing.nfArquivo) {
-      await logBmAction({ ...logBase, acao: "TENTATIVA_VOLTAR_COM_NF", statusAnterior: existing.status, observacao: "Bloqueado: NF já postada." });
-      return NextResponse.json(
-        { error: "Não é possível retornar este BM de forma automática, pois já existe Nota Fiscal postada pelo fornecedor." },
-        { status: 409 },
-      );
+    if (respostaFornecedor.length < 5) {
+      return NextResponse.json({ error: "Informe uma resposta com mais detalhes." }, { status: 400 });
     }
     const updated = await prisma.sgcAprovacaoMedicao.update({
       where: { id: existing.id },
-      data: { status: "PENDENTE", aprovadoAt: null, salvoAt: null, voltadoAt: now, updatedAt: now },
+      data: { observacaoColaborador: respostaFornecedor, updatedAt: now },
     });
-    await logBmAction({ ...logBase, acao: "VOLTAR", statusAnterior: "AGUARDANDO_NF", statusNovo: "PENDENTE" });
-    return NextResponse.json({ ok: true, status: updated.status });
-  }
-
-  // ── CANCELAR ──────────────────────────────────────────────────────────────────
-  if (action === "CANCELAR") {
-    if (!["PENDENTE", "REVISAO_SOLICITADA"].includes(existing.status)) {
-      return NextResponse.json({ error: "Somente medições pendentes podem ser canceladas." }, { status: 409 });
-    }
-    const updated = await prisma.sgcAprovacaoMedicao.update({
-      where: { id: existing.id },
-      data: { status: "CANCELADO", updatedAt: now },
+    await logBmAction({
+      ...logBase,
+      acao: "RESPONDER_MEDICAO",
+      statusAnterior: existing.status,
+      statusNovo: updated.status,
+      observacao: respostaFornecedor,
     });
-    await logBmAction({ ...logBase, acao: "CANCELAR", statusAnterior: existing.status, statusNovo: "CANCELADO", observacao: observacao || undefined });
     return NextResponse.json({ ok: true, status: updated.status });
   }
 

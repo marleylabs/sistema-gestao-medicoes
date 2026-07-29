@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
 
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -9,8 +10,9 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
   if (user.perfil !== "COLABORADOR") return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
 
+  const cicloAtivo = await getCicloAtivoMedicao();
   const sgc = await prisma.sgcAprovacaoMedicao.findFirst({
-    where: { colaboradorCodigo: user.usuario },
+    where: { colaboradorCodigo: user.usuario, ciclo: cicloAtivo },
     orderBy: { createdAt: "desc" },
     select: { id: true, status: true },
   });

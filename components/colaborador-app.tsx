@@ -1,36 +1,63 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  AlertCircle,
   Banknote,
+  Check,
+  CheckCheck,
   CheckCircle2,
   ChevronDown,
   Clock,
+  File as FileIcon,
   FileText,
   FileUp,
   LayoutDashboard,
-  LogOut,
   RefreshCw,
   UserRound,
   History,
+  MessageCircle,
+  Mic,
   RotateCcw,
   Save,
+  Search,
   Send,
+  StopCircle,
+  Trash2,
+  UploadCloud,
   X,
 } from "lucide-react";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { AppShell } from "@/components/app-shell";
+import { AccountMenu } from "@/components/account-menu";
+import { GeneralChatWidget } from "@/components/general-chat-widget";
 import { Badge, Button, Card, IconButton, Textarea } from "@/components/ui";
 import type { AuthUser } from "@/lib/session";
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const percent  = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 });
 
+type SgcChatMessage = {
+  id: string;
+  autor: "MEDICAO" | "FORNECEDOR";
+  autorNome: string;
+  autorAvatarUrl: string | null;
+  texto: string;
+  tipo: "TEXTO" | "AUDIO";
+  audioUrl: string | null;
+  audioMime: string | null;
+  audioNome: string | null;
+  lidoAt: string | null;
+  criadoAt: string;
+  enviando?: boolean;
+};
+
 type ColaboradorData = {
+  cicloAtivo: string;
   usuario: {
     codigo: string; nome: string; cpf: string | null; cnpj: string | null;
-    razaoSocial: string | null; email: string | null; funcao: string | null; statusColaborador: string | null;
+    avatarUrl: string | null; razaoSocial: string | null; email: string | null; funcao: string | null; statusColaborador: string | null;
   };
   alocacao: { ato: string | null; intrSossego: number; salobo: number; acg: number; escadasAlumar: number; } | null;
   pagamento: { valor: number; rev: number; responsavel: string | null; razaoSocial: string | null; } | null;
@@ -42,8 +69,11 @@ type ColaboradorData = {
     condicao: string | null; precoUnitario: number; valorMedido: number; obs: string | null;
   }>;
   sgc: {
+    id: string | null;
     status: string; revisaoNumero: number; revisaoLabel: string | null;
-    pontosDiscordancia: string | null; respostaAdmin: string | null;
+    pontosDiscordancia: string | null; respostaAdmin: string | null; observacaoColaborador: string | null;
+    medicaoOnline: boolean;
+    mensagens: SgcChatMessage[];
     aprovadoAt: string | null; revisaoSolicitadaAt: string | null; reenviadoAt: string | null;
   };
 };
@@ -51,6 +81,58 @@ type ColaboradorData = {
 function dateLabel(v: string | null) {
   if (!v) return "–";
   return new Intl.DateTimeFormat("pt-BR").format(new Date(`${v}T00:00:00`));
+}
+
+function chatTime(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function readableFileSize(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+}
+
+function fileExtension(name: string) {
+  return name.split(".").pop()?.toUpperCase() || "ARQ";
+}
+
+function hasUnreadMedicaoMessages(messages: SgcChatMessage[]) {
+  return messages.some((message) => message.autor === "MEDICAO" && !message.lidoAt);
+}
+
+function ChatReceipt({ read, sending }: { read: boolean; sending?: boolean }) {
+  if (sending) return <Check size={13} className="text-[#9CA3AF]" />;
+  return <CheckCheck size={13} className={read ? "text-[#2563EB]" : "text-[#9CA3AF]"} />;
+}
+
+function initials(value: string | null | undefined) {
+  const parts = (value ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
+function ChatAvatar({
+  name,
+  src,
+  unread,
+  className = "h-9 w-9",
+}: {
+  name: string | null | undefined;
+  src?: string | null;
+  unread?: boolean;
+  className?: string;
+}) {
+  return (
+    <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-bold ${className} ${unread ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="h-full w-full object-cover" />
+      ) : (
+        initials(name)
+      )}
+    </span>
+  );
 }
 
 function ratio(v: number) { return v ? percent.format(v) : "–"; }
@@ -64,27 +146,13 @@ function statusConfig(status: string) {
   return                                      { label: "Pendente de validação",   badge: "neutral" as const };
 }
 
-// ─── InfoCard ─────────────────────────────────────────────────────────────────
-
-function InfoCard({ title, icon, iconBg, iconColor, children }: {
-  title: string; icon: React.ReactNode; iconBg: string; iconColor: string; children: React.ReactNode;
-}) {
+function SummaryField({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <Card className="p-5">
-      <div className="mb-4 flex items-center gap-2.5">
-        <span className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${iconBg} ${iconColor}`}>{icon}</span>
-        <h2 className="text-sm font-bold text-[#1A1A1A]">{title}</h2>
-      </div>
-      {children}
-    </Card>
-  );
-}
-
-function FieldRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-3 py-2 border-b border-[#F3F4F6] last:border-0">
-      <span className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF] shrink-0">{label}</span>
-      <span className="text-sm font-medium text-[#1A1A1A] text-right">{value || "–"}</span>
+    <div className="min-w-0 rounded-lg border border-[#F3F4F6] bg-[#FAFAFA] px-3 py-2">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-[#9CA3AF]">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-[#1A1A1A]" title={typeof value === "string" ? value : undefined}>
+        {value || "–"}
+      </p>
     </div>
   );
 }
@@ -102,14 +170,26 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   const [medicoes, setMedicoes]             = useState<MedicaoAprovada[]>([]);
   const [medLoading, setMedLoading]         = useState(false);
   const [documentsOpen, setDocumentsOpen]   = useState(false);
-  const [revisionOpen, setRevisionOpen]     = useState(false);
+  const [actionModal, setActionModal]       = useState<"salvar" | "revisao" | "resposta" | null>(null);
   const [pontos, setPontos]                 = useState("");
+  const [respostaFornecedor, setRespostaFornecedor] = useState("");
   const [message, setMessage]               = useState<{ text: string; type: "success" | "info" } | null>(null);
+  const [modalError, setModalError]         = useState<string | null>(null);
   const [saving, setSaving]                 = useState(false);
   const [nfFile, setNfFile]                 = useState<File | null>(null);
   const [nfUploading, setNfUploading]       = useState(false);
+  const [nfProgress, setNfProgress]         = useState(0);
+  const [nfError, setNfError]               = useState<string | null>(null);
+  const [draggingNf, setDraggingNf]         = useState(false);
   const [observacao, setObservacao]         = useState("");
   const [salvoAt, setSalvoAt]               = useState<string | null>(null);
+  const [chatOpen, setChatOpen]             = useState(false);
+  const [chatDraft, setChatDraft]           = useState("");
+  const [chatSending, setChatSending]       = useState(false);
+  const [pendingChatMessage, setPendingChatMessage] = useState<(SgcChatMessage & { enviando?: boolean }) | null>(null);
+  const chatBaselineRef                     = useRef(false);
+  const previousMedicaoMessageIdsRef        = useRef<Set<string>>(new Set());
+  const nfInputRef                          = useRef<HTMLInputElement | null>(null);
 
   const canValidate = data?.sgc.status === "PENDENTE";
   const { label: statusLabel, badge: statusBadge } = data ? statusConfig(data.sgc.status) : { label: "", badge: "neutral" as const };
@@ -124,11 +204,11 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     ] as [string, number][]).filter(([, v]) => v > 0);
   }, [data]);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     const res = await fetch("/api/colaborador/me");
     setData(await res.json());
-    setLoading(false);
+    if (!opts?.silent) setLoading(false);
   }, []);
 
   const loadMedicoes = useCallback(async () => {
@@ -139,62 +219,241 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     setMedLoading(false);
   }, []);
 
+  function playNotificationSound() {
+    try {
+      const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextCtor) return;
+      const ctx = new AudioContextCtor();
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+      oscillator.frequency.setValueAtTime(660, ctx.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start();
+      oscillator.stop(ctx.currentTime + 0.36);
+      setTimeout(() => ctx.close().catch(() => {}), 500);
+    } catch {}
+  }
+
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     location.assign("/login");
   }
 
-  async function sendSgc(action: "SALVAR" | "ENVIAR" | "VOLTAR" | "CANCELAR" | "SOLICITAR_REVISAO") {
+  function openActionModal(kind: "salvar" | "revisao" | "resposta") {
+    setModalError(null);
+    if (kind === "resposta") setRespostaFornecedor(data?.sgc.observacaoColaborador ?? "");
+    setActionModal(kind);
+  }
+
+  function closeActionModal() {
+    setModalError(null);
+    setActionModal(null);
+  }
+
+  async function sendSgc(action: "SALVAR" | "ENVIAR" | "SOLICITAR_REVISAO" | "RESPONDER_MEDICAO") {
     setSaving(true);
     setMessage(null);
+    setModalError(null);
     const res = await fetch("/api/colaborador/sgc", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, observacao, pontosDiscordancia: pontos }),
+      body: JSON.stringify({ action, observacao, pontosDiscordancia: pontos, respostaFornecedor }),
     });
     const payload = await res.json().catch(() => ({}));
     setSaving(false);
     if (!res.ok) {
-      setMessage({ text: payload.error ?? "Não foi possível atualizar a validação.", type: "info" });
+      const errorText = payload.error ?? "Não foi possível atualizar a validação.";
+      if (actionModal) setModalError(errorText);
+      else setMessage({ text: errorText, type: "info" });
       return;
     }
     if (action === "SALVAR") {
       setSalvoAt(payload.salvoAt ?? new Date().toISOString());
       setMessage({ text: "BM salvo com sucesso. Clique em Enviar quando estiver pronto.", type: "success" });
+      closeActionModal();
       return;
     }
-    setRevisionOpen(false);
+    closeActionModal();
     setPontos("");
+    if (action === "RESPONDER_MEDICAO") setRespostaFornecedor("");
     const msgs: Record<string, string> = {
       ENVIAR: "BM enviado com sucesso. Aguardando envio da Nota Fiscal.",
-      VOLTAR: "BM retornado para revisão.",
-      CANCELAR: "BM cancelado.",
       SOLICITAR_REVISAO: "Solicitação de revisão enviada para a equipe de Medição.",
+      RESPONDER_MEDICAO: "Resposta enviada para a equipe de Medição.",
     };
     setMessage({ text: msgs[action] ?? "Operação realizada.", type: "success" });
     await loadData();
+  }
+
+  async function sendChatMessage() {
+    const texto = chatDraft.trim();
+    if (!texto) return;
+    setPendingChatMessage({
+      id: "pending-fornecedor-message",
+      autor: "FORNECEDOR",
+      autorNome: user.nome,
+      autorAvatarUrl: data?.usuario.avatarUrl ?? null,
+      texto,
+      tipo: "TEXTO",
+      audioUrl: null,
+      audioMime: null,
+      audioNome: null,
+      lidoAt: null,
+      criadoAt: new Date().toISOString(),
+      enviando: true,
+    });
+    setChatSending(true);
+    setMessage(null);
+    const res = await fetch("/api/colaborador/sgc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "RESPONDER_MEDICAO", respostaFornecedor: texto }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    setChatSending(false);
+    if (!res.ok) {
+      setPendingChatMessage(null);
+      setMessage({ text: payload.error ?? "Não foi possível enviar a mensagem.", type: "info" });
+      return;
+    }
+    setChatDraft("");
+    setMessage({ text: "Mensagem enviada para a equipe de Medição.", type: "success" });
+    await loadData({ silent: true });
+    setPendingChatMessage(null);
+  }
+
+  const markChatRead = useCallback(async () => {
+    const sgcId = data?.sgc.id;
+    if (!sgcId) return;
+
+    const readAt = new Date().toISOString();
+    setData((current) => {
+      if (!current || current.sgc.id !== sgcId) return current;
+      return {
+        ...current,
+        sgc: {
+          ...current.sgc,
+          mensagens: current.sgc.mensagens.map((message) =>
+            message.autor === "MEDICAO" && !message.lidoAt ? { ...message, lidoAt: readAt } : message,
+          ),
+        },
+      };
+    });
+
+    await fetch("/api/sgc/chat/lido", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sgcId }),
+    }).catch(() => undefined);
+  }, [data?.sgc.id]);
+
+  function selectNfFile(file: File | null) {
+    setNfError(null);
+    setNfProgress(0);
+    if (!file) {
+      setNfFile(null);
+      return;
+    }
+
+    const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
+    const allowedExtensions = /\.(pdf|jpg|jpeg|png)$/i;
+    if (!allowedTypes.has(file.type) && !allowedExtensions.test(file.name)) {
+      setNfFile(null);
+      setNfError("Formato inválido. Envie PDF, JPG ou PNG.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setNfFile(null);
+      setNfError("A Nota Fiscal deve ter no máximo 10 MB.");
+      return;
+    }
+    setNfFile(file);
   }
 
   async function uploadNf() {
     if (!nfFile) return;
     setNfUploading(true);
     setMessage(null);
+    setNfError(null);
+    setNfProgress(4);
     const form = new FormData();
     form.append("nf", nfFile);
-    const res = await fetch("/api/colaborador/nf", { method: "POST", body: form });
-    const payload = await res.json().catch(() => ({}));
-    setNfUploading(false);
-    if (!res.ok) {
-      setMessage({ text: payload.error ?? "Erro ao enviar a NF.", type: "info" });
-      return;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/colaborador/nf");
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          setNfProgress(Math.min(95, Math.round((event.loaded / event.total) * 100)));
+        };
+        xhr.onload = () => {
+          const payload = (() => {
+            try { return JSON.parse(xhr.responseText || "{}"); } catch { return {}; }
+          })();
+          if (xhr.status >= 200 && xhr.status < 300) {
+            setNfProgress(100);
+            resolve();
+          } else {
+            reject(new Error(payload.error ?? "Erro ao enviar a NF."));
+          }
+        };
+        xhr.onerror = () => reject(new Error("Erro de conexão ao enviar a NF."));
+        xhr.send(form);
+      });
+      setNfFile(null);
+      setMessage({ text: "Nota fiscal enviada com sucesso. Medição marcada como aprovada.", type: "success" });
+      await loadData();
+    } catch (error) {
+      setNfError(error instanceof Error ? error.message : "Erro ao enviar a NF.");
+    } finally {
+      setNfUploading(false);
     }
-    setNfFile(null);
-    setMessage({ text: "Nota fiscal enviada com sucesso. Medição marcada como aprovada.", type: "success" });
-    await loadData();
   }
 
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { if (section === "medicoes") loadMedicoes(); }, [section, loadMedicoes]);
+  useEffect(() => {
+    fetch("/api/usuario/presenca", { method: "POST" }).catch(() => undefined);
+    const interval = setInterval(() => {
+      fetch("/api/usuario/presenca", { method: "POST" }).catch(() => undefined);
+    }, 45000);
+    return () => clearInterval(interval);
+  }, []);
+  useEffect(() => {
+    if (data?.sgc.status !== "REVISAO_SOLICITADA") return;
+    const interval = setInterval(() => {
+      loadData({ silent: true });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [data?.sgc.status, loadData]);
+
+  useEffect(() => {
+    if (data?.sgc.status !== "REVISAO_SOLICITADA") {
+      chatBaselineRef.current = false;
+      previousMedicaoMessageIdsRef.current = new Set();
+      return;
+    }
+
+    const medicaoMessages = data.sgc.mensagens.filter((message) => message.autor === "MEDICAO");
+    const currentIds = new Set(medicaoMessages.map((message) => message.id));
+    if (!chatBaselineRef.current) {
+      chatBaselineRef.current = true;
+      previousMedicaoMessageIdsRef.current = currentIds;
+      return;
+    }
+
+    const novas = medicaoMessages.filter((message) => !previousMedicaoMessageIdsRef.current.has(message.id));
+    previousMedicaoMessageIdsRef.current = currentIds;
+    if (!novas.length) return;
+
+    playNotificationSound();
+  }, [chatOpen, data?.sgc.mensagens, data?.sgc.status]);
 
   if (loading || !data) {
     return (
@@ -214,15 +473,11 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
 
   const topBar = (
     <div className="flex items-center gap-2">
-      <Button variant="secondary" onClick={loadData} className="hidden sm:inline-flex">
+      <Button variant="secondary" onClick={() => loadData()} className="hidden sm:inline-flex">
         <RefreshCw size={14} />
         Atualizar
       </Button>
-      <div className="hidden text-right md:block">
-        <p className="text-sm font-semibold text-[#1A1A1A]">{user.nome}</p>
-        <p className="text-xs text-[#555555]">{user.usuario}</p>
-      </div>
-      <IconButton onClick={logout} title="Sair"><LogOut size={15} /></IconButton>
+      <AccountMenu user={user} roleLabel="Colaborador" onLogout={logout} />
     </div>
   );
 
@@ -279,22 +534,6 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             </div>
           )}
 
-          {/* Previous discordance */}
-          {data.sgc.pontosDiscordancia && (
-            <div className="mt-4 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] p-4">
-              <p className="text-sm font-bold text-[#DC2626]">Pontos de discordância enviados</p>
-              <p className="mt-1 text-sm text-[#1A1A1A]">{data.sgc.pontosDiscordancia}</p>
-            </div>
-          )}
-
-          {/* Resposta do admin */}
-          {data.sgc.respostaAdmin && (
-            <div className="mt-3 rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-[#2563EB]">Resposta da equipe de Medição</p>
-              <p className="mt-1.5 text-sm leading-relaxed text-[#1A1A1A]">{data.sgc.respostaAdmin}</p>
-            </div>
-          )}
-
           {/* Link para Minhas Medições quando aprovado */}
           {data.sgc.status === "APROVADO" && (
             <div className="mt-5 flex items-center justify-between rounded-lg border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-3">
@@ -309,48 +548,108 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
           {/* NF Upload (AGUARDANDO_NF) */}
           {data.sgc.status === "AGUARDANDO_NF" && (
             <div className="mt-5 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <FileUp size={16} className="text-[#D97706]" />
-                <h3 className="text-sm font-bold text-[#1A1A1A]">Envio da Nota Fiscal</h3>
+              <div className="mb-3 flex items-start gap-2">
+                <FileUp size={16} className="mt-0.5 shrink-0 text-[#D97706]" />
+                <div>
+                  <h3 className="text-sm font-bold text-[#1A1A1A]">Envio da Nota Fiscal</h3>
+                  <p className="mt-1 text-xs text-[#92400E]/80">
+                    Sua medição foi aprovada. Arraste o arquivo ou selecione no computador. Formatos aceitos: PDF, JPG ou PNG, até 10 MB.
+                  </p>
+                </div>
               </div>
-              <p className="mb-4 text-sm text-[#555555]">
-                Sua medição foi aprovada. Para finalizar o processo, faça o upload da Nota Fiscal referente a esta medição.
-                Formatos aceitos: PDF, JPG ou PNG (máx. 10 MB).
-              </p>
-              <label className="block">
-                <span className="sr-only">Nota Fiscal</span>
-                <input
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  className="block w-full text-sm text-[#555555] file:mr-4 file:rounded-lg file:border-0 file:bg-[#D97706] file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-[#B45309]"
-                  onChange={(e) => setNfFile(e.target.files?.[0] ?? null)}
-                />
-              </label>
+              <input
+                ref={nfInputRef}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                className="hidden"
+                onChange={(e) => selectNfFile(e.target.files?.[0] ?? null)}
+              />
+              <div
+                role="button"
+                tabIndex={0}
+                className={`rounded-xl border border-dashed px-4 py-5 text-center transition ${draggingNf ? "border-[#D97706] bg-[#FEF3C7]" : "border-[#FBBF24] bg-white/65 hover:bg-white"}`}
+                onClick={() => nfInputRef.current?.click()}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  nfInputRef.current?.click();
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setDraggingNf(true);
+                }}
+                onDragLeave={() => setDraggingNf(false)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setDraggingNf(false);
+                  selectNfFile(event.dataTransfer.files?.[0] ?? null);
+                }}
+              >
+                <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#FFF7ED] text-[#D97706]">
+                  <UploadCloud size={20} />
+                </span>
+                <p className="mt-3 text-sm font-semibold text-[#1A1A1A]">Clique para escolher ou arraste a Nota Fiscal</p>
+                <p className="mt-1 text-xs text-[#6B7280]">PDF, JPG ou PNG</p>
+              </div>
               {nfFile && (
-                <div className="mt-3 flex items-center gap-3">
-                  <span className="text-xs text-[#555555]">{nfFile.name} ({(nfFile.size / 1024).toFixed(0)} KB)</span>
-                  <Button variant="success" className="h-9 px-5" onClick={uploadNf} disabled={nfUploading}>
-                    {nfUploading ? "Enviando…" : "Enviar NF"}
-                  </Button>
+                <div className="mt-3 rounded-xl border border-[#FDE68A] bg-white p-3 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFF7ED] text-[#D97706]">
+                      <FileIcon size={18} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-[#1A1A1A]">{nfFile.name}</p>
+                        <span className="shrink-0 rounded bg-[#F3F4F6] px-1.5 py-0.5 text-[10px] font-bold text-[#6B7280]">{fileExtension(nfFile.name)}</span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-[#6B7280]">{readableFileSize(nfFile.size)}</p>
+                    </div>
+                    {nfError ? (
+                      <button
+                        type="button"
+                        className="rounded-lg p-2 text-[#D97706] hover:bg-[#FFF7ED]"
+                        onClick={uploadNf}
+                        title="Tentar novamente"
+                      >
+                        <RotateCcw size={16} />
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="rounded-lg p-2 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#DC2626]"
+                      onClick={() => selectNfFile(null)}
+                      disabled={nfUploading}
+                      title="Remover arquivo"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#DCFCE7]">
+                    <div
+                      className={`h-full rounded-full transition-all duration-200 ${nfError ? "bg-[#DC2626]" : "bg-[#15803D]"}`}
+                      style={{ width: `${nfError ? 100 : nfProgress}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <p className={`flex items-center gap-1 text-xs ${nfError ? "text-[#B91C1C]" : "text-[#6B7280]"}`}>
+                      {nfError ? <AlertCircle size={13} /> : null}
+                      {nfError ?? (nfUploading ? `Enviando... ${nfProgress}%` : nfProgress === 100 ? "Arquivo enviado." : "Pronto para envio.")}
+                    </p>
+                    <Button variant="success" className="h-8 px-4" onClick={uploadNf} disabled={nfUploading}>
+                      {nfUploading ? "Enviando..." : nfError ? "Tentar novamente" : "Enviar NF"}
+                    </Button>
+                  </div>
                 </div>
               )}
+              {nfError && !nfFile && <p className="mt-2 text-xs text-[#B91C1C]">{nfError}</p>}
             </div>
           )}
 
           {/* Actions */}
           {canValidate ? (
             <div className="mt-5 space-y-3">
-              {/* Observação */}
-              <div>
-                <Textarea
-                  className="min-h-20 bg-white text-sm"
-                  value={observacao}
-                  onChange={(e) => setObservacao(e.target.value)}
-                  placeholder="Observação (opcional) — registrada no histórico ao Salvar."
-                />
-              </div>
               <div className="flex flex-wrap gap-3">
-                <Button variant="secondary" className="h-10 px-5" onClick={() => sendSgc("SALVAR")} disabled={saving}>
+                <Button variant="secondary" className="h-10 px-5" onClick={() => openActionModal("salvar")} disabled={saving}>
                   <Save size={15} />
                   Salvar
                 </Button>
@@ -367,20 +666,11 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                 <Button
                   variant="ghost"
                   className="h-10 border border-[#F59E0B] bg-[#FFFBEB] px-5 text-[#D97706] hover:bg-[#FEF3C7]"
-                  onClick={() => setRevisionOpen((v) => !v)}
+                  onClick={() => openActionModal("revisao")}
                   disabled={saving}
                 >
                   <AlertTriangle size={15} />
                   Solicitar revisão
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="h-10 border border-[#E5E7EB] px-5 text-[#6B7280] hover:bg-[#F9FAFB]"
-                  onClick={() => sendSgc("CANCELAR")}
-                  disabled={saving}
-                >
-                  <X size={15} />
-                  Cancelar BM
                 </Button>
               </div>
               {!salvoAt && (
@@ -391,7 +681,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             </div>
           ) : data.sgc.status === "AGUARDANDO_NF" ? null : data.sgc.status === "REVISAO_SOLICITADA" ? (
             <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-sm text-[#555555]">
-              Solicitação enviada. Aguarde a equipe de Medição reenviar a medição revisada.
+              Solicitação enviada. A conversa desta revisão fica disponível no chat flutuante.
             </div>
           ) : data.sgc.status === "CANCELADO" ? (
             <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-sm text-[#555555]">
@@ -403,78 +693,154 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             </div>
           )}
 
-          {/* Voltar BM — disponível quando AGUARDANDO_NF */}
-          {data.sgc.status === "AGUARDANDO_NF" && (
-            <div className="mt-4 flex justify-end">
-              <Button
-                variant="ghost"
-                className="h-9 border border-[#E5E7EB] px-4 text-xs text-[#6B7280] hover:bg-[#F9FAFB]"
-                onClick={() => sendSgc("VOLTAR")}
-                disabled={saving}
-              >
-                <RotateCcw size={13} />
-                Voltar BM
-              </Button>
-            </div>
-          )}
-
-          {/* Revision form */}
-          {canValidate && revisionOpen && (
-            <div className="mt-5 rounded-xl border border-[#F59E0B] bg-[#FFFBEB] p-5">
-              <h3 className="text-sm font-bold text-[#1A1A1A]">Solicitação de revisão</h3>
-              <p className="mt-1 text-sm text-[#555555]">Descreva os pontos de discordância para análise da equipe de Medição.</p>
-              <div className="mt-3">
-                <Textarea
-                  className="min-h-28 bg-white"
-                  value={pontos}
-                  onChange={(e) => setPontos(e.target.value)}
-                  placeholder="Descreva onde e por que os dados estão incorretos."
-                />
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button variant="success" onClick={() => sendSgc("SOLICITAR_REVISAO")} disabled={saving}>
-                  {saving ? "Enviando…" : "Enviar revisão"}
-                </Button>
-                <Button variant="ghost" onClick={() => setRevisionOpen(false)} disabled={saving}>Cancelar</Button>
-              </div>
-            </div>
-          )}
         </Card>
 
-        {/* ── Info cards e documentos (ocultos quando aprovado) ── */}
-
-        <div className={`grid gap-4 sm:grid-cols-2 xl:grid-cols-3 ${data.sgc.status === "APROVADO" ? "hidden" : ""}`}>
-          <InfoCard title="Dados pessoais" icon={<UserRound size={17} />} iconBg="bg-[#EFF6FF]" iconColor="text-[#2563EB]">
-            <div>
-              <FieldRow label="Código"       value={data.usuario.codigo} />
-              <FieldRow label="Nome"         value={data.usuario.nome} />
-              <FieldRow label="CPF / CNPJ"   value={data.usuario.cpf || data.usuario.cnpj} />
-              <FieldRow label="Razão social" value={data.usuario.razaoSocial} />
-              <FieldRow label="E-mail"       value={data.usuario.email} />
-              <FieldRow label="Função"       value={data.usuario.funcao} />
+        {actionModal && (canValidate || actionModal === "resposta") && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 p-4">
+            <div className="w-full max-w-xl overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-2xl">
+              <div className={`border-b px-5 py-4 ${actionModal === "revisao" || actionModal === "resposta" ? "border-[#FDE68A] bg-[#FFFBEB]" : "border-[#E5E7EB] bg-[#FAFAFA]"}`}>
+                <p className="text-base font-bold text-[#1A1A1A]">
+                  {actionModal === "salvar" ? "Salvar validação" : actionModal === "revisao" ? "Solicitar revisão" : "Responder equipe de Medição"}
+                </p>
+                <p className="mt-1 text-sm text-[#555555]">
+                  {actionModal === "salvar"
+                    ? "Registre uma observação opcional antes de salvar sua análise."
+                    : actionModal === "revisao"
+                      ? "Descreva os pontos de discordância para análise da equipe de Medição."
+                      : "Leia o retorno recebido e envie uma resposta complementar para a equipe."}
+                </p>
+              </div>
+              <div className="grid gap-4 p-5">
+                {modalError && (
+                  <div className="rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] px-3 py-2 text-sm font-semibold text-[#AF1B1B]">
+                    {modalError}
+                  </div>
+                )}
+                {(actionModal === "resposta" || (actionModal === "revisao" && data.sgc.respostaAdmin)) && (
+                  <div className="rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] p-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-[#2563EB]">Resposta da equipe de Medição</p>
+                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-[#1A1A1A]">
+                      {data.sgc.respostaAdmin}
+                    </p>
+                  </div>
+                )}
+                {actionModal === "resposta" && data.sgc.pontosDiscordancia && (
+                  <div className="rounded-lg border border-[#FDE68A] bg-[#FFFBEB] p-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-[#D97706]">Sua solicitação original</p>
+                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-[#1A1A1A]">
+                      {data.sgc.pontosDiscordancia}
+                    </p>
+                  </div>
+                )}
+                {actionModal === "resposta" && data.sgc.observacaoColaborador && (
+                  <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Última resposta enviada</p>
+                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-[#1A1A1A]">
+                      {data.sgc.observacaoColaborador}
+                    </p>
+                  </div>
+                )}
+                <Textarea
+                  className="min-h-32 bg-white"
+                  value={actionModal === "salvar" ? observacao : actionModal === "revisao" ? pontos : respostaFornecedor}
+                  onChange={(e) => {
+                    if (actionModal === "salvar") setObservacao(e.target.value);
+                    else if (actionModal === "revisao") setPontos(e.target.value);
+                    else setRespostaFornecedor(e.target.value);
+                  }}
+                  placeholder={
+                    actionModal === "salvar"
+                      ? "Observação opcional para registrar no histórico."
+                      : actionModal === "revisao"
+                        ? "Descreva onde e por que os dados estão incorretos."
+                        : "Digite sua resposta para a equipe de Medição."
+                  }
+                />
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button variant="ghost" onClick={closeActionModal} disabled={saving}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    variant="success"
+                    onClick={() => sendSgc(actionModal === "salvar" ? "SALVAR" : actionModal === "revisao" ? "SOLICITAR_REVISAO" : "RESPONDER_MEDICAO")}
+                    disabled={saving}
+                  >
+                    {saving ? "Enviando..." : actionModal === "salvar" ? "Salvar" : actionModal === "revisao" ? "Enviar revisão" : "Enviar resposta"}
+                  </Button>
+                </div>
+              </div>
             </div>
-          </InfoCard>
+          </div>
+        )}
 
-          <InfoCard title="Alocação" icon={<FileText size={17} />} iconBg="bg-[#FFFBEB]" iconColor="text-[#D97706]">
-            <div>
-              <FieldRow label="Alocação principal" value={data.alocacao?.ato} />
-              <FieldRow
-                label="Contratos"
-                value={contratos.length ? contratos.map(([l, v]) => `${l}: ${ratio(v)}`).join(" · ") : "–"}
-              />
-              <FieldRow label="Atuação" value={data.usuario.statusColaborador} />
-            </div>
-          </InfoCard>
+        {/* ── Resumo do fornecedor (oculto quando aprovado) ── */}
+        <Card className={`overflow-hidden ${data.sgc.status === "APROVADO" ? "hidden" : ""}`}>
+          <div className="grid gap-5 p-5 xl:grid-cols-[1.15fr_0.9fr_0.95fr]">
+            <section className="min-w-0">
+              <div className="mb-4 flex items-center gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+                  <UserRound size={18} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold uppercase tracking-wide text-[#9CA3AF]">Fornecedor</p>
+                  <h2 className="truncate text-base font-bold text-[#1A1A1A]">{data.usuario.nome}</h2>
+                </div>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <SummaryField label="Código" value={data.usuario.codigo} />
+                <SummaryField label="Função" value={data.usuario.funcao} />
+                <SummaryField label="CPF / CNPJ" value={data.usuario.cpf || data.usuario.cnpj} />
+                <SummaryField label="E-mail" value={data.usuario.email} />
+                <div className="sm:col-span-2">
+                  <SummaryField label="Razão social" value={data.usuario.razaoSocial} />
+                </div>
+              </div>
+            </section>
 
-          <InfoCard title="Informações de pagamento" icon={<Banknote size={17} />} iconBg="bg-[#F0FDF4]" iconColor="text-[#16A34A]">
-            <div>
-              <FieldRow label="Valor previsto" value={currency.format(data.pagamento?.valor ?? 0)} />
-              <FieldRow label="Revisão"        value={data.pagamento?.rev ? currency.format(data.pagamento.rev) : "–"} />
-              <FieldRow label="Responsável"    value={data.pagamento?.responsavel} />
-              <FieldRow label="Empresa"        value={data.pagamento?.razaoSocial} />
-            </div>
-          </InfoCard>
-        </div>
+            <section className="min-w-0 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] p-4">
+              <div className="mb-4 flex items-center gap-3">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-[#D97706] ring-1 ring-[#FDE68A]">
+                  <FileText size={17} />
+                </span>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-[#D97706]">Alocação</p>
+                  <p className="text-sm font-bold text-[#1A1A1A]">{data.alocacao?.ato ?? "–"}</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {contratos.length ? contratos.map(([label, value]) => (
+                  <span key={label} className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-[#1A1A1A] ring-1 ring-[#FDE68A]">
+                    {label}
+                    <strong className="text-[#D97706]">{ratio(value)}</strong>
+                  </span>
+                )) : (
+                  <span className="text-sm text-[#92400E]">Nenhum contrato informado.</span>
+                )}
+              </div>
+              <div className="mt-4 rounded-lg bg-white px-3 py-2 ring-1 ring-[#FDE68A]">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[#D97706]">Atuação</p>
+                <p className="mt-1 text-sm font-semibold text-[#1A1A1A]">{data.usuario.statusColaborador ?? "–"}</p>
+              </div>
+            </section>
+
+            <section className="min-w-0 rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] p-4">
+              <div className="mb-4 flex items-center gap-3">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-[#16A34A] ring-1 ring-[#BBF7D0]">
+                  <Banknote size={17} />
+                </span>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-[#16A34A]">Pagamento previsto</p>
+                  <p className="text-xl font-bold text-[#1A1A1A]">{currency.format(data.pagamento?.valor ?? 0)}</p>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <SummaryField label="Revisão" value={data.pagamento?.rev ? currency.format(data.pagamento.rev) : "–"} />
+                <SummaryField label="Responsável" value={data.pagamento?.responsavel} />
+                <SummaryField label="Empresa" value={data.pagamento?.razaoSocial} />
+              </div>
+            </section>
+          </div>
+        </Card>
 
         {/* ── Documents (oculto quando aprovado) ── */}
         <Card className={`overflow-hidden ${data.sgc.status === "APROVADO" ? "hidden" : ""}`}>
@@ -485,7 +851,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             <div>
               <h2 className="text-sm font-bold text-[#1A1A1A]">Documentos da Medição do Ciclo</h2>
               <p className="mt-0.5 text-sm text-[#555555]">
-                {data.documentos.length} documentos vinculados ao código {data.usuario.codigo}.
+                {data.documentos.length} documentos vinculados ao código {data.usuario.codigo} no ciclo {data.cicloAtivo}.
               </p>
             </div>
             <ChevronDown className={`shrink-0 text-[#9CA3AF] transition-transform duration-200 ${documentsOpen ? "rotate-180" : ""}`} size={18} />
@@ -573,9 +939,272 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
               ))}
             </div>
           )
-        )}
-      </div>
+      )}
+    </div>
+      {section === "portal" && data.sgc.status === "REVISAO_SOLICITADA" && (
+        <RevisionChatWidget
+          mensagens={data.sgc.mensagens}
+          medicaoOnline={data.sgc.medicaoOnline}
+          fornecedorNome={data.usuario.nome}
+          fornecedorAvatarUrl={data.usuario.avatarUrl}
+          sgcId={data.sgc.id}
+          open={chatOpen}
+          draft={chatDraft}
+          sending={chatSending}
+  pendingMessage={pendingChatMessage}
+          onOpenChange={setChatOpen}
+          onDraftChange={setChatDraft}
+          onSend={sendChatMessage}
+          onRead={markChatRead}
+          onAudioSent={async (message) => {
+            setPendingChatMessage(message);
+            if (!message) await loadData({ silent: true });
+          }}
+        />
+      )}
+      <GeneralChatWidget className={section === "portal" && data.sgc.status === "REVISAO_SOLICITADA" ? "bottom-20" : "bottom-5"} />
     </AppShell>
+  );
+}
+
+function RevisionChatWidget({
+  mensagens,
+  medicaoOnline,
+  fornecedorNome,
+  fornecedorAvatarUrl,
+  sgcId,
+  open,
+  draft,
+  sending,
+  pendingMessage,
+  onOpenChange,
+  onDraftChange,
+  onSend,
+  onRead,
+  onAudioSent,
+}: {
+  mensagens: SgcChatMessage[];
+  medicaoOnline: boolean;
+  fornecedorNome: string;
+  fornecedorAvatarUrl: string | null;
+  sgcId: string | null;
+  open: boolean;
+  draft: string;
+  sending: boolean;
+  pendingMessage: (SgcChatMessage & { enviando?: boolean }) | null;
+  onOpenChange: (value: boolean) => void;
+  onDraftChange: (value: string) => void;
+  onSend: () => void;
+  onRead: () => void;
+  onAudioSent: (message: (SgcChatMessage & { enviando?: boolean }) | null) => Promise<void>;
+}) {
+  const hasUnread = hasUnreadMedicaoMessages(mensagens);
+  const visibleMessages = pendingMessage ? [...mensagens, pendingMessage] : mensagens;
+  const unreadKey = mensagens.filter((message) => message.autor === "MEDICAO" && !message.lidoAt).map((message) => message.id).join(",");
+  const markedReadRef = useRef<string | null>(null);
+  const latestMedicaoMessage = visibleMessages.at(-1);
+  const [gravando, setGravando] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastMessageKey = visibleMessages.at(-1)?.id ?? sgcId ?? "chat";
+
+  useEffect(() => {
+    if (!open || !sgcId || !unreadKey) return;
+    const markKey = `${sgcId}:${unreadKey}`;
+    if (markedReadRef.current === markKey) return;
+    markedReadRef.current = markKey;
+    onRead();
+  }, [open, onRead, sgcId, unreadKey]);
+
+  useEffect(() => {
+    if (!open) return;
+    messagesEndRef.current?.scrollIntoView({ block: "end" });
+  }, [open, lastMessageKey]);
+
+  if (!open) {
+    return (
+      <button
+        className={`fixed bottom-5 right-5 z-50 inline-flex h-12 items-center gap-2 rounded-full px-4 text-sm font-semibold text-white shadow-xl ${hasUnread ? "bg-[#16A34A] hover:bg-[#15803D]" : "bg-[#2563EB] hover:bg-[#1D4ED8]"}`}
+        onClick={() => onOpenChange(true)}
+      >
+        <MessageCircle size={18} />
+        Chat da revisão
+      </button>
+    );
+  }
+
+  async function enviarAudio(blob: Blob) {
+    if (!sgcId) return;
+    const localUrl = URL.createObjectURL(blob);
+    const pending: SgcChatMessage & { enviando?: boolean } = {
+      id: "pending-fornecedor-audio",
+      autor: "FORNECEDOR",
+      autorNome: fornecedorNome,
+      autorAvatarUrl: fornecedorAvatarUrl,
+      texto: "Áudio",
+      tipo: "AUDIO",
+      audioUrl: localUrl,
+      audioMime: blob.type || "audio/webm",
+      audioNome: "audio.webm",
+      lidoAt: null,
+      criadoAt: new Date().toISOString(),
+      enviando: true,
+    };
+    await onAudioSent(pending);
+    const form = new FormData();
+    form.append("sgcId", sgcId);
+    form.append("audio", blob, "audio.webm");
+    await fetch("/api/sgc/chat/audio", { method: "POST", body: form });
+    URL.revokeObjectURL(localUrl);
+    await onAudioSent(null);
+  }
+
+  async function toggleGravacao() {
+    if (gravando) {
+      recorderRef.current?.stop();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      setGravando(false);
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    streamRef.current = stream;
+    chunksRef.current = [];
+    const recorder = new MediaRecorder(stream);
+    recorderRef.current = recorder;
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) chunksRef.current.push(event.data);
+    };
+    recorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+      if (blob.size > 0) void enviarAudio(blob);
+    };
+    recorder.start();
+    setGravando(true);
+  }
+
+  return (
+    <div className="fixed bottom-5 right-5 z-50 grid h-[min(560px,calc(100vh-40px))] min-h-0 w-[min(860px,calc(100vw-24px))] grid-cols-1 overflow-hidden rounded-xl border border-[#D1D5DB] bg-white shadow-2xl md:grid-cols-[300px_1fr]">
+      <aside className="hidden min-h-0 min-w-0 border-r border-[#E5E7EB] bg-white md:flex md:flex-col">
+        <div className="border-b border-[#E5E7EB] px-4 py-3">
+          <p className="text-base font-bold text-[#1A1A1A]">Conversas</p>
+          <div className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-xs text-[#9CA3AF]">
+            <Search size={14} />
+            Pesquise conversas
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <button className="flex w-full gap-3 border-b border-[#F3F4F6] bg-[#EFF6FF] px-4 py-3 text-left">
+            <ChatAvatar name="Equipe de Medição" unread={hasUnread} className="h-10 w-10" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-sm font-semibold text-[#1A1A1A]">Equipe de Medição</p>
+                <span className="shrink-0 text-[10px] text-[#9CA3AF]">{latestMedicaoMessage ? chatTime(latestMedicaoMessage.criadoAt).split(", ").at(-1) : ""}</span>
+              </div>
+              <p className="mt-0.5 truncate text-xs text-[#6B7280]">{latestMedicaoMessage?.texto ?? "Sem mensagens."}</p>
+            </div>
+          </button>
+          <button className="flex w-full gap-3 border-b border-[#F3F4F6] px-4 py-3 text-left opacity-70">
+            <ChatAvatar name="Financeiro" className="h-10 w-10" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-sm font-semibold text-[#1A1A1A]">Financeiro</p>
+                <span className="rounded-full bg-[#F3F4F6] px-2 py-0.5 text-[10px] font-semibold text-[#6B7280]">em breve</span>
+              </div>
+              <p className="mt-0.5 truncate text-xs text-[#6B7280]">Canal reservado para notas fiscais e pagamentos.</p>
+            </div>
+          </button>
+        </div>
+      </aside>
+
+      <section className="flex min-h-0 min-w-0 flex-col">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <ChatAvatar name="Equipe de Medição" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-[#1A1A1A]">Equipe de Medição</p>
+              <p className={`text-xs ${medicaoOnline ? "text-[#16A34A]" : "text-[#9CA3AF]"}`}>
+                {medicaoOnline ? "online" : "offline"}
+              </p>
+            </div>
+          </div>
+          <button className="rounded-full p-1 text-[#6B7280] hover:bg-white hover:text-[#1A1A1A]" onClick={() => onOpenChange(false)} aria-label="Fechar chat">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#F3F4F6] px-4 py-4">
+          {visibleMessages.length ? (
+            visibleMessages.map((mensagem) => {
+              const isFornecedor = mensagem.autor === "FORNECEDOR";
+              return (
+                <div key={mensagem.id} className={`flex items-end gap-2 ${isFornecedor ? "justify-end" : "justify-start"}`}>
+                  {!isFornecedor && (
+                    <ChatAvatar
+                      name={mensagem.autorNome}
+                      src={mensagem.autorAvatarUrl}
+                      className="h-7 w-7 text-[10px]"
+                    />
+                  )}
+                  <div className={`max-w-[82%] rounded-xl px-3 py-2 text-sm shadow-sm ${isFornecedor ? "rounded-br-sm bg-[#DBEAFE] text-[#1E3A8A]" : "rounded-bl-sm bg-white text-[#1A1A1A]"}`}>
+                    <p className={`mb-1 text-[11px] font-bold ${isFornecedor ? "text-[#1D4ED8]" : "text-[#2563EB]"}`}>
+                      {mensagem.autorNome}
+                    </p>
+                    {mensagem.tipo === "AUDIO" && mensagem.audioUrl ? (
+                      <div className="min-w-52">
+                        <audio controls preload="metadata" src={mensagem.audioUrl} className="h-9 w-full" />
+                      </div>
+                    ) : (
+                      <p className="whitespace-pre-wrap leading-relaxed">{mensagem.texto}</p>
+                    )}
+                    <div className={`mt-1.5 flex items-center gap-1 text-[10px] font-semibold opacity-70 ${isFornecedor ? "justify-end" : "justify-start"}`}>
+                      <span>{chatTime(mensagem.criadoAt)}</span>
+                      {isFornecedor && <ChatReceipt read={!!mensagem.lidoAt} sending={mensagem.enviando} />}
+                    </div>
+                  </div>
+                  {isFornecedor && (
+                    <ChatAvatar
+                      name={mensagem.autorNome}
+                      src={mensagem.autorAvatarUrl ?? fornecedorAvatarUrl}
+                      className="h-7 w-7 text-[10px]"
+                    />
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            <p className="rounded-lg border border-dashed border-[#D1D5DB] bg-white px-3 py-4 text-center text-sm text-[#6B7280]">
+              Nenhuma mensagem registrada nesta revisão.
+            </p>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <div className="border-t border-[#E5E7EB] bg-white p-3">
+          <div className="flex items-end gap-2">
+            <textarea
+              className="max-h-32 min-h-11 flex-1 resize-none rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+              placeholder="Digite uma nova mensagem..."
+              value={draft}
+              onChange={(e) => onDraftChange(e.target.value)}
+            />
+            <Button
+              variant={gravando ? "danger" : "secondary"}
+              className="h-11 shrink-0 px-3"
+              onClick={toggleGravacao}
+              title={gravando ? "Parar gravação" : "Enviar áudio"}
+            >
+              {gravando ? <StopCircle size={15} /> : <Mic size={15} />}
+            </Button>
+            <Button className="h-11 shrink-0 px-4" onClick={onSend} disabled={sending || !draft.trim()}>
+              <Send size={13} />
+              {sending ? "..." : "Enviar"}
+            </Button>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -586,7 +1215,10 @@ function MedicaoAprovadaCard({ med, onReload }: { med: MedicaoAprovada; onReload
   const [bmOpen, setBmOpen] = useState(false);
   const [nfFile, setNfFile] = useState<File | null>(null);
   const [nfUploading, setNfUploading] = useState(false);
+  const [nfProgress, setNfProgress] = useState(0);
   const [nfError, setNfError] = useState<string | null>(null);
+  const [draggingNf, setDraggingNf] = useState(false);
+  const nfInputRef = useRef<HTMLInputElement | null>(null);
 
   const isAguardandoNf = med.status === "AGUARDANDO_NF";
 
@@ -600,18 +1232,65 @@ function MedicaoAprovadaCard({ med, onReload }: { med: MedicaoAprovada; onReload
 
   const totalValor = (med.pagamento?.valor ?? 0) + (med.pagamento?.rev ?? 0);
 
+  function selectNfFile(file: File | null) {
+    setNfError(null);
+    setNfProgress(0);
+    if (!file) {
+      setNfFile(null);
+      return;
+    }
+
+    const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
+    const allowedExtensions = /\.(pdf|jpg|jpeg|png)$/i;
+    if (!allowedTypes.has(file.type) && !allowedExtensions.test(file.name)) {
+      setNfFile(null);
+      setNfError("Formato inválido. Envie PDF, JPG ou PNG.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setNfFile(null);
+      setNfError("A Nota Fiscal deve ter no máximo 10 MB.");
+      return;
+    }
+    setNfFile(file);
+  }
+
   async function uploadNf() {
     if (!nfFile) return;
     setNfUploading(true);
     setNfError(null);
+    setNfProgress(4);
     const form = new FormData();
     form.append("nf", nfFile);
-    const res = await fetch("/api/colaborador/nf", { method: "POST", body: form });
-    const payload = await res.json().catch(() => ({}));
-    setNfUploading(false);
-    if (!res.ok) { setNfError(payload.error ?? "Erro ao enviar a NF."); return; }
-    setNfFile(null);
-    onReload();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/colaborador/nf");
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          setNfProgress(Math.min(95, Math.round((event.loaded / event.total) * 100)));
+        };
+        xhr.onload = () => {
+          const payload = (() => {
+            try { return JSON.parse(xhr.responseText || "{}"); } catch { return {}; }
+          })();
+          if (xhr.status >= 200 && xhr.status < 300) {
+            setNfProgress(100);
+            resolve();
+          } else {
+            reject(new Error(payload.error ?? "Erro ao enviar a NF."));
+          }
+        };
+        xhr.onerror = () => reject(new Error("Erro de conexão ao enviar a NF."));
+        xhr.send(form);
+      });
+      setNfFile(null);
+      onReload();
+    } catch (error) {
+      setNfError(error instanceof Error ? error.message : "Erro ao enviar a NF.");
+    } finally {
+      setNfUploading(false);
+    }
   }
 
   const headerBg = isAguardandoNf ? "border-[#FDE68A] bg-[#FFFBEB]" : "border-[#BBF7D0] bg-[#F0FDF4]";
@@ -651,25 +1330,98 @@ function MedicaoAprovadaCard({ med, onReload }: { med: MedicaoAprovada; onReload
       {/* NF status / upload */}
       {isAguardandoNf && (
         <div className="border-b border-[#FDE68A] bg-[#FFFBEB] px-5 py-4">
-          <p className="mb-3 text-sm font-semibold text-[#92400E]">Envio da Nota Fiscal</p>
-          <label className="block">
-            <span className="sr-only">Nota Fiscal</span>
-            <input
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png"
-              className="block w-full text-sm text-[#555555] file:mr-4 file:rounded-lg file:border-0 file:bg-[#D97706] file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-[#B45309]"
-              onChange={(e) => { setNfFile(e.target.files?.[0] ?? null); setNfError(null); }}
-            />
-          </label>
+          <div className="mb-3 flex items-start gap-2">
+            <FileUp size={16} className="mt-0.5 shrink-0 text-[#D97706]" />
+            <div>
+              <p className="text-sm font-semibold text-[#92400E]">Envio da Nota Fiscal</p>
+              <p className="mt-1 text-xs text-[#92400E]/80">Arraste o arquivo ou selecione no computador. Formatos aceitos: PDF, JPG ou PNG, até 10 MB.</p>
+            </div>
+          </div>
+          <input
+            ref={nfInputRef}
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            className="hidden"
+            onChange={(e) => selectNfFile(e.target.files?.[0] ?? null)}
+          />
+          <div
+            role="button"
+            tabIndex={0}
+            className={`rounded-xl border border-dashed px-4 py-5 text-center transition ${draggingNf ? "border-[#D97706] bg-[#FEF3C7]" : "border-[#FBBF24] bg-white/65 hover:bg-white"}`}
+            onClick={() => nfInputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              nfInputRef.current?.click();
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDraggingNf(true);
+            }}
+            onDragLeave={() => setDraggingNf(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDraggingNf(false);
+              selectNfFile(event.dataTransfer.files?.[0] ?? null);
+            }}
+          >
+            <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#FFF7ED] text-[#D97706]">
+              <UploadCloud size={20} />
+            </span>
+            <p className="mt-3 text-sm font-semibold text-[#1A1A1A]">Clique para escolher ou arraste a Nota Fiscal</p>
+            <p className="mt-1 text-xs text-[#6B7280]">PDF, JPG ou PNG</p>
+          </div>
           {nfFile && (
-            <div className="mt-3 flex items-center gap-3">
-              <span className="text-xs text-[#555555]">{nfFile.name} ({(nfFile.size / 1024).toFixed(0)} KB)</span>
-              <Button variant="success" className="h-9 px-5" onClick={uploadNf} disabled={nfUploading}>
-                {nfUploading ? "Enviando…" : "Enviar NF"}
-              </Button>
+            <div className="mt-3 rounded-xl border border-[#FDE68A] bg-white p-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFF7ED] text-[#D97706]">
+                  <FileIcon size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-[#1A1A1A]">{nfFile.name}</p>
+                    <span className="shrink-0 rounded bg-[#F3F4F6] px-1.5 py-0.5 text-[10px] font-bold text-[#6B7280]">{fileExtension(nfFile.name)}</span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-[#6B7280]">{readableFileSize(nfFile.size)}</p>
+                </div>
+                {nfError ? (
+                  <button
+                    type="button"
+                    className="rounded-lg p-2 text-[#D97706] hover:bg-[#FFF7ED]"
+                    onClick={uploadNf}
+                    title="Tentar novamente"
+                  >
+                    <RotateCcw size={16} />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="rounded-lg p-2 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#DC2626]"
+                  onClick={() => selectNfFile(null)}
+                  disabled={nfUploading}
+                  title="Remover arquivo"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#DCFCE7]">
+                <div
+                  className={`h-full rounded-full transition-all duration-200 ${nfError ? "bg-[#DC2626]" : "bg-[#15803D]"}`}
+                  style={{ width: `${nfError ? 100 : nfProgress}%` }}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <p className={`flex items-center gap-1 text-xs ${nfError ? "text-[#B91C1C]" : "text-[#6B7280]"}`}>
+                  {nfError ? <AlertCircle size={13} /> : null}
+                  {nfError ?? (nfUploading ? `Enviando... ${nfProgress}%` : nfProgress === 100 ? "Arquivo enviado." : "Pronto para envio.")}
+                </p>
+                <Button variant="success" className="h-8 px-4" onClick={uploadNf} disabled={nfUploading}>
+                  {nfUploading ? "Enviando..." : nfError ? "Tentar novamente" : "Enviar NF"}
+                </Button>
+              </div>
             </div>
           )}
-          {nfError && <p className="mt-2 text-xs text-[#B91C1C]">{nfError}</p>}
+          {nfError && !nfFile && <p className="mt-2 text-xs text-[#B91C1C]">{nfError}</p>}
         </div>
       )}
 

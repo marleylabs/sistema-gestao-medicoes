@@ -53,3 +53,44 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
 }
+
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const admin = await requireAdmin();
+  if (admin.response) return admin.response;
+  if (admin.user?.perfil !== "ADMIN") {
+    return NextResponse.json({ error: "Apenas administradores podem excluir usuários." }, { status: 403 });
+  }
+
+  const { id } = await params;
+  if (id === admin.user.id) {
+    return NextResponse.json({ error: "Você não pode excluir o próprio usuário." }, { status: 409 });
+  }
+
+  const user = await prisma.usuario.findUnique({ where: { id } });
+  if (!user || user.excluidoAt) {
+    return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+  }
+
+  if (user.perfil === "ADMIN" && user.ativo) {
+    const activeAdmins = await prisma.usuario.count({
+      where: { perfil: "ADMIN", ativo: true, excluidoAt: null },
+    });
+    if (activeAdmins <= 1) {
+      return NextResponse.json({ error: "Não é possível excluir o último administrador ativo." }, { status: 409 });
+    }
+  }
+
+  await prisma.usuario.update({
+    where: { id },
+    data: {
+      ativo: false,
+      senhaTemporaria: null,
+      primeiroLogin: false,
+      onlineAt: null,
+      excluidoAt: new Date(),
+      updatedAt: new Date(),
+    },
+  });
+
+  return NextResponse.json({ ok: true });
+}

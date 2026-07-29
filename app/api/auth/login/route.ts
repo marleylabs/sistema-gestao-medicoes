@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
 
   const user = await prisma.usuario.findUnique({ where: { usuario } });
   const now = new Date();
-  if (!user || !user.ativo || (user.bloqueadoAte && user.bloqueadoAte > now)) {
+  if (!user || user.excluidoAt || !user.ativo || (user.bloqueadoAte && user.bloqueadoAte > now)) {
     return NextResponse.json({ message: "Credenciais inválidas ou acesso temporariamente bloqueado." }, { status: 401 });
   }
 
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
   await prisma.usuario.update({
     where: { id: user.id },
-    data: { tentativasFalhas: 0, bloqueadoAte: null, ultimoLoginAt: now, updatedAt: now },
+    data: { tentativasFalhas: 0, bloqueadoAte: null, ultimoLoginAt: now, onlineAt: now, updatedAt: now },
   });
 
   const token = await createSessionToken({

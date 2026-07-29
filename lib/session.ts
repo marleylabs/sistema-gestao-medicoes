@@ -39,13 +39,13 @@ export async function verifySessionToken(token: string | undefined): Promise<Aut
     if (!payload.sub || typeof payload.usuario !== "string" || typeof payload.nome !== "string" || typeof payload.perfil !== "string") {
       return null;
     }
-    // Refresh perfil from DB so changes take effect without re-login
-    const dbUser = await prisma.usuario.findUnique({ where: { id: payload.sub }, select: { perfil: true, ativo: true } });
-    if (!dbUser || !dbUser.ativo) return null;
+    // Refresh perfil and name from DB so profile changes take effect without re-login.
+    const dbUser = await prisma.usuario.findUnique({ where: { id: payload.sub }, select: { nome: true, perfil: true, ativo: true, excluidoAt: true } });
+    if (!dbUser || dbUser.excluidoAt || !dbUser.ativo) return null;
     return {
       id: payload.sub,
       usuario: payload.usuario,
-      nome: payload.nome,
+      nome: dbUser.nome,
       perfil: dbUser.perfil,
     };
   } catch {

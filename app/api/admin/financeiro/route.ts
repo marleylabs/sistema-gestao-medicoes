@@ -95,6 +95,9 @@ export async function PATCH(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const fin = await requireFinanceiro();
   if (fin.response) return fin.response;
+  if (!["MEDICAO", "ADMIN"].includes(fin.user?.perfil ?? "")) {
+    return NextResponse.json({ error: "Ação restrita à equipe de medição." }, { status: 403 });
+  }
 
   const payload = await request.json().catch(() => null);
   const action = payload?.action;
@@ -109,8 +112,8 @@ export async function POST(request: NextRequest) {
   });
   if (!sgc) return NextResponse.json({ error: "Registro não encontrado." }, { status: 404 });
 
-  if (sgc.status !== "AGUARDANDO_NF") {
-    return NextResponse.json({ error: "Somente medições em 'Aguardando NF' podem ser retornadas." }, { status: 409 });
+  if (!["PENDENTE", "REVISAO_SOLICITADA"].includes(sgc.status)) {
+    return NextResponse.json({ error: "Somente BMs em 'Aguardando aprovação' ou 'Revisão' podem ser retornados." }, { status: 409 });
   }
 
   if (sgc.nfArquivo) {
@@ -134,7 +137,19 @@ export async function POST(request: NextRequest) {
   const now = new Date();
   await prisma.sgcAprovacaoMedicao.update({
     where: { id },
-    data: { status: "PENDENTE", aprovadoAt: null, salvoAt: null, voltadoAt: now, updatedAt: now },
+    data: {
+      status: "AGUARDANDO_ENVIO",
+      pontosDiscordancia: null,
+      respostaAdmin: null,
+      observacaoColaborador: null,
+      aprovadoAt: null,
+      revisaoSolicitadaAt: null,
+      salvoAt: null,
+      reenviadoAt: null,
+      resolvidoAt: null,
+      voltadoAt: now,
+      updatedAt: now,
+    },
   });
 
   await logBmAction({
@@ -144,9 +159,9 @@ export async function POST(request: NextRequest) {
     usuarioId: fin.user?.id,
     usuarioNome: fin.user?.nome,
     acao: "VOLTAR_BM",
-    statusAnterior: "AGUARDANDO_NF",
-    statusNovo: "PENDENTE",
-    telaOrigem: "Financeiro",
+    statusAnterior: sgc.status,
+    statusNovo: "AGUARDANDO_ENVIO",
+    telaOrigem: "Pagamentos por colaborador",
   });
 
   return NextResponse.json({ ok: true });

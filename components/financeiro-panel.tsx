@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, CheckCircle2, FileText, RefreshCw, RotateCcw, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, FileText, RefreshCw, X } from "lucide-react";
 import { Badge, BlurValue, Button, Card, Input, Select, SectionHeader } from "@/components/ui";
 import { useBlur } from "@/components/providers";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
@@ -90,6 +90,12 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
   const [uploadError, setUploadError]     = useState<string | null>(null);
   const [filterStatus, setFilterStatus]   = useState("todos");
 
+  useEffect(() => {
+    if (!selectedCiclo && ciclos[0]?.ciclo) {
+      setSelectedCiclo(ciclos[0].ciclo);
+    }
+  }, [ciclos, selectedCiclo]);
+
   const load = useCallback(async () => {
     if (!selectedCiclo) return;
     setLoading(true);
@@ -121,22 +127,6 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
   const [uploadFormId, setUploadFormId]   = useState<string | null>(null);
   const [bmData, setBmData]               = useState<BmData | null>(null);
   const [bmLoading, setBmLoading]         = useState(false);
-  const [voltandoId, setVoltandoId]       = useState<string | null>(null);
-  const [voltarError, setVoltarError]     = useState<{ id: string; msg: string } | null>(null);
-
-  async function voltarBm(id: string) {
-    setVoltandoId(id);
-    setVoltarError(null);
-    const res = await fetch("/api/admin/financeiro", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "VOLTAR_BM", id }),
-    });
-    const payload = await res.json().catch(() => ({}));
-    setVoltandoId(null);
-    if (!res.ok) { setVoltarError({ id, msg: payload.error ?? "Erro ao retornar BM." }); return; }
-    load();
-  }
 
   async function openBm(item: FinanceiroItem) {
     setBmLoading(true);
@@ -320,17 +310,6 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
                           </td>
                           <td className="whitespace-nowrap px-3 py-2.5 text-right">
                             <div className="flex flex-col items-end gap-1.5">
-                              {item.status === "AGUARDANDO_NF" && !showUploadForm && (
-                                <Button
-                                  variant="ghost"
-                                  className="h-7 border border-[#E5E7EB] px-2.5 text-[10px] text-[#6B7280] hover:bg-[#F9FAFB]"
-                                  onClick={() => { setVoltarError(null); voltarBm(item.id); }}
-                                  disabled={voltandoId === item.id}
-                                >
-                                  <RotateCcw size={11} />
-                                  {voltandoId === item.id ? "Retornando…" : "Voltar BM"}
-                                </Button>
-                              )}
                               {item.status === "APROVADO" && !showUploadForm && (
                                 <Button
                                   variant="success"
@@ -356,9 +335,6 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
                                     </a>
                                   )}
                                 </>
-                              )}
-                              {voltarError?.id === item.id && (
-                                <p className="text-[10px] text-[#B91C1C] max-w-[200px] text-right">{voltarError.msg}</p>
                               )}
                             </div>
                           </td>

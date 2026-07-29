@@ -56,7 +56,7 @@ export async function ensureBootstrapAdmin() {
       usuario,
       nome,
       senhaHash: await hashPassword(password),
-      perfil: "MEDICAO",
+      perfil: "ADMIN",
     },
   });
   await ensureDefaultAccessUsers();
@@ -84,6 +84,7 @@ export async function ensureDefaultAccessUsers() {
       update: {
         nome: medicaoUser.nome,
         ativo: true,
+        excluidoAt: null,
         updatedAt: now,
         // perfil is intentionally not overwritten — allow manual changes via Gestão de Usuários
       },
@@ -102,6 +103,7 @@ export async function ensureDefaultAccessUsers() {
 
     const existing = await prisma.usuario.findUnique({ where: { usuario } });
     if (existing) {
+      if (existing.excluidoAt) continue;
       await prisma.usuario.update({
         where: { usuario },
         data: { nome: colaborador.nomeCompleto || colaborador.nome, perfil: "COLABORADOR", ativo: true, updatedAt: now },

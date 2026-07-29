@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import threading
 import traceback
@@ -89,8 +90,11 @@ def parse_multipart(content_type: str, body: bytes) -> tuple[bytes | None, str |
         if b"\r\n\r\n" not in part:
             continue
         header_block, _, content = part.partition(b"\r\n\r\n")
-        # strip trailing \r\n
-        content = content.rstrip(b"\r\n")
+        # Remove only the CRLF separator added before the next multipart boundary.
+        # Do not use rstrip here: Excel files are ZIP containers and may legally
+        # end with bytes that look like newlines, which would corrupt the file.
+        if content.endswith(b"\r\n"):
+            content = content[:-2]
         headers = header_block.decode(errors="replace")
 
         if 'name="file"' in headers:
@@ -143,6 +147,9 @@ class Handler(BaseHTTPRequestHandler):
         file_bytes, ciclo = parse_multipart(content_type, body)
         if not file_bytes:
             self.send_json(400, {"error": "Campo 'file' não encontrado no upload."})
+            return
+        if not ciclo or not re.fullmatch(r"\d{4}", ciclo):
+            self.send_json(400, {"error": "Informe o ciclo de destino no formato YYMM. Exemplo: 2606."})
             return
 
         with _lock:

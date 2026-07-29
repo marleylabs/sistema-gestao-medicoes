@@ -3,7 +3,7 @@
 import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 import { Banknote, Clock3, Edit3, HardHat, Trash2, UserCheck, Users } from "lucide-react";
 import type { DashboardData } from "@/components/types";
-import { Badge, BlurValue, Button, Card, Input, SectionHeader } from "@/components/ui";
+import { BlurValue, Button, Card, Input, SectionHeader } from "@/components/ui";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -70,11 +70,6 @@ export function Dashboard({ data }: { data: DashboardData | null }) {
       <SectionHeader
         title="Resumo do ciclo"
         description="Indicadores consolidados de medição e participação."
-        action={
-          data.contextoMapa?.mesReferencia ? (
-            <Badge variant="brand">{data.contextoMapa.mesReferencia}</Badge>
-          ) : undefined
-        }
       />
 
       <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">

@@ -13,30 +13,32 @@ import {
   History,
   LayoutDashboard,
   LogOut,
+  MessageCircle,
   Plus,
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
+  Trash2,
   Upload,
-  Users,
   Wallet,
   X,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { AccountMenu } from "@/components/account-menu";
+import { GeneralChatWidget } from "@/components/general-chat-widget";
 import { Dashboard, MapaPagamentoResumo } from "@/components/dashboard";
-import { MapaPagamentoTable } from "@/components/mapa-pagamento-table";
+import { ComentarioDropdown, MapaPagamentoTable } from "@/components/mapa-pagamento-table";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { UsuariosPanel } from "@/components/usuarios-panel";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { ContratosPanel } from "@/components/contratos-panel";
-import { EquipePanel } from "@/components/equipe-panel";
 import { Badge, Button, Card, IconButton, SectionHeader, Select } from "@/components/ui";
 import { useBlur } from "@/components/providers";
 import type { DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
 import type { AuthUser } from "@/lib/session";
 
-type Section = "visao" | "historico" | "importar" | "evidencias" | "usuarios" | "financeiro" | "contratos" | "equipe";
+type Section = "visao" | "historico" | "importar" | "evidencias" | "usuarios" | "financeiro" | "contratos";
 
 const TITLES: Record<Section, string> = {
   visao: "Dashboard",
@@ -46,21 +48,22 @@ const TITLES: Record<Section, string> = {
   usuarios: "Gestão de Usuários",
   financeiro: "Painel Financeiro",
   contratos: "Contratos",
-  equipe: "Equipe de Medição",
 };
 
 const CICLO_GERAL = "GERAL";
 
-type CicloEntry = { ciclo: string; mesReferencia: string | null; updatedAt: string };
+type CicloEntry = { ciclo: string; mesReferencia: string | null; ativoMedicao?: boolean; updatedAt: string };
 
 export function MedicoesApp({ user }: { user: AuthUser }) {
   const [dashboard, setDashboard]           = useState<DashboardData | null>(null);
   const [profissionais, setProfissionais]   = useState<Profissional[]>([]);
   const [mapaItens, setMapaItens]           = useState<MapaPagamentoItem[]>([]);
   const [sgcAlertas, setSgcAlertas]         = useState<SgcAlerta[]>([]);
+  const [sgcConversas, setSgcConversas]     = useState<SgcAlerta[]>([]);
   const [sgcStatus, setSgcStatus]           = useState<Record<string, { status: string; revisaoNumero: number; id: string }>>({});
   const [reenviandoId, setReenviandoId]     = useState<string | null>(null);
   const [selectedAlerta, setSelectedAlerta] = useState<SgcAlerta | null>(null);
+  const [selectedChatAlerta, setSelectedChatAlerta] = useState<SgcAlerta | null>(null);
   const [notifOpen, setNotifOpen]           = useState(false);
   const [seenIds, setSeenIds]               = useState<string[]>([]);
   const [selectedCodigo, setSelectedCodigo] = useState("");
@@ -70,9 +73,15 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   const [novoCiclo, setNovoCiclo]           = useState("");
   const [criandoCiclo, setCriandoCiclo]     = useState(false);
   const [novoCicloOpen, setNovoCicloOpen]   = useState(false);
+  const [ativandoMedicaoCiclo, setAtivandoMedicaoCiclo] = useState<string | null>(null);
+  const cicloInicializadoRef                = useRef(false);
+  const alertasBaselineRef                  = useRef(false);
+  const previousAlertIdsRef                 = useRef<Set<string>>(new Set());
+  const previousAlertMessageIdsRef          = useRef<Map<string, string>>(new Map());
 
   const router = useRouter();
   const searchParams = useSearchParams();
+  const currentSearchParams = searchParams ?? new URLSearchParams();
   const { blur, toggleBlur } = useBlur();
   const isAdmin      = user.perfil === "MEDICAO" || user.perfil === "ADMIN";
   const isFullAdmin  = user.perfil === "ADMIN";
@@ -83,18 +92,26 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   const VALID_SECTIONS: Section[] = isFinanceiro
     ? ["financeiro"]
     : isMedicao
-    ? ["visao", "evidencias"]
+    ? ["visao", "importar", "evidencias"]
     : isFullAdmin
-    ? ["visao", "historico", "importar", "evidencias", "usuarios", "financeiro", "contratos", "equipe"]
-    : ["visao", "historico", "importar", "evidencias", "usuarios", "financeiro", "contratos", "equipe"];
-  const sectionParam = searchParams.get("section") as Section | null;
+    ? ["visao", "historico", "importar", "evidencias", "usuarios", "financeiro", "contratos"]
+    : ["visao", "historico", "importar", "evidencias", "usuarios", "financeiro", "contratos"];
+  const sectionParam = currentSearchParams.get("section") as Section | null;
   const section: Section = sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : (isFinanceiro ? "financeiro" : "visao");
   function setSection(s: Section) {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(currentSearchParams.toString());
     params.set("section", s);
     router.replace(`?${params.toString()}`);
   }
   const hasUnread = sgcAlertas.some((a) => !seenIds.includes(a.id));
+  const unreadChatMessagesCount = useMemo(
+    () =>
+      sgcConversas.reduce(
+        (total, conversa) => total + conversa.mensagens.filter((message) => message.autor === "FORNECEDOR" && !message.lidoAt).length,
+        0,
+      ),
+    [sgcConversas],
+  );
 
   const colaboradores = useMemo(() => profissionais.filter((p) => p.codigo), [profissionais]);
   const contratos = useMemo(
@@ -123,15 +140,49 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   const refresh    = useCallback(async () => { await loadDashboard(); }, [loadDashboard]);
   const refreshAll = useCallback(async () => { await Promise.all([loadDashboard(), loadLookups()]); }, [loadDashboard, loadLookups]);
 
+  const loadCiclos = useCallback(async () => {
+    const res = await fetch("/api/ciclos");
+    if (!res.ok) return;
+    const data: CicloEntry[] = await res.json();
+    setCiclos(data);
+    if (!cicloInicializadoRef.current) {
+      cicloInicializadoRef.current = true;
+      setActiveCiclo((current) => current === CICLO_GERAL && data[0]?.ciclo ? data[0].ciclo : current);
+    }
+  }, []);
+
   const loadAlertas = useCallback(async () => {
     if (!isAdmin) return;
-    const [alertasRes, statusRes] = await Promise.all([
+    const [alertasRes, statusRes, conversasRes] = await Promise.all([
       fetch(`/api/sgc/alertas?ciclo=${activeCiclo}`),
       fetch(`/api/sgc/status?ciclo=${activeCiclo}`),
+      fetch(`/api/sgc/conversas?ciclo=${activeCiclo}`),
     ]);
     if (alertasRes.ok) setSgcAlertas(await alertasRes.json());
     if (statusRes.ok) setSgcStatus(await statusRes.json());
+    if (conversasRes.ok) setSgcConversas(await conversasRes.json());
   }, [isAdmin, activeCiclo]);
+
+  function playNotificationSound() {
+    try {
+      const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextCtor) return;
+      const ctx = new AudioContextCtor();
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+      oscillator.frequency.setValueAtTime(660, ctx.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start();
+      oscillator.stop(ctx.currentTime + 0.36);
+      setTimeout(() => ctx.close().catch(() => {}), 500);
+    } catch {}
+  }
 
   async function enviarBm(colaboradorCodigo: string) {
     const res = await fetch("/api/sgc/enviar", {
@@ -145,6 +196,40 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       return;
     }
     await loadAlertas();
+  }
+
+  async function retornarBm(sgcId: string) {
+    if (!window.confirm("Retornar este BM para aguardando envio?")) return;
+    const res = await fetch("/api/admin/financeiro", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "VOLTAR_BM", id: sgcId }),
+    });
+    if (!res.ok) {
+      const p = await res.json().catch(() => ({}));
+      alert(p.error ?? "Não foi possível retornar a medição.");
+      return;
+    }
+    await Promise.all([refreshAll(), loadAlertas()]);
+  }
+
+  async function ativarCicloMedicao(ciclo: string) {
+    setAtivandoMedicaoCiclo(ciclo);
+    try {
+      const res = await fetch("/api/ciclos", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set_ativo_medicao", ciclo }),
+      });
+      if (!res.ok) {
+        const p = await res.json().catch(() => ({}));
+        alert(p.error ?? "Não foi possível ativar o ciclo para medição.");
+        return;
+      }
+      await loadCiclos();
+    } finally {
+      setAtivandoMedicaoCiclo(null);
+    }
   }
 
   function markSeen(alerta?: SgcAlerta) {
@@ -178,13 +263,10 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   }
 
   useEffect(() => {
-    fetch("/api/ciclos").then(async (res) => {
-      if (!res.ok) return;
-      setCiclos(await res.json());
-    });
+    loadCiclos();
     const raw = localStorage.getItem("sgc_alertas_vistos");
     if (raw) { try { setSeenIds(JSON.parse(raw)); } catch { setSeenIds([]); } }
-  }, []);
+  }, [loadCiclos]);
 
   useEffect(() => {
     loadLookups();
@@ -193,10 +275,74 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   useEffect(() => { refresh(); }, [refresh]);
 
   useEffect(() => {
-    loadAlertas();
-    const interval = setInterval(loadAlertas, 30000);
+    fetch("/api/usuario/presenca", { method: "POST" }).catch(() => undefined);
+    const interval = setInterval(() => {
+      fetch("/api/usuario/presenca", { method: "POST" }).catch(() => undefined);
+    }, 45000);
     return () => clearInterval(interval);
-  }, [loadAlertas]);
+  }, []);
+
+  useEffect(() => {
+    alertasBaselineRef.current = false;
+    previousAlertIdsRef.current = new Set();
+    previousAlertMessageIdsRef.current = new Map();
+  }, [activeCiclo]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    loadAlertas();
+    const source = new EventSource(`/api/sgc/alertas/stream?ciclo=${encodeURIComponent(activeCiclo)}`);
+    source.addEventListener("alertas", () => {
+      loadAlertas();
+    });
+
+    const fallbackInterval = setInterval(loadAlertas, 30000);
+
+    return () => {
+      source.close();
+      clearInterval(fallbackInterval);
+    };
+  }, [isAdmin, activeCiclo, loadAlertas]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const currentIds = new Set(sgcAlertas.map((alerta) => alerta.id));
+    const currentMessageIds = new Map(sgcAlertas.map((alerta) => [alerta.id, latestChatMessage(alerta)?.id ?? ""]));
+    if (!alertasBaselineRef.current) {
+      alertasBaselineRef.current = true;
+      previousAlertIdsRef.current = currentIds;
+      previousAlertMessageIdsRef.current = currentMessageIds;
+      return;
+    }
+
+    const novos = sgcAlertas.filter((alerta) => !previousAlertIdsRef.current.has(alerta.id));
+    const novasMensagens = sgcAlertas.filter((alerta) => {
+      const ultima = latestChatMessage(alerta);
+      return ultima?.autor === "FORNECEDOR" && previousAlertMessageIdsRef.current.get(alerta.id) !== ultima.id;
+    });
+    previousAlertIdsRef.current = currentIds;
+    previousAlertMessageIdsRef.current = currentMessageIds;
+
+    const alertaNotificacao = novasMensagens[0] ?? novos[0];
+    if (!alertaNotificacao) return;
+
+    playNotificationSound();
+    if (selectedChatAlerta?.id === alertaNotificacao.id) return;
+  }, [isAdmin, selectedChatAlerta?.id, sgcAlertas]);
+
+  useEffect(() => {
+    if (!selectedChatAlerta) return;
+    const atualizado = sgcConversas.find((alerta) => alerta.id === selectedChatAlerta.id);
+    if (atualizado && atualizado !== selectedChatAlerta) setSelectedChatAlerta(atualizado);
+  }, [selectedChatAlerta, sgcConversas]);
+
+  useEffect(() => {
+    if (!selectedChatAlerta) return;
+    const interval = setInterval(loadAlertas, 3000);
+    return () => clearInterval(interval);
+  }, [loadAlertas, selectedChatAlerta]);
 
   // ─── Nav items ───────────────────────────────────────────────────────────────
 
@@ -206,13 +352,13 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
     ? [
         { id: "visao",      label: "Visão Geral", icon: <LayoutDashboard size={17} /> },
         { id: "evidencias", label: "Evidências",  icon: <FileSearch size={17} /> },
+        { id: "importar",   label: "Importar Planilha", icon: <Upload size={17} />, bottom: true },
       ]
     : [
         { id: "visao",      label: "Visão Geral",      icon: <LayoutDashboard size={17} /> },
         { id: "financeiro", label: "Financeiro",        icon: <Wallet size={17} /> },
         { id: "evidencias", label: "Evidências",        icon: <FileSearch size={17} /> },
         { id: "contratos",  label: "Contratos",         icon: <Building2 size={17} /> },
-        { id: "equipe",     label: "Equipe de Medição", icon: <Users size={17} /> },
         { id: "usuarios",   label: "Usuários",          icon: <ShieldCheck size={17} /> },
         { id: "importar",   label: "Importar Planilha", icon: <Upload size={17} />, bottom: true },
       ];
@@ -239,7 +385,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
           <IconButton
             className={hasUnread ? "border-[#AF1B1B] bg-[#AF1B1B] text-white hover:bg-[#8C1616] hover:text-white" : ""}
             onClick={() => { setNotifOpen((v) => !v); markSeen(); }}
-            title="Notificações SGC"
+            title="Notificações"
           >
             {hasUnread ? <BellRing size={16} /> : <Bell size={16} />}
           </IconButton>
@@ -252,7 +398,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
           {notifOpen && (
             <div className="absolute right-0 top-11 z-50 w-[min(360px,calc(100vw-16px))] overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-xl">
               <div className="border-b border-[#E5E7EB] px-4 py-3">
-                <p className="text-sm font-bold text-[#1A1A1A]">Notificações SGC</p>
+                <p className="text-sm font-bold text-[#1A1A1A]">Notificações</p>
                 <p className="text-xs text-[#555555]">{sgcAlertas.length} solicitação(ões) pendente(s)</p>
               </div>
               <div className="max-h-72 overflow-auto">
@@ -264,11 +410,10 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
                       onClick={() => { setSelectedAlerta(a); setNotifOpen(false); markSeen(a); }}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold text-[#1A1A1A]">{a.colaboradorCodigo}</span>
+                        <span className="text-sm font-semibold text-[#1A1A1A]">{a.colaboradorNome ?? "Fornecedor"}</span>
                         <Badge variant="warning">{a.proximaRevisaoLabel}</Badge>
                       </div>
-                      <p className="mt-0.5 text-sm text-[#555555]">{a.colaboradorNome ?? "–"}</p>
-                      <p className="mt-1 text-xs text-[#9CA3AF] line-clamp-1">{a.pontosDiscordancia}</p>
+                      <p className="mt-1 text-xs text-[#9CA3AF] line-clamp-1">Solicitação de revisão</p>
                     </button>
                   ))
                 ) : (
@@ -286,21 +431,13 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
         </div>
       )}
 
-      <div className="hidden items-center gap-2.5 border-l border-[#E5E7EB] pl-3 md:flex">
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#EFF6FF] text-[#2563EB]">
-          <ShieldCheck size={16} />
-        </span>
-        <div className="max-w-36 leading-tight">
-          <p className="truncate text-sm font-semibold text-[#1A1A1A]">{user.nome}</p>
-          <p className="text-xs text-[#555555]">
-            {isFinanceiro ? "Financeiro" : isFullAdmin ? "Administrador" : isMedicao ? "Medição" : isDP ? "Dep. Pessoal" : "Usuário"}
-          </p>
-        </div>
+      <div className="border-l border-[#E5E7EB] pl-2">
+        <AccountMenu
+          user={user}
+          roleLabel={isFinanceiro ? "Financeiro" : isFullAdmin ? "Administrador" : isMedicao ? "Medição" : isDP ? "Dep. Pessoal" : "Usuário"}
+          onLogout={logout}
+        />
       </div>
-
-      <IconButton onClick={logout} title="Sair">
-        <LogOut size={15} />
-      </IconButton>
     </div>
   );
 
@@ -519,7 +656,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       pageTitle={TITLES[section]}
       topBarRight={topBar}
     >
-      {section !== "importar" && section !== "evidencias" && section !== "usuarios" && section !== "financeiro" && section !== "contratos" && section !== "equipe" && filtersBar}
+      {section !== "importar" && section !== "evidencias" && section !== "usuarios" && section !== "financeiro" && section !== "contratos" && filtersBar}
 
       {section === "visao" && (
         <div className="grid gap-6">
@@ -535,6 +672,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
             revisoes={sgcAlertas}
             sgcStatus={sgcStatus}
             onEnviarBm={enviarBm}
+            onRetornarBm={retornarBm}
             ciclo={activeCiclo}
           />
         </div>
@@ -550,13 +688,21 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
           criandoCiclo={criandoCiclo}
           onCriarCiclo={criarCiclo}
           onSelectCiclo={(c) => { setActiveCiclo(c); setSection("visao"); }}
+          ativandoMedicaoCiclo={ativandoMedicaoCiclo}
+          onAtivarMedicao={ativarCicloMedicao}
         />
       )}
 
       {section === "importar" && isAdmin && (
         <div className="flex justify-center">
           <div className="w-full max-w-2xl">
-            <ImportarPlanilhaSection ciclos={ciclos} onImported={refreshAll} />
+            <ImportarPlanilhaSection
+              ciclos={ciclos}
+              onImported={() => {
+                loadCiclos();
+                refreshAll();
+              }}
+            />
           </div>
         </div>
       )}
@@ -570,15 +716,11 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       )}
 
       {section === "usuarios" && isAdmin && (
-        <UsuariosPanel />
+        <UsuariosPanel canCreateUsers={isFullAdmin} />
       )}
 
       {section === "contratos" && isAdmin && (
         <ContratosPanel />
-      )}
-
-      {section === "equipe" && isAdmin && (
-        <EquipePanel />
       )}
 
       {selectedAlerta && (
@@ -589,6 +731,22 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
           onReenviar={() => reenviar(selectedAlerta)}
         />
       )}
+
+      {isAdmin && !selectedChatAlerta && <GeneralChatWidget />}
+
+      {selectedChatAlerta && (
+        <ComentarioDropdown
+          revisao={selectedChatAlerta}
+          conversas={sgcConversas}
+          onClose={() => setSelectedChatAlerta(null)}
+          onRespondido={loadAlertas}
+          onSelectRevisao={(revisao) => {
+            const alerta = sgcConversas.find((item) => item.id === revisao.id);
+            if (alerta) setSelectedChatAlerta(alerta);
+          }}
+          ciclo={activeCiclo}
+        />
+      )}
     </AppShell>
   );
 }
@@ -596,7 +754,16 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
 // ─── HistoricoSection ─────────────────────────────────────────────────────────
 
 function HistoricoSection({
-  ciclos, activeCiclo, isAdmin, novoCiclo, setNovoCiclo, criandoCiclo, onCriarCiclo, onSelectCiclo,
+  ciclos,
+  activeCiclo,
+  isAdmin,
+  novoCiclo,
+  setNovoCiclo,
+  criandoCiclo,
+  onCriarCiclo,
+  onSelectCiclo,
+  ativandoMedicaoCiclo,
+  onAtivarMedicao,
 }: {
   ciclos: CicloEntry[];
   activeCiclo: string;
@@ -606,6 +773,8 @@ function HistoricoSection({
   criandoCiclo: boolean;
   onCriarCiclo: () => void;
   onSelectCiclo: (ciclo: string) => void;
+  ativandoMedicaoCiclo: string | null;
+  onAtivarMedicao: (ciclo: string) => void;
 }) {
   const dateLabel = (v: string) =>
     new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(v));
@@ -659,25 +828,42 @@ function HistoricoSection({
             )}
             {ciclos.map((c) => {
               const isActive = c.ciclo === activeCiclo;
+              const isMedicaoAtiva = !!c.ativoMedicao;
               return (
                 <tr key={c.ciclo} className={`border-b border-[#F3F4F6] last:border-0 ${isActive ? "bg-[#EFF6FF]" : "hover:bg-[#FAFAFA]"}`}>
                   <td className="px-4 py-3 font-semibold text-[#1A1A1A]">
                     {c.ciclo}
                     {isActive && (
                       <span className="ml-2 inline-flex items-center rounded-md bg-[#EFF6FF] px-1.5 py-0.5 text-[10px] font-bold text-[#2563EB] ring-1 ring-[#BFDBFE]">
-                        ATIVO
+                        VISUALIZANDO
+                      </span>
+                    )}
+                    {isMedicaoAtiva && (
+                      <span className="ml-2 inline-flex items-center rounded-md bg-[#F0FDF4] px-1.5 py-0.5 text-[10px] font-bold text-[#15803D] ring-1 ring-[#BBF7D0]">
+                        MEDIÇÃO ATIVA
                       </span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-[#555555]">{c.mesReferencia ?? "–"}</td>
                   <td className="px-4 py-3 text-[#555555]">{dateLabel(c.updatedAt)}</td>
                   <td className="px-4 py-3 text-right">
-                    <Button
-                      variant={isActive ? "secondary" : "primary"}
-                      onClick={() => onSelectCiclo(c.ciclo)}
-                    >
-                      {isActive ? "Visualizando" : "Abrir ciclo"}
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      {isAdmin && (
+                        <Button
+                          variant={isMedicaoAtiva ? "success" : "secondary"}
+                          disabled={isMedicaoAtiva || ativandoMedicaoCiclo === c.ciclo}
+                          onClick={() => onAtivarMedicao(c.ciclo)}
+                        >
+                          {isMedicaoAtiva ? "Ativo para medição" : ativandoMedicaoCiclo === c.ciclo ? "Ativando..." : "Ativar medição"}
+                        </Button>
+                      )}
+                      <Button
+                        variant={isActive ? "secondary" : "primary"}
+                        onClick={() => onSelectCiclo(c.ciclo)}
+                      >
+                        {isActive ? "Visualizando" : "Abrir ciclo"}
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -700,6 +886,22 @@ type SgcAlerta = {
   proximaRevisaoLabel: string;
   pontosDiscordancia: string | null;
   respostaAdmin: string | null;
+  observacaoColaborador: string | null;
+  colaboradorAvatarUrl?: string | null;
+  colaboradorOnline?: boolean;
+  mensagens: Array<{
+    id: string;
+    autor: "MEDICAO" | "FORNECEDOR";
+    autorNome: string;
+    autorAvatarUrl: string | null;
+    texto: string;
+    tipo: "TEXTO" | "AUDIO";
+    audioUrl: string | null;
+    audioMime: string | null;
+    audioNome: string | null;
+    lidoAt: string | null;
+    criadoAt: string;
+  }>;
   revisaoSolicitadaAt: string | null;
   colaborador: {
     codigo: string; nome: string | null; cpf: string | null; cnpj: string | null;
@@ -727,6 +929,10 @@ function dateTimeLabel(v: string | null) {
 function dateLabel(v: string | null) {
   if (!v) return "–";
   return new Intl.DateTimeFormat("pt-BR").format(new Date(`${v}T00:00:00`));
+}
+
+function latestChatMessage(alerta: SgcAlerta) {
+  return alerta.mensagens.at(-1) ?? null;
 }
 
 function Detail({ label, value }: { label: string; value: React.ReactNode }) {
@@ -858,6 +1064,7 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
   const [file, setFile]         = useState<File | null>(null);
   const [ciclo, setCiclo]       = useState("");
   const [uploading, setUploading] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [msg, setMsg]           = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [status, setStatus]     = useState<EtlStatus | null>(null);
   const pollingRef              = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -898,11 +1105,15 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!file) { setMsg({ type: "error", text: "Selecione um arquivo .xlsm ou .xlsx." }); return; }
+    if (!/^\d{4}$/.test(ciclo.trim())) {
+      setMsg({ type: "error", text: "Informe o ciclo de destino no formato YYMM antes de importar. Exemplo: 2606." });
+      return;
+    }
     setUploading(true);
     setMsg({ type: "info", text: "Enviando arquivo…" });
     const form = new FormData();
     form.append("file", file);
-    if (ciclo) form.append("ciclo", ciclo);
+    form.append("ciclo", ciclo.trim());
     try {
       const res = await fetch("/api/admin/etl", { method: "POST", body: form });
       const data = await res.json();
@@ -916,6 +1127,40 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
     }
   }
 
+  async function handleResetDatabase() {
+    const confirmed = window.confirm(
+      "Limpar dados de teste? Esta ação apaga medições, profissionais, projetos, mapa de pagamento, SGC e contratos importados. Os usuários internos de acesso serão preservados.",
+    );
+    if (!confirmed) return;
+
+    setResetting(true);
+    setMsg({ type: "info", text: "Limpando dados de teste…" });
+    try {
+      const res = await fetch("/api/admin/reset-database", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmacao: "LIMPAR" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMsg({ type: "error", text: data.error ?? "Não foi possível limpar os dados." });
+        return;
+      }
+      setFile(null);
+      setCiclo("");
+      setStatus(null);
+      setMsg({
+        type: "success",
+        text: `Dados limpos. ${data.removed?.medicoes ?? 0} medição(ões), ${data.removed?.profissionais ?? 0} profissional(is) e ${data.removed?.mapaPagamentoItens ?? 0} item(ns) de pagamento removidos.`,
+      });
+      onImported();
+    } catch {
+      setMsg({ type: "error", text: "Erro de conexão ao limpar os dados." });
+    } finally {
+      setResetting(false);
+    }
+  }
+
   const msgColors = { success: "bg-[#DCFCE7] text-[#15803D]", error: "bg-[#FEE2E2] text-[#B91C1C]", info: "bg-[#EFF6FF] text-[#1D4ED8]" };
 
   return (
@@ -924,7 +1169,7 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-base font-bold text-[#1A1A1A]">Importar Planilha</h1>
-          <p className="mt-0.5 text-xs text-[#555555]">Envie o arquivo .xlsm ou .xlsx para atualizar os dados da plataforma.</p>
+          <p className="mt-0.5 text-xs text-[#555555]">Envie o arquivo .xlsm ou .xlsx para substituir somente o ciclo informado.</p>
         </div>
         {status?.running && (
           <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#EFF6FF] px-3 py-1.5 text-xs font-semibold text-[#2563EB]">
@@ -982,7 +1227,7 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
             <p className="text-xs font-semibold text-[#555555]">Ciclo de destino</p>
             <div className="flex gap-2">
               <Select value={ciclo} onChange={(e) => setCiclo(e.target.value)} className="flex-1">
-                <option value="">Detectar automaticamente pela planilha</option>
+                <option value="">Selecione ou digite o ciclo</option>
                 {ciclos.map((c) => (
                   <option key={c.ciclo} value={c.ciclo}>{c.ciclo}{c.mesReferencia ? ` – ${c.mesReferencia}` : ""}</option>
                 ))}
@@ -995,7 +1240,7 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
                 className="h-9 w-40 rounded-lg border border-[#E5E7EB] px-3 text-xs outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
               />
             </div>
-            <p className="text-[11px] text-[#9CA3AF]">Se deixar em branco, o ciclo será derivado do campo "Mês Referência" da planilha.</p>
+            <p className="text-[11px] text-[#9CA3AF]">O ciclo informado separa as cargas. Importar 2606 substitui somente 2606 e preserva 2605.</p>
           </div>
 
           {msg && (
@@ -1034,6 +1279,24 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
           </div>
         </Card>
       )}
+
+      <Card className="overflow-hidden border-[#FCA5A5]">
+        <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-bold text-[#1A1A1A]">Ambiente de testes</p>
+            <p className="mt-0.5 text-xs text-[#555555]">Limpa os dados importados e mantém os usuários internos para novo teste.</p>
+          </div>
+          <Button
+            variant="danger"
+            onClick={handleResetDatabase}
+            disabled={resetting || uploading || status?.running}
+            className="sm:w-auto"
+          >
+            <Trash2 size={14} />
+            {resetting ? "Limpando…" : "Limpar dados"}
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }

@@ -15,9 +15,14 @@ create table if not exists usuarios (
     primeiro_login   boolean     not null default false,
     perfil           text        not null default 'MEDICAO',
     ativo            boolean     not null default true,
+    avatar_arquivo   bytea,
+    avatar_mime      text,
+    avatar_atualizado_at timestamptz,
     tentativas_falhas integer    not null default 0,
     bloqueado_ate    timestamptz,
     ultimo_login_at  timestamptz,
+    online_at         timestamptz,
+    excluido_at       timestamptz,
     created_at       timestamptz not null default now(),
     updated_at       timestamptz not null default now(),
     constraint usuarios_perfil_check check (
@@ -28,10 +33,49 @@ create table if not exists usuarios (
 -- Migrações incrementais (idempotentes)
 alter table usuarios add column if not exists senha_temporaria text;
 alter table usuarios add column if not exists primeiro_login boolean not null default false;
+alter table usuarios add column if not exists avatar_arquivo bytea;
+alter table usuarios add column if not exists avatar_mime text;
+alter table usuarios add column if not exists avatar_atualizado_at timestamptz;
+alter table usuarios add column if not exists online_at timestamptz;
+alter table usuarios add column if not exists excluido_at timestamptz;
 alter table usuarios drop constraint if exists usuarios_perfil_check;
 alter table usuarios add constraint usuarios_perfil_check check (
     perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','DEPARTAMENTO_PESSOAL')
 );
+
+-- ─── chat geral da plataforma ───────────────────────────────
+create table if not exists chat_conversas (
+    id         uuid        primary key default gen_random_uuid(),
+    chave      text        not null unique,
+    tipo       text        not null default 'DIRETA',
+    titulo     text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists chat_participantes (
+    id            uuid        primary key default gen_random_uuid(),
+    conversa_id   uuid        not null references chat_conversas(id) on delete cascade,
+    usuario_id    uuid        not null references usuarios(id) on delete cascade,
+    ultimo_lido_at timestamptz,
+    created_at    timestamptz not null default now(),
+    unique (conversa_id, usuario_id)
+);
+
+create table if not exists chat_mensagens (
+    id          uuid        primary key default gen_random_uuid(),
+    conversa_id uuid        not null references chat_conversas(id) on delete cascade,
+    autor_id    uuid        not null references usuarios(id) on delete cascade,
+    texto       text        not null,
+    origem      text        unique,
+    created_at  timestamptz not null default now()
+);
+
+alter table chat_mensagens add column if not exists origem text;
+create unique index if not exists chat_mensagens_origem_key on chat_mensagens(origem) where origem is not null;
+create index if not exists idx_chat_conversas_updated_at on chat_conversas(updated_at desc);
+create index if not exists idx_chat_participantes_usuario_id on chat_participantes(usuario_id);
+create index if not exists idx_chat_mensagens_conversa_created on chat_mensagens(conversa_id, created_at);
 
 -- ─── projetos ────────────────────────────────────────────────
 create table if not exists projetos (
@@ -144,8 +188,19 @@ create table if not exists sgc_logs (
     status_novo        text,
     tela_origem        text,
     observacao         text,
+    tipo_mensagem      text        not null default 'TEXTO',
+    audio_arquivo      bytea,
+    audio_mime         text,
+    audio_nome         text,
+    lido_at            timestamptz,
     created_at         timestamptz not null default now()
 );
+
+alter table sgc_logs add column if not exists lido_at timestamptz;
+alter table sgc_logs add column if not exists tipo_mensagem text not null default 'TEXTO';
+alter table sgc_logs add column if not exists audio_arquivo bytea;
+alter table sgc_logs add column if not exists audio_mime text;
+alter table sgc_logs add column if not exists audio_nome text;
 
 create index if not exists idx_sgc_logs_sgc_id on sgc_logs(sgc_id);
 create index if not exists idx_sgc_logs_colaborador_ciclo on sgc_logs(colaborador_codigo, ciclo);
@@ -161,10 +216,16 @@ create table if not exists mapa_pagamento_contexto (
     producao_fim    date,
     ato_label       text,
     ato_ciclo       text,
+    ativo_medicao   boolean     not null default false,
     contratos       jsonb       not null default '[]'::jsonb,
     rateio          jsonb       not null default '[]'::jsonb,
     updated_at      timestamptz not null default now()
 );
+
+alter table mapa_pagamento_contexto add column if not exists ativo_medicao boolean not null default false;
+create unique index if not exists mapa_pagamento_contexto_ativo_medicao_key
+    on mapa_pagamento_contexto(ativo_medicao)
+    where ativo_medicao = true;
 
 -- ─── mapa_pagamento_itens ────────────────────────────────────
 create table if not exists mapa_pagamento_itens (
@@ -176,10 +237,10 @@ create table if not exists mapa_pagamento_itens (
     responsavel      text,
     cpf_cnpj         text,
     razao_social     text,
-    intr_sossego     numeric(16,4) not null default 0,
-    salobo           numeric(16,4) not null default 0,
-    acg              numeric(16,4) not null default 0,
-    escadas_alumar   numeric(16,4) not null default 0,
+    intr_sossego     numeric(18,8) not null default 0,
+    salobo           numeric(18,8) not null default 0,
+    acg              numeric(18,8) not null default 0,
+    escadas_alumar   numeric(18,8) not null default 0,
     horas            numeric(14,4) not null default 0,
     valor            numeric(16,4) not null default 0,
     rev              numeric(16,4) not null default 0,
@@ -193,6 +254,11 @@ create table if not exists mapa_pagamento_itens (
 -- Migrações incrementais
 alter table mapa_pagamento_itens add column if not exists ciclo text not null default '2605';
 alter table mapa_pagamento_itens add column if not exists horas numeric(14,4) not null default 0;
+alter table mapa_pagamento_itens
+    alter column intr_sossego type numeric(18,8),
+    alter column salobo type numeric(18,8),
+    alter column acg type numeric(18,8),
+    alter column escadas_alumar type numeric(18,8);
 
 -- ─── medicoes ────────────────────────────────────────────────
 create table if not exists medicoes (

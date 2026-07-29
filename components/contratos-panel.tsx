@@ -14,6 +14,7 @@ type Contrato = {
   data_inicio: string | null;
   data_fim: string | null;
   valor_total: string | null;
+  coluna_mapa: string | null;
   ativo: boolean;
   created_at: string;
 };

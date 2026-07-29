@@ -6,5 +6,6 @@ __pycache__
 *.pyc
 .env
 .env.local
+.codex_tmp
 screenshots
 npm-debug.log*
