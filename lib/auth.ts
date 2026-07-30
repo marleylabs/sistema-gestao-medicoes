@@ -11,14 +11,23 @@ import {
   SESSION_DURATION_SECONDS,
   verifySessionToken,
 } from "@/lib/session";
+import { normalizeAccessUsername } from "@/lib/usuario-format";
 
 const scrypt = promisify(scryptCallback);
 export { createSessionToken, SESSION_COOKIE, verifySessionToken };
 export type { AuthUser };
 
 export function generateTempPassword(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+  return Array.from({ length: 14 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
+
+export function validatePasswordStrength(password: string) {
+  if (password.length < 12) return "A senha deve ter pelo menos 12 caracteres.";
+  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+    return "A senha deve conter letras maiúsculas, minúsculas e números.";
+  }
+  return null;
 }
 
 export async function hashPassword(password: string) {
@@ -38,13 +47,16 @@ export async function verifyPassword(password: string, storedHash: string) {
 }
 
 export async function ensureBootstrapAdmin() {
+  await migrateAccessUsernames();
+  await clearStoredTemporaryPasswords();
+
   const totalUsers = await prisma.usuario.count();
   if (totalUsers > 0) {
     await ensureDefaultAccessUsers();
     return;
   }
 
-  const usuario = process.env.AUTH_BOOTSTRAP_USERNAME?.trim();
+  const usuario = normalizeAccessUsername(process.env.AUTH_BOOTSTRAP_USERNAME);
   const password = process.env.AUTH_BOOTSTRAP_PASSWORD;
   const nome = process.env.AUTH_BOOTSTRAP_NAME?.trim() || "Administrador";
   if (!usuario || !password || password.length < 12) {
@@ -62,14 +74,21 @@ export async function ensureBootstrapAdmin() {
   await ensureDefaultAccessUsers();
 }
 
+async function clearStoredTemporaryPasswords() {
+  await prisma.usuario.updateMany({
+    where: { senhaTemporaria: { not: null } },
+    data: { senhaTemporaria: null, updatedAt: new Date() },
+  });
+}
+
 export async function ensureDefaultAccessUsers() {
   const temporaryPassword = process.env.AUTH_TEMP_PASSWORD || "Teste@123456";
   const senhaHash = await hashPassword(temporaryPassword);
   const now = new Date();
 
   const medicaoUsers = [
-    { usuario: "ANDERSON MARLEY", nome: "Anderson Marley" },
-    { usuario: "GABRIEL SOUSA", nome: "Gabriel Sousa" },
+    { usuario: "ANDERSON.MARLEY", nome: "Anderson Marley" },
+    { usuario: "GABRIEL.SOUSA", nome: "Gabriel Sousa" },
   ];
   const medicaoUsernames = new Set(medicaoUsers.map((user) => user.usuario));
 
@@ -97,7 +116,7 @@ export async function ensureDefaultAccessUsers() {
   });
 
   for (const colaborador of colaboradores) {
-    const usuario = colaborador.codigo?.trim();
+    const usuario = normalizeAccessUsername(colaborador.codigo);
     if (!usuario) continue;
     if (medicaoUsernames.has(usuario)) continue;
 
@@ -116,12 +135,32 @@ export async function ensureDefaultAccessUsers() {
           usuario,
           nome: colaborador.nomeCompleto || colaborador.nome || usuario,
           senhaHash: tempHash,
-          senhaTemporaria: tempPass,
+          senhaTemporaria: null,
           primeiroLogin: true,
           perfil: "COLABORADOR",
         },
       });
     }
+  }
+}
+
+async function migrateAccessUsernames() {
+  const usuarios = await prisma.usuario.findMany({
+    where: { usuario: { contains: " " } },
+    select: { id: true, usuario: true },
+  });
+
+  for (const user of usuarios) {
+    const usuario = normalizeAccessUsername(user.usuario);
+    if (!usuario || usuario === user.usuario) continue;
+
+    const exists = await prisma.usuario.findUnique({ where: { usuario }, select: { id: true } });
+    if (exists && exists.id !== user.id) continue;
+
+    await prisma.usuario.update({
+      where: { id: user.id },
+      data: { usuario, updatedAt: new Date() },
+    });
   }
 }
 

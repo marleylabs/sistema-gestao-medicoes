@@ -6,6 +6,7 @@ import { toNumber } from "@/lib/format";
 import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
 import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
+import { toColaboradorCodigo } from "@/lib/usuario-format";
 
 function dateOnly(value: Date | null) {
   return value?.toISOString().slice(0, 10) ?? null;
@@ -28,7 +29,7 @@ export async function GET() {
     return NextResponse.json({ error: "Acesso restrito ao colaborador." }, { status: 403 });
   }
 
-  const codigo = user.usuario;
+  const codigo = toColaboradorCodigo(user.usuario);
   const cicloAtivo = await getCicloAtivoMedicao();
   const [profissional, pagamento, documentos, sgc, currentUsuario, usuariosMedicaoOnline] = await Promise.all([
     prisma.profissional.findUnique({

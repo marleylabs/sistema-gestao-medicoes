@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { toColaboradorCodigo } from "@/lib/usuario-format";
 
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
 
   if (!sgc) return NextResponse.json({ error: "Revisão não encontrada." }, { status: 404 });
 
-  if (user.perfil === "COLABORADOR" && sgc.colaboradorCodigo !== user.usuario) {
+  if (user.perfil === "COLABORADOR" && sgc.colaboradorCodigo !== toColaboradorCodigo(user.usuario)) {
     return NextResponse.json({ error: "Acesso restrito ao colaborador." }, { status: 403 });
   }
 

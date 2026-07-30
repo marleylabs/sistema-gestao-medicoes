@@ -7,6 +7,8 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { normalizeLoginUsername, toColaboradorCodigo } from "@/lib/usuario-format";
 
 const MAX_FAILURES = 5;
 const LOCK_MINUTES = 15;
@@ -15,13 +17,26 @@ export async function POST(request: NextRequest) {
   await ensureBootstrapAdmin();
 
   const body = await request.json().catch(() => null);
-  const usuario = typeof body?.usuario === "string" ? body.usuario.trim() : "";
+  const usuario = typeof body?.usuario === "string" ? normalizeLoginUsername(body.usuario) : "";
+  const usuarioLegado = toColaboradorCodigo(usuario);
   const password = typeof body?.senha === "string" ? body.senha : "";
   if (!usuario || !password) {
     return NextResponse.json({ message: "Informe usuário e senha." }, { status: 400 });
   }
 
-  const user = await prisma.usuario.findUnique({ where: { usuario } });
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "local";
+  const limit = checkRateLimit(`login:${ip}:${usuario}`, 8, 15 * 60 * 1000);
+  if (!limit.ok) {
+    return NextResponse.json(
+      { message: "Muitas tentativas de acesso. Tente novamente em instantes." },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } },
+    );
+  }
+
+  const user = await prisma.usuario.findFirst({
+    where: { OR: [{ usuario }, { usuario: usuarioLegado }] },
+    orderBy: { updatedAt: "desc" },
+  });
   const now = new Date();
   if (!user || user.excluidoAt || !user.ativo || (user.bloqueadoAte && user.bloqueadoAte > now)) {
     return NextResponse.json({ message: "Credenciais inválidas ou acesso temporariamente bloqueado." }, { status: 401 });

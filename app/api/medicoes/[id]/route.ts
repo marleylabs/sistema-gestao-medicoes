@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { serializeMedicao } from "@/lib/format";
 import { buildMedicaoData } from "@/lib/medicao-input";
@@ -8,6 +9,9 @@ type Params = {
 };
 
 export async function PUT(request: NextRequest, { params }: Params) {
+  const admin = await requireAdmin();
+  if (admin.response) return admin.response;
+
   const { id } = await params;
   const body = await request.json();
   const data = buildMedicaoData(body);
@@ -30,6 +34,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
 }
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
+  const admin = await requireAdmin();
+  if (admin.response) return admin.response;
+
   const { id } = await params;
   await prisma.medicao.delete({ where: { id } });
   return NextResponse.json({ ok: true });

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
+import { getCurrentUser, hashPassword, validatePasswordStrength, verifyPassword } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: NextRequest) {
@@ -10,8 +10,9 @@ export async function POST(request: NextRequest) {
   const senhaAtual = typeof body?.senhaAtual === "string" ? body.senhaAtual : "";
   const novaSenha = typeof body?.novaSenha === "string" ? body.novaSenha : "";
 
-  if (!novaSenha || novaSenha.length < 8) {
-    return NextResponse.json({ error: "A nova senha deve ter pelo menos 8 caracteres." }, { status: 400 });
+  const passwordError = validatePasswordStrength(novaSenha);
+  if (passwordError) {
+    return NextResponse.json({ error: passwordError }, { status: 400 });
   }
 
   const dbUser = await prisma.usuario.findUnique({ where: { id: user.id } });

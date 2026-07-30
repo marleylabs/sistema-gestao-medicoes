@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logBmAction } from "@/lib/bm-log";
 import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
+import { toColaboradorCodigo } from "@/lib/usuario-format";
 
 type Action = "SALVAR" | "ENVIAR" | "SOLICITAR_REVISAO" | "RESPONDER_MEDICAO";
 
@@ -23,9 +24,10 @@ export async function POST(request: NextRequest) {
   }
 
   const cicloAtivo = await getCicloAtivoMedicao();
+  const colaboradorCodigo = toColaboradorCodigo(user.usuario);
   const existing = await prisma.sgcAprovacaoMedicao.findFirst({
     where: {
-      colaboradorCodigo: user.usuario,
+      colaboradorCodigo,
       ciclo: cicloAtivo,
       status: { notIn: ["AGUARDANDO_ENVIO", "CANCELADO"] },
     },
@@ -39,7 +41,7 @@ export async function POST(request: NextRequest) {
   const now = new Date();
   const logBase = {
     sgcId: existing.id,
-    colaboradorCodigo: user.usuario,
+    colaboradorCodigo,
     ciclo: existing.ciclo,
     usuarioId: user.id,
     usuarioNome: user.nome,

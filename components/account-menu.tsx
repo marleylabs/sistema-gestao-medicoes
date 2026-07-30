@@ -376,7 +376,7 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
                   <form className="grid max-w-md gap-3" onSubmit={changePassword}>
                     <div>
                       <h3 className="text-base font-medium text-[#1A1A1A]">Alterar senha</h3>
-                      <p className="mt-1 text-sm text-[#6B7280]">Use uma senha com pelo menos 8 caracteres.</p>
+                      <p className="mt-1 text-sm text-[#6B7280]">Use uma senha com pelo menos 12 caracteres, letras maiúsculas, minúsculas e números.</p>
                     </div>
                     <Input type="password" placeholder="Senha atual" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" />
                     <Input type="password" placeholder="Nova senha" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" />

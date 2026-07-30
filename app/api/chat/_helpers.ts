@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { AuthUser } from "@/lib/session";
+import { normalizeAccessUsername, toColaboradorCodigo } from "@/lib/usuario-format";
 
 export function avatarUrlByUserId(id: string, updatedAt: Date | null) {
   return updatedAt ? `/api/usuario/avatar?userId=${encodeURIComponent(id)}&v=${updatedAt.getTime()}` : null;
@@ -56,7 +57,7 @@ export async function importSgcChatsForUser(user: AuthUser) {
     where: {
       acao: { in: chatActions },
       observacao: { not: null },
-      ...(user.perfil === "COLABORADOR" ? { colaboradorCodigo: user.usuario } : {}),
+      ...(user.perfil === "COLABORADOR" ? { colaboradorCodigo: toColaboradorCodigo(user.usuario) } : {}),
     },
     select: {
       id: true,
@@ -83,11 +84,16 @@ export async function importSgcChatsForUser(user: AuthUser) {
   const defaultMedicaoUser = medicaoUsers[0] ?? (["MEDICAO", "ADMIN"].includes(user.perfil) ? { id: user.id, nome: user.nome } : null);
   if (!defaultMedicaoUser) return;
 
+  const colaboradorCodigos = Array.from(new Set(logs.map((log) => log.colaboradorCodigo)));
   const fornecedores = await prisma.usuario.findMany({
-    where: { usuario: { in: Array.from(new Set(logs.map((log) => log.colaboradorCodigo))) } },
+    where: { usuario: { in: Array.from(new Set([...colaboradorCodigos, ...colaboradorCodigos.map(normalizeAccessUsername)])) } },
     select: { id: true, usuario: true },
   });
-  const fornecedorByCodigo = new Map(fornecedores.map((fornecedor) => [fornecedor.usuario, fornecedor.id]));
+  const fornecedorByCodigo = new Map<string, string>();
+  for (const fornecedor of fornecedores) {
+    fornecedorByCodigo.set(fornecedor.usuario, fornecedor.id);
+    fornecedorByCodigo.set(toColaboradorCodigo(fornecedor.usuario), fornecedor.id);
+  }
 
   for (const log of logs) {
     const fornecedorId = fornecedorByCodigo.get(log.colaboradorCodigo);

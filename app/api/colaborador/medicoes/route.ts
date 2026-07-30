@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { decryptSensitive } from "@/lib/encryption";
 import { toNumber } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { toColaboradorCodigo } from "@/lib/usuario-format";
 
 function dateOnly(value: Date | null) {
   return value?.toISOString().slice(0, 10) ?? null;
@@ -13,7 +14,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
   if (user.perfil !== "COLABORADOR") return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
 
-  const codigo = user.usuario;
+  const codigo = toColaboradorCodigo(user.usuario);
 
   const aprovacoes = await prisma.sgcAprovacaoMedicao.findMany({
     where: { colaboradorCodigo: codigo, status: { in: ["APROVADO", "AGUARDANDO_NF", "PAGO"] } },

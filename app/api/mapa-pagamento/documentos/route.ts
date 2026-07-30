@@ -30,6 +30,9 @@ function serialize(d: {
 }
 
 export async function GET(request: NextRequest) {
+  const admin = await requireAdmin();
+  if (admin.response) return admin.response;
+
   const codigo = request.nextUrl.searchParams.get("codigo")?.trim();
   const ciclo  = request.nextUrl.searchParams.get("ciclo")?.trim();
   if (!codigo || !ciclo) {

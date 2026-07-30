@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { serializeProfessional } from "@/lib/format";
 
 export async function GET() {
+  const admin = await requireAdmin();
+  if (admin.response) return admin.response;
+
   const medicoes = await prisma.medicao.findMany({
     where: {
       idCoordenador: {

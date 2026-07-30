@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { buildSgcChatMessages } from "@/lib/bm-log";
 import { prisma } from "@/lib/prisma";
+import { normalizeAccessUsername, toColaboradorCodigo } from "@/lib/usuario-format";
 
 function avatarUrlByUserId(id: string, updatedAt: Date | null) {
   return updatedAt ? `/api/usuario/avatar?userId=${encodeURIComponent(id)}&v=${updatedAt.getTime()}` : null;
@@ -57,12 +58,13 @@ export async function GET(request: NextRequest) {
         where: {
           OR: [
             { usuario: registro.colaboradorCodigo },
+            { usuario: normalizeAccessUsername(registro.colaboradorCodigo) },
             ...(chatUserIds.length ? [{ id: { in: chatUserIds } }] : []),
           ],
         },
         select: { id: true, usuario: true, avatarAtualizadoAt: true, onlineAt: true },
       });
-      const fornecedorUsuario = usuariosChat.find((usuario) => usuario.usuario === registro.colaboradorCodigo);
+      const fornecedorUsuario = usuariosChat.find((usuario) => toColaboradorCodigo(usuario.usuario) === registro.colaboradorCodigo);
       const fornecedorAvatarUrl = fornecedorUsuario ? avatarUrlByUsuario(fornecedorUsuario.usuario, fornecedorUsuario.avatarAtualizadoAt) : null;
       const medicaoAvatarUrlsByUsuarioId = Object.fromEntries(
         usuariosChat.map((usuario) => [usuario.id, avatarUrlByUserId(usuario.id, usuario.avatarAtualizadoAt)]),

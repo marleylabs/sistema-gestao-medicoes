@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { safeDownloadName } from "@/lib/file-security";
 import { prisma } from "@/lib/prisma";
+import { toColaboradorCodigo } from "@/lib/usuario-format";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -14,11 +16,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!sgc?.comprovanteArquivo) return NextResponse.json({ error: "Comprovante não encontrado." }, { status: 404 });
 
-  if (user.perfil === "COLABORADOR" && sgc.colaboradorCodigo !== user.usuario) {
+  if (user.perfil === "COLABORADOR" && sgc.colaboradorCodigo !== toColaboradorCodigo(user.usuario)) {
     return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
   }
 
-  const nome = sgc.comprovanteArquivoNome ?? "comprovante";
+  const nome = safeDownloadName(sgc.comprovanteArquivoNome, "comprovante");
   const ext = nome.split(".").pop()?.toLowerCase();
   const contentType = ext === "pdf" ? "application/pdf" : ext === "png" ? "image/png" : "image/jpeg";
 
@@ -26,6 +28,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     headers: {
       "Content-Type": contentType,
       "Content-Disposition": `inline; filename="${nome}"`,
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

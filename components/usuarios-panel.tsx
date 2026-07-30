@@ -61,7 +61,7 @@ function SetSenhaForm({ userId, onDone }: { userId: string; onDone: () => void }
 
   async function salvar() {
     setError("");
-    if (novaSenha.length < 8) { setError("Mínimo 8 caracteres."); return; }
+    if (novaSenha.length < 12) { setError("Mínimo 12 caracteres."); return; }
     if (novaSenha !== confirmar) { setError("Senhas não coincidem."); return; }
     setSaving(true);
     const res = await fetch(`/api/admin/usuarios/${userId}`, {
@@ -77,7 +77,7 @@ function SetSenhaForm({ userId, onDone }: { userId: string; onDone: () => void }
   return (
     <div className="mt-3 grid gap-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
       <p className="text-xs font-semibold text-[#555555]">Definir nova senha</p>
-      <Input type="password" placeholder="Nova senha (mín. 8)" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} />
+      <Input type="password" placeholder="Nova senha (mín. 12)" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} />
       <Input type="password" placeholder="Confirmar senha" value={confirmar} onChange={(e) => setConfirmar(e.target.value)} />
       {error && <p className="text-xs text-[#B91C1C]">{error}</p>}
       <div className="flex gap-2">
@@ -360,7 +360,7 @@ function CriarUsuarioModal({
             Senha inicial
             <Input
               type="password"
-              placeholder="Mínimo 8 caracteres"
+              placeholder="Mínimo 12 caracteres"
               value={form.senha}
               onChange={(e) => updateField("senha", e.target.value)}
             />

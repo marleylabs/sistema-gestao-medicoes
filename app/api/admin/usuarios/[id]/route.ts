@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { generateTempPassword, hashPassword } from "@/lib/auth";
+import { generateTempPassword, hashPassword, validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
   if (admin.response) return admin.response;
+  if (admin.user?.perfil !== "ADMIN") {
+    return NextResponse.json({ error: "Apenas administradores podem alterar usuários." }, { status: 403 });
+  }
 
   const { id } = await params;
   const body = await request.json().catch(() => null);
@@ -27,7 +30,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const tempHash = await hashPassword(tempPass);
     await prisma.usuario.update({
       where: { id },
-      data: { senhaHash: tempHash, senhaTemporaria: tempPass, primeiroLogin: true, updatedAt: new Date() },
+      data: { senhaHash: tempHash, senhaTemporaria: null, primeiroLogin: true, updatedAt: new Date() },
     });
     return NextResponse.json({ senhaTemporaria: tempPass });
   }
@@ -43,7 +46,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   if (action === "set_senha") {
     const novaSenha = typeof body?.novaSenha === "string" ? body.novaSenha : "";
-    if (novaSenha.length < 8) return NextResponse.json({ error: "Senha deve ter pelo menos 8 caracteres." }, { status: 400 });
+    const passwordError = validatePasswordStrength(novaSenha);
+    if (passwordError) return NextResponse.json({ error: passwordError }, { status: 400 });
     await prisma.usuario.update({
       where: { id },
       data: { senhaHash: await hashPassword(novaSenha), senhaTemporaria: null, primeiroLogin: false, updatedAt: new Date() },

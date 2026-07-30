@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { safeDownloadName } from "@/lib/file-security";
 import { prisma } from "@/lib/prisma";
+import { toColaboradorCodigo } from "@/lib/usuario-format";
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -22,7 +24,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "Áudio não encontrado." }, { status: 404 });
   }
 
-  if (user.perfil === "COLABORADOR" && log.colaboradorCodigo !== user.usuario) {
+  if (user.perfil === "COLABORADOR" && log.colaboradorCodigo !== toColaboradorCodigo(user.usuario)) {
     return NextResponse.json({ error: "Acesso restrito ao colaborador." }, { status: 403 });
   }
   if (!["COLABORADOR", "MEDICAO", "ADMIN"].includes(user.perfil)) {
@@ -32,8 +34,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   return new NextResponse(log.audioArquivo, {
     headers: {
       "Content-Type": log.audioMime ?? "audio/webm",
-      "Content-Disposition": `inline; filename="${encodeURIComponent(log.audioNome ?? "audio.webm")}"`,
+      "Content-Disposition": `inline; filename="${safeDownloadName(log.audioNome, "audio.webm")}"`,
       "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

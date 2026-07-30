@@ -5,6 +5,12 @@ import { prisma } from "@/lib/prisma";
 export async function POST(request: NextRequest) {
   const auth = await requireAdmin();
   if (auth.response) return auth.response;
+  if (auth.user?.perfil !== "ADMIN") {
+    return NextResponse.json({ error: "Apenas administradores podem limpar dados." }, { status: 403 });
+  }
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_DATABASE_RESET !== "true") {
+    return NextResponse.json({ error: "Reset de banco desabilitado em produção." }, { status: 403 });
+  }
 
   const body = await request.json().catch(() => null);
   if (body?.confirmacao !== "LIMPAR") {

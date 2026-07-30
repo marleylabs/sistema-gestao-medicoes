@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { toNumber } from "@/lib/format";
 
 export async function GET(request: NextRequest) {
+  const admin = await requireAdmin();
+  if (admin.response) return admin.response;
+
   const codigo = request.nextUrl.searchParams.get("codigo")?.trim();
   const contrato = request.nextUrl.searchParams.get("contrato")?.trim();
   const ciclo = request.nextUrl.searchParams.get("ciclo")?.trim() || "2605";

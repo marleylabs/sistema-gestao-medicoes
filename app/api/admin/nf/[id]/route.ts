@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireFinanceiro } from "@/lib/admin";
+import { safeDownloadName } from "@/lib/file-security";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -14,7 +15,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!sgc?.nfArquivo) return NextResponse.json({ error: "NF não encontrada." }, { status: 404 });
 
-  const nome = sgc.nfArquivoNome ?? "nota-fiscal";
+  const nome = safeDownloadName(sgc.nfArquivoNome, "nota-fiscal");
   const ext = nome.split(".").pop()?.toLowerCase();
   const contentType = ext === "pdf" ? "application/pdf" : ext === "png" ? "image/png" : "image/jpeg";
 
@@ -22,6 +23,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     headers: {
       "Content-Type": contentType,
       "Content-Disposition": `inline; filename="${nome}"`,
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

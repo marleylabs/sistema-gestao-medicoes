@@ -40,11 +40,11 @@ export async function verifySessionToken(token: string | undefined): Promise<Aut
       return null;
     }
     // Refresh perfil and name from DB so profile changes take effect without re-login.
-    const dbUser = await prisma.usuario.findUnique({ where: { id: payload.sub }, select: { nome: true, perfil: true, ativo: true, excluidoAt: true } });
+    const dbUser = await prisma.usuario.findUnique({ where: { id: payload.sub }, select: { usuario: true, nome: true, perfil: true, ativo: true, excluidoAt: true } });
     if (!dbUser || dbUser.excluidoAt || !dbUser.ativo) return null;
     return {
       id: payload.sub,
-      usuario: payload.usuario,
+      usuario: dbUser.usuario,
       nome: dbUser.nome,
       perfil: dbUser.perfil,
     };

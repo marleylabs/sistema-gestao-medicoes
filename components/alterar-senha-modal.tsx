@@ -13,7 +13,7 @@ export function AlterarSenhaModal({ onSuccess }: { onSuccess: () => void }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (novaSenha.length < 8) { setError("A senha deve ter pelo menos 8 caracteres."); return; }
+    if (novaSenha.length < 12) { setError("A senha deve ter pelo menos 12 caracteres."); return; }
     if (novaSenha !== confirmar) { setError("As senhas não coincidem."); return; }
     setLoading(true);
     const res = await fetch("/api/auth/alterar-senha", {
@@ -45,7 +45,7 @@ export function AlterarSenhaModal({ onSuccess }: { onSuccess: () => void }) {
             Nova senha
             <Input
               type="password"
-              placeholder="Mínimo 8 caracteres"
+              placeholder="Mínimo 12 caracteres"
               value={novaSenha}
               onChange={(e) => setNovaSenha(e.target.value)}
               required

@@ -4,6 +4,9 @@ import { requireAdmin } from "@/lib/admin";
 import { mapaPagamentoData, serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 
 export async function GET(request: NextRequest) {
+  const admin = await requireAdmin();
+  if (admin.response) return admin.response;
+
   const ciclo = request.nextUrl.searchParams.get("ciclo")?.trim() || "2605";
   const isGeral = ciclo === "GERAL";
 

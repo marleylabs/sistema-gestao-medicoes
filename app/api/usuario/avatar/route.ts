@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { detectAllowedImageMime } from "@/lib/file-security";
 import { prisma } from "@/lib/prisma";
 
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
@@ -44,12 +45,16 @@ export async function POST(request: NextRequest) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
+  const detectedMime = detectAllowedImageMime(buffer);
+  if (!detectedMime || detectedMime !== file.type) {
+    return NextResponse.json({ error: "O arquivo enviado não corresponde a uma imagem válida." }, { status: 400 });
+  }
   const avatarAtualizadoAt = new Date();
   await prisma.usuario.update({
     where: { id: user.id },
     data: {
       avatarArquivo: buffer,
-      avatarMime: file.type,
+      avatarMime: detectedMime,
       avatarAtualizadoAt,
       updatedAt: avatarAtualizadoAt,
     },

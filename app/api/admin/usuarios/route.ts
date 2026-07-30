@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { hashPassword } from "@/lib/auth";
+import { hashPassword, validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { normalizeAccessUsername } from "@/lib/usuario-format";
 
 const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "DEPARTAMENTO_PESSOAL"];
 
 export async function GET() {
   const admin = await requireAdmin();
   if (admin.response) return admin.response;
+  if (admin.user?.perfil !== "ADMIN") {
+    return NextResponse.json({ error: "Apenas administradores podem gerenciar usuários." }, { status: 403 });
+  }
 
   const usuarios = await prisma.usuario.findMany({
     where: { excluidoAt: null },
@@ -18,7 +22,6 @@ export async function GET() {
       perfil: true,
       ativo: true,
       primeiroLogin: true,
-      senhaTemporaria: true,
       ultimoLoginAt: true,
       createdAt: true,
     },
@@ -33,7 +36,7 @@ export async function GET() {
       perfil: u.perfil,
       ativo: u.ativo,
       primeiroLogin: u.primeiroLogin,
-      senhaTemporaria: u.senhaTemporaria,
+      senhaTemporaria: null,
       ultimoLoginAt: u.ultimoLoginAt?.toISOString() ?? null,
       createdAt: u.createdAt.toISOString(),
     }))
@@ -48,7 +51,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => null);
-  const usuario = typeof body?.usuario === "string" ? body.usuario.trim() : "";
+  const usuario = typeof body?.usuario === "string" ? normalizeAccessUsername(body.usuario) : "";
   const nome = typeof body?.nome === "string" ? body.nome.trim() : "";
   const perfil = typeof body?.perfil === "string" ? body.perfil : "";
   const senha = typeof body?.senha === "string" ? body.senha : "";
@@ -62,8 +65,9 @@ export async function POST(request: NextRequest) {
   if (!VALID_PERFIS.includes(perfil)) {
     return NextResponse.json({ error: "Perfil inválido." }, { status: 400 });
   }
-  if (senha.length < 8) {
-    return NextResponse.json({ error: "Senha deve ter pelo menos 8 caracteres." }, { status: 400 });
+  const passwordError = validatePasswordStrength(senha);
+  if (passwordError) {
+    return NextResponse.json({ error: passwordError }, { status: 400 });
   }
 
   const exists = await prisma.usuario.findUnique({ where: { usuario } });
@@ -76,7 +80,7 @@ export async function POST(request: NextRequest) {
           perfil,
           ativo: true,
           primeiroLogin: true,
-          senhaTemporaria: senha,
+          senhaTemporaria: null,
           senhaHash: await hashPassword(senha),
           excluidoAt: null,
           updatedAt: new Date(),
@@ -88,7 +92,6 @@ export async function POST(request: NextRequest) {
           perfil: true,
           ativo: true,
           primeiroLogin: true,
-          senhaTemporaria: true,
           ultimoLoginAt: true,
           createdAt: true,
         },
@@ -100,7 +103,7 @@ export async function POST(request: NextRequest) {
         perfil: restored.perfil,
         ativo: restored.ativo,
         primeiroLogin: restored.primeiroLogin,
-        senhaTemporaria: restored.senhaTemporaria,
+        senhaTemporaria: senha,
         ultimoLoginAt: restored.ultimoLoginAt?.toISOString() ?? null,
         createdAt: restored.createdAt.toISOString(),
       }, { status: 201 });
@@ -115,7 +118,7 @@ export async function POST(request: NextRequest) {
       perfil,
       ativo: true,
       primeiroLogin: true,
-      senhaTemporaria: senha,
+      senhaTemporaria: null,
       senhaHash: await hashPassword(senha),
     },
     select: {
@@ -125,7 +128,6 @@ export async function POST(request: NextRequest) {
       perfil: true,
       ativo: true,
       primeiroLogin: true,
-      senhaTemporaria: true,
       ultimoLoginAt: true,
       createdAt: true,
     },
@@ -139,7 +141,7 @@ export async function POST(request: NextRequest) {
       perfil: created.perfil,
       ativo: created.ativo,
       primeiroLogin: created.primeiroLogin,
-      senhaTemporaria: created.senhaTemporaria,
+      senhaTemporaria: senha,
       ultimoLoginAt: created.ultimoLoginAt?.toISOString() ?? null,
       createdAt: created.createdAt.toISOString(),
     },
