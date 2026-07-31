@@ -74,6 +74,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   const [criandoCiclo, setCriandoCiclo]     = useState(false);
   const [novoCicloOpen, setNovoCicloOpen]   = useState(false);
   const [ativandoMedicaoCiclo, setAtivandoMedicaoCiclo] = useState<string | null>(null);
+  const [resetandoCiclos, setResetandoCiclos] = useState(false);
   const cicloInicializadoRef                = useRef(false);
   const alertasBaselineRef                  = useRef(false);
   const previousAlertIdsRef                 = useRef<Set<string>>(new Set());
@@ -232,6 +233,38 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
     }
   }
 
+  async function resetarCiclos(cicloAlvo?: string) {
+    const cicloParaResetar = (cicloAlvo?.trim() || (activeCiclo !== CICLO_GERAL ? activeCiclo : "")).trim();
+    if (!/^\d{4}$/.test(cicloParaResetar)) {
+      alert("Selecione ou digite um ciclo válido para excluir.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Excluir o ciclo ${cicloParaResetar}? Esta ação remove os dados vinculados ao ciclo, incluindo medições, pagamentos, aprovações, arquivos e histórico de revisão. Usuários cadastrados serão preservados.`,
+    );
+    if (!confirmed) return;
+
+    setResetandoCiclos(true);
+    try {
+      const res = await fetch("/api/ciclos", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmacao: "RESETAR_CICLOS", ciclo: cicloParaResetar }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error ?? "Não foi possível excluir o ciclo.");
+        return;
+      }
+      setActiveCiclo(CICLO_GERAL);
+      setCiclos([]);
+      await Promise.all([loadCiclos(), refreshAll(), loadAlertas()]);
+      alert(`${data.removed?.ciclos ?? 0} ciclo(s) excluído(s).`);
+    } finally {
+      setResetandoCiclos(false);
+    }
+  }
+
   function markSeen(alerta?: SgcAlerta) {
     const ids = alerta ? [alerta.id] : sgcAlertas.map((a) => a.id);
     setSeenIds((cur) => {
@@ -356,6 +389,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       ]
     : [
         { id: "visao",      label: "Visão Geral",      icon: <LayoutDashboard size={17} /> },
+        { id: "historico",  label: "Histórico",         icon: <History size={17} /> },
         { id: "financeiro", label: "Financeiro",        icon: <Wallet size={17} /> },
         { id: "evidencias", label: "Evidências",        icon: <FileSearch size={17} /> },
         { id: "contratos",  label: "Contratos",         icon: <Building2 size={17} /> },
@@ -522,7 +556,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
                     <option value={activeCiclo}>{activeCiclo}</option>
                   )}
                 </Select>
-                {isAdmin && activeCiclo !== CICLO_GERAL && (
+                {isAdmin && (
                   <div className="relative">
                     <IconButton
                       title="Novo ciclo"
@@ -690,6 +724,9 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
           onSelectCiclo={(c) => { setActiveCiclo(c); setSection("visao"); }}
           ativandoMedicaoCiclo={ativandoMedicaoCiclo}
           onAtivarMedicao={ativarCicloMedicao}
+          canResetCiclos={isFullAdmin}
+          resetandoCiclos={resetandoCiclos}
+          onResetCiclos={resetarCiclos}
         />
       )}
 
@@ -764,6 +801,9 @@ function HistoricoSection({
   onSelectCiclo,
   ativandoMedicaoCiclo,
   onAtivarMedicao,
+  canResetCiclos,
+  resetandoCiclos,
+  onResetCiclos,
 }: {
   ciclos: CicloEntry[];
   activeCiclo: string;
@@ -775,6 +815,9 @@ function HistoricoSection({
   onSelectCiclo: (ciclo: string) => void;
   ativandoMedicaoCiclo: string | null;
   onAtivarMedicao: (ciclo: string) => void;
+  canResetCiclos: boolean;
+  resetandoCiclos: boolean;
+  onResetCiclos: (ciclo?: string) => void;
 }) {
   const dateLabel = (v: string) =>
     new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(v));
@@ -787,7 +830,7 @@ function HistoricoSection({
           <p className="mt-0.5 text-sm text-[#555555]">Todos os ciclos cadastrados no sistema.</p>
         </div>
         {isAdmin && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <input
               className="h-9 w-32 rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
               placeholder="Ex: 2606"
@@ -800,6 +843,12 @@ function HistoricoSection({
               <Plus size={14} />
               Novo ciclo
             </Button>
+            {canResetCiclos && (
+              <Button variant="danger" onClick={() => onResetCiclos(novoCiclo)} disabled={resetandoCiclos || !/^\d{4}$/.test(novoCiclo)}>
+                <Trash2 size={14} />
+                {resetandoCiclos ? "Excluindo..." : "Excluir ciclo"}
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -863,6 +912,16 @@ function HistoricoSection({
                       >
                         {isActive ? "Visualizando" : "Abrir ciclo"}
                       </Button>
+                      {canResetCiclos && (
+                        <IconButton
+                          title={`Excluir ciclo ${c.ciclo}`}
+                          onClick={() => onResetCiclos(c.ciclo)}
+                          disabled={resetandoCiclos}
+                          className="border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C] hover:bg-[#FEE2E2] hover:text-[#991B1B]"
+                        >
+                          <Trash2 size={14} />
+                        </IconButton>
+                      )}
                     </div>
                   </td>
                 </tr>

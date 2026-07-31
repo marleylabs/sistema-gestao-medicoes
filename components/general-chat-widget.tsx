@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, Search, Send, X } from "lucide-react";
 import { Button } from "@/components/ui";
 
@@ -31,6 +31,10 @@ type ChatMensagem = {
   criadoAt: string;
   meu: boolean;
 };
+
+type BubblePosition = { x: number; y: number };
+
+const CHAT_BUBBLE_POSITION_KEY = "general_chat_bubble_position";
 
 function initials(value: string | null | undefined) {
   const parts = (value ?? "").trim().split(/\s+/).filter(Boolean);
@@ -71,7 +75,18 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [bubblePosition, setBubblePosition] = useState<BubblePosition | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const bubbleRef = useRef<HTMLButtonElement | null>(null);
+  const bubbleDragRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    lastPosition: BubblePosition | null;
+  } | null>(null);
 
   const unreadCount = useMemo(() => conversas.reduce((total, conversa) => total + conversa.unreadCount, 0), [conversas]);
 
@@ -95,6 +110,24 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
   }, [loadConversas]);
 
   useEffect(() => { loadConversas(); }, [loadConversas]);
+
+  useEffect(() => {
+    const raw = localStorage.getItem(CHAT_BUBBLE_POSITION_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as Partial<BubblePosition>;
+      if (typeof parsed.x !== "number" || typeof parsed.y !== "number") return;
+      const width = bubbleRef.current?.offsetWidth ?? 150;
+      const height = bubbleRef.current?.offsetHeight ?? 48;
+      setBubblePosition({
+        x: Math.min(Math.max(8, parsed.x), window.innerWidth - width - 8),
+        y: Math.min(Math.max(8, parsed.y), window.innerHeight - height - 8),
+      });
+    } catch {
+      localStorage.removeItem(CHAT_BUBBLE_POSITION_KEY);
+    }
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     loadConversas();
@@ -158,6 +191,60 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     }
   }
 
+  function moveBubble(clientX: number, clientY: number) {
+    const drag = bubbleDragRef.current;
+    const button = bubbleRef.current;
+    if (!drag || !button) return;
+
+    const deltaX = clientX - drag.startClientX;
+    const deltaY = clientY - drag.startClientY;
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) drag.moved = true;
+
+    const nextPosition = {
+      x: Math.min(Math.max(8, drag.startX + deltaX), window.innerWidth - button.offsetWidth - 8),
+      y: Math.min(Math.max(8, drag.startY + deltaY), window.innerHeight - button.offsetHeight - 8),
+    };
+    drag.lastPosition = nextPosition;
+    setBubblePosition(nextPosition);
+  }
+
+  function handleBubblePointerDown(event: PointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    bubbleDragRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: rect.left,
+      startY: rect.top,
+      moved: false,
+      lastPosition: { x: rect.left, y: rect.top },
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleBubblePointerMove(event: PointerEvent<HTMLButtonElement>) {
+    if (!bubbleDragRef.current || bubbleDragRef.current.pointerId !== event.pointerId) return;
+    moveBubble(event.clientX, event.clientY);
+  }
+
+  function handleBubblePointerUp(event: PointerEvent<HTMLButtonElement>) {
+    const drag = bubbleDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    moveBubble(event.clientX, event.clientY);
+    const position = drag.lastPosition ?? bubblePosition;
+    if (position) localStorage.setItem(CHAT_BUBBLE_POSITION_KEY, JSON.stringify(position));
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function handleBubbleClick() {
+    const wasDragged = bubbleDragRef.current?.moved;
+    bubbleDragRef.current = null;
+    if (wasDragged) return;
+    setOpen(true);
+  }
+
   const filteredConversas = conversas.filter((conversa) => {
     const term = search.trim().toLowerCase();
     if (!term) return true;
@@ -169,8 +256,15 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
   if (!open) {
     return (
       <button
-        className={`fixed right-5 z-[60] inline-flex h-12 items-center gap-2 rounded-full px-4 text-sm font-semibold text-white shadow-xl ${unreadCount ? "bg-[#16A34A] hover:bg-[#15803D]" : "bg-[#2563EB] hover:bg-[#1D4ED8]"} ${className || "bottom-5"}`}
-        onClick={() => setOpen(true)}
+        ref={bubbleRef}
+        className={`fixed z-[60] inline-flex h-12 touch-none select-none items-center gap-2 rounded-full px-4 text-sm font-semibold text-white shadow-xl transition-colors ${bubblePosition ? "" : `right-5 ${className || "bottom-5"}`} ${unreadCount ? "bg-[#16A34A] hover:bg-[#15803D]" : "bg-[#2563EB] hover:bg-[#1D4ED8]"}`}
+        style={bubblePosition ? { left: bubblePosition.x, top: bubblePosition.y } : undefined}
+        onPointerDown={handleBubblePointerDown}
+        onPointerMove={handleBubblePointerMove}
+        onPointerUp={handleBubblePointerUp}
+        onPointerCancel={() => { bubbleDragRef.current = null; }}
+        onClick={handleBubbleClick}
+        title="Clique para abrir ou arraste para mover"
       >
         <MessageCircle size={18} />
         Conversas

@@ -78,3 +78,101 @@ export async function PATCH(request: NextRequest) {
 
   return NextResponse.json({ ciclo, ativoMedicao: true });
 }
+
+export async function DELETE(request: NextRequest) {
+  const admin = await requireAdmin();
+  if (admin.response) return admin.response;
+  if (admin.user?.perfil !== "ADMIN") {
+    return NextResponse.json({ error: "Apenas administradores podem excluir ciclos." }, { status: 403 });
+  }
+
+  const payload = await request.json().catch(() => null);
+  if (payload?.confirmacao !== "RESETAR_CICLOS") {
+    return NextResponse.json({ error: "Confirmação inválida." }, { status: 400 });
+  }
+
+  const ciclos = Array.isArray(payload?.ciclos)
+    ? payload.ciclos.filter((ciclo: unknown): ciclo is string => typeof ciclo === "string" && /^\d{4}$/.test(ciclo))
+    : [];
+  const cicloUnico = typeof payload?.ciclo === "string" && /^\d{4}$/.test(payload.ciclo) ? payload.ciclo : "";
+  const ciclosAlvo = Array.from(new Set([...(cicloUnico ? [cicloUnico] : []), ...ciclos]));
+
+  if (ciclosAlvo.length === 0) {
+    return NextResponse.json({ error: "Informe pelo menos um ciclo válido para excluir." }, { status: 400 });
+  }
+
+  const sgcLogs = await prisma.sgcLog.findMany({
+    where: { ciclo: { in: ciclosAlvo } },
+    select: { id: true },
+  });
+  const sgcOrigins = sgcLogs.map((log) => `sgc:${log.id}`);
+
+  const removed = await prisma.$transaction(async (tx) => {
+    const chatMensagens = sgcOrigins.length
+      ? await tx.chatMensagem.deleteMany({ where: { origem: { in: sgcOrigins } } })
+      : { count: 0 };
+
+    const chatConversasVazias = await tx.chatConversa.deleteMany({
+      where: {
+        mensagens: { none: {} },
+        participantes: { none: {} },
+      },
+    });
+
+    const sgcLogs = await tx.sgcLog.deleteMany({ where: { ciclo: { in: ciclosAlvo } } });
+    const sgcAprovacoes = await tx.sgcAprovacaoMedicao.deleteMany({ where: { ciclo: { in: ciclosAlvo } } });
+    const bmAux = await tx.bmAuxMedicao.deleteMany({ where: { ciclo: { in: ciclosAlvo } } });
+    const medicoes = await tx.medicao.deleteMany({ where: { ciclo: { in: ciclosAlvo } } });
+    const mapaPagamentoItens = await tx.mapaPagamentoItem.deleteMany({ where: { ciclo: { in: ciclosAlvo } } });
+    const etlExecucoes = await tx.etlExecucao.deleteMany({ where: { ciclo: { in: ciclosAlvo } } });
+    const ciclos = await tx.mapaPagamentoContexto.deleteMany({ where: { ciclo: { in: ciclosAlvo } } });
+
+    const projetosOrfaos = await tx.$executeRaw`
+      delete from projetos p
+      where not exists (
+        select 1 from medicoes m
+        where m.id_projeto = p.id
+      )
+    `;
+
+    const profissionaisOrfaos = await tx.$executeRaw`
+      delete from profissionais p
+      where not exists (
+        select 1 from medicoes m
+        where m.id_profissional = p.id or m.id_coordenador = p.id
+      )
+      and not exists (
+        select 1 from mapa_pagamento_itens mpi
+        where mpi.projetista_codigo = p.codigo
+      )
+      and not exists (
+        select 1 from bm_aux_medicoes bm
+        where bm.responsavel_codigo = p.codigo
+      )
+      and not exists (
+        select 1 from sgc_aprovacoes_medicao sgc
+        where sgc.colaborador_codigo = p.codigo
+      )
+      and not exists (
+        select 1 from sgc_logs logs
+        where logs.colaborador_codigo = p.codigo
+      )
+    `;
+
+    return {
+      ciclos: ciclos.count,
+      medicoes: medicoes.count,
+      mapaPagamentoItens: mapaPagamentoItens.count,
+      sgcAprovacoes: sgcAprovacoes.count,
+      sgcLogs: sgcLogs.count,
+      bmAux: bmAux.count,
+      etlExecucoes: etlExecucoes.count,
+      chatMensagens: chatMensagens.count,
+      chatConversasVazias: chatConversasVazias.count,
+      projetosOrfaos,
+      profissionaisOrfaos,
+    };
+  });
+
+  return NextResponse.json({ ok: true, removed });
+}

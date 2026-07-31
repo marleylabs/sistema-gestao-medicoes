@@ -9,10 +9,22 @@ export async function GET(request: NextRequest) {
 
   const ciclo = request.nextUrl.searchParams.get("ciclo")?.trim() || "2605";
   const isGeral = ciclo === "GERAL";
+  const ciclosCadastrados = await prisma.mapaPagamentoContexto.findMany({
+    select: { ciclo: true },
+  });
+  const ciclosPermitidos = ciclosCadastrados.map((item) => item.ciclo);
+
+  if (isGeral && ciclosPermitidos.length === 0) {
+    return NextResponse.json([]);
+  }
+
+  if (!isGeral && !ciclosPermitidos.includes(ciclo)) {
+    return NextResponse.json([]);
+  }
 
   const itens = await prisma.mapaPagamentoItem.findMany({
     where: {
-      ...(isGeral ? {} : { ciclo }),
+      ...(isGeral ? { ciclo: { in: ciclosPermitidos } } : { ciclo }),
       valor: { gt: 0 },
     },
     orderBy: [{ ciclo: "desc" }, { ordem: "asc" }],

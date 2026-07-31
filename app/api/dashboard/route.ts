@@ -4,6 +4,20 @@ import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { toNumber } from "@/lib/format";
 
+const emptyDashboard = {
+  cards: {
+    totalMedido: 0,
+    totalHoras: 0,
+    atosAtivos: 0,
+    producaoAtivos: 0,
+    totalRegistros: 0,
+  },
+  contextoMapa: null,
+  porCiclo: [],
+  porProjeto: [],
+  tiposPrecos: [],
+};
+
 export async function GET(request: NextRequest) {
   const admin = await requireAdmin();
   if (admin.response) return admin.response;
@@ -12,8 +26,22 @@ export async function GET(request: NextRequest) {
   const contrato = request.nextUrl.searchParams.get("contrato")?.trim();
   const ciclo = request.nextUrl.searchParams.get("ciclo")?.trim() || "2605";
   const isGeral = ciclo === "GERAL";
-  const mapaCicloFilter = isGeral ? Prisma.empty : Prisma.sql`and mpi.ciclo = ${ciclo}`;
-  const medicaoCicloFilter = isGeral ? Prisma.empty : Prisma.sql`and m.ciclo = ${ciclo}`;
+  const ciclosCadastrados = await prisma.mapaPagamentoContexto.findMany({
+    select: { ciclo: true },
+  });
+  const ciclosPermitidos = ciclosCadastrados.map((item) => item.ciclo);
+  const cicloExiste = isGeral || ciclosPermitidos.includes(ciclo);
+
+  if ((isGeral && ciclosPermitidos.length === 0) || !cicloExiste) {
+    return NextResponse.json(emptyDashboard);
+  }
+
+  const mapaCicloFilter = isGeral
+    ? Prisma.sql`and mpi.ciclo = ANY(${ciclosPermitidos}::text[])`
+    : Prisma.sql`and mpi.ciclo = ${ciclo}`;
+  const medicaoCicloFilter = isGeral
+    ? Prisma.sql`and m.ciclo = ANY(${ciclosPermitidos}::text[])`
+    : Prisma.sql`and m.ciclo = ${ciclo}`;
   const codigoFilter = codigo ? Prisma.sql`and pr.codigo = ${codigo}` : Prisma.empty;
   const contratoFilter = contrato
     ? Prisma.sql`and lower(coalesce(m.raw_payload->>'CONTRATO', '')) = lower(${contrato})`
@@ -205,7 +233,7 @@ export async function GET(request: NextRequest) {
           ) as total_participacao
         from mapa_pagamento_itens mpi
         where mpi.valor > 0
-        ${isGeral ? Prisma.empty : Prisma.sql`and mpi.ciclo = ${ciclo}`}
+        ${mapaCicloFilter}
         ${mapaCodigoFilter}
       )
       select
@@ -277,7 +305,7 @@ export async function GET(request: NextRequest) {
       FROM mapa_pagamento_itens
       WHERE valor > 0
         AND ato = ANY(${nomes}::text[])
-        ${ciclo && ciclo !== "GERAL" ? Prisma.sql`AND ciclo = ${ciclo}` : Prisma.empty}
+        ${isGeral ? Prisma.sql`AND ciclo = ANY(${ciclosPermitidos}::text[])` : Prisma.sql`AND ciclo = ${ciclo}`}
       GROUP BY ato
     `;
     for (const r of rows) valorPorAto[r.ato] = toNumber(r.total as any);
