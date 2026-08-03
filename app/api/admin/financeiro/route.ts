@@ -60,11 +60,10 @@ export async function PATCH(request: NextRequest) {
   const file = formData.get("comprovante") as File | null;
 
   if (!id) return NextResponse.json({ error: "Parâmetro id obrigatório." }, { status: 400 });
-  if (!file) return NextResponse.json({ error: "Comprovante não enviado." }, { status: 400 });
-  if (file.size > MAX_SIZE) return NextResponse.json({ error: "Arquivo muito grande (máx. 10 MB)." }, { status: 400 });
+  if (file && file.size > MAX_SIZE) return NextResponse.json({ error: "Arquivo muito grande (máx. 10 MB)." }, { status: 400 });
 
   const allowed = ["application/pdf", "image/jpeg", "image/png"];
-  if (!allowed.includes(file.type)) {
+  if (file && !allowed.includes(file.type)) {
     return NextResponse.json({ error: "Formato inválido. Envie PDF, JPG ou PNG." }, { status: 400 });
   }
 
@@ -74,7 +73,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Somente registros com NF enviada podem ser marcados como pagos." }, { status: 409 });
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
+  const buffer = file ? Buffer.from(await file.arrayBuffer()) : null;
   const now = new Date();
 
   await prisma.sgcAprovacaoMedicao.update({
@@ -83,8 +82,8 @@ export async function PATCH(request: NextRequest) {
       status: "PAGO",
       pagoAt: now,
       comprovanteArquivo: buffer,
-      comprovanteArquivoNome: file.name,
-      comprovanteCarregadoAt: now,
+      comprovanteArquivoNome: file?.name ?? null,
+      comprovanteCarregadoAt: file ? now : null,
       updatedAt: now,
     },
   });

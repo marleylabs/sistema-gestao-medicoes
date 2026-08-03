@@ -3,6 +3,14 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: "standalone",
+  outputFileTracingIncludes: {
+    "/api/admin/templates/[tipo]": ["./app-assets/templates/**/*"],
+    "/api/colaborador/nf": [
+      "./node_modules/pdf-parse/**/*",
+      "./node_modules/node-ensure/**/*",
+      "./node_modules/debug/**/*",
+    ],
+  },
   experimental: {
     proxyClientMaxBodySize: "100mb",
   },

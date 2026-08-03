@@ -20,6 +20,12 @@ type PaymentPayload = {
   status?: unknown;
 };
 
+type CadastroOverride = {
+  responsavel?: string | null;
+  cpfCnpj?: string | null;
+  razaoSocial?: string | null;
+};
+
 function text(value: unknown) {
   const cleaned = String(value ?? "").trim();
   return cleaned || null;
@@ -31,15 +37,15 @@ function manualHash(payload: unknown) {
     .digest("hex");
 }
 
-export function serializeMapaPagamentoItem(item: any) {
+export function serializeMapaPagamentoItem(item: any, cadastro?: CadastroOverride | null) {
   return {
     id: item.id,
     ordem: item.ordem,
     ato: item.ato,
     projetistaCodigo: item.projetistaCodigo,
-    responsavel: item.responsavel,
-    cpfCnpj: decryptSensitive(item.cpfCnpj),
-    razaoSocial: item.razaoSocial,
+    responsavel: cadastro?.responsavel ?? item.responsavel,
+    cpfCnpj: cadastro?.cpfCnpj ?? decryptSensitive(item.cpfCnpj),
+    razaoSocial: cadastro?.razaoSocial ?? item.razaoSocial,
     intrSossego: toNumber(item.intrSossego),
     salobo: toNumber(item.salobo),
     acg: toNumber(item.acg),

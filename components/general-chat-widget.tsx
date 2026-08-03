@@ -61,6 +61,7 @@ function chatTime(value: string | null | undefined) {
 function perfilLabel(perfil: string) {
   if (perfil === "COLABORADOR") return "Fornecedor";
   if (perfil === "FINANCEIRO") return "Financeiro";
+  if (perfil === "ADMINISTRATIVO") return "Administrativo";
   if (perfil === "ADMIN") return "Administrador";
   if (perfil === "MEDICAO") return "Medição";
   return "Usuário";

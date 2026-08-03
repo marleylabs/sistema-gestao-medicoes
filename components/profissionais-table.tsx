@@ -8,7 +8,7 @@ export function ProfissionaisTable({ profissionais }: { profissionais: Profissio
     <div className="overflow-hidden rounded-lg border border-[#d8dee8] bg-white">
       <div className="border-b border-[#d8dee8] px-4 py-3">
         <h2 className="text-lg font-bold text-[#1A1A1A]">Cadastro de profissionais</h2>
-        <p className="text-sm text-[#1A1A1A]">Informações importadas da aba BASE pelo campo Codigo.</p>
+        <p className="text-sm text-[#1A1A1A]">Informações consolidadas da planilha principal e do cadastro administrativo.</p>
       </div>
       <div className="max-h-[460px] overflow-auto">
         <table className="w-full min-w-[1180px] border-collapse text-sm">

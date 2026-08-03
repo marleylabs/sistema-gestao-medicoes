@@ -35,7 +35,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ senhaTemporaria: tempPass });
   }
 
-  const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "DEPARTAMENTO_PESSOAL"];
+  const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "ADMINISTRATIVO", "DEPARTAMENTO_PESSOAL"];
 
   if (action === "set_perfil") {
     const perfil = typeof body?.perfil === "string" ? body.perfil : "";

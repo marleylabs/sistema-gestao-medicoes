@@ -46,6 +46,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-medicoes_app}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-medicoes}
       NODE_ENV: production
+      ALLOW_DATABASE_RESET: ${ALLOW_DATABASE_RESET:-false}
       AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
       AUTH_BOOTSTRAP_USERNAME: ${AUTH_BOOTSTRAP_USERNAME}

@@ -7,6 +7,7 @@ import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
 import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
+import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
 
 function dateOnly(value: Date | null) {
   return value?.toISOString().slice(0, 10) ?? null;
@@ -31,9 +32,10 @@ export async function GET() {
 
   const codigo = toColaboradorCodigo(user.usuario);
   const cicloAtivo = await getCicloAtivoMedicao();
+  const codigoAliases = await getColaboradorCodigoAliases(user.usuario, cicloAtivo);
   const [profissional, pagamento, documentos, sgc, currentUsuario, usuariosMedicaoOnline] = await Promise.all([
-    prisma.profissional.findUnique({
-      where: { codigo },
+    prisma.profissional.findFirst({
+      where: { codigo: { in: codigoAliases } },
       select: {
         codigo: true,
         nome: true,
@@ -49,7 +51,7 @@ export async function GET() {
     prisma.mapaPagamentoItem.findFirst({
       where: {
         ciclo: cicloAtivo,
-        projetistaCodigo: codigo,
+        projetistaCodigo: { in: codigoAliases },
         valor: { gt: 0 },
       },
       orderBy: { ordem: "asc" },
@@ -57,7 +59,7 @@ export async function GET() {
     prisma.medicao.findMany({
       where: {
         ciclo: cicloAtivo,
-        profissional: { codigo },
+        profissional: { codigo: { in: codigoAliases } },
       },
       select: {
         id: true,
@@ -82,7 +84,7 @@ export async function GET() {
       orderBy: [{ dataCadastro: "asc" }, { createdAt: "asc" }],
     }),
     prisma.sgcAprovacaoMedicao.findFirst({
-      where: { colaboradorCodigo: codigo, ciclo: cicloAtivo },
+      where: { colaboradorCodigo: { in: codigoAliases }, ciclo: cicloAtivo },
       orderBy: { createdAt: "desc" },
     }),
     prisma.usuario.findUnique({

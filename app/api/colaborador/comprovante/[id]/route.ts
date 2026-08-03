@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { safeDownloadName } from "@/lib/file-security";
 import { prisma } from "@/lib/prisma";
-import { toColaboradorCodigo } from "@/lib/usuario-format";
+import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -16,8 +16,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!sgc?.comprovanteArquivo) return NextResponse.json({ error: "Comprovante não encontrado." }, { status: 404 });
 
-  if (user.perfil === "COLABORADOR" && sgc.colaboradorCodigo !== toColaboradorCodigo(user.usuario)) {
-    return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+  if (user.perfil === "COLABORADOR") {
+    const aliases = await getColaboradorCodigoAliases(user.usuario);
+    if (!aliases.includes(sgc.colaboradorCodigo)) {
+      return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+    }
   }
 
   const nome = safeDownloadName(sgc.comprovanteArquivoNome, "comprovante");

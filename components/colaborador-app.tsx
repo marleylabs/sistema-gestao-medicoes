@@ -558,14 +558,14 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                 <div>
                   <h3 className="text-sm font-bold text-[#1A1A1A]">Envio da Nota Fiscal</h3>
                   <p className="mt-1 text-xs text-[#92400E]/80">
-                    Sua medição foi aprovada. Arraste o arquivo ou selecione no computador. Formatos aceitos: PDF, JPG ou PNG, até 10 MB.
+                    Sua medição foi aprovada. Arraste o arquivo ou selecione no computador. Formato aceito: PDF pesquisável, até 10 MB.
                   </p>
                 </div>
               </div>
               <input
                 ref={nfInputRef}
                 type="file"
-                accept=".pdf,.jpg,.jpeg,.png"
+                accept=".pdf"
                 className="hidden"
                 onChange={(e) => selectNfFile(e.target.files?.[0] ?? null)}
               />
@@ -594,7 +594,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                   <UploadCloud size={20} />
                 </span>
                 <p className="mt-3 text-sm font-semibold text-[#1A1A1A]">Clique para escolher ou arraste a Nota Fiscal</p>
-                <p className="mt-1 text-xs text-[#6B7280]">PDF, JPG ou PNG</p>
+                <p className="mt-1 text-xs text-[#6B7280]">PDF pesquisável</p>
               </div>
               {nfFile && (
                 <div className="mt-3 rounded-xl border border-[#FDE68A] bg-white p-3 shadow-sm">
@@ -1377,13 +1377,13 @@ function MedicaoAprovadaCard({ med, onReload }: { med: MedicaoAprovada; onReload
             <FileUp size={16} className="mt-0.5 shrink-0 text-[#D97706]" />
             <div>
               <p className="text-sm font-semibold text-[#92400E]">Envio da Nota Fiscal</p>
-              <p className="mt-1 text-xs text-[#92400E]/80">Arraste o arquivo ou selecione no computador. Formatos aceitos: PDF, JPG ou PNG, até 10 MB.</p>
+              <p className="mt-1 text-xs text-[#92400E]/80">Arraste o arquivo ou selecione no computador. Formato aceito: PDF pesquisável, até 10 MB.</p>
             </div>
           </div>
           <input
             ref={nfInputRef}
             type="file"
-            accept=".pdf,.jpg,.jpeg,.png"
+            accept=".pdf"
             className="hidden"
             onChange={(e) => selectNfFile(e.target.files?.[0] ?? null)}
           />
@@ -1412,7 +1412,7 @@ function MedicaoAprovadaCard({ med, onReload }: { med: MedicaoAprovada; onReload
               <UploadCloud size={20} />
             </span>
             <p className="mt-3 text-sm font-semibold text-[#1A1A1A]">Clique para escolher ou arraste a Nota Fiscal</p>
-            <p className="mt-1 text-xs text-[#6B7280]">PDF, JPG ou PNG</p>
+            <p className="mt-1 text-xs text-[#6B7280]">PDF pesquisável</p>
           </div>
           {nfFile && (
             <div className="mt-3 rounded-xl border border-[#FDE68A] bg-white p-3 shadow-sm">

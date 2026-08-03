@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { avatarUrlByUserId, canChatWith, directChatKey, importSgcChatsForUser, isInternalPerfil, isOnline, joinSharedFornecedorChats } from "@/app/api/chat/_helpers";
+import { avatarUrlByUserId, canChatWith, canUseChatPerfil, directChatKey, importSgcChatsForUser, isInternalPerfil, isOnline, joinSharedFornecedorChats } from "@/app/api/chat/_helpers";
 
 function serializePerfil(perfil: string) {
   if (perfil === "COLABORADOR") return "Fornecedor";
@@ -14,6 +14,7 @@ function serializePerfil(perfil: string) {
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  if (!canUseChatPerfil(user.perfil)) return NextResponse.json([]);
   await importSgcChatsForUser(user);
   await joinSharedFornecedorChats(user);
 
@@ -74,6 +75,9 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  if (!canUseChatPerfil(user.perfil)) {
+    return NextResponse.json({ error: "O Administrativo não utiliza o chat da aplicação." }, { status: 403 });
+  }
 
   const body = await request.json().catch(() => null);
   const targetUserId = typeof body?.targetUserId === "string" ? body.targetUserId : "";

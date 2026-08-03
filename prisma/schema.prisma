@@ -144,6 +144,38 @@ model Profissional {
   @@map("profissionais")
 }
 
+model CadastroFornecedor {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cnpjNormalizado    String    @unique @map("cnpj_normalizado")
+  colaboradorCodigo  String?   @map("colaborador_codigo")
+  responsavel        String
+  razaoSocial        String    @map("razao_social")
+  statusContrato     String?   @map("status_contrato")
+  objetoContrato     String?   @map("objeto_contrato")
+  cargo              String?
+  cpf                String?
+  cnpj               String?
+  email              String?
+  telefone           String?
+  tipoCt             String?   @map("tipo_ct")
+  tipoContrato       String?   @map("tipo_contrato")
+  valorHora          Decimal?  @map("valor_hora") @db.Decimal(16, 4)
+  valorA1Equivalente Decimal?  @map("valor_a1_equivalente") @db.Decimal(16, 4)
+  valorDocumento     Decimal?  @map("valor_documento") @db.Decimal(16, 4)
+  inicio             DateTime? @db.Date
+  final              DateTime? @db.Date
+  statusCadastro     String?   @map("status_cadastro")
+  primeiroAditivo    String?   @map("primeiro_aditivo")
+  segundoAditivo     String?   @map("segundo_aditivo")
+  rawPayload         Json      @default("{}") @map("raw_payload")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@index([colaboradorCodigo])
+  @@index([final])
+  @@map("cadastros_fornecedores")
+}
+
 model Medicao {
   id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   numeroMedicao      String        @map("numero_medicao")

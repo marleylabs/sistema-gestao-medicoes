@@ -6,6 +6,7 @@ import {
   Bell,
   BellRing,
   Building2,
+  Download,
   Eye,
   EyeOff,
   FileSearch,
@@ -32,13 +33,14 @@ import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { UsuariosPanel } from "@/components/usuarios-panel";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { ContratosPanel } from "@/components/contratos-panel";
+import { AdministrativoPanel } from "@/components/administrativo-panel";
 import { Badge, Button, Card, IconButton, SectionHeader, Select } from "@/components/ui";
 import { useBlur } from "@/components/providers";
 import type { DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
 import type { AuthUser } from "@/lib/session";
 
-type Section = "visao" | "historico" | "importar" | "evidencias" | "usuarios" | "financeiro" | "contratos";
+type Section = "visao" | "historico" | "importar" | "evidencias" | "usuarios" | "financeiro" | "contratos" | "administrativo";
 
 const TITLES: Record<Section, string> = {
   visao: "Dashboard",
@@ -48,6 +50,7 @@ const TITLES: Record<Section, string> = {
   usuarios: "Gestão de Usuários",
   financeiro: "Painel Financeiro",
   contratos: "Contratos",
+  administrativo: "Painel Administrativo",
 };
 
 const CICLO_GERAL = "GERAL";
@@ -88,17 +91,20 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   const isFullAdmin  = user.perfil === "ADMIN";
   const isMedicao    = user.perfil === "MEDICAO";
   const isFinanceiro = user.perfil === "FINANCEIRO";
+  const isAdministrativo = user.perfil === "ADMINISTRATIVO";
   const isDP         = user.perfil === "DEPARTAMENTO_PESSOAL";
 
   const VALID_SECTIONS: Section[] = isFinanceiro
     ? ["financeiro"]
+    : isAdministrativo
+    ? ["administrativo"]
     : isMedicao
     ? ["visao", "importar", "evidencias"]
     : isFullAdmin
-    ? ["visao", "historico", "importar", "evidencias", "usuarios", "financeiro", "contratos"]
+    ? ["visao", "historico", "importar", "evidencias", "usuarios", "financeiro", "contratos", "administrativo"]
     : ["visao", "historico", "importar", "evidencias", "usuarios", "financeiro", "contratos"];
   const sectionParam = currentSearchParams.get("section") as Section | null;
-  const section: Section = sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : (isFinanceiro ? "financeiro" : "visao");
+  const section: Section = sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : (isFinanceiro ? "financeiro" : isAdministrativo ? "administrativo" : "visao");
   function setSection(s: Section) {
     const params = new URLSearchParams(currentSearchParams.toString());
     params.set("section", s);
@@ -381,6 +387,8 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
 
   const navItems = isFinanceiro
     ? [{ id: "financeiro", label: "Financeiro", icon: <Wallet size={17} /> }]
+    : isAdministrativo
+    ? [{ id: "administrativo", label: "Administrativo", icon: <FileText size={17} /> }]
     : isMedicao
     ? [
         { id: "visao",      label: "Visão Geral", icon: <LayoutDashboard size={17} /> },
@@ -393,6 +401,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
         { id: "financeiro", label: "Financeiro",        icon: <Wallet size={17} /> },
         { id: "evidencias", label: "Evidências",        icon: <FileSearch size={17} /> },
         { id: "contratos",  label: "Contratos",         icon: <Building2 size={17} /> },
+        { id: "administrativo", label: "Administrativo", icon: <FileText size={17} /> },
         { id: "usuarios",   label: "Usuários",          icon: <ShieldCheck size={17} /> },
         { id: "importar",   label: "Importar Planilha", icon: <Upload size={17} />, bottom: true },
       ];
@@ -690,7 +699,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       pageTitle={TITLES[section]}
       topBarRight={topBar}
     >
-      {section !== "importar" && section !== "evidencias" && section !== "usuarios" && section !== "financeiro" && section !== "contratos" && filtersBar}
+      {section !== "importar" && section !== "evidencias" && section !== "usuarios" && section !== "financeiro" && section !== "contratos" && section !== "administrativo" && filtersBar}
 
       {section === "visao" && (
         <div className="grid gap-6">
@@ -758,6 +767,10 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
 
       {section === "contratos" && isAdmin && (
         <ContratosPanel />
+      )}
+
+      {section === "administrativo" && (isFullAdmin || isAdministrativo) && (
+        <AdministrativoPanel />
       )}
 
       {selectedAlerta && (
@@ -1228,14 +1241,24 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-base font-bold text-[#1A1A1A]">Importar Planilha</h1>
-          <p className="mt-0.5 text-xs text-[#555555]">Envie o arquivo .xlsm ou .xlsx para substituir somente o ciclo informado.</p>
+          <p className="mt-0.5 text-xs text-[#555555]">Envie o arquivo .xlsm ou .xlsx para substituir somente o ciclo informado. A aba Base é opcional.</p>
         </div>
-        {status?.running && (
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#EFF6FF] px-3 py-1.5 text-xs font-semibold text-[#2563EB]">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-[#2563EB]" />
-            Importando…
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/api/admin/templates/medicoes"
+            download
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#555555] shadow-sm transition hover:border-[#2563EB] hover:text-[#2563EB]"
+          >
+            <Download size={14} />
+            Baixar máscara
+          </a>
+          {status?.running && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#EFF6FF] px-3 py-1.5 text-xs font-semibold text-[#2563EB]">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-[#2563EB]" />
+              Importando…
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Upload card */}
@@ -1247,7 +1270,7 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
             </span>
             <div>
               <p className="text-sm font-semibold text-[#1A1A1A]">Arquivo Excel</p>
-              <p className="text-[11px] text-[#9CA3AF]">Formato aceito: .xlsm ou .xlsx</p>
+              <p className="text-[11px] text-[#9CA3AF]">Formato aceito: .xlsm ou .xlsx; dados cadastrais vêm do Painel Administrativo</p>
             </div>
           </div>
         </div>

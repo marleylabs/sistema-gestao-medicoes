@@ -107,16 +107,15 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
   useEffect(() => { load(); }, [load]);
 
   async function enviarComprovante(id: string) {
-    if (!comprovanteFile) return;
     setUploadingId(id);
     setUploadError(null);
     const form = new FormData();
     form.append("id", id);
-    form.append("comprovante", comprovanteFile);
+    if (comprovanteFile) form.append("comprovante", comprovanteFile);
     const res = await fetch("/api/admin/financeiro", { method: "PATCH", body: form });
     const payload = await res.json().catch(() => ({}));
     setUploadingId(null);
-    if (!res.ok) { setUploadError(payload.error ?? "Erro ao enviar comprovante."); return; }
+    if (!res.ok) { setUploadError(payload.error ?? "Erro ao confirmar pagamento."); return; }
     setComprovanteFile(null);
     setUploadError(null);
     // fechar o form de upload
@@ -362,7 +361,7 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
                                 </div>
                                 <div className="flex flex-1 flex-wrap items-center gap-3">
                                   <div className="flex-1">
-                                    <p className="mb-1 text-xs font-semibold text-[#555555]">Comprovante de pagamento (PDF, JPG ou PNG)</p>
+                                    <p className="mb-1 text-xs font-semibold text-[#555555]">Comprovante de pagamento opcional (PDF, JPG ou PNG)</p>
                                     <input
                                       type="file"
                                       accept=".pdf,.jpg,.jpeg,.png"
@@ -374,10 +373,10 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
                                     <Button
                                       variant="success"
                                       className="h-9 px-4 text-xs"
-                                      disabled={!comprovanteFile || uploadingId === item.id}
+                                      disabled={uploadingId === item.id}
                                       onClick={() => enviarComprovante(item.id)}
                                     >
-                                      {uploadingId === item.id ? "Enviando…" : "Confirmar pagamento"}
+                                      {uploadingId === item.id ? "Confirmando…" : "Confirmar pagamento"}
                                     </Button>
                                     <Button
                                       variant="secondary"

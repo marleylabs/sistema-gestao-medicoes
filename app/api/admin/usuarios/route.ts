@@ -4,7 +4,7 @@ import { hashPassword, validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { normalizeAccessUsername } from "@/lib/usuario-format";
 
-const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "DEPARTAMENTO_PESSOAL"];
+const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "ADMINISTRATIVO", "DEPARTAMENTO_PESSOAL"];
 
 export async function GET() {
   const admin = await requireAdmin();

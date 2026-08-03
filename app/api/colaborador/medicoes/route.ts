@@ -4,6 +4,7 @@ import { decryptSensitive } from "@/lib/encryption";
 import { toNumber } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
+import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
 
 function dateOnly(value: Date | null) {
   return value?.toISOString().slice(0, 10) ?? null;
@@ -15,29 +16,31 @@ export async function GET() {
   if (user.perfil !== "COLABORADOR") return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
 
   const codigo = toColaboradorCodigo(user.usuario);
+  const codigoAliases = await getColaboradorCodigoAliases(user.usuario);
 
   const aprovacoes = await prisma.sgcAprovacaoMedicao.findMany({
-    where: { colaboradorCodigo: codigo, status: { in: ["APROVADO", "AGUARDANDO_NF", "PAGO"] } },
+    where: { colaboradorCodigo: { in: codigoAliases }, status: { in: ["APROVADO", "AGUARDANDO_NF", "PAGO"] } },
     orderBy: { aprovadoAt: "desc" },
   });
 
   if (!aprovacoes.length) return NextResponse.json({ medicoes: [] });
 
   const profissional = await prisma.profissional.findFirst({
-    where: { codigo },
+    where: { codigo: { in: codigoAliases } },
     select: { nomeCompleto: true, nome: true, cpf: true, cnpj: true, razaoSocial: true, funcao: true },
   });
 
   const medicoes = await Promise.all(
     aprovacoes.map(async (sgc) => {
+      const cicloAliases = await getColaboradorCodigoAliases(user.usuario, sgc.ciclo);
       const [pagamento, contexto, documentos] = await Promise.all([
         prisma.mapaPagamentoItem.findFirst({
-          where: { ciclo: sgc.ciclo, projetistaCodigo: codigo },
+          where: { ciclo: sgc.ciclo, projetistaCodigo: { in: cicloAliases } },
           orderBy: { ordem: "asc" },
         }),
         prisma.mapaPagamentoContexto.findUnique({ where: { ciclo: sgc.ciclo } }),
         prisma.medicao.findMany({
-          where: { profissional: { codigo }, ciclo: sgc.ciclo },
+          where: { profissional: { codigo: { in: cicloAliases } }, ciclo: sgc.ciclo },
           select: {
             id: true, dataCadastro: true, formato: true, quantidade: true, obs: true,
             equivalenteA1Horas: true, valorMedicao: true, medidoHoras: true,

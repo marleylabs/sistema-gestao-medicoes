@@ -29,6 +29,7 @@ const PERFIL_LABEL: Record<string, string> = {
   MEDICAO: "Medição",
   COLABORADOR: "Fornecedor",
   FINANCEIRO: "Financeiro",
+  ADMINISTRATIVO: "Administrativo",
   DEPARTAMENTO_PESSOAL: "Departamento Pessoal",
 };
 
@@ -37,6 +38,7 @@ const PERFIL_OPTIONS = [
   { value: "MEDICAO",             label: "Medição" },
   { value: "COLABORADOR",         label: "Fornecedor" },
   { value: "FINANCEIRO",          label: "Financeiro" },
+  { value: "ADMINISTRATIVO",      label: "Administrativo" },
   { value: "DEPARTAMENTO_PESSOAL", label: "Departamento Pessoal" },
 ];
 
@@ -44,6 +46,7 @@ const PERFIL_GROUPS = [
   { value: "ADMIN", label: "Administradores", description: "Acesso completo à plataforma." },
   { value: "MEDICAO", label: "Equipe de medição", description: "Operação e acompanhamento das medições." },
   { value: "FINANCEIRO", label: "Financeiro", description: "Notas fiscais, pagamentos e comprovantes." },
+  { value: "ADMINISTRATIVO", label: "Administrativo", description: "Cadastros, validade documental e dados cadastrais." },
   { value: "COLABORADOR", label: "Fornecedores", description: "Acesso ao portal do colaborador." },
   { value: "DEPARTAMENTO_PESSOAL", label: "Departamento Pessoal", description: "Usuários reservados para etapa futura." },
 ];
@@ -144,13 +147,15 @@ function UsuarioCard({ u, onRefresh, canDelete }: { u: Usuario; onRefresh: () =>
   }
 
   const perfilLabel = PERFIL_LABEL[u.perfil] ?? u.perfil;
-  const isInternal = ["MEDICAO", "ADMIN", "FINANCEIRO"].includes(u.perfil);
+  const isInternal = ["MEDICAO", "ADMIN", "FINANCEIRO", "ADMINISTRATIVO"].includes(u.perfil);
   const accent = u.perfil === "ADMIN"
     ? "border-[#AF1B1B]/30 bg-[#FFF5F5]"
     : u.perfil === "MEDICAO"
     ? "border-[#2563EB]/25 bg-[#EFF6FF]"
     : u.perfil === "FINANCEIRO"
     ? "border-[#16A34A]/25 bg-[#F0FDF4]"
+    : u.perfil === "ADMINISTRATIVO"
+    ? "border-[#0F766E]/25 bg-[#F0FDFA]"
     : "border-[#E5E7EB] bg-white";
 
   return (

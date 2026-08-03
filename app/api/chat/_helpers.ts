@@ -11,9 +11,14 @@ export function isOnline(onlineAt: Date | null | undefined) {
 }
 
 export function canChatWith(current: AuthUser, targetPerfil: string) {
+  if (current.perfil === "ADMINISTRATIVO" || targetPerfil === "ADMINISTRATIVO") return false;
   if (current.perfil === "COLABORADOR") return ["MEDICAO", "ADMIN", "FINANCEIRO"].includes(targetPerfil);
   if (["MEDICAO", "ADMIN", "FINANCEIRO"].includes(current.perfil)) return targetPerfil !== "DEPARTAMENTO_PESSOAL";
   return false;
+}
+
+export function canUseChatPerfil(perfil: string) {
+  return perfil !== "ADMINISTRATIVO";
 }
 
 export function isInternalPerfil(perfil: string) {

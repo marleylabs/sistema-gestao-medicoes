@@ -48,6 +48,7 @@ services:
     environment:
       DATABASE_URL: postgresql://medicoes_app:medicoes_app_dev@postgres:5432/medicoes
       NODE_ENV: production
+      ALLOW_DATABASE_RESET: ${ALLOW_DATABASE_RESET:-false}
       AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
       AUTH_BOOTSTRAP_USERNAME: ${AUTH_BOOTSTRAP_USERNAME}

@@ -52,7 +52,9 @@ export async function ensureBootstrapAdmin() {
 
   const totalUsers = await prisma.usuario.count();
   if (totalUsers > 0) {
-    await ensureDefaultAccessUsers();
+    if (process.env.AUTH_CREATE_DEFAULT_MEDICAO_USERS === "true") {
+      await ensureDefaultAccessUsers();
+    }
     return;
   }
 
@@ -71,7 +73,9 @@ export async function ensureBootstrapAdmin() {
       perfil: "ADMIN",
     },
   });
-  await ensureDefaultAccessUsers();
+  if (process.env.AUTH_CREATE_DEFAULT_MEDICAO_USERS === "true") {
+    await ensureDefaultAccessUsers();
+  }
 }
 
 async function clearStoredTemporaryPasswords() {

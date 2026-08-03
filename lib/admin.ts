@@ -24,3 +24,14 @@ export async function requireFinanceiro() {
   }
   return { user, response: null };
 }
+
+export async function requireAdministrativo() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return { user: null, response: NextResponse.json({ error: "Não autenticado." }, { status: 401 }) };
+  }
+  if (!["ADMIN", "ADMINISTRATIVO"].includes(user.perfil)) {
+    return { user, response: NextResponse.json({ error: "Acesso restrito ao Administrativo." }, { status: 403 }) };
+  }
+  return { user, response: null };
+}

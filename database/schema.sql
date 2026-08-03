@@ -26,7 +26,7 @@ create table if not exists usuarios (
     created_at       timestamptz not null default now(),
     updated_at       timestamptz not null default now(),
     constraint usuarios_perfil_check check (
-        perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','DEPARTAMENTO_PESSOAL')
+        perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','DEPARTAMENTO_PESSOAL','ADMINISTRATIVO')
     )
 );
 
@@ -40,7 +40,7 @@ alter table usuarios add column if not exists online_at timestamptz;
 alter table usuarios add column if not exists excluido_at timestamptz;
 alter table usuarios drop constraint if exists usuarios_perfil_check;
 alter table usuarios add constraint usuarios_perfil_check check (
-    perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','DEPARTAMENTO_PESSOAL')
+    perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','DEPARTAMENTO_PESSOAL','ADMINISTRATIVO')
 );
 
 -- ─── chat geral da plataforma ───────────────────────────────
@@ -116,6 +116,38 @@ alter table profissionais add column if not exists funcao text;
 
 create unique index if not exists idx_profissionais_codigo_unique
     on profissionais(codigo) where codigo is not null;
+
+-- ─── cadastros administrativos de fornecedores ───────────────
+create table if not exists cadastros_fornecedores (
+    id                   uuid        primary key default gen_random_uuid(),
+    cnpj_normalizado      text        not null unique,
+    colaborador_codigo    text,
+    responsavel           text        not null,
+    razao_social          text        not null,
+    status_contrato       text,
+    objeto_contrato       text,
+    cargo                 text,
+    cpf                   text,
+    cnpj                  text,
+    email                 text,
+    telefone              text,
+    tipo_ct               text,
+    tipo_contrato         text,
+    valor_hora            numeric(16,4),
+    valor_a1_equivalente  numeric(16,4),
+    valor_documento       numeric(16,4),
+    inicio                date,
+    final                 date,
+    status_cadastro       text,
+    primeiro_aditivo      text,
+    segundo_aditivo       text,
+    raw_payload           jsonb       not null default '{}'::jsonb,
+    created_at            timestamptz not null default now(),
+    updated_at            timestamptz not null default now()
+);
+
+create index if not exists idx_cadastros_fornecedores_colaborador_codigo on cadastros_fornecedores(colaborador_codigo);
+create index if not exists idx_cadastros_fornecedores_final on cadastros_fornecedores(final);
 
 -- ─── sgc_aprovacoes_medicao ──────────────────────────────────
 create table if not exists sgc_aprovacoes_medicao (

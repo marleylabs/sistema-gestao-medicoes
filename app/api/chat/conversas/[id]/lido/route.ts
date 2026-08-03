@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ensureChatParticipant } from "@/app/api/chat/_helpers";
+import { canUseChatPerfil, ensureChatParticipant } from "@/app/api/chat/_helpers";
 
 export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  if (!canUseChatPerfil(user.perfil)) return NextResponse.json({ error: "O Administrativo não utiliza o chat da aplicação." }, { status: 403 });
   const { id } = await params;
 
   const participante = await ensureChatParticipant(id, user.id);

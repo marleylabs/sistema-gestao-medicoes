@@ -148,7 +148,7 @@ BM_AUX_COLUMNS = {
     "mesclado": ["Mesclado"],
     "valor": ["VALOR"],
     "percentual_emissao": ["% EMISSÃO", "% EMISSAO"],
-    "valor_medicao": ["VALOR DA MEDIÇÃO", "VALOR DA MEDICAO"],
+    "valor_medicao": ["VALOR DA MEDIÇÃO", "VALOR DA MEDICAO", "Valor De Medição"],
 }
 
 
@@ -172,6 +172,20 @@ def is_valid_measurement_key(numero_medicao: str | None, codigo_projeto: str | N
 def first_value(row: pd.Series, candidates: list[str]) -> Any:
     for column in candidates:
         if column not in row.index:
+            continue
+
+        value = row[column]
+        if isinstance(value, pd.Series):
+            value = next((item for item in value.tolist() if not pd.isna(item) and not (isinstance(item, str) and not item.strip())), None)
+
+        if not pd.isna(value):
+            if isinstance(value, str) and not value.strip():
+                continue
+            return value
+
+    normalized_candidates = {normalize_for_compare(column) for column in candidates}
+    for column in row.index:
+        if normalize_for_compare(str(column)) not in normalized_candidates:
             continue
 
         value = row[column]
@@ -257,6 +271,13 @@ def resolve_sheet_name(excel_path: Path, requested_name: str, aliases: list[str]
     raise ValueError(
         f"Aba '{requested_name}' não encontrada. Abas disponíveis: {', '.join(available.values())}."
     )
+
+
+def resolve_optional_sheet_name(excel_path: Path, requested_name: str, aliases: list[str] | None = None) -> str | None:
+    try:
+        return resolve_sheet_name(excel_path, requested_name, aliases)
+    except ValueError:
+        return None
 
 
 def normalize_collaborator_status(value: Any) -> str:
@@ -760,9 +781,10 @@ def read_measurements_sheet(excel_path: Path, sheet_name: str) -> pd.DataFrame:
         key_header="Número da Medição",
     )
     if not df.empty:
-        return df
+        return normalize_measurements_layout(df)
 
-    return pd.read_excel(excel_path, sheet_name=sheet_name, dtype=object).dropna(how="all").reset_index(drop=True)
+    fallback = pd.read_excel(excel_path, sheet_name=sheet_name, dtype=object).dropna(how="all").reset_index(drop=True)
+    return normalize_measurements_layout(fallback)
 
 
 def read_bm_aux_sheet(excel_path: Path, sheet_name: str) -> pd.DataFrame:
@@ -775,14 +797,239 @@ def read_bm_aux_sheet(excel_path: Path, sheet_name: str) -> pd.DataFrame:
 
     table = read_excel_table(excel_path, sheet_name, ["TabelaAuxiliar", "BM_AUX"])
     if not table.empty:
-        return table
+        return normalize_bm_aux_layout(table)
 
-    return read_excel_header_region(
+    df = read_excel_header_region(
         excel_path,
         sheet_name,
-        required_headers={"Projeto", "Responsavel", "Equivalente_Revisado", "VALOR DA MEDIÇÃO"},
-        key_header="Projeto",
+        required_headers={"Projeto", "Num_Cliente", "Valor De Medição"},
+        key_header="Num_Cliente",
     )
+    return normalize_bm_aux_layout(df)
+
+
+def looks_like_document_code(value: Any) -> bool:
+    text_value = clean_text(value)
+    if not text_value:
+        return False
+    normalized = normalize_for_compare(text_value)
+    return any(marker in normalized for marker in ("grd-", "orc-", "he-", "-e-", "-c-", "-n-"))
+
+
+def should_apply_positioned_measurements_layout(df: pd.DataFrame) -> bool:
+    if df.empty or len(df.columns) < 38:
+        return False
+
+    sample = df.head(20)
+    coordinator_values = sample.iloc[:, 6].tolist()
+    current_professional_values = sample.iloc[:, 28].tolist()
+    document_like = sum(1 for value in coordinator_values if looks_like_document_code(value))
+    professional_like = sum(1 for value in current_professional_values if clean_text(value))
+    return document_like >= 3 and professional_like >= 3
+
+
+POSITIONED_MEASUREMENTS_HEADERS = [
+    "Número da Medição",
+    "Projeto Referente",
+    "Título Primário",
+    "Centro de Custo",
+    "Coordenador",
+    "Colaborador de Apoio",
+    "Número do Documento",
+    "Evidência",
+    "Data de Cadastro",
+    "Formato",
+    "Quantidade",
+    "Multiplicador",
+    "Equivalente (A1 ou Horas)",
+    "Porcentagem de Revisão",
+    "Emissão Inicial",
+    "Retorno Vale",
+    "Encerramento",
+    "Arquivamento",
+    "Medido (Horas)",
+    "Item da QQP",
+    "Valor Unitário",
+    "Valor Bruto",
+    "Valor Total",
+    "OBS",
+    "Valor do Reajuste",
+    "Ignorar 1",
+    "Localização",
+    "Ignorar 2",
+    "PROJETISTA",
+    "Status Colaborador",
+    "% EMISSÃO",
+    "CONTRATO",
+    "TIPO2",
+    "CONDIÇÃO",
+    "Valor Auxiliar 1",
+    "Valor Auxiliar 2",
+    "Percentual Auxiliar 1",
+    "VALOR DE MEDIÇÃO",
+]
+
+
+def normalize_measurements_layout(df: pd.DataFrame) -> pd.DataFrame:
+    if not should_apply_positioned_measurements_layout(df):
+        return df
+
+    normalized_rows = [normalize_positioned_measurement_row(row) for _, row in df.iterrows()]
+    return pd.DataFrame(normalized_rows).dropna(how="all").reset_index(drop=True)
+
+
+def cell_at(row: pd.Series, position: int) -> Any:
+    index = position - 1
+    if index < 0 or index >= len(row):
+        return None
+    return row.iloc[index]
+
+
+def positive_or_fallback(primary: Any, fallback: Any) -> Any:
+    primary_value = clean_decimal(primary, default=None)
+    if primary_value is not None and primary_value > 0:
+        return primary
+
+    fallback_value = clean_decimal(fallback, default=None)
+    if fallback_value is not None and fallback_value > 0:
+        return fallback
+
+    return primary if primary_value is not None else fallback
+
+
+def normalize_positioned_measurement_row(row: pd.Series) -> dict[str, Any]:
+    raw_values = {f"Origem Coluna {index}": json_safe(value) for index, value in enumerate(row.tolist(), start=1)}
+
+    if looks_like_document_code(cell_at(row, 7)):
+        valor_medicao = positive_or_fallback(cell_at(row, 35), cell_at(row, 38))
+        return {
+            "Número da Medição": cell_at(row, 1),
+            "Projeto Referente": cell_at(row, 2),
+            "Título Primário": cell_at(row, 3),
+            "Centro de Custo": cell_at(row, 4),
+            "Localização": cell_at(row, 27),
+            "CONTRATO": cell_at(row, 32),
+            "Coordenador": cell_at(row, 5),
+            "PROJETISTA": cell_at(row, 29),
+            "FUNÇÃO": cell_at(row, 8),
+            "Mesclado": cell_at(row, 10),
+            "Número do Documento": cell_at(row, 7),
+            "Evidência": cell_at(row, 8),
+            "Data de Cadastro": cell_at(row, 9),
+            "Formato": cell_at(row, 10),
+            "Quantidade": cell_at(row, 11),
+            "Multiplicador": cell_at(row, 12),
+            "Equivalente (A1 ou Horas)": cell_at(row, 13),
+            "Porcentagem de Revisão": cell_at(row, 14),
+            "Emissão Inicial": cell_at(row, 15),
+            "Retorno Vale": cell_at(row, 16),
+            "Encerramento": cell_at(row, 17),
+            "Arquivamento": cell_at(row, 18),
+            "Medido (Horas)": cell_at(row, 19),
+            "Item da QQP": cell_at(row, 20),
+            "Valor Unitário": cell_at(row, 21),
+            "Valor Bruto": cell_at(row, 22),
+            "Valor Total": valor_medicao,
+            "OBS": cell_at(row, 24),
+            "Valor do Reajuste": cell_at(row, 25),
+            "REFERÊNCIA": cell_at(row, 31),
+            "% EMISSÃO": cell_at(row, 31),
+            "TIPO2": cell_at(row, 33),
+            "CONDIÇÃO": cell_at(row, 34),
+            "VALOR DE MEDIÇÃO": valor_medicao,
+            **raw_values,
+        }
+
+    valor_medicao = positive_or_fallback(cell_at(row, 35), cell_at(row, 38))
+    profissional = cell_at(row, 29) or cell_at(row, 7) or cell_at(row, 8)
+    return {
+        "Número da Medição": cell_at(row, 1),
+        "Projeto Referente": cell_at(row, 2),
+        "Título Primário": cell_at(row, 3),
+        "Centro de Custo": cell_at(row, 4),
+        "Localização": cell_at(row, 27),
+        "CONTRATO": cell_at(row, 32),
+        "Coordenador": cell_at(row, 5),
+        "PROJETISTA": profissional,
+        "FUNÇÃO": cell_at(row, 26),
+        "Mesclado": cell_at(row, 10),
+        "Número do Documento": cell_at(row, 7),
+        "Evidência": cell_at(row, 8),
+        "Data de Cadastro": cell_at(row, 9),
+        "Formato": cell_at(row, 10),
+        "Quantidade": cell_at(row, 11),
+        "Multiplicador": cell_at(row, 12),
+        "Equivalente (A1 ou Horas)": cell_at(row, 13),
+        "Porcentagem de Revisão": cell_at(row, 14),
+        "Emissão Inicial": cell_at(row, 15),
+        "Retorno Vale": cell_at(row, 17),
+        "Encerramento": None,
+        "Arquivamento": None,
+        "Medido (Horas)": cell_at(row, 13) or cell_at(row, 11),
+        "Item da QQP": cell_at(row, 20),
+        "Valor Unitário": cell_at(row, 21),
+        "Valor Bruto": cell_at(row, 22),
+        "Valor Total": valor_medicao,
+        "OBS": cell_at(row, 26),
+        "Valor do Reajuste": 0,
+        "REFERÊNCIA": cell_at(row, 31),
+        "% EMISSÃO": cell_at(row, 31),
+        "TIPO2": cell_at(row, 33),
+        "CONDIÇÃO": cell_at(row, 34),
+        "VALOR DE MEDIÇÃO": valor_medicao,
+        **raw_values,
+    }
+
+
+def should_apply_positioned_bm_aux_layout(df: pd.DataFrame) -> bool:
+    if df.empty or len(df.columns) < 28:
+        return False
+    sample = df.head(20)
+    first_columns_empty = sample.iloc[:, 0].isna().sum() >= 3 and sample.iloc[:, 1].isna().sum() >= 3
+    third_column_has_project = sum(1 for value in sample.iloc[:, 2].tolist() if clean_text(value)) >= 3
+    return first_columns_empty and third_column_has_project
+
+
+POSITIONED_BM_AUX_HEADERS = [
+    "Ignorar 1",
+    "Ignorar 2",
+    "Projeto",
+    "Fase",
+    "Num_Cliente",
+    "Responsavel",
+    "Auxiliar",
+    "Data_Entrega",
+    "Tipo_Revisao",
+    "Tipo_Emissao",
+    "Data_Emissao",
+    "Evidencia_Emissao",
+    "Status_Retorno",
+    "Formato",
+    "Quantidade",
+    "Perc_Revisao",
+    "Equivalente_Revisado",
+    "Tipo_Doc",
+    "Contrato",
+    "Orçamento",
+    "Ordem_Emissao",
+    "Ultima_Emissao",
+    "Ciclo",
+    "CICLO RETORNO",
+    "Mesclado",
+    "VALOR",
+    "% EMISSÃO",
+    "VALOR DA MEDIÇÃO",
+]
+
+
+def normalize_bm_aux_layout(df: pd.DataFrame) -> pd.DataFrame:
+    if not should_apply_positioned_bm_aux_layout(df):
+        return df
+
+    normalized = df.copy()
+    normalized = normalized.iloc[:, : len(POSITIONED_BM_AUX_HEADERS)]
+    normalized.columns = POSITIONED_BM_AUX_HEADERS[: len(normalized.columns)]
+    return normalized
 
 
 def normalize_cycle(value: Any) -> str | None:
@@ -1055,7 +1302,7 @@ def ingest(
         load_schema(engine, Path(__file__).resolve().parents[1] / "database" / "schema.sql")
 
     sheet_name = resolve_sheet_name(excel_path, sheet_name, SHEET_ALIASES["Documentos"])
-    base_sheet_name = resolve_sheet_name(excel_path, base_sheet_name, SHEET_ALIASES["Base"])
+    base_sheet_name = resolve_optional_sheet_name(excel_path, base_sheet_name, SHEET_ALIASES["Base"])
     payment_map_sheet_name = resolve_sheet_name(
         excel_path,
         payment_map_sheet_name,
@@ -1068,11 +1315,13 @@ def ingest(
     )
 
     df = read_measurements_sheet(excel_path, sheet_name)
-    base_df = pd.read_excel(excel_path, sheet_name=base_sheet_name, dtype=object)
-    base_df = base_df.dropna(how="all").reset_index(drop=True)
-    payment_map_df = pd.read_excel(excel_path, sheet_name=payment_map_sheet_name, header=7, dtype=object)
-    payment_map_df = payment_map_df.dropna(how="all").reset_index(drop=True)
+    base_df = (
+        pd.read_excel(excel_path, sheet_name=base_sheet_name, dtype=object).dropna(how="all").reset_index(drop=True)
+        if base_sheet_name
+        else pd.DataFrame()
+    )
     payment_map_items_df = read_payment_map_items(excel_path, payment_map_sheet_name)
+    payment_map_df = payment_map_items_df
     bm_aux_df = read_bm_aux_sheet(excel_path, bm_aux_sheet_name)
     positive_payment_codes = build_positive_payment_codes(df)
     canonical_codes = build_canonical_professional_codes(base_df)
@@ -1235,6 +1484,7 @@ def ingest(
 
     return {
         "rows_read": len(df),
+        "base_sheet_found": 1 if base_sheet_name else 0,
         "base_rows_read": len(base_df),
         "base_professionals_loaded": base_loaded,
         "payment_map_rows_read": len(payment_map_df),
@@ -1255,7 +1505,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ETL relacional de medições da aba Documentos.")
     parser.add_argument("--excel", default=DEFAULT_EXCEL_PATH, help="Caminho do arquivo .xlsm/.xlsx.")
     parser.add_argument("--sheet", default=DEFAULT_SHEET, help="Nome da aba de origem.")
-    parser.add_argument("--base-sheet", default=DEFAULT_BASE_SHEET, help="Nome da aba de cadastro de profissionais.")
+    parser.add_argument("--base-sheet", default=DEFAULT_BASE_SHEET, help="Nome da aba opcional de cadastro de profissionais.")
     parser.add_argument("--payment-map-sheet", default=DEFAULT_PAYMENT_MAP_SHEET, help="Nome da aba do mapa de pagamento.")
     parser.add_argument("--bm-aux-sheet", default=DEFAULT_BM_AUX_SHEET, help="Nome da aba auxiliar de BM.")
     parser.add_argument(

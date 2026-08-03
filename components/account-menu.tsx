@@ -14,6 +14,19 @@ type ProfileData = {
   avatarUrl: string | null;
   ultimoLoginAt: string | null;
   createdAt: string;
+  dadosCadastrais: {
+    responsavel: string;
+    razaoSocial: string;
+    cnpj: string | null;
+    cpf: string | null;
+    email: string | null;
+    telefone: string | null;
+    cargo: string | null;
+    inicio: string | null;
+    final: string | null;
+    validadeLabel: string;
+    validadeTone: "danger" | "warning" | "notice" | "success" | "neutral";
+  } | null;
 };
 
 type AccountMenuProps = {
@@ -37,6 +50,20 @@ function dateTimeLabel(value: string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function dateLabel(value: string | null | undefined) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("pt-BR").format(new Date(value));
+}
+
+function ReadOnlyField({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] px-3 py-2.5">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-[#9CA3AF]">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-[#1A1A1A]">{value || "-"}</p>
+    </div>
+  );
 }
 
 function Avatar({
@@ -65,10 +92,7 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [tab, setTab] = useState<"account" | "security">("account");
-  const [editingName, setEditingName] = useState(false);
   const [profile, setProfile] = useState<ProfileData | null>(null);
-  const [nameDraft, setNameDraft] = useState(user.nome);
-  const [savingName, setSavingName] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -86,6 +110,7 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
     avatarUrl: null,
     ultimoLoginAt: null,
     createdAt: new Date().toISOString(),
+    dadosCadastrais: null,
   };
 
   const avatarSrc = useMemo(() => displayProfile.avatarUrl ?? null, [displayProfile.avatarUrl]);
@@ -95,7 +120,6 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
     if (!res.ok) return;
     const data: ProfileData = await res.json();
     setProfile(data);
-    setNameDraft(data.nome);
   }
 
   useEffect(() => {
@@ -114,29 +138,8 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
     setTab(initialTab);
     setModalOpen(true);
     setMenuOpen(false);
-    setEditingName(false);
     setFeedback(null);
     loadProfile();
-  }
-
-  async function saveName(event: FormEvent) {
-    event.preventDefault();
-    setSavingName(true);
-    setFeedback(null);
-    const res = await fetch("/api/usuario/me", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nome: nameDraft }),
-    });
-    const payload = await res.json().catch(() => ({}));
-    setSavingName(false);
-    if (!res.ok) {
-      setFeedback({ type: "error", text: payload.error ?? "Não foi possível atualizar o nome." });
-      return;
-    }
-    setProfile(payload);
-    setEditingName(false);
-    setFeedback({ type: "success", text: "Nome atualizado com sucesso." });
   }
 
   async function uploadAvatar(event: ChangeEvent<HTMLInputElement>) {
@@ -325,36 +328,29 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
                     <section className="grid gap-3">
                       <div>
                         <h3 className="text-base font-medium text-[#1A1A1A]">Nome</h3>
-                        {!editingName && <p className="mt-4 text-sm text-[#1A1A1A]">{displayProfile.nome}</p>}
+                        <p className="mt-4 text-sm text-[#1A1A1A]">{displayProfile.nome}</p>
+                        <p className="mt-1 text-xs text-[#6B7280]">Dados gerenciados pelo Administrativo.</p>
                       </div>
-                      {editingName ? (
-                        <form className="grid max-w-md gap-3" onSubmit={saveName}>
-                          <Input value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} autoFocus />
-                          <div className="flex flex-wrap gap-2">
-                            <Button type="submit" disabled={savingName}>
-                              Salvar
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              onClick={() => {
-                                setNameDraft(displayProfile.nome);
-                                setEditingName(false);
-                              }}
-                            >
-                              Cancelar
-                            </Button>
-                          </div>
-                        </form>
-                      ) : (
-                        <button
-                          type="button"
-                          className="w-fit text-sm font-medium text-[#2563EB] transition hover:text-[#1D4ED8] hover:underline"
-                          onClick={() => setEditingName(true)}
-                        >
-                          Alterar nome
-                        </button>
-                      )}
                     </section>
+
+                    {displayProfile.dadosCadastrais && (
+                      <section className="grid gap-4">
+                        <div>
+                          <h3 className="text-base font-medium text-[#1A1A1A]">Dados cadastrais</h3>
+                          <p className="mt-1 text-sm text-[#6B7280]">Essas informações vêm do Painel Administrativo.</p>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <ReadOnlyField label="Responsável" value={displayProfile.dadosCadastrais.responsavel} />
+                          <ReadOnlyField label="Cargo" value={displayProfile.dadosCadastrais.cargo} />
+                          <ReadOnlyField label="Razão social" value={displayProfile.dadosCadastrais.razaoSocial} />
+                          <ReadOnlyField label="CNPJ" value={displayProfile.dadosCadastrais.cnpj} />
+                          <ReadOnlyField label="CPF" value={displayProfile.dadosCadastrais.cpf} />
+                          <ReadOnlyField label="E-mail" value={displayProfile.dadosCadastrais.email} />
+                          <ReadOnlyField label="Telefone" value={displayProfile.dadosCadastrais.telefone} />
+                          <ReadOnlyField label="Validade" value={`${dateLabel(displayProfile.dadosCadastrais.final)} - ${displayProfile.dadosCadastrais.validadeLabel}`} />
+                        </div>
+                      </section>
+                    )}
 
                     <section className="grid gap-5">
                       <h3 className="text-base font-medium text-[#1A1A1A]">Acesso</h3>
