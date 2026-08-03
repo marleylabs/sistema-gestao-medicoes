@@ -19,11 +19,21 @@ from sqlalchemy import MetaData, create_engine, text
 from sqlalchemy.dialects.postgresql import insert
 
 
-DEFAULT_SHEET = "Geral"
-DEFAULT_BASE_SHEET = "BASE"
+DEFAULT_SHEET = "Documentos"
+DEFAULT_BASE_SHEET = "Base"
 DEFAULT_PAYMENT_MAP_SHEET = "MAPA PAGTO"
-DEFAULT_BM_AUX_SHEET = "BM AUX"  # legado: parâmetro mantido, mas a aba não é mais carregada
+DEFAULT_BM_AUX_SHEET = "Documentos Auxiliares"
 DEFAULT_EXCEL_PATH = r"C:\Users\anderson.marley\Desktop\2605 - ELABORAÇÃO DE BMS - ( PROJETISTAS ).xlsm"
+SHEET_ALIASES = {
+    "Documentos": ["Documentos", "Geral"],
+    "Base": ["Base", "BASE"],
+    "MAPA PAGTO": ["MAPA PAGTO"],
+    "Documentos Auxiliares": ["Documentos Auxiliares", "BM AUX", "BM - AUX"],
+}
+BM_AUX_ALLOWED_COLLABORATORS = {
+    "mauricio spindola",
+    "cristiano jeferson",
+}
 ENCRYPTED_PREFIX = "enc:v1"
 SENSITIVE_RAW_COLUMNS = {
     "cpf",
@@ -112,6 +122,35 @@ MEASUREMENT_COLUMNS = {
     "valor_medicao": ["VALOR DE MEDIÇÃO"],
 }
 
+BM_AUX_COLUMNS = {
+    "projeto": ["Projeto"],
+    "fase": ["Fase"],
+    "numero_cliente": ["Num_Cliente", "Número Cliente", "Numero Cliente"],
+    "responsavel": ["Responsavel", "Responsável"],
+    "auxiliar": ["Auxiliar"],
+    "data_entrega": ["Data_Entrega", "Data Entrega"],
+    "tipo_revisao": ["Tipo_Revisao", "Tipo Revisão"],
+    "tipo_emissao": ["Tipo_Emissao", "Tipo Emissão"],
+    "data_emissao": ["Data_Emissao", "Data Emissão"],
+    "evidencia_emissao": ["Evidencia_Emissao", "Evidência Emissão"],
+    "status_retorno": ["Status_Retorno", "Status Retorno"],
+    "formato": ["Formato"],
+    "quantidade": ["Quantidade"],
+    "perc_revisao": ["Perc_Revisao", "Perc Revisão"],
+    "equivalente_revisado": ["Equivalente_Revisado", "Equivalente Revisado"],
+    "tipo_doc": ["Tipo_Doc", "Tipo Doc", "TIPO DG/DOC/HH"],
+    "contrato": ["Contrato"],
+    "orcamento": ["Orçamento", "Orcamento"],
+    "ordem_emissao": ["Ordem_Emissao", "Ordem Emissão"],
+    "ultima_emissao": ["Ultima_Emissao", "Última_Emissao", "Última Emissão"],
+    "ciclo": ["Ciclo", "CICLO"],
+    "ciclo_retorno": ["CICLO RETORNO", "Ciclo Retorno"],
+    "mesclado": ["Mesclado"],
+    "valor": ["VALOR"],
+    "percentual_emissao": ["% EMISSÃO", "% EMISSAO"],
+    "valor_medicao": ["VALOR DA MEDIÇÃO", "VALOR DA MEDICAO"],
+}
+
 
 def is_valid_measurement_key(numero_medicao: str | None, codigo_projeto: str | None) -> bool:
     if not numero_medicao or not codigo_projeto:
@@ -132,8 +171,14 @@ def is_valid_measurement_key(numero_medicao: str | None, codigo_projeto: str | N
 
 def first_value(row: pd.Series, candidates: list[str]) -> Any:
     for column in candidates:
-        if column in row.index and not pd.isna(row[column]):
-            value = row[column]
+        if column not in row.index:
+            continue
+
+        value = row[column]
+        if isinstance(value, pd.Series):
+            value = next((item for item in value.tolist() if not pd.isna(item) and not (isinstance(item, str) and not item.strip())), None)
+
+        if not pd.isna(value):
             if isinstance(value, str) and not value.strip():
                 continue
             return value
@@ -190,6 +235,28 @@ def normalize_for_compare(value: str | None) -> str:
     normalized = unicodedata.normalize("NFKD", value)
     normalized = "".join(char for char in normalized if not unicodedata.combining(char))
     return normalized.casefold().strip()
+
+
+def resolve_sheet_name(excel_path: Path, requested_name: str, aliases: list[str] | None = None) -> str:
+    workbook = load_workbook(excel_path, read_only=True, data_only=True, keep_vba=True)
+    try:
+        available = {normalize_for_compare(name): name for name in workbook.sheetnames}
+    finally:
+        workbook.close()
+
+    candidates = [requested_name, *(aliases or [])]
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = normalize_for_compare(candidate)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        if normalized in available:
+            return available[normalized]
+
+    raise ValueError(
+        f"Aba '{requested_name}' não encontrada. Abas disponíveis: {', '.join(available.values())}."
+    )
 
 
 def normalize_collaborator_status(value: Any) -> str:
@@ -474,6 +541,9 @@ def build_canonical_professional_codes(base_df: pd.DataFrame) -> dict[str, str]:
         if not codigo:
             continue
         canonical_codes[normalize_for_compare(codigo)] = codigo
+        nome_completo = clean_text(raw["nome_completo"])
+        if nome_completo:
+            canonical_codes[normalize_for_compare(nome_completo)] = codigo
     return canonical_codes
 
 
@@ -581,14 +651,16 @@ def build_payment_map_context(excel_path: Path, sheet_name: str, ciclo: str | No
     }
 
 
-def read_excel_table(excel_path: Path, sheet_name: str, table_name: str) -> pd.DataFrame:
+def read_excel_table(excel_path: Path, sheet_name: str, table_name: str | list[str]) -> pd.DataFrame:
     workbook = load_workbook(excel_path, read_only=False, data_only=True, keep_vba=True)
     try:
         sheet = workbook[sheet_name]
-        if table_name not in sheet.tables:
+        table_names = [table_name] if isinstance(table_name, str) else table_name
+        table_key = next((name for name in table_names if name in sheet.tables), None)
+        if table_key is None:
             return pd.DataFrame()
 
-        table = sheet.tables[table_name]
+        table = sheet.tables[table_key]
         min_col, min_row, max_col, max_row = range_boundaries(table.ref)
         rows = [
             list(row)
@@ -693,6 +765,35 @@ def read_measurements_sheet(excel_path: Path, sheet_name: str) -> pd.DataFrame:
     return pd.read_excel(excel_path, sheet_name=sheet_name, dtype=object).dropna(how="all").reset_index(drop=True)
 
 
+def read_bm_aux_sheet(excel_path: Path, sheet_name: str) -> pd.DataFrame:
+    workbook = load_workbook(excel_path, read_only=True, data_only=True, keep_vba=True)
+    try:
+        if sheet_name not in workbook.sheetnames:
+            return pd.DataFrame()
+    finally:
+        workbook.close()
+
+    table = read_excel_table(excel_path, sheet_name, ["TabelaAuxiliar", "BM_AUX"])
+    if not table.empty:
+        return table
+
+    return read_excel_header_region(
+        excel_path,
+        sheet_name,
+        required_headers={"Projeto", "Responsavel", "Equivalente_Revisado", "VALOR DA MEDIÇÃO"},
+        key_header="Projeto",
+    )
+
+
+def normalize_cycle(value: Any) -> str | None:
+    cleaned = clean_text(value)
+    if not cleaned:
+        return None
+    if cleaned.endswith(".0"):
+        cleaned = cleaned[:-2]
+    return cleaned
+
+
 def build_payment_map_item(row: pd.Series, ordem: int, canonical_codes: dict[str, str], ciclo: str = "2605") -> dict[str, Any] | None:
     raw = extract(row, PAYMENT_MAP_ITEM_COLUMNS)
     projetista_codigo = clean_text(raw["projetista_codigo"])
@@ -730,6 +831,131 @@ def build_payment_map_item(row: pd.Series, ordem: int, canonical_codes: dict[str
     payload["raw_payload"] = raw_payload
     payload["source_row_hash"] = source_hash({"ciclo": ciclo, "ordem": ordem, **raw_payload})
     return payload
+
+
+def bm_aux_people(raw: dict[str, Any], canonical_codes: dict[str, str]) -> list[tuple[str, str]]:
+    people: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for role, key in [("RESPONSAVEL", "responsavel"), ("AUXILIAR", "auxiliar")]:
+        name = clean_text(raw[key])
+        if not name:
+            continue
+        normalized = normalize_for_compare(name)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if BM_AUX_ALLOWED_COLLABORATORS and normalized not in BM_AUX_ALLOWED_COLLABORATORS:
+            continue
+        people.append((role, canonical_codes.get(normalized, name)))
+    return people
+
+
+def is_bm_aux_only_collaborator(value: Any, canonical_codes: dict[str, str]) -> bool:
+    name = clean_text(value)
+    if not name:
+        return False
+    normalized = normalize_for_compare(name)
+    canonical = canonical_codes.get(normalized)
+    return normalized in BM_AUX_ALLOWED_COLLABORATORS or normalize_for_compare(canonical) in BM_AUX_ALLOWED_COLLABORATORS
+
+
+def build_bm_aux_measurement(
+    row: pd.Series,
+    row_number: int,
+    codigo: str,
+    papel: str,
+    ciclo: str,
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    raw = extract(row, BM_AUX_COLUMNS)
+    numero_documento = clean_text(raw["numero_cliente"])
+    codigo_projeto = clean_text(raw["projeto"]) or clean_text(raw["orcamento"])
+    if not numero_documento or not codigo_projeto:
+        return None
+
+    valor_medicao = clean_decimal(raw["valor_medicao"])
+    valor_unitario = clean_decimal(raw["valor"])
+    equivalente = clean_decimal(raw["equivalente_revisado"])
+    percentual_emissao = clean_percent(raw["percentual_emissao"])
+    raw_payload = safe_raw_payload(row, "unnamed_")
+    raw_payload.update({"origem": "BM AUX", "papel": papel, "colaborador": codigo})
+
+    measurement = {
+        "numero_medicao": "BM AUX",
+        "mesclado": clean_text(raw["mesclado"]),
+        "numero_documento": numero_documento,
+        "evidencia": clean_text(raw["evidencia_emissao"]),
+        "data_cadastro": clean_date(raw["data_emissao"]) or clean_date(raw["data_entrega"]),
+        "formato": clean_text(raw["formato"]),
+        "quantidade": clean_decimal(raw["quantidade"]),
+        "multiplicador": Decimal("1"),
+        "equivalente_a1_horas": equivalente,
+        "porcentagem_revisao": clean_percent(raw["perc_revisao"]),
+        "emissao_inicial": percentual_emissao,
+        "retorno_vale": None,
+        "encerramento": None,
+        "arquivamento": None,
+        "medido_horas": equivalente,
+        "item_qqp": None,
+        "valor_unitario": valor_unitario,
+        "valor_bruto": valor_medicao,
+        "valor_total": valor_medicao,
+        "obs": clean_text(raw["status_retorno"]),
+        "valor_reajuste": Decimal("0"),
+        "ciclo": ciclo,
+        "referencia": clean_text(raw["tipo_revisao"]),
+        "percentual_emissao": percentual_emissao,
+        "tipo2": clean_text(raw["tipo_doc"]),
+        "condicao": clean_text(raw["valor"]),
+        "valor_medicao": valor_medicao,
+        "raw_payload": raw_payload,
+        "source_row_hash": source_hash({"ciclo": ciclo, "origem": "BM AUX", "linha": row_number, "papel": papel, **raw_payload}),
+    }
+
+    project = {
+        "codigo_projeto": codigo_projeto,
+        "titulo_primario": clean_text(raw["orcamento"]),
+        "centro_custo": clean_text(raw["fase"]),
+        "localizacao": None,
+        "contrato": clean_text(raw["contrato"]),
+    }
+
+    return measurement, project
+
+
+def build_bm_aux_record(
+    row: pd.Series,
+    row_number: int,
+    codigo: str,
+    papel: str,
+    ciclo: str,
+) -> dict[str, Any]:
+    raw = extract(row, BM_AUX_COLUMNS)
+    raw_payload = safe_raw_payload(row, "unnamed_")
+    raw_payload.update({"papel": papel, "colaborador": codigo})
+    return {
+        "responsavel_codigo": codigo,
+        "ciclo": ciclo,
+        "equivalente_revisado": clean_decimal(raw["equivalente_revisado"]),
+        "valor_medicao": clean_decimal(raw["valor_medicao"]),
+        "raw_payload": raw_payload,
+        "source_row_hash": source_hash({"ciclo": ciclo, "origem": "BM AUX RESUMO", "linha": row_number, "papel": papel, **raw_payload}),
+    }
+
+
+def upsert_bm_aux_medicao(conn, bm_aux_medicoes, data: dict[str, Any]) -> None:
+    stmt = insert(bm_aux_medicoes).values(**data)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[bm_aux_medicoes.c.source_row_hash],
+        set_={
+            "responsavel_codigo": stmt.excluded.responsavel_codigo,
+            "ciclo": stmt.excluded.ciclo,
+            "equivalente_revisado": stmt.excluded.equivalente_revisado,
+            "valor_medicao": stmt.excluded.valor_medicao,
+            "raw_payload": stmt.excluded.raw_payload,
+            "updated_at": text("now()"),
+        },
+    )
+    conn.execute(stmt)
 
 
 def upsert_payment_map_item(conn, mapa_pagamento_itens, data: dict[str, Any]) -> None:
@@ -828,21 +1054,41 @@ def ingest(
     if create_schema:
         load_schema(engine, Path(__file__).resolve().parents[1] / "database" / "schema.sql")
 
+    sheet_name = resolve_sheet_name(excel_path, sheet_name, SHEET_ALIASES["Documentos"])
+    base_sheet_name = resolve_sheet_name(excel_path, base_sheet_name, SHEET_ALIASES["Base"])
+    payment_map_sheet_name = resolve_sheet_name(
+        excel_path,
+        payment_map_sheet_name,
+        SHEET_ALIASES["MAPA PAGTO"],
+    )
+    bm_aux_sheet_name = resolve_sheet_name(
+        excel_path,
+        bm_aux_sheet_name,
+        SHEET_ALIASES["Documentos Auxiliares"],
+    )
+
     df = read_measurements_sheet(excel_path, sheet_name)
     base_df = pd.read_excel(excel_path, sheet_name=base_sheet_name, dtype=object)
     base_df = base_df.dropna(how="all").reset_index(drop=True)
     payment_map_df = pd.read_excel(excel_path, sheet_name=payment_map_sheet_name, header=7, dtype=object)
     payment_map_df = payment_map_df.dropna(how="all").reset_index(drop=True)
     payment_map_items_df = read_payment_map_items(excel_path, payment_map_sheet_name)
+    bm_aux_df = read_bm_aux_sheet(excel_path, bm_aux_sheet_name)
     positive_payment_codes = build_positive_payment_codes(df)
     canonical_codes = build_canonical_professional_codes(base_df)
 
     projetos, profissionais, medicoes, mapa_pagamento_contexto, mapa_pagamento_itens, bm_aux_medicoes = reflect_tables(engine)
     payment_context = build_payment_map_context(excel_path, payment_map_sheet_name, ciclo=ciclo)
     ciclo_efetivo = payment_context["ciclo"]
+    should_filter_bm_aux_by_cycle = normalize_for_compare(bm_aux_sheet_name) in {
+        normalize_for_compare("BM AUX"),
+        normalize_for_compare("BM - AUX"),
+    }
     base_loaded = 0
     payment_status_loaded = 0
     payment_items_loaded = 0
+    bm_aux_rows_loaded = 0
+    bm_aux_measurements_loaded = 0
     inserted_or_updated = 0
     source_hashes: set[str] = set()
     duplicate_source_rows = 0
@@ -876,11 +1122,66 @@ def ingest(
             upsert_payment_map_item(conn, mapa_pagamento_itens, payment_item)
             payment_items_loaded += 1
 
+        for index, row in bm_aux_df.iterrows():
+            raw = extract(row, BM_AUX_COLUMNS)
+            if should_filter_bm_aux_by_cycle and normalize_cycle(raw["ciclo"]) != ciclo_efetivo:
+                continue
+
+            people = bm_aux_people(raw, canonical_codes)
+            if not people:
+                continue
+            bm_aux_rows_loaded += 1
+
+            for papel, codigo in people:
+                built = build_bm_aux_measurement(row, index + 1, codigo, papel, ciclo_efetivo)
+                if not built:
+                    continue
+
+                measurement, project = built
+                id_projeto = upsert_project(conn, projetos, project)
+                id_profissional = upsert_professional(
+                    conn,
+                    profissionais,
+                    {"nome": codigo, "codigo": codigo, "funcao": None},
+                )
+                measurement.update(
+                    {
+                        "id_projeto": id_projeto,
+                        "id_coordenador": None,
+                        "id_profissional": id_profissional,
+                    }
+                )
+
+                if measurement["source_row_hash"] in source_hashes:
+                    duplicate_source_rows += 1
+                source_hashes.add(measurement["source_row_hash"])
+
+                stmt = insert(medicoes).values(**measurement)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=[medicoes.c.source_row_hash],
+                    set_={
+                        column: stmt.excluded[column]
+                        for column in measurement
+                        if column not in {"source_row_hash"}
+                    }
+                    | {"updated_at": text("now()")},
+                )
+                conn.execute(stmt)
+                inserted_or_updated += 1
+                bm_aux_measurements_loaded += 1
+
+                bm_aux_record = build_bm_aux_record(row, index + 1, codigo, papel, ciclo_efetivo)
+                upsert_bm_aux_medicao(conn, bm_aux_medicoes, bm_aux_record)
+
         for _, row in df.iterrows():
             project_raw = extract(row, PROJECT_COLUMNS)
             codigo_projeto = clean_text(project_raw["codigo_projeto"])
             numero_medicao = clean_text(first_value(row, MEASUREMENT_COLUMNS["numero_medicao"]))
             if not is_valid_measurement_key(numero_medicao, codigo_projeto):
+                skipped += 1
+                continue
+            professional_raw = extract(row, PROFESSIONAL_COLUMNS)
+            if is_bm_aux_only_collaborator(professional_raw["nome"], canonical_codes):
                 skipped += 1
                 continue
 
@@ -896,7 +1197,7 @@ def ingest(
                 },
             )
 
-            id_profissional = upsert_professional(conn, profissionais, extract(row, PROFESSIONAL_COLUMNS))
+            id_profissional = upsert_professional(conn, profissionais, professional_raw)
             id_coordenador = upsert_professional(conn, profissionais, extract(row, COORDINATOR_COLUMNS))
             measurement = build_measurement(row)
             # O ciclo efetivo da carga é a fonte da verdade. Isso evita manter
@@ -940,6 +1241,9 @@ def ingest(
         "payment_status_loaded": payment_status_loaded,
         "payment_map_items_rows_read": len(payment_map_items_df),
         "payment_map_items_loaded": payment_items_loaded,
+        "bm_aux_rows_read": len(bm_aux_df),
+        "bm_aux_rows_loaded": bm_aux_rows_loaded,
+        "bm_aux_measurements_loaded": bm_aux_measurements_loaded,
         "rows_processed": inserted_or_updated,
         "rows_unique_by_source_hash": len(source_hashes),
         "rows_duplicate_by_source_hash": duplicate_source_rows,
@@ -948,7 +1252,7 @@ def ingest(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="ETL relacional de medições da planilha Geral.")
+    parser = argparse.ArgumentParser(description="ETL relacional de medições da aba Documentos.")
     parser.add_argument("--excel", default=DEFAULT_EXCEL_PATH, help="Caminho do arquivo .xlsm/.xlsx.")
     parser.add_argument("--sheet", default=DEFAULT_SHEET, help="Nome da aba de origem.")
     parser.add_argument("--base-sheet", default=DEFAULT_BASE_SHEET, help="Nome da aba de cadastro de profissionais.")

@@ -9,3 +9,5 @@ __pycache__
 .codex_tmp
 screenshots
 npm-debug.log*
+outputs
+~$*

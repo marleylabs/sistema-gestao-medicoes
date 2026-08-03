@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, CheckCircle2, FileText, RefreshCw, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, Download, FileText, RefreshCw, X } from "lucide-react";
 import { Badge, BlurValue, Button, Card, Input, Select, SectionHeader } from "@/components/ui";
 import { useBlur } from "@/components/providers";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
@@ -136,6 +136,11 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
     setBmLoading(false);
   }
 
+  function exportarPagamentosConcluidos() {
+    if (!selectedCiclo) return;
+    window.open(`/api/admin/financeiro/exportar?ciclo=${encodeURIComponent(selectedCiclo)}`, "_blank", "noopener,noreferrer");
+  }
+
   const filtered = items.filter((item) => {
     if (filterStatus !== "todos" && item.status !== filterStatus) return false;
     if (busca) {
@@ -160,10 +165,16 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
         title="Painel Financeiro"
         description="Acompanhe o fluxo de notas fiscais e pagamentos por ciclo."
         action={
-          <Button variant="secondary" onClick={load} disabled={loading}>
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-            Atualizar
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" onClick={exportarPagamentosConcluidos} disabled={!selectedCiclo || loading}>
+              <Download size={14} />
+              Exportar concluídos
+            </Button>
+            <Button variant="secondary" onClick={load} disabled={loading}>
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              Atualizar
+            </Button>
+          </div>
         }
       />
 
@@ -254,7 +265,7 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
               <table className="w-full border-collapse text-[11px]">
                 <thead>
                   <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB]">
-                    {["Colaborador", "CNPJ / CPF", "Razão Social", "Valor", "Boletim", "Nota Fiscal", "Recebida em", "Status", ""].map((h, i) => (
+                    {["Colaborador", "CNPJ / CPF", "Razão Social", "Valor", "Boletim", "Nota Fiscal", "Recebida em", "Pagamento em", "Status", ""].map((h, i) => (
                       <th key={i} className={`whitespace-nowrap px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-[#555555] ${i >= 3 ? "text-right" : "text-left"}`}>
                         {h}
                       </th>
@@ -305,6 +316,9 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
                             )}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2.5 text-right text-[10px] text-[#555555]">{fmtDate(item.nfCarregadoAt)}</td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-right text-[10px] text-[#555555]">
+                            {item.status === "PAGO" ? fmtDate(item.pagoAt) : "–"}
+                          </td>
                           <td className="whitespace-nowrap px-3 py-2.5 text-right">
                             <Badge variant={badge}>{label}</Badge>
                           </td>
@@ -322,7 +336,6 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
                               )}
                               {item.status === "PAGO" && (
                                 <>
-                                  <span className="text-[10px] text-[#555555]">{fmtDate(item.pagoAt)}</span>
                                   {item.comprovanteArquivoNome && (
                                     <a
                                       href={`/api/colaborador/comprovante/${item.id}`}
@@ -341,7 +354,7 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
                         </tr>
                         {showUploadForm && (
                           <tr className="border-b last:border-0 bg-[#F0FDF4]">
-                            <td colSpan={9} className="px-5 py-4">
+                            <td colSpan={10} className="px-5 py-4">
                               <div className="flex flex-wrap items-end gap-4 rounded-xl border border-[#BBF7D0] bg-white p-4">
                                 <div className="flex items-center gap-2 text-sm font-semibold text-[#15803D]">
                                   <CheckCircle2 size={16} className="text-[#16A34A]" />
@@ -392,7 +405,7 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
                     <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[11px] font-bold text-[#1A1A1A]">
                       <BlurValue>{currency.format(totalValor)}</BlurValue>
                     </td>
-                    <td colSpan={5} />
+                    <td colSpan={6} />
                   </tr>
                 </tfoot>
               </table>

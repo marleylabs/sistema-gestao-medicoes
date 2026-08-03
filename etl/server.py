@@ -38,15 +38,15 @@ def run_etl(file_bytes: bytes, ciclo: str | None) -> None:
     global _running, _last_result, _last_error, _watchdog_timer
     tmp_path: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=".xlsm", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
             tmp.write(file_bytes)
             tmp_path = Path(tmp.name)
         result = ingest(
             excel_path=tmp_path,
-            sheet_name="Geral",
-            base_sheet_name="BASE",
+            sheet_name="Documentos",
+            base_sheet_name="Base",
             payment_map_sheet_name="MAPA PAGTO",
-            bm_aux_sheet_name="BM AUX",
+            bm_aux_sheet_name="Documentos Auxiliares",
             database_url=DATABASE_URL,
             create_schema=False,
             full_refresh=True,

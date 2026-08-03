@@ -138,12 +138,17 @@ function ChatAvatar({
 function ratio(v: number) { return v ? percent.format(v) : "–"; }
 
 function statusConfig(status: string) {
-  if (status === "APROVADO")           return { label: "Medição aprovada",        badge: "success" as const };
+  if (status === "PAGO")               return { label: "Medição concluída",       badge: "success" as const };
+  if (status === "APROVADO")           return { label: "Aguardando pagamento",    badge: "brand" as const };
   if (status === "AGUARDANDO_NF")      return { label: "Aguardando envio da NF",  badge: "warning" as const };
   if (status === "REVISAO_SOLICITADA") return { label: "Revisão solicitada",      badge: "warning" as const };
   if (status === "AGUARDANDO_ENVIO")   return { label: "Aguardando envio do BM",  badge: "neutral" as const };
   if (status === "CANCELADO")          return { label: "BM cancelado",            badge: "neutral" as const };
   return                                      { label: "Pendente de validação",   badge: "neutral" as const };
+}
+
+function isFinancialFollowUpStatus(status: string) {
+  return status === "APROVADO" || status === "PAGO";
 }
 
 function SummaryField({ label, value }: { label: string; value: React.ReactNode }) {
@@ -534,10 +539,10 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             </div>
           )}
 
-          {/* Link para Minhas Medições quando aprovado */}
-          {data.sgc.status === "APROVADO" && (
+          {/* Link para Minhas Medições quando segue para acompanhamento financeiro */}
+          {isFinancialFollowUpStatus(data.sgc.status) && (
             <div className="mt-5 flex items-center justify-between rounded-lg border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-3">
-              <p className="text-sm text-[#15803D]">Acesse <strong>Minhas Medições</strong> para ver todos os detalhes desta aprovação.</p>
+              <p className="text-sm text-[#15803D]">Acesse <strong>Minhas Medições</strong> para acompanhar o pagamento e os detalhes desta medição.</p>
               <Button variant="success" className="shrink-0" onClick={() => setSection("medicoes")}>
                 <History size={14} />
                 Ver medições
@@ -689,7 +694,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             </div>
           ) : (
             <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-sm text-[#555555]">
-              A medição já foi aprovada para este ciclo.
+              A medição está disponível em Minhas Medições para acompanhamento financeiro.
             </div>
           )}
 
@@ -773,8 +778,8 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
           </div>
         )}
 
-        {/* ── Resumo do fornecedor (oculto quando aprovado) ── */}
-        <Card className={`overflow-hidden ${data.sgc.status === "APROVADO" ? "hidden" : ""}`}>
+        {/* ── Resumo do fornecedor (oculto no acompanhamento financeiro) ── */}
+        <Card className={`overflow-hidden ${isFinancialFollowUpStatus(data.sgc.status) ? "hidden" : ""}`}>
           <div className="grid gap-5 p-5 xl:grid-cols-[1.15fr_0.9fr_0.95fr]">
             <section className="min-w-0">
               <div className="mb-4 flex items-center gap-3">
@@ -842,8 +847,8 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
           </div>
         </Card>
 
-        {/* ── Documents (oculto quando aprovado) ── */}
-        <Card className={`overflow-hidden ${data.sgc.status === "APROVADO" ? "hidden" : ""}`}>
+        {/* ── Documents (oculto no acompanhamento financeiro) ── */}
+        <Card className={`overflow-hidden ${isFinancialFollowUpStatus(data.sgc.status) ? "hidden" : ""}`}>
           <button
             className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[#FAFAFA]"
             onClick={() => setDocumentsOpen((v) => !v)}
@@ -1221,6 +1226,8 @@ function MedicaoAprovadaCard({ med, onReload }: { med: MedicaoAprovada; onReload
   const nfInputRef = useRef<HTMLInputElement | null>(null);
 
   const isAguardandoNf = med.status === "AGUARDANDO_NF";
+  const isAguardandoPagamento = med.status === "APROVADO";
+  const isConcluida = med.status === "PAGO";
 
   const aprovadoLabel = med.aprovadoAt
     ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(med.aprovadoAt))
@@ -1293,11 +1300,43 @@ function MedicaoAprovadaCard({ med, onReload }: { med: MedicaoAprovada; onReload
     }
   }
 
-  const headerBg = isAguardandoNf ? "border-[#FDE68A] bg-[#FFFBEB]" : "border-[#BBF7D0] bg-[#F0FDF4]";
-  const iconBg   = isAguardandoNf ? "bg-[#D97706]/10 text-[#D97706]" : "bg-[#16A34A]/10 text-[#16A34A]";
-  const titleColor = isAguardandoNf ? "text-[#92400E]" : "text-[#15803D]";
-  const subColor   = isAguardandoNf ? "text-[#D97706]" : "text-[#16A34A]";
-  const StatusIcon = isAguardandoNf ? FileUp : CheckCircle2;
+  const headerBg = isAguardandoNf
+    ? "border-[#FDE68A] bg-[#FFFBEB]"
+    : isAguardandoPagamento
+      ? "border-[#BFDBFE] bg-[#EFF6FF]"
+      : "border-[#BBF7D0] bg-[#F0FDF4]";
+  const iconBg = isAguardandoNf
+    ? "bg-[#D97706]/10 text-[#D97706]"
+    : isAguardandoPagamento
+      ? "bg-[#2563EB]/10 text-[#2563EB]"
+      : "bg-[#16A34A]/10 text-[#16A34A]";
+  const titleColor = isAguardandoNf
+    ? "text-[#92400E]"
+    : isAguardandoPagamento
+      ? "text-[#1D4ED8]"
+      : "text-[#15803D]";
+  const subColor = isAguardandoNf
+    ? "text-[#D97706]"
+    : isAguardandoPagamento
+      ? "text-[#2563EB]"
+      : "text-[#16A34A]";
+  const StatusIcon = isAguardandoNf ? FileUp : isAguardandoPagamento ? Clock : CheckCircle2;
+  const statusTitle = isAguardandoNf
+    ? "Aguardando NF"
+    : isAguardandoPagamento
+      ? "Aguardando pagamento"
+      : isConcluida
+        ? "Medição Concluída"
+        : "Medição";
+  const statusSubtitle = isAguardandoNf
+    ? "Envie a Nota Fiscal para seguir com o pagamento"
+    : isAguardandoPagamento
+      ? nfEnviadaLabel
+        ? `NF enviada em ${nfEnviadaLabel}. Pagamento pendente.`
+        : "Nota Fiscal recebida. Pagamento pendente."
+      : med.comprovanteCarregadoAt
+        ? `Pagamento concluído em ${new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(med.comprovanteCarregadoAt))}`
+        : `Aprovado em ${aprovadoLabel}`;
 
   return (
     <Card className="overflow-hidden">
@@ -1311,12 +1350,16 @@ function MedicaoAprovadaCard({ med, onReload }: { med: MedicaoAprovada; onReload
             <div>
               <div className="flex items-center gap-2">
                 <p className={`text-sm font-bold ${titleColor}`}>
-                  {isAguardandoNf ? "Aguardando NF" : "Medição Aprovada"} — Ciclo {med.ciclo}
+                  {statusTitle} — Ciclo {med.ciclo}
                 </p>
-                {med.revisaoLabel && <Badge variant={isAguardandoNf ? "warning" : "success"} className="shrink-0">{med.revisaoLabel}</Badge>}
+                {med.revisaoLabel && (
+                  <Badge variant={isAguardandoNf ? "warning" : isAguardandoPagamento ? "brand" : "success"} className="shrink-0">
+                    {med.revisaoLabel}
+                  </Badge>
+                )}
               </div>
               <p className={`text-xs ${subColor}`}>
-                {isAguardandoNf ? "Envie a Nota Fiscal para concluir" : `Aprovado em ${aprovadoLabel}`}
+                {statusSubtitle}
               </p>
             </div>
           </div>
@@ -1426,17 +1469,17 @@ function MedicaoAprovadaCard({ med, onReload }: { med: MedicaoAprovada; onReload
       )}
 
       {!isAguardandoNf && med.nfArquivoNome && (
-        <div className="flex items-center gap-3 border-b border-[#BBF7D0] bg-[#F0FDF4] px-5 py-3">
-          <FileText size={14} className="shrink-0 text-[#16A34A]" />
-          <span className="flex-1 text-xs text-[#15803D]">
+        <div className={`flex items-center gap-3 border-b px-5 py-3 ${isAguardandoPagamento ? "border-[#BFDBFE] bg-[#EFF6FF]" : "border-[#BBF7D0] bg-[#F0FDF4]"}`}>
+          <FileText size={14} className={`shrink-0 ${isAguardandoPagamento ? "text-[#2563EB]" : "text-[#16A34A]"}`} />
+          <span className={`flex-1 text-xs ${isAguardandoPagamento ? "text-[#1D4ED8]" : "text-[#15803D]"}`}>
             NF enviada: <strong>{med.nfArquivoNome}</strong>
-            {nfEnviadaLabel && <span className="ml-1 text-[#16A34A]/70">· {nfEnviadaLabel}</span>}
+            {nfEnviadaLabel && <span className={`ml-1 ${isAguardandoPagamento ? "text-[#2563EB]/70" : "text-[#16A34A]/70"}`}>· {nfEnviadaLabel}</span>}
           </span>
           <a
             href={`/api/colaborador/nf/${med.id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="shrink-0 rounded-lg bg-[#16A34A] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#15803D]"
+            className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-white ${isAguardandoPagamento ? "bg-[#2563EB] hover:bg-[#1D4ED8]" : "bg-[#16A34A] hover:bg-[#15803D]"}`}
           >
             Visualizar NF
           </a>
