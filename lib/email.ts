@@ -52,7 +52,7 @@ export function bmDisponivel(nome: string, meta?: { ciclo?: string; colaboradorC
     <div style="font-family:sans-serif;max-width:540px;margin:0 auto;">
       <h2 style="color:#1A1A1A;">Nova medição disponível para análise</h2>
       <p>Olá, <strong>${nomeSeguro}</strong>!</p>
-      <p>Uma nova medição foi disponibilizada para análise no Portal do Colaborador.</p>
+      <p>Uma nova medição foi disponibilizada para análise no Portal do Fornecedor.</p>
       ${cicloSeguro ? `<p><strong>Ciclo:</strong> ${cicloSeguro}</p>` : ""}
       ${codigoSeguro ? `<p><strong>Código:</strong> ${codigoSeguro}</p>` : ""}
       <p>Acesse o portal para visualizar os dados e registrar sua conformidade.</p>

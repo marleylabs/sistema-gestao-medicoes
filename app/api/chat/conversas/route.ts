@@ -7,8 +7,20 @@ function serializePerfil(perfil: string) {
   if (perfil === "COLABORADOR") return "Fornecedor";
   if (perfil === "FINANCEIRO") return "Financeiro";
   if (perfil === "ADMIN") return "Administrador";
-  if (perfil === "MEDICAO") return "Medição";
+  if (perfil === "MEDICAO") return "Equipe de Medição";
   return "Usuário";
+}
+
+function teamLabel(perfil: string) {
+  if (perfil === "MEDICAO") return "Equipe de Medição";
+  if (perfil === "FINANCEIRO") return "Financeiro";
+  if (perfil === "ADMIN") return "Administrador";
+  return "Equipe";
+}
+
+function getTeamPerfilFromKey(chave: string) {
+  const parts = chave.split(":");
+  return parts[0] === "TEAM" ? parts[1] ?? null : null;
 }
 
 export async function GET() {
@@ -38,6 +50,7 @@ export async function GET() {
 
   const payload = await Promise.all(participacoes.map(async (participacao) => {
     const conversa = participacao.conversa;
+    const targetPerfil = getTeamPerfilFromKey(conversa.chave);
     const outro = isInternalPerfil(user.perfil)
       ? conversa.participantes.find((item) => item.usuario.perfil === "COLABORADOR")?.usuario
         ?? conversa.participantes.find((item) => item.usuarioId !== user.id)?.usuario
@@ -53,14 +66,25 @@ export async function GET() {
     });
     return {
       id: conversa.id,
-      titulo: outro?.nome ?? conversa.titulo ?? "Conversa",
-      subtitulo: outro ? serializePerfil(outro.perfil) : "Conversa",
+      titulo: targetPerfil ? teamLabel(targetPerfil) : outro?.nome ?? conversa.titulo ?? "Conversa",
+      subtitulo: targetPerfil ? "Equipe fixada" : outro ? serializePerfil(outro.perfil) : "Conversa",
       targetUserId: outro?.id ?? null,
-      avatarUrl: outro ? avatarUrlByUserId(outro.id, outro.avatarAtualizadoAt) : null,
-      online: isOnline(outro?.onlineAt),
+      targetPerfil,
+      avatarUrl: targetPerfil ? null : outro ? avatarUrlByUserId(outro.id, outro.avatarAtualizadoAt) : null,
+      online: targetPerfil
+        ? conversa.participantes.some((item) => item.usuarioId !== user.id && isOnline(item.usuario.onlineAt))
+        : isOnline(outro?.onlineAt),
       ultimaMensagem: ultima ? {
         id: ultima.id,
-        texto: ultima.texto,
+        texto: ultima.tipoMensagem === "AUDIO"
+          ? "Áudio"
+          : ultima.tipoMensagem === "IMAGEM"
+            ? "Imagem"
+            : ultima.tipoMensagem === "VIDEO"
+              ? "Vídeo"
+              : ultima.tipoMensagem === "ARQUIVO"
+                ? (ultima.arquivoNome ?? "Arquivo")
+                : ultima.texto,
         autorNome: ultima.autor.nome,
         criadoAt: ultima.createdAt.toISOString(),
       } : null,
@@ -81,6 +105,75 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => null);
   const targetUserId = typeof body?.targetUserId === "string" ? body.targetUserId : "";
+  const targetPerfil = typeof body?.targetPerfil === "string" ? body.targetPerfil : targetUserId.startsWith("perfil:") ? targetUserId.replace("perfil:", "") : "";
+
+  if (targetPerfil) {
+    if (!canChatWith(user, targetPerfil)) {
+      return NextResponse.json({ error: "Equipe indisponível para conversa." }, { status: 403 });
+    }
+
+    let targets = await prisma.usuario.findMany({
+      where: {
+        perfil: targetPerfil,
+        ativo: true,
+        excluidoAt: null,
+        id: { not: user.id },
+      },
+      select: { id: true },
+      orderBy: { nome: "asc" },
+      take: 20,
+    });
+
+    if (!targets.length && targetPerfil !== "ADMIN") {
+      targets = await prisma.usuario.findMany({
+        where: {
+          perfil: "ADMIN",
+          ativo: true,
+          excluidoAt: null,
+          id: { not: user.id },
+        },
+        select: { id: true },
+        orderBy: { nome: "asc" },
+        take: 5,
+      });
+    }
+
+    if (!targets.length) {
+      return NextResponse.json({ error: "Nenhum usuário disponível nessa equipe." }, { status: 404 });
+    }
+
+    const chave = user.perfil === "COLABORADOR"
+      ? `TEAM:${targetPerfil}:${user.id}`
+      : `TEAM:${targetPerfil}:${user.perfil}`;
+    const participantIds = Array.from(new Set([user.id, ...targets.map((target) => target.id)]));
+    const conversa = await prisma.chatConversa.upsert({
+      where: { chave },
+      create: {
+        chave,
+        tipo: "EQUIPE",
+        titulo: teamLabel(targetPerfil),
+        participantes: {
+          create: participantIds.map((usuarioId) => ({
+            usuarioId,
+            ...(usuarioId === user.id ? { ultimoLidoAt: new Date() } : {}),
+          })),
+        },
+      },
+      update: { updatedAt: new Date(), titulo: teamLabel(targetPerfil), tipo: "EQUIPE" },
+      select: { id: true },
+    });
+
+    for (const usuarioId of participantIds) {
+      await prisma.chatParticipante.upsert({
+        where: { conversaId_usuarioId: { conversaId: conversa.id, usuarioId } },
+        create: { conversaId: conversa.id, usuarioId, ...(usuarioId === user.id ? { ultimoLidoAt: new Date() } : {}) },
+        update: {},
+      });
+    }
+
+    return NextResponse.json({ id: conversa.id });
+  }
+
   if (!targetUserId || targetUserId === user.id) {
     return NextResponse.json({ error: "Usuário inválido." }, { status: 400 });
   }

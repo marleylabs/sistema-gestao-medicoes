@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarClock, CheckCircle2, Download, Edit3, FileSpreadsheet, RefreshCw, Save, Upload, X } from "lucide-react";
+import { AlertTriangle, Download, Edit3, FileSpreadsheet, RefreshCw, Save, Upload, X } from "lucide-react";
 import { Button, Card, Input, SectionHeader } from "@/components/ui";
 
 type CadastroFornecedor = {
@@ -42,6 +42,8 @@ type ImportResult = {
   senhasTemporarias: { usuario: string; nome: string; senha: string }[];
 };
 
+type StatusFilter = "todos" | "vencidos" | "vencendo" | "pendencias";
+
 function dateInputValue(value: string | null) {
   if (!value) return "";
   return value.slice(0, 10);
@@ -58,6 +60,13 @@ const toneClass: Record<CadastroFornecedor["validadeTone"], string> = {
   notice: "bg-[#EFF6FF] text-[#1D4ED8] ring-[#BFDBFE]",
   success: "bg-[#F0FDF4] text-[#15803D] ring-[#BBF7D0]",
   neutral: "bg-[#F3F4F6] text-[#6B7280] ring-[#E5E7EB]",
+};
+
+const FILTER_LABELS: Record<StatusFilter, string> = {
+  todos: "Todos",
+  vencidos: "Vencidos",
+  vencendo: "Próximo do vencimento",
+  pendencias: "Pendências",
 };
 
 function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: () => void }) {
@@ -195,6 +204,7 @@ export function AdministrativoPanel() {
   const [uploading, setUploading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -210,16 +220,27 @@ export function AdministrativoPanel() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((item) =>
-      [item.responsavel, item.razaoSocial, item.cnpj, item.colaboradorCodigo, item.email]
-        .some((value) => value?.toLowerCase().includes(q)),
-    );
-  }, [items, search]);
+    return items.filter((item) => {
+      const matchesSearch = !q || [item.responsavel, item.razaoSocial, item.cnpj, item.colaboradorCodigo, item.email]
+        .some((value) => value?.toLowerCase().includes(q));
+      const matchesStatus =
+        statusFilter === "todos" ||
+        (statusFilter === "vencidos" && item.diasAteVencimento !== null && item.diasAteVencimento < 0) ||
+        (statusFilter === "vencendo" && item.diasAteVencimento !== null && item.diasAteVencimento >= 0 && item.diasAteVencimento <= 30) ||
+        (statusFilter === "pendencias" && item.pendencias.length > 0);
+      return matchesSearch && matchesStatus;
+    });
+  }, [items, search, statusFilter]);
 
   const vencidos = items.filter((item) => item.diasAteVencimento !== null && item.diasAteVencimento < 0).length;
   const vencendo = items.filter((item) => item.diasAteVencimento !== null && item.diasAteVencimento >= 0 && item.diasAteVencimento <= 30).length;
   const pendencias = items.filter((item) => item.pendencias.length > 0);
+  const filterCounts: Record<StatusFilter, number> = {
+    todos: items.length,
+    vencidos,
+    vencendo,
+    pendencias: pendencias.length,
+  };
 
   async function upload() {
     if (!file) return;
@@ -333,7 +354,26 @@ export function AdministrativoPanel() {
         </Card>
       )}
 
-      <Card className="p-4">
+      <Card className="grid gap-4 p-4">
+        <div className="flex flex-wrap gap-2">
+          {(Object.keys(FILTER_LABELS) as StatusFilter[]).map((filter) => (
+            <button
+              key={filter}
+              type="button"
+              onClick={() => setStatusFilter(filter)}
+              className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition ${
+                statusFilter === filter
+                  ? "border-[#2563EB] bg-[#2563EB] text-white shadow-sm"
+                  : "border-[#E5E7EB] bg-white text-[#555555] hover:border-[#2563EB] hover:text-[#2563EB]"
+              }`}
+            >
+              {FILTER_LABELS[filter]}
+              <span className={`rounded px-1.5 py-0.5 text-[10px] ${statusFilter === filter ? "bg-white/20 text-white" : "bg-[#F3F4F6] text-[#6B7280]"}`}>
+                {filterCounts[filter]}
+              </span>
+            </button>
+          ))}
+        </div>
         <Input placeholder="Buscar por responsável, razão social, CNPJ, código ou e-mail..." value={search} onChange={(e) => setSearch(e.target.value)} />
       </Card>
 
@@ -347,10 +387,6 @@ export function AdministrativoPanel() {
         </div>
       )}
 
-      <div className="grid gap-2 text-xs text-[#6B7280] sm:grid-cols-2">
-        <span className="inline-flex items-center gap-1"><CalendarClock size={13} /> Validade calculada pela coluna FINAL.</span>
-        <span className="inline-flex items-center gap-1"><CheckCircle2 size={13} /> NF só libera com cadastro válido e CNPJ compatível.</span>
-      </div>
     </div>
   );
 }

@@ -117,7 +117,7 @@ function TiposPrecos({ itens }: { itens: DashboardData["tiposPrecos"] }) {
           <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB]">
             <Users size={16} />
           </span>
-          <h3 className="text-sm font-bold text-[#1A1A1A]">Tipos e Preços por colaborador</h3>
+          <h3 className="text-sm font-bold text-[#1A1A1A]">Tipos e Preços por fornecedor</h3>
         </div>
         <p className="text-sm text-[#555555]">Nenhum documento cadastrado.</p>
       </Card>
@@ -136,13 +136,13 @@ function TiposPrecos({ itens }: { itens: DashboardData["tiposPrecos"] }) {
         <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB]">
           <Users size={14} />
         </span>
-        <h3 className="text-sm font-bold text-[#1A1A1A]">Tipos e Preços por colaborador</h3>
+        <h3 className="text-sm font-bold text-[#1A1A1A]">Tipos e Preços por fornecedor</h3>
       </div>
       <div className="overflow-auto max-h-[260px]">
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 bg-[#F9FAFB]">
             <tr>
-              {["Colaborador", "Tipo DG/DOC/HH", "Preço Unit."].map((h, i) => (
+              {["Fornecedor", "Tipo DG/DOC/HH", "Preço Unit."].map((h, i) => (
                 <th key={h} className={`border-b border-[#E5E7EB] px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-[#555555] ${i > 0 ? "text-right" : "text-left"}`}>
                   {h}
                 </th>
@@ -265,7 +265,7 @@ export function MapaPagamentoResumo({
     <section className="grid min-w-0 gap-5">
       <SectionHeader
         title="Visão financeira"
-        description="Tipos, preços por colaborador e distribuição de valor medido por contrato."
+        description="Tipos, preços por fornecedor e distribuição de valor medido por contrato."
         action={undefined}
       />
 
@@ -274,7 +274,7 @@ export function MapaPagamentoResumo({
       )}
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        {/* Tipos e Preços por colaborador */}
+        {/* Tipos e Preços por fornecedor */}
         <TiposPrecos itens={data?.tiposPrecos ?? []} />
 
         {/* Contracts table */}

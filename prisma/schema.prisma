@@ -64,12 +64,17 @@ model ChatParticipante {
 }
 
 model ChatMensagem {
-  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  conversaId String       @map("conversa_id") @db.Uuid
-  autorId    String       @map("autor_id") @db.Uuid
-  texto      String
-  origem     String?      @unique
-  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversaId     String       @map("conversa_id") @db.Uuid
+  autorId        String       @map("autor_id") @db.Uuid
+  texto          String
+  tipoMensagem   String       @default("TEXTO") @map("tipo_mensagem")
+  arquivo        Bytes?       @map("arquivo")
+  arquivoNome    String?      @map("arquivo_nome")
+  arquivoMime    String?      @map("arquivo_mime")
+  arquivoTamanho Int?         @map("arquivo_tamanho")
+  origem         String?      @unique
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
 
   conversa ChatConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
   autor    Usuario      @relation(fields: [autorId], references: [id], onDelete: Cascade)

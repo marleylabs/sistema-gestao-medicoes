@@ -241,7 +241,7 @@ export function MapaPagamentoTable({
       <div className="border-b border-[#E5E7EB] bg-white px-5 py-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
           <div className="min-w-0">
-            <h2 className="text-base font-bold text-[#1A1A1A]">Pagamentos por colaborador</h2>
+            <h2 className="text-base font-bold text-[#1A1A1A]">Pagamentos por fornecedor</h2>
             <p className="mt-0.5 text-sm text-[#555555]">{filterDescription}</p>
           </div>
           <div className="flex flex-1 flex-wrap items-end gap-3 xl:justify-end">
@@ -422,7 +422,7 @@ export function MapaPagamentoTable({
                                 ? "Faça alguma alteração no pagamento antes de reenviar"
                                 : isRevisaoEnvio
                                 ? "Reenviar medição revisada"
-                                : "Enviar BM para o colaborador"
+                                : "Enviar BM para o fornecedor"
                             }
                             onClick={async () => {
                               setEnviandoCodigo(codigo);
@@ -445,7 +445,7 @@ export function MapaPagamentoTable({
                               className={hasUnreadFornecedorMessages(revisao.mensagens)
                                 ? "border-[#86EFAC] bg-[#F0FDF4] text-[#16A34A] hover:border-[#22C55E] hover:bg-[#DCFCE7]"
                                 : "border-[#FCD34D] bg-[#FFFBEB] text-[#D97706] hover:border-[#F59E0B] hover:bg-[#FEF3C7]"}
-                              title="Ver comentário do colaborador"
+                              title="Ver comentário do fornecedor"
                               onClick={() => setOpenDropdownId(dropdownOpen ? null : item.id)}
                             >
                               <MessageCircle size={14} />
@@ -1077,7 +1077,7 @@ function PaymentModal({
               {item ? "Editar pagamento" : "Novo pagamento"}
             </h2>
             <p className="mt-0.5 text-sm text-[#555555]">
-              {item ? "Atualize os dados do colaborador no ciclo atual." : "Preencha os dados para cadastrar um novo colaborador."}
+              {item ? "Atualize os dados do fornecedor no ciclo atual." : "Preencha os dados para cadastrar um novo fornecedor."}
             </p>
           </div>
           <IconButton onClick={onCancel} title="Fechar"><X size={16} /></IconButton>

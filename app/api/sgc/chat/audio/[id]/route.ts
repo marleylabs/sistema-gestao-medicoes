@@ -25,7 +25,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   }
 
   if (user.perfil === "COLABORADOR" && log.colaboradorCodigo !== toColaboradorCodigo(user.usuario)) {
-    return NextResponse.json({ error: "Acesso restrito ao colaborador." }, { status: 403 });
+    return NextResponse.json({ error: "Acesso restrito ao fornecedor." }, { status: 403 });
   }
   if (!["COLABORADOR", "MEDICAO", "ADMIN"].includes(user.perfil)) {
     return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });

@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   const isMedicao = ["MEDICAO", "ADMIN"].includes(user.perfil);
   if (!isFornecedor && !isMedicao) return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
   if (isFornecedor && sgc.colaboradorCodigo !== toColaboradorCodigo(user.usuario)) {
-    return NextResponse.json({ error: "Acesso restrito ao colaborador." }, { status: 403 });
+    return NextResponse.json({ error: "Acesso restrito ao fornecedor." }, { status: 403 });
   }
   if (sgc.status !== "REVISAO_SOLICITADA") {
     return NextResponse.json({ error: "Áudios só podem ser enviados enquanto a revisão estiver aberta." }, { status: 409 });
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
         acao,
         statusAnterior: sgc.status,
         statusNovo: sgc.status,
-        telaOrigem: isFornecedor ? "Portal do Colaborador" : "Medição",
+        telaOrigem: isFornecedor ? "Portal do Fornecedor" : "Medição",
         observacao: "Áudio",
         tipoMensagem: "AUDIO",
         audioArquivo: bytes,

@@ -27,7 +27,7 @@ export async function GET() {
     return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
   }
   if (user.perfil !== "COLABORADOR") {
-    return NextResponse.json({ error: "Acesso restrito ao colaborador." }, { status: 403 });
+    return NextResponse.json({ error: "Acesso restrito ao fornecedor." }, { status: 403 });
   }
 
   const codigo = toColaboradorCodigo(user.usuario);

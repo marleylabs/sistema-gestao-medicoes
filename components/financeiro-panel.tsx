@@ -256,7 +256,7 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
           </div>
         ) : filtered.length === 0 ? (
           <div className="p-10 text-center text-sm text-[#9CA3AF]">
-            Nenhum colaborador encontrado para este ciclo e filtro.
+            Nenhum fornecedor encontrado para este ciclo e filtro.
           </div>
         ) : (
           <>
@@ -264,7 +264,7 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
               <table className="w-full border-collapse text-[11px]">
                 <thead>
                   <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB]">
-                    {["Colaborador", "CNPJ / CPF", "Razão Social", "Valor", "Boletim", "Nota Fiscal", "Recebida em", "Pagamento em", "Status", ""].map((h, i) => (
+                    {["Fornecedor", "CNPJ / CPF", "Razão Social", "Valor", "Boletim", "Nota Fiscal", "Recebida em", "Pagamento em", "Status", ""].map((h, i) => (
                       <th key={i} className={`whitespace-nowrap px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-[#555555] ${i >= 3 ? "text-right" : "text-left"}`}>
                         {h}
                       </th>
@@ -399,7 +399,7 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
                 <tfoot>
                   <tr className="border-t-2 border-[#E5E7EB] bg-[#F9FAFB]">
                     <td colSpan={3} className="px-3 py-2.5 text-[10px] font-semibold text-[#555555]">
-                      {filtered.length} colaborador(es)
+                      {filtered.length} fornecedor(es)
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[11px] font-bold text-[#1A1A1A]">
                       <BlurValue>{currency.format(totalValor)}</BlurValue>

@@ -67,7 +67,7 @@ O script usa internamente `C:\docker\medicoes-crud`, um junction para a pasta re
 - Banco: `medicoes`
 - Usuário: `medicoes_app`
 - Senha: `medicoes_app_dev`
-- Porta PostgreSQL no Windows: `55432`
+- Porta PostgreSQL no Windows: `15432`
 - Porta da aplicação: `3000`
 
 ## Autenticação e segurança

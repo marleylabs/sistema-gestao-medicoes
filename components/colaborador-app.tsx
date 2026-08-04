@@ -465,7 +465,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
       <div className="flex min-h-screen items-center justify-center bg-[#F5F5F5]">
         <div className="flex items-center gap-3 text-sm text-[#555555]">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#2563EB]" />
-          Carregando ambiente do colaborador…
+          Carregando ambiente do fornecedor…
         </div>
       </div>
     );
@@ -482,13 +482,13 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
         <RefreshCw size={14} />
         Atualizar
       </Button>
-      <AccountMenu user={user} roleLabel="Colaborador" onLogout={logout} />
+      <AccountMenu user={user} roleLabel="Fornecedor" onLogout={logout} />
     </div>
   );
 
   const aguardando = data.sgc.status === "AGUARDANDO_ENVIO";
 
-  const TITLES: Record<Section, string> = { portal: "Portal do Colaborador", medicoes: "Minhas Medições" };
+  const TITLES: Record<Section, string> = { portal: "Portal do Fornecedor", medicoes: "Minhas Medições" };
 
   return (
     <AppShell activeSection={section} onNavigate={(id) => setSection(id as Section)} navItems={navItems} pageTitle={TITLES[section]} topBarRight={topBar}>
@@ -523,9 +523,6 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                 <h2 className="text-xl font-bold text-[#1A1A1A]">{statusLabel}</h2>
                 {data.sgc.revisaoLabel && <Badge variant="brand">{data.sgc.revisaoLabel}</Badge>}
               </div>
-              <p className="mt-1.5 text-sm text-[#555555]">
-                Confira os dados apresentados e registre sua conformidade ou pontos de discordância.
-              </p>
             </div>
             <Badge variant={statusBadge} className="shrink-0 px-3 py-1 text-xs">
               {data.sgc.status}

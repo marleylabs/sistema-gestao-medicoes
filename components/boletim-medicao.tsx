@@ -108,8 +108,6 @@ export function BoletimMedicao({ data }: { data: BmData }) {
 
   // Datas derivadas automaticamente do ciclo como fallback
   const datas = cicloToDates(data.ciclo);
-  const producaoInicio = ctx?.producaoInicio || datas.producaoInicio;
-  const producaoFim    = ctx?.producaoFim    || datas.producaoFim;
   const atoInicio      = datas.atoInicio;
   const atoFim         = datas.atoFim;
 
@@ -241,10 +239,6 @@ export function BoletimMedicao({ data }: { data: BmData }) {
             <tr>
               <Th rowSpan={4} colSpan={2} className="text-left pl-2 align-top">
                 <div>OBSERVAÇÕES</div>
-                <div className="mt-2 text-[9px] font-normal normal-case text-[#555]">
-                  <div>Produção: {dateLabel(producaoInicio)} a {dateLabel(producaoFim)}</div>
-                  <div>ATO: {dateLabel(atoInicio)} a {dateLabel(atoFim)}</div>
-                </div>
               </Th>
               <Th colSpan={7}>CONDIÇÕES COMERCIAIS</Th>
               <Td rowSpan={4} colSpan={3} className="bg-[#FFD966] text-center align-middle">
@@ -338,7 +332,6 @@ export function BoletimMedicao({ data }: { data: BmData }) {
 
             {/* ── Cabeçalho da tabela de documentos ── */}
             {(() => {
-              const hasObs = data.documentos.some((d) => d.obs);
               const totalDocMedido = data.documentos.reduce((s, d) => s + d.valorMedido, 0);
               return (
                 <>
@@ -353,13 +346,12 @@ export function BoletimMedicao({ data }: { data: BmData }) {
                     <Th>Preço Unit.</Th>
                     <Th>Valor Medido</Th>
                     <Th>Total</Th>
-                    {hasObs && <Th>Observação</Th>}
                   </tr>
 
                   {/* ── Linhas de documentos ── */}
                   {data.documentos.length === 0 ? (
                     <tr>
-                      <Td colSpan={hasObs ? 13 : 12} className="text-center text-[#9CA3AF] py-3">Nenhum documento vinculado a este ciclo.</Td>
+                      <Td colSpan={12} className="text-center text-[#9CA3AF] py-3">Nenhum documento vinculado a este ciclo.</Td>
                     </tr>
                   ) : (
                     data.documentos.map((doc) => (
@@ -374,7 +366,6 @@ export function BoletimMedicao({ data }: { data: BmData }) {
                         <Td className="text-right">{doc.precoUnitario ? fmt(doc.precoUnitario) : (doc.condicao ?? "–")}</Td>
                         <Td className="text-right">{fmt(doc.valorMedido)}</Td>
                         <Td className="text-right font-bold">{fmt(doc.valorMedido)}</Td>
-                        {hasObs && <Td className="text-[9px] text-[#555555]">{doc.obs ?? ""}</Td>}
                       </tr>
                     ))
                   )}
@@ -387,7 +378,6 @@ export function BoletimMedicao({ data }: { data: BmData }) {
                     <Td colSpan={3} className="bg-[#F3F3F3]" />
                     <Td className="text-right font-bold bg-[#FFD966]">{fmt(totalDocMedido || totalMedicao)}</Td>
                     <Td className="text-right font-bold bg-[#FFD966]">{fmt(totalDocMedido || totalMedicao)}</Td>
-                    {hasObs && <Td className="bg-[#F3F3F3]" />}
                   </tr>
                 </>
               );

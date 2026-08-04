@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
 
   const profissional = await prisma.profissional.findFirst({ where: { codigo } });
   if (!profissional) {
-    return NextResponse.json({ error: "Colaborador não encontrado." }, { status: 404 });
+    return NextResponse.json({ error: "Fornecedor não encontrado." }, { status: 404 });
   }
 
   const codigoProjeto = (se as string | undefined)?.trim() || `MANUAL-${ciclo}-${Date.now()}`;

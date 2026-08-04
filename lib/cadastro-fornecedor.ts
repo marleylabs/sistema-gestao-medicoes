@@ -359,7 +359,7 @@ export async function validateFornecedorForNfUpload(colaboradorCodigo: string) {
 export function serializeCadastroFornecedor(item: any) {
   const visual = cadastroStatusVisual(item.final);
   const pendencias: string[] = [];
-  if (!item.colaboradorCodigo) pendencias.push("Sem vínculo com colaborador");
+  if (!item.colaboradorCodigo) pendencias.push("Sem vínculo com fornecedor");
   if (!item.cnpjNormalizado) pendencias.push("CNPJ não informado");
   if (visual.dias !== null && visual.dias < 0) pendencias.push("Cadastro vencido");
   return {

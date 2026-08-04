@@ -60,7 +60,7 @@ export function LoginForm() {
             <div className="rounded-lg border border-[#d8dee8] bg-white p-6 shadow-sm">
               <div className="mb-6">
                 <h1 className="text-2xl font-bold text-[#1A1A1A]">Acessar plataforma</h1>
-                <p className="mt-1 text-sm text-[#1A1A1A]">Use seu usuário de Medição ou código de colaborador.</p>
+                <p className="mt-1 text-sm text-[#1A1A1A]">Use seu usuário de Medição ou código de fornecedor.</p>
               </div>
 
               <form className="grid gap-4" onSubmit={submit}>

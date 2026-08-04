@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
     acao: "VOLTAR_BM",
     statusAnterior: sgc.status,
     statusNovo: "AGUARDANDO_ENVIO",
-    telaOrigem: "Pagamentos por colaborador",
+    telaOrigem: "Pagamentos por fornecedor",
   });
 
   return NextResponse.json({ ok: true });

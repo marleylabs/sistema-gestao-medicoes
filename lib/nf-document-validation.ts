@@ -8,6 +8,11 @@ type NfParty = {
   razaoSocial: string | null;
 };
 
+type NfDetectedParties = {
+  prestador: NfParty;
+  tomador: NfParty;
+};
+
 type ValidateNfDocumentInput = {
   buffer: Buffer;
   mimeType: string;
@@ -16,10 +21,12 @@ type ValidateNfDocumentInput = {
 };
 
 type ValidateNfDocumentResult =
-  | { ok: true; detected: NfParty }
-  | { ok: false; error: string; detected?: NfParty };
+  | { ok: true; detected: NfDetectedParties }
+  | { ok: false; error: string; detected?: Partial<NfDetectedParties> };
 
 const PDF_MIME = "application/pdf";
+const EXPECTED_TOMADOR_CNPJ = "04892580000120";
+const EXPECTED_TOMADOR_RAZAO_SOCIAL = "PROJETA CONSULTORIA E SERVICOS LTDA";
 
 function normalizeText(value: string | null | undefined) {
   return String(value ?? "")
@@ -40,6 +47,25 @@ function normalizeCompany(value: string | null | undefined) {
 
 function compactCompany(value: string | null | undefined) {
   return normalizeCompany(value).replace(/[^A-Z0-9]/g, "");
+}
+
+function companyMatches(detectedValue: string | null | undefined, expectedValue: string) {
+  const expectedCompany = normalizeCompany(expectedValue);
+  const detectedCompany = normalizeCompany(detectedValue);
+  const expectedCompanyCompact = compactCompany(expectedValue);
+  const detectedCompanyCompact = compactCompany(detectedValue);
+
+  return (
+    !!detectedCompany &&
+    (
+      detectedCompany === expectedCompany ||
+      detectedCompanyCompact === expectedCompanyCompact ||
+      detectedCompany.includes(expectedCompany) ||
+      expectedCompany.includes(detectedCompany) ||
+      detectedCompanyCompact.includes(expectedCompanyCompact) ||
+      expectedCompanyCompact.includes(detectedCompanyCompact)
+    )
+  );
 }
 
 function linesFromText(text: string) {
@@ -117,6 +143,19 @@ function extractPrestador(text: string): NfParty {
   };
 }
 
+function extractTomador(text: string): NfParty {
+  const tomadorSection = sectionBetween(
+    text,
+    [/TOMADOR\s*DO\s*SERVI[CÇ]O/i, /DADOS\s*DO\s*TOMADOR/i],
+    [/INTERMEDI[AÁ]RIO\s*DO\s*SERVI[CÇ]O/i, /SERVI[CÇ]O\s*PRESTADO/i, /DISCRIMINA[CÇ][AÃ]O/i, /VALOR\s*TOTAL/i],
+  );
+  const lines = linesFromText(tomadorSection);
+  return {
+    cnpj: extractCnpj(tomadorSection),
+    razaoSocial: extractRazaoSocial(lines),
+  };
+}
+
 async function extractPdfText(buffer: Buffer) {
   const result = await pdf(buffer);
   return result.text ?? "";
@@ -138,9 +177,11 @@ export async function validateNfDocumentAgainstCadastro(input: ValidateNfDocumen
     };
   }
 
-  const detected = extractPrestador(text);
+  const detectedPrestador = extractPrestador(text);
+  const detectedTomador = extractTomador(text);
+  const detected = { prestador: detectedPrestador, tomador: detectedTomador };
   const expectedCnpj = onlyDigits(input.expectedCnpj);
-  if (!detected.cnpj) {
+  if (!detectedPrestador.cnpj) {
     return {
       ok: false,
       error: "Upload bloqueado: não foi possível localizar o CNPJ do prestador na NF.",
@@ -148,7 +189,7 @@ export async function validateNfDocumentAgainstCadastro(input: ValidateNfDocumen
     };
   }
 
-  if (detected.cnpj !== expectedCnpj) {
+  if (detectedPrestador.cnpj !== expectedCnpj) {
     return {
       ok: false,
       error: "Upload bloqueado: o CNPJ do prestador na NF diverge do cadastro administrativo.",
@@ -156,10 +197,7 @@ export async function validateNfDocumentAgainstCadastro(input: ValidateNfDocumen
     };
   }
 
-  const expectedCompany = normalizeCompany(input.expectedRazaoSocial);
-  const detectedCompany = normalizeCompany(detected.razaoSocial);
-  const expectedCompanyCompact = compactCompany(input.expectedRazaoSocial);
-  const detectedCompanyCompact = compactCompany(detected.razaoSocial);
+  const detectedCompany = normalizeCompany(detectedPrestador.razaoSocial);
   if (!detectedCompany) {
     return {
       ok: false,
@@ -168,17 +206,43 @@ export async function validateNfDocumentAgainstCadastro(input: ValidateNfDocumen
     };
   }
 
-  if (
-    detectedCompany !== expectedCompany &&
-    detectedCompanyCompact !== expectedCompanyCompact &&
-    !detectedCompany.includes(expectedCompany) &&
-    !expectedCompany.includes(detectedCompany) &&
-    !detectedCompanyCompact.includes(expectedCompanyCompact) &&
-    !expectedCompanyCompact.includes(detectedCompanyCompact)
-  ) {
+  if (!companyMatches(detectedPrestador.razaoSocial, input.expectedRazaoSocial)) {
     return {
       ok: false,
       error: "Upload bloqueado: a razão social do prestador na NF diverge do cadastro administrativo.",
+      detected,
+    };
+  }
+
+  if (!detectedTomador.cnpj) {
+    return {
+      ok: false,
+      error: "Upload bloqueado: não foi possível localizar o CNPJ do tomador do serviço na NF.",
+      detected,
+    };
+  }
+
+  if (detectedTomador.cnpj !== EXPECTED_TOMADOR_CNPJ) {
+    return {
+      ok: false,
+      error: "Upload bloqueado: o CNPJ do tomador do serviço na NF deve ser 04.892.580/0001-20.",
+      detected,
+    };
+  }
+
+  const detectedTomadorCompany = normalizeCompany(detectedTomador.razaoSocial);
+  if (!detectedTomadorCompany) {
+    return {
+      ok: false,
+      error: "Upload bloqueado: não foi possível localizar o Nome / Nome Empresarial do tomador do serviço na NF.",
+      detected,
+    };
+  }
+
+  if (!companyMatches(detectedTomador.razaoSocial, EXPECTED_TOMADOR_RAZAO_SOCIAL)) {
+    return {
+      ok: false,
+      error: "Upload bloqueado: o tomador do serviço na NF deve ser PROJETA CONSULTORIA E SERVICOS LTDA.",
       detected,
     };
   }

@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Bell,
   BellRing,
-  Building2,
   Download,
   Eye,
   EyeOff,
@@ -32,7 +31,6 @@ import { ComentarioDropdown, MapaPagamentoTable } from "@/components/mapa-pagame
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { UsuariosPanel } from "@/components/usuarios-panel";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
-import { ContratosPanel } from "@/components/contratos-panel";
 import { AdministrativoPanel } from "@/components/administrativo-panel";
 import { Badge, Button, Card, IconButton, SectionHeader, Select } from "@/components/ui";
 import { useBlur } from "@/components/providers";
@@ -40,7 +38,7 @@ import type { DashboardData, MapaPagamentoItem, Profissional } from "@/component
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
 import type { AuthUser } from "@/lib/session";
 
-type Section = "visao" | "historico" | "importar" | "evidencias" | "usuarios" | "financeiro" | "contratos" | "administrativo";
+type Section = "visao" | "historico" | "importar" | "evidencias" | "usuarios" | "financeiro" | "administrativo";
 
 const TITLES: Record<Section, string> = {
   visao: "Dashboard",
@@ -49,7 +47,6 @@ const TITLES: Record<Section, string> = {
   evidencias: "Evidências de Medição",
   usuarios: "Gestão de Usuários",
   financeiro: "Painel Financeiro",
-  contratos: "Contratos",
   administrativo: "Painel Administrativo",
 };
 
@@ -101,8 +98,8 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
     : isMedicao
     ? ["visao", "importar", "evidencias"]
     : isFullAdmin
-    ? ["visao", "historico", "importar", "evidencias", "usuarios", "financeiro", "contratos", "administrativo"]
-    : ["visao", "historico", "importar", "evidencias", "usuarios", "financeiro", "contratos"];
+    ? ["administrativo", "evidencias", "financeiro", "historico", "importar", "usuarios", "visao"]
+    : ["evidencias", "financeiro", "historico", "importar", "usuarios", "visao"];
   const sectionParam = currentSearchParams.get("section") as Section | null;
   const section: Section = sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : (isFinanceiro ? "financeiro" : isAdministrativo ? "administrativo" : "visao");
   function setSection(s: Section) {
@@ -397,11 +394,10 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       ]
     : [
         { id: "visao",      label: "Visão Geral",      icon: <LayoutDashboard size={17} /> },
-        { id: "historico",  label: "Histórico",         icon: <History size={17} /> },
-        { id: "financeiro", label: "Financeiro",        icon: <Wallet size={17} /> },
-        { id: "evidencias", label: "Evidências",        icon: <FileSearch size={17} /> },
-        { id: "contratos",  label: "Contratos",         icon: <Building2 size={17} /> },
         { id: "administrativo", label: "Administrativo", icon: <FileText size={17} /> },
+        { id: "evidencias", label: "Evidências",        icon: <FileSearch size={17} /> },
+        { id: "financeiro", label: "Financeiro",        icon: <Wallet size={17} /> },
+        { id: "historico",  label: "Histórico",         icon: <History size={17} /> },
         { id: "usuarios",   label: "Usuários",          icon: <ShieldCheck size={17} /> },
         { id: "importar",   label: "Importar Planilha", icon: <Upload size={17} />, bottom: true },
       ];
@@ -639,11 +635,11 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
             {/* Divisor vertical */}
             <div className="hidden self-stretch border-l border-[#E5E7EB] sm:block" />
 
-            {/* Colaborador */}
+            {/* Fornecedor */}
             <label className="grid w-full min-w-0 flex-1 gap-1.5 text-xs font-semibold text-[#555555] sm:min-w-[180px]">
-              Colaborador
+              Fornecedor
               <Select value={selectedCodigo} onChange={(e) => setSelectedCodigo(e.target.value)}>
-                <option value="">Todos os colaboradores</option>
+                <option value="">Todos os fornecedores</option>
                 {colaboradores.map((p) => (
                   <option key={p.id} value={p.codigo ?? ""}>{p.codigo}</option>
                 ))}
@@ -699,7 +695,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       pageTitle={TITLES[section]}
       topBarRight={topBar}
     >
-      {section !== "importar" && section !== "evidencias" && section !== "usuarios" && section !== "financeiro" && section !== "contratos" && section !== "administrativo" && filtersBar}
+      {section !== "importar" && section !== "evidencias" && section !== "usuarios" && section !== "financeiro" && section !== "administrativo" && filtersBar}
 
       {section === "visao" && (
         <div className="grid gap-6">
@@ -763,10 +759,6 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
 
       {section === "usuarios" && isAdmin && (
         <UsuariosPanel canCreateUsers={isFullAdmin} />
-      )}
-
-      {section === "contratos" && isAdmin && (
-        <ContratosPanel />
       )}
 
       {section === "administrativo" && (isFullAdmin || isAdministrativo) && (
@@ -840,7 +832,6 @@ function HistoricoSection({
       <div className="flex items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-[#1A1A1A]">Histórico de Medições</h2>
-          <p className="mt-0.5 text-sm text-[#555555]">Todos os ciclos cadastrados no sistema.</p>
         </div>
         {isAdmin && (
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1038,7 +1029,7 @@ function SgcReviewModal({
           <div className="grid gap-4 lg:grid-cols-3">
             {[
               {
-                title: "Fornecedor / colaborador",
+                title: "Fornecedor",
                 fields: [
                   ["Código", alerta.colaborador.codigo],
                   ["Nome", alerta.colaborador.nome],
@@ -1241,7 +1232,6 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-base font-bold text-[#1A1A1A]">Importar Planilha</h1>
-          <p className="mt-0.5 text-xs text-[#555555]">Envie o arquivo .xlsm ou .xlsx para substituir somente o ciclo informado. A aba Base é opcional.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <a
@@ -1433,7 +1423,7 @@ function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissio
     const res = await fetch(`/api/admin/bm?codigo=${encodeURIComponent(selectedCodigo)}&ciclo=${encodeURIComponent(ciclo)}`);
     const data = await res.json();
     if (!res.ok) { setError(data.error ?? "Erro ao buscar boletim."); }
-    else if (!data.pagamento && !data.documentos?.length) { setError("Nenhuma medição encontrada para este colaborador e ciclo."); }
+    else if (!data.pagamento && !data.documentos?.length) { setError("Nenhuma medição encontrada para este fornecedor e ciclo."); }
     else setBm(data);
     setLoading(false);
   }
@@ -1442,7 +1432,7 @@ function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissio
     <div className="grid gap-6 mx-auto w-full" style={{ maxWidth: "80rem" }}>
       <SectionHeader
         title="Evidências de Medição"
-        description="Visualize e imprima o Boletim de Medição de qualquer colaborador por ciclo."
+        description="Visualize e imprima o Boletim de Medição de qualquer fornecedor por ciclo."
       />
 
       <Card className="overflow-hidden">
@@ -1453,7 +1443,7 @@ function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissio
             </span>
             <div>
               <p className="text-sm font-semibold text-[#1A1A1A]">Filtros</p>
-              <p className="text-[11px] text-[#9CA3AF]">Selecione o ciclo e o colaborador para visualizar o boletim</p>
+              <p className="text-[11px] text-[#9CA3AF]">Selecione o ciclo e o fornecedor para visualizar o boletim</p>
             </div>
           </div>
         </div>
@@ -1469,7 +1459,7 @@ function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissio
             </Select>
           </label>
           <label className="grid w-full gap-1.5 text-xs font-semibold text-[#555555] sm:w-auto">
-            Colaborador
+            Fornecedor
             <Select value={selectedCodigo} onChange={(e) => setSelectedCodigo(e.target.value)} className="sm:min-w-[220px]" disabled={colaboradoresAprovados.length === 0}>
               <option value="">
                 {colaboradoresAprovados.length === 0 ? "Nenhuma aprovação encontrada" : "Selecione…"}

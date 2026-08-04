@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   const ciclo = typeof payload?.ciclo === "string" ? payload.ciclo.trim() : "2605";
 
   if (!colaboradorCodigo) {
-    return NextResponse.json({ error: "Código do colaborador é obrigatório." }, { status: 400 });
+    return NextResponse.json({ error: "Código do fornecedor é obrigatório." }, { status: 400 });
   }
 
   const profissional = await prisma.profissional.findUnique({
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
 
   if (existing && !["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA", "CANCELADO"].includes(existing.status)) {
     return NextResponse.json(
-      { error: "Medição já enviada para este colaborador neste ciclo." },
+      { error: "Medição já enviada para este fornecedor neste ciclo." },
       { status: 409 },
     );
   }

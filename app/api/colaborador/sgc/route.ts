@@ -11,7 +11,7 @@ type Action = "SALVAR" | "ENVIAR" | "SOLICITAR_REVISAO" | "RESPONDER_MEDICAO";
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-  if (user.perfil !== "COLABORADOR") return NextResponse.json({ error: "Acesso restrito ao colaborador." }, { status: 403 });
+  if (user.perfil !== "COLABORADOR") return NextResponse.json({ error: "Acesso restrito ao fornecedor." }, { status: 403 });
 
   const payload = await request.json().catch(() => null);
   const action: Action = payload?.action;
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     ciclo: existing.ciclo,
     usuarioId: user.id,
     usuarioNome: user.nome,
-    telaOrigem: "Portal do Colaborador",
+    telaOrigem: "Portal do Fornecedor",
   };
 
   // ── SALVAR ────────────────────────────────────────────────────────────────────

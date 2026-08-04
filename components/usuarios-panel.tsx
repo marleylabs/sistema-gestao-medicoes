@@ -47,7 +47,7 @@ const PERFIL_GROUPS = [
   { value: "MEDICAO", label: "Equipe de medição", description: "Operação e acompanhamento das medições." },
   { value: "FINANCEIRO", label: "Financeiro", description: "Notas fiscais, pagamentos e comprovantes." },
   { value: "ADMINISTRATIVO", label: "Administrativo", description: "Cadastros, validade documental e dados cadastrais." },
-  { value: "COLABORADOR", label: "Fornecedores", description: "Acesso ao portal do colaborador." },
+  { value: "COLABORADOR", label: "Fornecedores", description: "Acesso ao portal do fornecedor." },
   { value: "DEPARTAMENTO_PESSOAL", label: "Departamento Pessoal", description: "Usuários reservados para etapa futura." },
 ];
 
@@ -438,7 +438,7 @@ export function UsuariosPanel({ canCreateUsers = false }: { canCreateUsers?: boo
       <div className="mx-auto w-full" style={{ maxWidth: "80rem" }}>
         <SectionHeader
           title="Gestão de usuários"
-          description="Gerencie acessos, senhas e status dos colaboradores e usuários da plataforma."
+          description="Gerencie acessos, senhas e status dos fornecedores e usuários da plataforma."
           action={
             <div className="flex flex-wrap gap-2">
               {canCreateUsers && (

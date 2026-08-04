@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
   const headers = [
     "Ciclo",
     "Código",
-    "Colaborador",
+    "Fornecedor",
     "CPF / CNPJ",
     "Razão Social",
     "Atuação",

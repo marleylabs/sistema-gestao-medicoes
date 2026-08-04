@@ -67,11 +67,21 @@ create table if not exists chat_mensagens (
     conversa_id uuid        not null references chat_conversas(id) on delete cascade,
     autor_id    uuid        not null references usuarios(id) on delete cascade,
     texto       text        not null,
+    tipo_mensagem text      not null default 'TEXTO',
+    arquivo     bytea,
+    arquivo_nome text,
+    arquivo_mime text,
+    arquivo_tamanho integer,
     origem      text        unique,
     created_at  timestamptz not null default now()
 );
 
 alter table chat_mensagens add column if not exists origem text;
+alter table chat_mensagens add column if not exists tipo_mensagem text not null default 'TEXTO';
+alter table chat_mensagens add column if not exists arquivo bytea;
+alter table chat_mensagens add column if not exists arquivo_nome text;
+alter table chat_mensagens add column if not exists arquivo_mime text;
+alter table chat_mensagens add column if not exists arquivo_tamanho integer;
 create unique index if not exists chat_mensagens_origem_key on chat_mensagens(origem) where origem is not null;
 create index if not exists idx_chat_conversas_updated_at on chat_conversas(updated_at desc);
 create index if not exists idx_chat_participantes_usuario_id on chat_participantes(usuario_id);

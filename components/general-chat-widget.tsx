@@ -1,7 +1,7 @@
 "use client";
 
 import { type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MessageCircle, Search, Send, X } from "lucide-react";
+import { FileText, ImageIcon, MessageCircle, Mic, Paperclip, Search, Send, StopCircle, X } from "lucide-react";
 import { Button } from "@/components/ui";
 
 type ChatConversa = {
@@ -10,6 +10,8 @@ type ChatConversa = {
   subtitulo: string;
   avatarUrl: string | null;
   online: boolean;
+  targetUserId?: string | null;
+  targetPerfil?: string | null;
   ultimaMensagem: { id: string; texto: string; autorNome: string; criadoAt: string } | null;
   unreadCount: number;
 };
@@ -21,6 +23,7 @@ type ChatUsuario = {
   perfil: string;
   avatarUrl: string | null;
   online: boolean;
+  fixado?: boolean;
 };
 
 type ChatMensagem = {
@@ -28,6 +31,11 @@ type ChatMensagem = {
   autorNome: string;
   autorAvatarUrl: string | null;
   texto: string;
+  tipoMensagem: "TEXTO" | "AUDIO" | "IMAGEM" | "VIDEO" | "ARQUIVO";
+  arquivoNome: string | null;
+  arquivoMime: string | null;
+  arquivoTamanho: number | null;
+  arquivoUrl: string | null;
   criadoAt: string;
   meu: boolean;
 };
@@ -35,6 +43,15 @@ type ChatMensagem = {
 type BubblePosition = { x: number; y: number };
 
 const CHAT_BUBBLE_POSITION_KEY = "general_chat_bubble_position";
+const MEDIA_ACCEPT = "image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime";
+
+function clampBubblePosition(position: BubblePosition, width: number, height: number): BubblePosition {
+  if (typeof window === "undefined") return position;
+  return {
+    x: Math.min(Math.max(8, position.x), Math.max(8, window.innerWidth - width - 8)),
+    y: Math.min(Math.max(8, position.y), Math.max(8, window.innerHeight - height - 8)),
+  };
+}
 
 function initials(value: string | null | undefined) {
   const parts = (value ?? "").trim().split(/\s+/).filter(Boolean);
@@ -58,13 +75,36 @@ function chatTime(value: string | null | undefined) {
   return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
 
+function readableFileSize(size: number | null | undefined) {
+  if (!size) return "";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1).replace(".", ",")} MB`;
+}
+
 function perfilLabel(perfil: string) {
   if (perfil === "COLABORADOR") return "Fornecedor";
   if (perfil === "FINANCEIRO") return "Financeiro";
   if (perfil === "ADMINISTRATIVO") return "Administrativo";
   if (perfil === "ADMIN") return "Administrador";
-  if (perfil === "MEDICAO") return "Medição";
+  if (perfil === "MEDICAO") return "Equipe de Medição";
   return "Usuário";
+}
+
+function perfilFromLabel(label: string | null | undefined) {
+  if (label === "Equipe de Medição") return "MEDICAO";
+  if (label === "Financeiro") return "FINANCEIRO";
+  if (label === "Administrador") return "ADMIN";
+  return null;
+}
+
+function isGenericAttachmentText(message: ChatMensagem) {
+  return (
+    (message.tipoMensagem === "AUDIO" && message.texto === "Áudio") ||
+    (message.tipoMensagem === "IMAGEM" && message.texto === "Imagem") ||
+    (message.tipoMensagem === "VIDEO" && message.texto === "Vídeo") ||
+    (message.tipoMensagem === "ARQUIVO" && message.texto === "Arquivo")
+  );
 }
 
 export function GeneralChatWidget({ className = "" }: { className?: string }) {
@@ -76,8 +116,15 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [fileAccept, setFileAccept] = useState(MEDIA_ACCEPT);
   const [bubblePosition, setBubblePosition] = useState<BubblePosition | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
   const bubbleRef = useRef<HTMLButtonElement | null>(null);
   const bubbleDragRef = useRef<{
     pointerId: number;
@@ -120,13 +167,32 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
       if (typeof parsed.x !== "number" || typeof parsed.y !== "number") return;
       const width = bubbleRef.current?.offsetWidth ?? 150;
       const height = bubbleRef.current?.offsetHeight ?? 48;
-      setBubblePosition({
-        x: Math.min(Math.max(8, parsed.x), window.innerWidth - width - 8),
-        y: Math.min(Math.max(8, parsed.y), window.innerHeight - height - 8),
-      });
+      const nextPosition = clampBubblePosition({ x: parsed.x, y: parsed.y }, width, height);
+      setBubblePosition(nextPosition);
+      localStorage.setItem(CHAT_BUBBLE_POSITION_KEY, JSON.stringify(nextPosition));
     } catch {
       localStorage.removeItem(CHAT_BUBBLE_POSITION_KEY);
     }
+  }, []);
+
+  useEffect(() => {
+    function handleResize() {
+      setBubblePosition((current) => {
+        if (!current) return current;
+        const width = bubbleRef.current?.offsetWidth ?? 150;
+        const height = bubbleRef.current?.offsetHeight ?? 48;
+        const nextPosition = clampBubblePosition(current, width, height);
+        localStorage.setItem(CHAT_BUBBLE_POSITION_KEY, JSON.stringify(nextPosition));
+        return nextPosition;
+      });
+    }
+
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", handleResize);
+    };
   }, []);
 
   useEffect(() => {
@@ -158,7 +224,7 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     const res = await fetch("/api/chat/conversas", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targetUserId: usuario.id }),
+      body: JSON.stringify(usuario.id.startsWith("perfil:") ? { targetPerfil: usuario.perfil } : { targetUserId: usuario.id }),
     });
     if (!res.ok) return;
     const payload = await res.json();
@@ -169,26 +235,94 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
       subtitulo: perfilLabel(usuario.perfil),
       avatarUrl: usuario.avatarUrl,
       online: usuario.online,
+      targetUserId: usuario.id.startsWith("perfil:") ? null : usuario.id,
+      targetPerfil: usuario.id.startsWith("perfil:") ? usuario.perfil : null,
       ultimaMensagem: null,
       unreadCount: 0,
     };
     await selectConversa(conversa);
   }
 
-  async function sendMessage() {
-    if (!selected || !draft.trim()) return;
+  async function sendMessage(arquivo?: File, textoAlternativo?: string) {
+    if (!selected) return;
+    const texto = (textoAlternativo ?? draft).trim();
+    if (!texto && !arquivo) return;
     setSending(true);
-    const texto = draft.trim();
     setDraft("");
-    const res = await fetch(`/api/chat/conversas/${selected.id}/mensagens`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ texto }),
-    });
+    const res = arquivo
+      ? await fetch(`/api/chat/conversas/${selected.id}/mensagens`, {
+          method: "POST",
+          body: (() => {
+            const form = new FormData();
+            form.append("texto", texto);
+            form.append("arquivo", arquivo);
+            return form;
+          })(),
+        })
+      : await fetch(`/api/chat/conversas/${selected.id}/mensagens`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ texto }),
+        });
     setSending(false);
     if (res.ok) {
       await loadMessages(selected.id);
       await loadConversas();
+    }
+  }
+
+  async function handleFileChange(file: File | null | undefined) {
+    if (!file || !selected) return;
+    await sendMessage(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function openAttachmentPicker(accept: string) {
+    setFileAccept(accept);
+    setAttachmentMenuOpen(false);
+    window.setTimeout(() => fileInputRef.current?.click(), 0);
+  }
+
+  function stopRecorder() {
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+  }
+
+  async function toggleRecording() {
+    if (!selected || sending) return;
+    if (recording) {
+      stopRecorder();
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert("Gravação de áudio indisponível neste navegador.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = stream;
+      chunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        setRecording(false);
+        recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+        recordingStreamRef.current = null;
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        chunksRef.current = [];
+        if (!blob.size) return;
+        const file = new File([blob], `audio-${Date.now()}.webm`, { type: blob.type || "audio/webm" });
+        await sendMessage(file);
+      };
+      recorder.start();
+      setRecording(true);
+    } catch {
+      setRecording(false);
+      alert("Não foi possível acessar o microfone.");
     }
   }
 
@@ -201,10 +335,7 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     const deltaY = clientY - drag.startClientY;
     if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) drag.moved = true;
 
-    const nextPosition = {
-      x: Math.min(Math.max(8, drag.startX + deltaX), window.innerWidth - button.offsetWidth - 8),
-      y: Math.min(Math.max(8, drag.startY + deltaY), window.innerHeight - button.offsetHeight - 8),
-    };
+    const nextPosition = clampBubblePosition({ x: drag.startX + deltaX, y: drag.startY + deltaY }, button.offsetWidth, button.offsetHeight);
     drag.lastPosition = nextPosition;
     setBubblePosition(nextPosition);
   }
@@ -251,7 +382,10 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     if (!term) return true;
     return [conversa.titulo, conversa.subtitulo, conversa.ultimaMensagem?.texto].some((value) => (value ?? "").toLowerCase().includes(term));
   });
+  const targetUserIds = new Set(conversas.map((conversa) => conversa.targetUserId).filter(Boolean));
+  const targetPerfis = new Set(conversas.flatMap((conversa) => [conversa.targetPerfil, perfilFromLabel(conversa.subtitulo)]).filter(Boolean));
   const conversaIds = new Set(conversas.map((conversa) => conversa.titulo.toLowerCase()));
+  const pinnedUsuarios = search.trim() ? [] : usuarios.filter((usuario) => usuario.fixado && !targetUserIds.has(usuario.id) && !targetPerfis.has(usuario.perfil));
   const usuariosToShow = search.trim() ? usuarios.filter((usuario) => !conversaIds.has(usuario.nome.toLowerCase())).slice(0, 10) : [];
 
   if (!open) {
@@ -289,6 +423,15 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
+          {pinnedUsuarios.map((usuario) => (
+            <button key={`fixed-${usuario.id}`} className="flex w-full gap-3 border-b border-[#F3F4F6] bg-[#F8FAFC] px-4 py-3 text-left hover:bg-[#EFF6FF]" onClick={() => startConversation(usuario)}>
+              <Avatar name={usuario.nome} src={usuario.avatarUrl} className="h-10 w-10" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-[#1A1A1A]">{perfilLabel(usuario.perfil)}</p>
+                <p className="mt-0.5 truncate text-xs text-[#2563EB]">Fixado • {usuario.online ? "online" : "offline"}</p>
+              </div>
+            </button>
+          ))}
           {usuariosToShow.map((usuario) => (
             <button key={usuario.id} className="flex w-full gap-3 border-b border-[#F3F4F6] px-4 py-3 text-left hover:bg-[#F9FAFB]" onClick={() => startConversation(usuario)}>
               <Avatar name={usuario.nome} src={usuario.avatarUrl} className="h-10 w-10" />
@@ -311,7 +454,7 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
               {conversa.unreadCount > 0 && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-[#16A34A]" />}
             </button>
           ))}
-          {!filteredConversas.length && !usuariosToShow.length && <p className="px-4 py-6 text-sm text-[#9CA3AF]">Nenhuma conversa encontrada.</p>}
+          {!pinnedUsuarios.length && !filteredConversas.length && !usuariosToShow.length && <p className="px-4 py-6 text-sm text-[#9CA3AF]">Nenhuma conversa encontrada.</p>}
         </div>
       </aside>
 
@@ -337,7 +480,24 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
                 <p className={`mb-1 text-[11px] font-bold ${message.meu ? "text-[#1D4ED8]" : "text-[#2563EB]"}`}>
                   {message.autorNome}
                 </p>
-                <p className="whitespace-pre-wrap leading-relaxed">{message.texto}</p>
+                {message.arquivoUrl && message.tipoMensagem === "AUDIO" && (
+                  <audio controls preload="metadata" src={message.arquivoUrl} className="h-9 w-64 max-w-full" />
+                )}
+                {message.arquivoUrl && message.tipoMensagem === "IMAGEM" && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={message.arquivoUrl} alt={message.arquivoNome ?? "Imagem enviada"} className="max-h-56 max-w-full rounded-lg object-contain" />
+                )}
+                {message.arquivoUrl && message.tipoMensagem === "VIDEO" && (
+                  <video controls preload="metadata" src={message.arquivoUrl} className="max-h-64 max-w-full rounded-lg" />
+                )}
+                {message.arquivoUrl && message.tipoMensagem === "ARQUIVO" && (
+                  <a href={message.arquivoUrl} download className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${message.meu ? "border-[#93C5FD] bg-white/40 text-[#1E40AF]" : "border-[#E5E7EB] bg-[#F9FAFB] text-[#374151]"}`}>
+                    <FileText size={16} />
+                    <span className="min-w-0 flex-1 truncate">{message.arquivoNome ?? "Arquivo"}</span>
+                    <span className="shrink-0 text-[10px] opacity-70">{readableFileSize(message.arquivoTamanho)}</span>
+                  </a>
+                )}
+                {(!message.arquivoUrl || !isGenericAttachmentText(message)) && <p className="whitespace-pre-wrap leading-relaxed">{message.texto}</p>}
                 <div className={`mt-1.5 text-[10px] font-semibold opacity-70 ${message.meu ? "text-right" : "text-left"}`}>{chatTime(message.criadoAt)}</div>
               </div>
             </div>
@@ -346,9 +506,26 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
         </div>
 
         <div className="border-t border-[#E5E7EB] bg-white p-3">
+          <input ref={fileInputRef} type="file" className="hidden" accept={fileAccept} onChange={(event) => handleFileChange(event.target.files?.[0])} />
           <div className="flex items-end gap-2">
             <textarea className="max-h-32 min-h-11 flex-1 resize-none rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20" placeholder="Digite uma nova mensagem..." value={draft} onChange={(e) => setDraft(e.target.value)} disabled={!selected} />
-            <Button className="h-11 shrink-0 px-4" onClick={sendMessage} disabled={sending || !selected || !draft.trim()}>
+            <div className="relative shrink-0">
+              <button className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#E5E7EB] bg-white text-[#6B7280] shadow-sm transition hover:bg-[#F9FAFB] hover:text-[#2563EB] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setAttachmentMenuOpen((current) => !current)} disabled={!selected || sending} aria-label="Adicionar anexo" title="Adicionar anexo">
+                <Paperclip size={16} />
+              </button>
+              {attachmentMenuOpen && selected && (
+                <div className="absolute bottom-12 right-0 z-10 w-44 overflow-hidden rounded-lg border border-[#E5E7EB] bg-white py-1 text-sm shadow-xl">
+                  <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-[#374151] hover:bg-[#F9FAFB]" onClick={() => openAttachmentPicker(MEDIA_ACCEPT)}>
+                    <ImageIcon size={15} className="text-[#2563EB]" />
+                    Fotos e vídeos
+                  </button>
+                </div>
+              )}
+            </div>
+            <button className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${recording ? "border-[#DC2626] bg-[#FEF2F2] text-[#DC2626]" : "border-[#E5E7EB] bg-white text-[#6B7280] hover:bg-[#F9FAFB] hover:text-[#2563EB]"}`} onClick={toggleRecording} disabled={!selected || sending} aria-label={recording ? "Parar gravação" : "Enviar áudio"} title={recording ? "Parar gravação" : "Enviar áudio"}>
+              {recording ? <StopCircle size={16} /> : <Mic size={16} />}
+            </button>
+            <Button className="h-11 shrink-0 px-4" onClick={() => sendMessage()} disabled={sending || !selected || !draft.trim()}>
               <Send size={13} />
               {sending ? "..." : "Enviar"}
             </Button>
