@@ -514,6 +514,7 @@ def upsert_payment_map_status(conn, profissionais, data: dict[str, Any]) -> int:
             index_elements=[profissionais.c.nome],
             set_={
                 "codigo": text("coalesce(profissionais.codigo, excluded.codigo)"),
+                "nome_completo": text("coalesce(excluded.nome_completo, profissionais.nome_completo)"),
                 "status_colaborador": stmt.excluded.status_colaborador,
                 "updated_at": text("now()"),
             },
@@ -568,12 +569,32 @@ def build_canonical_professional_codes(base_df: pd.DataFrame) -> dict[str, str]:
     return canonical_codes
 
 
+def build_payment_map_canonical_codes(payment_map_df: pd.DataFrame) -> dict[str, str]:
+    canonical_codes: dict[str, str] = {}
+    for _, row in payment_map_df.iterrows():
+        raw = extract(row, PAYMENT_MAP_ITEM_COLUMNS)
+        codigo = clean_text(raw["projetista_codigo"])
+        if not codigo:
+            continue
+
+        normalized_code = normalize_for_compare(codigo)
+        if normalized_code in {"projetista", "total", "valor"}:
+            continue
+
+        canonical_codes[normalized_code] = codigo
+        responsavel = clean_text(raw["responsavel"])
+        if responsavel:
+            canonical_codes[normalize_for_compare(responsavel)] = codigo
+    return canonical_codes
+
+
 def build_payment_map_status(
     row: pd.Series,
     positive_payment_codes: set[str],
     canonical_codes: dict[str, str],
 ) -> dict[str, Any] | None:
     raw = extract(row, PAYMENT_MAP_COLUMNS)
+    item_raw = extract(row, PAYMENT_MAP_ITEM_COLUMNS)
     codigo = clean_text(raw["codigo"])
     status_source = clean_text(raw["status_source"])
     valor = clean_decimal(raw["valor"])
@@ -596,6 +617,7 @@ def build_payment_map_status(
     return {
         "nome": codigo,
         "codigo": codigo,
+        "nome_completo": clean_text(item_raw["responsavel"]),
         "status_colaborador": status_colaborador,
     }
 
@@ -1325,14 +1347,11 @@ def ingest(
     bm_aux_df = read_bm_aux_sheet(excel_path, bm_aux_sheet_name)
     positive_payment_codes = build_positive_payment_codes(df)
     canonical_codes = build_canonical_professional_codes(base_df)
+    canonical_codes.update(build_payment_map_canonical_codes(payment_map_items_df))
 
     projetos, profissionais, medicoes, mapa_pagamento_contexto, mapa_pagamento_itens, bm_aux_medicoes = reflect_tables(engine)
     payment_context = build_payment_map_context(excel_path, payment_map_sheet_name, ciclo=ciclo)
     ciclo_efetivo = payment_context["ciclo"]
-    should_filter_bm_aux_by_cycle = normalize_for_compare(bm_aux_sheet_name) in {
-        normalize_for_compare("BM AUX"),
-        normalize_for_compare("BM - AUX"),
-    }
     base_loaded = 0
     payment_status_loaded = 0
     payment_items_loaded = 0
@@ -1373,7 +1392,8 @@ def ingest(
 
         for index, row in bm_aux_df.iterrows():
             raw = extract(row, BM_AUX_COLUMNS)
-            if should_filter_bm_aux_by_cycle and normalize_cycle(raw["ciclo"]) != ciclo_efetivo:
+            row_cycle = normalize_cycle(raw["ciclo"])
+            if row_cycle and row_cycle != ciclo_efetivo:
                 continue
 
             people = bm_aux_people(raw, canonical_codes)

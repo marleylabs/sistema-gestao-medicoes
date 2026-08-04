@@ -9,6 +9,26 @@ function text(value: unknown) {
   return cleaned || null;
 }
 
+function formatCpf(value: unknown) {
+  const digits = onlyDigits(String(value ?? "")).slice(0, 11);
+  if (!digits) return null;
+  return digits.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+}
+
+function formatPhone(value: unknown) {
+  const digits = onlyDigits(String(value ?? "")).slice(0, 11);
+  if (!digits) return null;
+  if (digits.length === 10) return digits.replace(/^(\d{2})(\d{4})(\d{4})$/, "($1) $2-$3");
+  if (digits.length === 11) return digits.replace(/^(\d{2})(\d{5})(\d{4})$/, "($1) $2-$3");
+  return String(value ?? "").trim() || null;
+}
+
+function normalizeEmail(value: unknown) {
+  const email = text(value)?.toLowerCase() ?? null;
+  if (!email) return null;
+  return email;
+}
+
 function numberValue(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const numeric = Number(String(value).replace(/\./g, "").replace(",", "."));
@@ -35,6 +55,21 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: "Informe um CNPJ válido." }, { status: 400 });
   }
 
+  const cpfNormalizado = onlyDigits(body.cpf);
+  if (cpfNormalizado && cpfNormalizado.length !== 11) {
+    return NextResponse.json({ error: "Informe um CPF válido ou deixe o campo vazio." }, { status: 400 });
+  }
+
+  const telefoneNormalizado = onlyDigits(body.telefone);
+  if (telefoneNormalizado && ![10, 11].includes(telefoneNormalizado.length)) {
+    return NextResponse.json({ error: "Informe um telefone válido com DDD ou deixe o campo vazio." }, { status: 400 });
+  }
+
+  const email = normalizeEmail(body.email);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return NextResponse.json({ error: "Informe um e-mail válido ou deixe o campo vazio." }, { status: 400 });
+  }
+
   const responsavel = text(body.responsavel);
   const razaoSocial = text(body.razaoSocial);
   if (!responsavel || !razaoSocial) {
@@ -58,10 +93,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       statusContrato: text(body.statusContrato),
       objetoContrato: text(body.objetoContrato),
       cargo: text(body.cargo),
-      cpf: encryptSensitive(text(body.cpf)),
+      cpf: encryptSensitive(formatCpf(body.cpf)),
       cnpj: encryptSensitive(formatCnpj(cnpjNormalizado)),
-      email: encryptSensitive(text(body.email)),
-      telefone: encryptSensitive(text(body.telefone)),
+      email: encryptSensitive(email),
+      telefone: encryptSensitive(formatPhone(body.telefone)),
       tipoCt: text(body.tipoCt),
       tipoContrato: text(body.tipoContrato),
       valorHora: numberValue(body.valorHora),
@@ -82,9 +117,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       data: {
         nomeCompleto: responsavel,
         razaoSocial,
-        cpf: encryptSensitive(text(body.cpf)),
+        cpf: encryptSensitive(formatCpf(body.cpf)),
         cnpj: encryptSensitive(formatCnpj(cnpjNormalizado)),
-        email: encryptSensitive(text(body.email)),
+        email: encryptSensitive(email),
         funcao: text(body.cargo),
         updatedAt: new Date(),
       },

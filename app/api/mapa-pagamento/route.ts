@@ -12,6 +12,11 @@ type CadastroResumo = {
   cnpjNormalizado: string;
 };
 
+type CadastroMatch = {
+  cadastro: CadastroResumo;
+  match: "codigo" | "responsavel" | "cnpj";
+};
+
 function normalizeMatch(value: string | null | undefined) {
   return (value ?? "")
     .normalize("NFD")
@@ -20,23 +25,31 @@ function normalizeMatch(value: string | null | undefined) {
     .toUpperCase();
 }
 
-function cadastroOverride(cadastro: CadastroResumo | undefined) {
-  if (!cadastro) return null;
+function cadastroOverride(result: CadastroMatch | undefined) {
+  if (!result) return null;
+  const { cadastro, match } = result;
   return {
-    responsavel: cadastro.responsavel,
+    responsavel: match === "cnpj" ? null : cadastro.responsavel,
     cpfCnpj: formatCnpj(cadastro.cnpjNormalizado),
     razaoSocial: cadastro.razaoSocial,
   };
 }
 
-function cadastroByItem(item: any, cadastros: CadastroResumo[]) {
+function cadastroByItem(item: any, cadastros: CadastroResumo[]): CadastroMatch | undefined {
   const codigo = normalizeMatch(item.projetistaCodigo);
   const responsavel = normalizeMatch(item.responsavel);
   const cpfCnpj = onlyDigits(decryptSensitive(item.cpfCnpj));
 
-  return cadastros.find((cadastro) => normalizeMatch(cadastro.colaboradorCodigo) === codigo)
-    ?? cadastros.find((cadastro) => normalizeMatch(cadastro.responsavel) === responsavel)
-    ?? cadastros.find((cadastro) => cadastro.cnpjNormalizado && cadastro.cnpjNormalizado === cpfCnpj);
+  const byCodigo = cadastros.find((cadastro) => normalizeMatch(cadastro.colaboradorCodigo) === codigo);
+  if (byCodigo) return { cadastro: byCodigo, match: "codigo" };
+
+  const byResponsavel = cadastros.find((cadastro) => normalizeMatch(cadastro.responsavel) === responsavel);
+  if (byResponsavel) return { cadastro: byResponsavel, match: "responsavel" };
+
+  const byCnpj = cadastros.find((cadastro) => cadastro.cnpjNormalizado && cadastro.cnpjNormalizado === cpfCnpj);
+  if (byCnpj) return { cadastro: byCnpj, match: "cnpj" };
+
+  return undefined;
 }
 
 export async function GET(request: NextRequest) {

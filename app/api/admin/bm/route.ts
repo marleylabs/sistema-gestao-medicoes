@@ -8,6 +8,10 @@ function dateOnly(value: Date | null) {
   return value?.toISOString().slice(0, 10) ?? null;
 }
 
+function unique(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => !!value)));
+}
+
 export async function GET(request: NextRequest) {
   const admin = await requireAdmin();
   if (admin.response) return admin.response;
@@ -19,21 +23,39 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Parâmetros obrigatórios: codigo, ciclo." }, { status: 400 });
   }
 
+  const pagamentosAliases = await prisma.mapaPagamentoItem.findMany({
+    where: {
+      ciclo,
+      OR: [
+        { projetistaCodigo: { equals: codigo, mode: "insensitive" } },
+        { responsavel: { equals: codigo, mode: "insensitive" } },
+      ],
+    },
+    select: { projetistaCodigo: true, responsavel: true },
+  });
+  const codigoAliases = unique([codigo, ...pagamentosAliases.flatMap((item) => [item.projetistaCodigo, item.responsavel])]);
+
   const [profissional, sgc, pagamento, contexto, documentos] = await Promise.all([
     prisma.profissional.findFirst({
-      where: { codigo },
+      where: {
+        OR: [
+          { codigo: { in: codigoAliases } },
+          { nome: { in: codigoAliases } },
+          { nomeCompleto: { in: codigoAliases } },
+        ],
+      },
       select: { nomeCompleto: true, nome: true, cpf: true, cnpj: true, razaoSocial: true, funcao: true },
     }),
     prisma.sgcAprovacaoMedicao.findFirst({
-      where: { colaboradorCodigo: codigo, ciclo },
+      where: { colaboradorCodigo: { in: codigoAliases }, ciclo },
     }),
     prisma.mapaPagamentoItem.findFirst({
-      where: { ciclo, projetistaCodigo: codigo },
+      where: { ciclo, projetistaCodigo: { in: codigoAliases } },
       orderBy: { ordem: "asc" },
     }),
     prisma.mapaPagamentoContexto.findUnique({ where: { ciclo } }),
     prisma.medicao.findMany({
-      where: { profissional: { codigo }, ciclo },
+      where: { profissional: { codigo: { in: codigoAliases } }, ciclo },
       select: {
         id: true, dataCadastro: true, formato: true, quantidade: true, obs: true,
         equivalenteA1Horas: true, valorMedicao: true, medidoHoras: true,

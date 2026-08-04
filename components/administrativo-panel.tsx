@@ -69,16 +69,55 @@ const FILTER_LABELS: Record<StatusFilter, string> = {
   pendencias: "Pendências",
 };
 
-function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: () => void }) {
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
+function digitsOnly(value: string | null | undefined) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+function maskCnpj(value: string | null | undefined) {
+  const digits = digitsOnly(value).slice(0, 14);
+  return digits
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d)/, ".$1/$2")
+    .replace(/(\d{4})(\d)/, "$1-$2");
+}
+
+function maskCpf(value: string | null | undefined) {
+  const digits = digitsOnly(value).slice(0, 11);
+  return digits
+    .replace(/^(\d{3})(\d)/, "$1.$2")
+    .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/(\d{3})(\d)/, "$1-$2");
+}
+
+function maskPhone(value: string | null | undefined) {
+  const digits = digitsOnly(value).slice(0, 11);
+  if (digits.length <= 2) return digits.replace(/^(\d{0,2})/, (_, ddd) => (ddd ? `(${ddd}` : ""));
+  if (digits.length <= 6) return digits.replace(/^(\d{2})(\d{0,4})/, "($1) $2");
+  if (digits.length <= 10) return digits.replace(/^(\d{2})(\d{0,4})(\d{0,4})/, "($1) $2-$3");
+  return digits.replace(/^(\d{2})(\d{0,5})(\d{0,4})/, "($1) $2-$3");
+}
+
+function normalizeEmail(value: string | null | undefined) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function formatCadastroInput(field: string, value: string) {
+  if (field === "cnpj") return maskCnpj(value);
+  if (field === "cpf") return maskCpf(value);
+  if (field === "telefone") return maskPhone(value);
+  if (field === "email") return value.trimStart();
+  return value;
+}
+
+function cadastroFormFromItem(item: CadastroFornecedor) {
+  return {
     responsavel: item.responsavel,
     razaoSocial: item.razaoSocial,
-    cnpj: item.cnpj ?? "",
-    cpf: item.cpf ?? "",
+    cnpj: maskCnpj(item.cnpj ?? item.cnpjNormalizado),
+    cpf: maskCpf(item.cpf ?? ""),
     email: item.email ?? "",
-    telefone: item.telefone ?? "",
+    telefone: maskPhone(item.telefone ?? ""),
     cargo: item.cargo ?? "",
     statusContrato: item.statusContrato ?? "",
     statusCadastro: item.statusCadastro ?? "",
@@ -92,10 +131,20 @@ function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: ()
     valorDocumento: item.valorDocumento?.toString() ?? "",
     primeiroAditivo: item.primeiroAditivo ?? "",
     segundoAditivo: item.segundoAditivo ?? "",
-  });
+  };
+}
+
+function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState(() => cadastroFormFromItem(item));
+
+  useEffect(() => {
+    setForm(cadastroFormFromItem(item));
+  }, [item]);
 
   function update(field: keyof typeof form, value: string) {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => ({ ...prev, [field]: formatCadastroInput(field, value) }));
   }
 
   async function save() {
@@ -160,7 +209,22 @@ function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: ()
           ].map(([field, label]) => (
             <label key={field} className="grid gap-1 text-xs font-semibold text-[#555555]">
               {label}
-              <Input value={form[field as keyof typeof form]} onChange={(e) => update(field as keyof typeof form, e.target.value)} />
+              <Input
+                type={field === "email" ? "email" : "text"}
+                inputMode={field === "email" ? "email" : ["cnpj", "cpf", "telefone"].includes(field) ? "numeric" : undefined}
+                value={form[field as keyof typeof form]}
+                onChange={(e) => update(field as keyof typeof form, e.target.value)}
+                onBlur={(e) => {
+                  if (field === "email") update(field as keyof typeof form, normalizeEmail(e.target.value));
+                }}
+                placeholder={
+                  field === "cnpj" ? "00.000.000/0000-00" :
+                  field === "cpf" ? "000.000.000-00" :
+                  field === "telefone" ? "(00) 00000-0000" :
+                  field === "email" ? "nome@empresa.com.br" :
+                  undefined
+                }
+              />
             </label>
           ))}
           <label className="grid gap-1 text-xs font-semibold text-[#555555]">
