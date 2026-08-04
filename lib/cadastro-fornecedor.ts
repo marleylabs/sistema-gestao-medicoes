@@ -66,8 +66,14 @@ export function onlyDigits(value: string | number | null | undefined) {
   return String(value).replace(/\D/g, "");
 }
 
+export function normalizeCnpjDigits(value: string | number | null | undefined) {
+  const digits = onlyDigits(value);
+  if (digits.length === 13) return digits.padStart(14, "0");
+  return digits;
+}
+
 export function formatCnpj(value: string | number | null | undefined) {
-  const digits = onlyDigits(value).padStart(14, "0").slice(-14);
+  const digits = normalizeCnpjDigits(value).padStart(14, "0").slice(-14);
   if (!digits) return "";
   return digits.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
 }
@@ -155,7 +161,7 @@ export function parseCadastroFornecedorWorkbook(buffer: Buffer) {
     });
 
     const responsavel = asText(record.responsavel);
-    const cnpjNormalizado = onlyDigits(record.cnpj);
+    const cnpjNormalizado = normalizeCnpjDigits(record.cnpj);
     if (!responsavel || cnpjNormalizado.length !== 14) continue;
     rows.push({
       statusContrato: record.statusContrato ?? null,
@@ -191,6 +197,25 @@ async function findProfissionalCodigoByCnpj(cnpjNormalizado: string) {
   return profissionais.find((p) => onlyDigits(decryptSensitive(p.cnpj)) === cnpjNormalizado)?.codigo ?? null;
 }
 
+async function findProfissionalCodigoByName(name: string) {
+  const target = codigoFromName(name);
+  const profissionais = await prisma.profissional.findMany({
+    select: { codigo: true, nome: true, nomeCompleto: true },
+  });
+  return profissionais.find((profissional) => {
+    const codigo = codigoFromName(profissional.codigo ?? "");
+    const nome = codigoFromName(profissional.nome ?? "");
+    const nomeCompleto = codigoFromName(profissional.nomeCompleto ?? "");
+    return (
+      codigo === target ||
+      nome === target ||
+      nomeCompleto === target ||
+      (codigo && target.startsWith(codigo)) ||
+      (nome && target.startsWith(nome))
+    );
+  })?.codigo ?? null;
+}
+
 export async function importCadastrosFornecedores(buffer: Buffer) {
   const rows = parseCadastroFornecedorWorkbook(buffer);
   let atualizados = 0;
@@ -199,65 +224,66 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
   const senhasTemporarias: { usuario: string; nome: string; senha: string }[] = [];
 
   for (const row of rows) {
-    let colaboradorCodigo = await findProfissionalCodigoByCnpj(row.cnpjNormalizado);
-    if (!colaboradorCodigo) colaboradorCodigo = codigoFromName(row.responsavel);
+    const codigoResponsavel = codigoFromName(row.responsavel);
+    let colaboradorCodigo = await findProfissionalCodigoByName(row.responsavel);
+    if (!colaboradorCodigo) colaboradorCodigo = await findProfissionalCodigoByCnpj(row.cnpjNormalizado);
+    if (!colaboradorCodigo) colaboradorCodigo = codigoResponsavel;
     const usuario = normalizeAccessUsername(colaboradorCodigo);
     const now = new Date();
 
     await prisma.$transaction(async (tx) => {
-      const exists = await tx.cadastroFornecedor.findUnique({ where: { cnpjNormalizado: row.cnpjNormalizado }, select: { id: true } });
-      await tx.cadastroFornecedor.upsert({
+      const existingByCnpj = await tx.cadastroFornecedor.findUnique({
         where: { cnpjNormalizado: row.cnpjNormalizado },
-        create: {
-          cnpjNormalizado: row.cnpjNormalizado,
-          colaboradorCodigo,
-          responsavel: row.responsavel,
-          razaoSocial: row.razaoSocial,
-          statusContrato: row.statusContrato,
-          objetoContrato: row.objetoContrato,
-          cargo: row.cargo,
-          cpf: encryptSensitive(row.cpf),
-          cnpj: encryptSensitive(formatCnpj(row.cnpjNormalizado)),
-          email: encryptSensitive(row.email),
-          telefone: encryptSensitive(row.telefone),
-          tipoCt: row.tipoCt,
-          tipoContrato: row.tipoContrato,
-          valorHora: row.valorHora,
-          valorA1Equivalente: row.valorA1Equivalente,
-          valorDocumento: row.valorDocumento,
-          inicio: row.inicio,
-          final: row.final,
-          statusCadastro: row.statusCadastro,
-          primeiroAditivo: row.primeiroAditivo,
-          segundoAditivo: row.segundoAditivo,
-          rawPayload: row.rawPayload,
-        },
-        update: {
-          colaboradorCodigo,
-          responsavel: row.responsavel,
-          razaoSocial: row.razaoSocial,
-          statusContrato: row.statusContrato,
-          objetoContrato: row.objetoContrato,
-          cargo: row.cargo,
-          cpf: encryptSensitive(row.cpf),
-          cnpj: encryptSensitive(formatCnpj(row.cnpjNormalizado)),
-          email: encryptSensitive(row.email),
-          telefone: encryptSensitive(row.telefone),
-          tipoCt: row.tipoCt,
-          tipoContrato: row.tipoContrato,
-          valorHora: row.valorHora,
-          valorA1Equivalente: row.valorA1Equivalente,
-          valorDocumento: row.valorDocumento,
-          inicio: row.inicio,
-          final: row.final,
-          statusCadastro: row.statusCadastro,
-          primeiroAditivo: row.primeiroAditivo,
-          segundoAditivo: row.segundoAditivo,
-          rawPayload: row.rawPayload,
-          updatedAt: now,
-        },
+        select: { id: true },
       });
-      if (exists) atualizados += 1;
+      const existingByResponsavel = await tx.cadastroFornecedor.findFirst({
+        where: {
+          OR: [
+            { colaboradorCodigo },
+            { colaboradorCodigo: codigoResponsavel },
+            { responsavel: { equals: row.responsavel, mode: "insensitive" } },
+          ],
+        },
+        select: { id: true, cnpjNormalizado: true },
+      });
+      const existing = existingByCnpj ?? existingByResponsavel;
+      const data = {
+        cnpjNormalizado: row.cnpjNormalizado,
+        colaboradorCodigo,
+        responsavel: row.responsavel,
+        razaoSocial: row.razaoSocial,
+        statusContrato: row.statusContrato,
+        objetoContrato: row.objetoContrato,
+        cargo: row.cargo,
+        cpf: encryptSensitive(row.cpf),
+        cnpj: encryptSensitive(formatCnpj(row.cnpjNormalizado)),
+        email: encryptSensitive(row.email),
+        telefone: encryptSensitive(row.telefone),
+        tipoCt: row.tipoCt,
+        tipoContrato: row.tipoContrato,
+        valorHora: row.valorHora,
+        valorA1Equivalente: row.valorA1Equivalente,
+        valorDocumento: row.valorDocumento,
+        inicio: row.inicio,
+        final: row.final,
+        statusCadastro: row.statusCadastro,
+        primeiroAditivo: row.primeiroAditivo,
+        segundoAditivo: row.segundoAditivo,
+        rawPayload: row.rawPayload,
+      };
+
+      if (existing) {
+        await tx.cadastroFornecedor.update({
+          where: { id: existing.id },
+          data: {
+            ...data,
+            updatedAt: now,
+          },
+        });
+      } else {
+        await tx.cadastroFornecedor.create({ data });
+      }
+      if (existing) atualizados += 1;
       else criados += 1;
 
       await tx.profissional.upsert({

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdministrativo } from "@/lib/admin";
-import { formatCnpj, onlyDigits, serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
+import { formatCnpj, normalizeCnpjDigits, onlyDigits, serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
 import { encryptSensitive } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 
@@ -50,7 +50,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
 
-  const cnpjNormalizado = onlyDigits(body.cnpj);
+  const cnpjNormalizado = normalizeCnpjDigits(body.cnpj);
   if (cnpjNormalizado.length !== 14) {
     return NextResponse.json({ error: "Informe um CNPJ válido." }, { status: 400 });
   }
