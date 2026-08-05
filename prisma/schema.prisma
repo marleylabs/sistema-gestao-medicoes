@@ -151,7 +151,7 @@ model Profissional {
 
 model CadastroFornecedor {
   id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  cnpjNormalizado    String    @unique @map("cnpj_normalizado")
+  cnpjNormalizado    String    @map("cnpj_normalizado")
   colaboradorCodigo  String?   @map("colaborador_codigo")
   responsavel        String
   razaoSocial        String    @map("razao_social")
@@ -177,6 +177,7 @@ model CadastroFornecedor {
   updatedAt          DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
   @@index([colaboradorCodigo])
+  @@index([cnpjNormalizado])
   @@index([final])
   @@map("cadastros_fornecedores")
 }

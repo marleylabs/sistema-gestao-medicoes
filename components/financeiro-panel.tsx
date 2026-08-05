@@ -211,7 +211,7 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
           <div className="flex-1">
             <p className="mb-1.5 text-xs font-semibold text-[#555555]">Buscar</p>
             <Input
-              placeholder="Nome, código ou empresa…"
+              placeholder="Nome, ID ou empresa..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               className="min-w-[220px]"

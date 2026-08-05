@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { generateUniqueInternalAccessCode, hashPassword, isInternalUserProfile, validatePasswordStrength } from "@/lib/auth";
+import { generateUniqueInternalAccessCode, hashPassword, validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { normalizeFornecedorAccessCnpj } from "@/lib/usuario-format";
 
 const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "ADMINISTRATIVO", "DEPARTAMENTO_PESSOAL"];
 
@@ -22,6 +21,7 @@ export async function GET() {
       perfil: true,
       ativo: true,
       primeiroLogin: true,
+      senhaTemporaria: true,
       ultimoLoginAt: true,
       createdAt: true,
     },
@@ -36,7 +36,7 @@ export async function GET() {
       perfil: u.perfil,
       ativo: u.ativo,
       primeiroLogin: u.primeiroLogin,
-      senhaTemporaria: null,
+      senhaTemporaria: u.primeiroLogin ? u.senhaTemporaria : null,
       ultimoLoginAt: u.ultimoLoginAt?.toISOString() ?? null,
       createdAt: u.createdAt.toISOString(),
     }))
@@ -54,18 +54,13 @@ export async function POST(request: NextRequest) {
   const nome = typeof body?.nome === "string" ? body.nome.trim() : "";
   const perfil = typeof body?.perfil === "string" ? body.perfil : "";
   const senha = typeof body?.senha === "string" ? body.senha : "";
-  const usuario = isInternalUserProfile(perfil)
-    ? await generateUniqueInternalAccessCode()
-    : normalizeFornecedorAccessCnpj(typeof body?.usuario === "string" ? body.usuario : "");
+  const usuario = await generateUniqueInternalAccessCode();
 
   if (nome.length < 3) {
     return NextResponse.json({ error: "Informe um nome com pelo menos 3 caracteres." }, { status: 400 });
   }
   if (!VALID_PERFIS.includes(perfil)) {
     return NextResponse.json({ error: "Perfil inválido." }, { status: 400 });
-  }
-  if (perfil === "COLABORADOR" && !usuario) {
-    return NextResponse.json({ error: "Informe um CNPJ válido para o fornecedor." }, { status: 400 });
   }
   const passwordError = validatePasswordStrength(senha);
   if (passwordError) {
@@ -82,7 +77,7 @@ export async function POST(request: NextRequest) {
           perfil,
           ativo: true,
           primeiroLogin: true,
-          senhaTemporaria: null,
+          senhaTemporaria: senha,
           senhaHash: await hashPassword(senha),
           excluidoAt: null,
           updatedAt: new Date(),
@@ -94,6 +89,7 @@ export async function POST(request: NextRequest) {
           perfil: true,
           ativo: true,
           primeiroLogin: true,
+          senhaTemporaria: true,
           ultimoLoginAt: true,
           createdAt: true,
         },
@@ -120,7 +116,7 @@ export async function POST(request: NextRequest) {
       perfil,
       ativo: true,
       primeiroLogin: true,
-      senhaTemporaria: null,
+      senhaTemporaria: senha,
       senhaHash: await hashPassword(senha),
     },
     select: {
@@ -130,6 +126,7 @@ export async function POST(request: NextRequest) {
       perfil: true,
       ativo: true,
       primeiroLogin: true,
+      senhaTemporaria: true,
       ultimoLoginAt: true,
       createdAt: true,
     },

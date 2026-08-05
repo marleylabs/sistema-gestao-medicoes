@@ -62,14 +62,14 @@ function ContratoForm({
 
   return (
     <div className="grid gap-4 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
-      {/* Linha 1: Nome + Código */}
+      {/* Linha 1: Nome + ID */}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-1">
           <label className="text-[11px] font-semibold text-[#555555]">Nome do contrato *</label>
           <Input placeholder="Ex: Salobo" value={nome} onChange={(e) => setNome(e.target.value)} />
         </div>
         <div className="grid gap-1">
-          <label className="text-[11px] font-semibold text-[#555555]">Código (opcional)</label>
+          <label className="text-[11px] font-semibold text-[#555555]">ID (opcional)</label>
           <Input placeholder="Ex: SLBO-001" value={codigo} onChange={(e) => setCodigo(e.target.value)} />
         </div>
       </div>

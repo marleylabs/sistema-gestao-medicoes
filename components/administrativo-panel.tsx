@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Download, Edit3, FileSpreadsheet, RefreshCw, Save, Upload, X } from "lucide-react";
+import { AlertTriangle, Copy, Download, Edit3, FileSpreadsheet, RefreshCw, Save, Upload, X } from "lucide-react";
 import { Button, Card, Input, SectionHeader } from "@/components/ui";
 
 type CadastroFornecedor = {
@@ -102,6 +102,25 @@ function normalizeEmail(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function displayText(value: string | null | undefined) {
+  const text = String(value ?? "").trim();
+  if (!text) return "-";
+  return text
+    .toLocaleLowerCase("pt-BR")
+    .replace(/(^|[\s./&()-])([\p{L}])/gu, (_, prefix: string, letter: string) => `${prefix}${letter.toLocaleUpperCase("pt-BR")}`)
+    .replace(/\b(Ltda|Me|Epp|Sa|S\/A)\b/g, (match) => match.toLocaleUpperCase("pt-BR"))
+    .replace(/\b(E|Da|Das|De|Do|Dos)\b/g, (match) => match.toLocaleLowerCase("pt-BR"));
+}
+
+function compactId(value: string) {
+  if (!value) return "-";
+  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
+}
+
+function vigenciaLabel(inicio: string | null, final: string | null) {
+  return `${fmtDate(inicio)} a ${fmtDate(final)}`;
+}
+
 function formatCadastroInput(field: string, value: string) {
   if (field === "cnpj") return maskCnpj(value);
   if (field === "cpf") return maskCpf(value);
@@ -165,16 +184,16 @@ function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: ()
   }
 
   return (
-    <Card className={`overflow-hidden ${item.pendencias.length ? "border-[#FCA5A5]" : ""}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E5E7EB] px-4 py-3">
+    <Card className={`flex h-full min-h-[168px] flex-col overflow-hidden ${item.pendencias.length ? "border-[#FCA5A5]" : ""}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-sm font-bold text-[#1A1A1A]">{item.responsavel}</h3>
+            <h3 className="truncate text-sm font-bold text-[#1A1A1A]">{displayText(item.responsavel)}</h3>
             <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ${toneClass[item.validadeTone]}`}>
               {item.validadeLabel}
             </span>
           </div>
-          <p className="mt-1 truncate text-xs text-[#6B7280]">{item.razaoSocial}</p>
+          <p className="mt-1 truncate text-xs text-[#6B7280]">{displayText(item.razaoSocial)}</p>
         </div>
         <button
           type="button"
@@ -244,13 +263,40 @@ function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: ()
           </div>
         </div>
       ) : (
-        <div className="grid gap-3 p-4 text-xs text-[#555555] sm:grid-cols-2">
-          <div><span className="font-bold text-[#1A1A1A]">CNPJ:</span> {item.cnpj ?? "-"}</div>
-          <div><span className="font-bold text-[#1A1A1A]">Identificador:</span> {item.cnpjNormalizado ?? "-"}</div>
-          <div><span className="font-bold text-[#1A1A1A]">E-mail:</span> {item.email ?? "-"}</div>
-          <div><span className="font-bold text-[#1A1A1A]">Telefone:</span> {item.telefone ?? "-"}</div>
-          <div><span className="font-bold text-[#1A1A1A]">Início:</span> {fmtDate(item.inicio)}</div>
-          <div><span className="font-bold text-[#1A1A1A]">Final:</span> {fmtDate(item.final)}</div>
+        <div className="grid flex-1 content-start gap-x-8 gap-y-3 px-5 py-4 text-xs sm:grid-cols-2">
+          <div className="min-w-0">
+            <span className="text-[#64748B]">CNPJ</span>
+            <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{item.cnpj ?? "-"}</p>
+          </div>
+          <div className="min-w-0">
+            <span className="text-[#64748B]">ID</span>
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+              <span className="truncate font-mono text-[11px] font-semibold text-[#1F2937]" title={item.id}>{compactId(item.id)}</span>
+              <button
+                type="button"
+                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#94A3B8] transition hover:bg-[#F1F5F9] hover:text-[#2563EB]"
+                onClick={() => navigator.clipboard?.writeText(item.id)}
+                aria-label="Copiar ID"
+                title="Copiar ID"
+              >
+                <Copy size={12} />
+              </button>
+            </div>
+          </div>
+          <div className="min-w-0">
+            <span className="text-[#64748B]">E-mail</span>
+            <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{normalizeEmail(item.email) || "-"}</p>
+          </div>
+          <div className="min-w-0">
+            <span className="text-[#64748B]">Telefone</span>
+            <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{maskPhone(item.telefone) || "-"}</p>
+          </div>
+          <div className="min-w-0 sm:col-span-2">
+            <span className="text-[#64748B]">Vigência</span>
+            <p className="mt-0.5 inline-flex rounded-full bg-[#F8FAFC] px-2.5 py-1 font-semibold text-[#334155] ring-1 ring-[#E2E8F0]">
+              {vigenciaLabel(item.inicio, item.final)}
+            </p>
+          </div>
           {item.pendencias.length > 0 && (
             <div className="rounded-lg bg-[#FEF2F2] px-3 py-2 text-[#B91C1C] sm:col-span-2">
               Pendência: {item.pendencias.join(", ")}

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { AuthUser } from "@/lib/session";
 import { normalizeAccessUsername, toColaboradorCodigo } from "@/lib/usuario-format";
+import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
 
 export function avatarUrlByUserId(id: string, updatedAt: Date | null) {
   return updatedAt ? `/api/usuario/avatar?userId=${encodeURIComponent(id)}&v=${updatedAt.getTime()}` : null;
@@ -58,11 +59,12 @@ export async function joinSharedFornecedorChats(user: AuthUser) {
 
 export async function importSgcChatsForUser(user: AuthUser) {
   const chatActions = ["SOLICITAR_REVISAO", "RESPONDER_REVISAO", "RESPONDER_MEDICAO"];
+  const aliases = user.perfil === "COLABORADOR" ? await getColaboradorCodigoAliases(user.usuario) : [];
   const logs = await prisma.sgcLog.findMany({
     where: {
       acao: { in: chatActions },
       observacao: { not: null },
-      ...(user.perfil === "COLABORADOR" ? { colaboradorCodigo: toColaboradorCodigo(user.usuario) } : {}),
+      ...(user.perfil === "COLABORADOR" ? { colaboradorCodigo: { in: aliases } } : {}),
     },
     select: {
       id: true,
@@ -90,14 +92,30 @@ export async function importSgcChatsForUser(user: AuthUser) {
   if (!defaultMedicaoUser) return;
 
   const colaboradorCodigos = Array.from(new Set(logs.map((log) => log.colaboradorCodigo)));
+  const cadastros = colaboradorCodigos.length
+    ? await prisma.cadastroFornecedor.findMany({
+        where: { colaboradorCodigo: { in: colaboradorCodigos } },
+        select: { colaboradorCodigo: true, responsavel: true },
+      })
+    : [];
+  const cadastroResponsaveis = Array.from(new Set(cadastros.map((cadastro) => cadastro.responsavel).filter(Boolean)));
   const fornecedores = await prisma.usuario.findMany({
-    where: { usuario: { in: Array.from(new Set([...colaboradorCodigos, ...colaboradorCodigos.map(normalizeAccessUsername)])) } },
-    select: { id: true, usuario: true },
+    where: {
+      perfil: "COLABORADOR",
+      OR: [
+        { usuario: { in: Array.from(new Set([...colaboradorCodigos, ...colaboradorCodigos.map(normalizeAccessUsername)])) } },
+        ...(cadastroResponsaveis.length ? [{ nome: { in: cadastroResponsaveis } }] : []),
+      ],
+    },
+    select: { id: true, usuario: true, nome: true },
   });
   const fornecedorByCodigo = new Map<string, string>();
   for (const fornecedor of fornecedores) {
     fornecedorByCodigo.set(fornecedor.usuario, fornecedor.id);
     fornecedorByCodigo.set(toColaboradorCodigo(fornecedor.usuario), fornecedor.id);
+    cadastros
+      .filter((cadastro) => cadastro.responsavel === fornecedor.nome)
+      .forEach((cadastro) => cadastro.colaboradorCodigo && fornecedorByCodigo.set(cadastro.colaboradorCodigo, fornecedor.id));
   }
 
   for (const log of logs) {

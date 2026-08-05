@@ -53,8 +53,8 @@ function cadastroByItem(item: any, cadastros: CadastroResumo[]): CadastroMatch |
   const byResponsavel = cadastros.find((cadastro) => samePersonMatch(cadastro.responsavel, item.responsavel));
   if (byResponsavel) return { cadastro: byResponsavel, match: "responsavel" };
 
-  const byCnpj = cadastros.find((cadastro) => cadastro.cnpjNormalizado && cadastro.cnpjNormalizado === cpfCnpj);
-  if (byCnpj) return { cadastro: byCnpj, match: "cnpj" };
+  const byCnpj = cadastros.filter((cadastro) => cadastro.cnpjNormalizado && cadastro.cnpjNormalizado === cpfCnpj);
+  if (byCnpj.length === 1) return { cadastro: byCnpj[0], match: "cnpj" };
 
   return undefined;
 }

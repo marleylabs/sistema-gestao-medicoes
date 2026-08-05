@@ -3,7 +3,6 @@ import "server-only";
 import { promisify } from "node:util";
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { decryptSensitive } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 import {
   createSessionToken,
@@ -12,7 +11,7 @@ import {
   SESSION_DURATION_SECONDS,
   verifySessionToken,
 } from "@/lib/session";
-import { isInternalAccessCode, normalizeAccessUsername, normalizeFornecedorAccessCnpj } from "@/lib/usuario-format";
+import { isInternalAccessCode, normalizeAccessUsername } from "@/lib/usuario-format";
 
 const scrypt = promisify(scryptCallback);
 export { createSessionToken, SESSION_COOKIE, verifySessionToken };
@@ -22,6 +21,10 @@ export const INTERNAL_USER_PROFILES = ["ADMIN", "MEDICAO", "FINANCEIRO", "ADMINI
 
 export function isInternalUserProfile(perfil: string | null | undefined) {
   return !!perfil && (INTERNAL_USER_PROFILES as readonly string[]).includes(perfil);
+}
+
+export function mustUseInternalAccessCode(_perfil: string | null | undefined) {
+  return true;
 }
 
 type UsuarioDelegate = {
@@ -37,7 +40,7 @@ export async function generateUniqueInternalAccessCode(tx: UsuarioDelegate = pri
     const exists = await tx.usuario.findUnique({ where: { usuario }, select: { id: true } });
     if (!exists) return usuario;
   }
-  throw new Error("Não foi possível gerar um código interno único.");
+  throw new Error("Não foi possível gerar um ID interno único.");
 }
 
 export function generateTempPassword(): string {
@@ -71,7 +74,6 @@ export async function verifyPassword(password: string, storedHash: string) {
 
 export async function ensureBootstrapAdmin() {
   await migrateAccessUsernames();
-  await clearStoredTemporaryPasswords();
 
   const totalUsers = await prisma.usuario.count();
   if (totalUsers > 0) {
@@ -100,13 +102,6 @@ export async function ensureBootstrapAdmin() {
   if (process.env.AUTH_CREATE_DEFAULT_MEDICAO_USERS === "true") {
     await ensureDefaultAccessUsers();
   }
-}
-
-async function clearStoredTemporaryPasswords() {
-  await prisma.usuario.updateMany({
-    where: { senhaTemporaria: { not: null } },
-    data: { senhaTemporaria: null, updatedAt: new Date() },
-  });
 }
 
 export async function ensureDefaultAccessUsers() {
@@ -151,8 +146,18 @@ export async function ensureDefaultAccessUsers() {
   });
 
   for (const colaborador of colaboradores) {
-    const usuario = normalizeAccessUsername(decryptSensitive((colaborador as any).cnpj) || colaborador.codigo);
-    if (!usuario) continue;
+    const existingByName = await prisma.usuario.findFirst({
+      where: {
+        perfil: "COLABORADOR",
+        excluidoAt: null,
+        OR: [
+          { nome: colaborador.nomeCompleto || colaborador.nome || "" },
+          { nome: colaborador.nome || "" },
+        ],
+      },
+      select: { usuario: true },
+    });
+    const usuario = existingByName?.usuario ?? await generateUniqueInternalAccessCode();
     if (medicaoUsernames.has(usuario)) continue;
 
     const existing = await prisma.usuario.findUnique({ where: { usuario } });
@@ -170,7 +175,7 @@ export async function ensureDefaultAccessUsers() {
           usuario,
           nome: colaborador.nomeCompleto || colaborador.nome || usuario,
           senhaHash: tempHash,
-          senhaTemporaria: null,
+          senhaTemporaria: tempPass,
           primeiroLogin: true,
           perfil: "COLABORADOR",
         },
@@ -187,31 +192,7 @@ async function migrateAccessUsernames() {
 
   for (const user of usuarios) {
     let usuario = normalizeAccessUsername(user.usuario);
-    if (isInternalUserProfile(user.perfil)) {
-      usuario = isInternalAccessCode(user.usuario) ? user.usuario : await generateUniqueInternalAccessCode();
-    } else if (user.perfil === "COLABORADOR") {
-      const currentCnpj = normalizeFornecedorAccessCnpj(user.usuario);
-      if (currentCnpj) {
-        usuario = currentCnpj;
-      } else {
-        const legacyCodigo = user.usuario
-          .trim()
-          .replace(/\.+/g, " ")
-          .replace(/\s+/g, " ")
-          .toUpperCase();
-        const cadastro = await prisma.cadastroFornecedor.findFirst({
-          where: {
-            OR: [
-              { colaboradorCodigo: legacyCodigo },
-              { responsavel: { equals: user.nome, mode: "insensitive" } },
-              { responsavel: { equals: legacyCodigo, mode: "insensitive" } },
-            ],
-          },
-          select: { cnpjNormalizado: true },
-        });
-        usuario = cadastro?.cnpjNormalizado ?? "";
-      }
-    }
+    usuario = isInternalAccessCode(user.usuario) ? user.usuario : await generateUniqueInternalAccessCode();
     if (!usuario || usuario === user.usuario) continue;
 
     const exists = await prisma.usuario.findUnique({ where: { usuario }, select: { id: true } });

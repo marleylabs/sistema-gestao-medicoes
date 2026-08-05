@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   const ciclo = typeof payload?.ciclo === "string" ? payload.ciclo.trim() : "2605";
 
   if (!colaboradorCodigo) {
-    return NextResponse.json({ error: "Código do fornecedor é obrigatório." }, { status: 400 });
+    return NextResponse.json({ error: "ID do fornecedor é obrigatório." }, { status: 400 });
   }
 
   const profissional = await prisma.profissional.findUnique({

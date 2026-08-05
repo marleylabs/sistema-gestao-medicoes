@@ -54,7 +54,7 @@ export function bmDisponivel(nome: string, meta?: { ciclo?: string; colaboradorC
       <p>Olá, <strong>${nomeSeguro}</strong>!</p>
       <p>Uma nova medição foi disponibilizada para análise no Portal do Fornecedor.</p>
       ${cicloSeguro ? `<p><strong>Ciclo:</strong> ${cicloSeguro}</p>` : ""}
-      ${codigoSeguro ? `<p><strong>Código:</strong> ${codigoSeguro}</p>` : ""}
+      ${codigoSeguro ? `<p><strong>ID:</strong> ${codigoSeguro}</p>` : ""}
       <p>Acesse o portal para visualizar os dados e registrar sua conformidade.</p>
       ${appUrlSeguro ? `<p style="margin:24px 0;"><a href="${appUrlSeguro}" style="display:inline-block;background:#2563EB;color:white;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700;">Acessar plataforma</a></p>` : ""}
       <hr style="border:none;border-top:1px solid #E5E7EB;margin:24px 0;">

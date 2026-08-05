@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
   const ciclo = typeof payload?.ciclo === "string" ? payload.ciclo.trim() : "2605";
 
   if (!colaboradorCodigo || !resposta) {
-    return NextResponse.json({ error: "Código e resposta são obrigatórios." }, { status: 400 });
+    return NextResponse.json({ error: "ID e resposta são obrigatórios." }, { status: 400 });
   }
 
   const atual = await prisma.sgcAprovacaoMedicao.findUnique({

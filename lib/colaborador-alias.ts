@@ -20,12 +20,24 @@ function unique(values: Array<string | null | undefined>) {
 export async function getColaboradorCodigoAliases(usuario: string | null | undefined, ciclo?: string | null) {
   const usuarioCnpj = normalizeCnpjDigits(usuario);
   const cadastroPorLogin = usuarioCnpj.length === 14
-    ? await prisma.cadastroFornecedor.findUnique({
+    ? await prisma.cadastroFornecedor.findFirst({
         where: { cnpjNormalizado: usuarioCnpj },
         select: { colaboradorCodigo: true, responsavel: true, cnpjNormalizado: true },
       })
     : null;
-  const codigo = cadastroPorLogin?.colaboradorCodigo ?? toColaboradorCodigo(usuario);
+  const usuarioDb = !cadastroPorLogin && usuario
+    ? await prisma.usuario.findUnique({
+        where: { usuario: usuario.trim().toUpperCase() },
+        select: { nome: true },
+      })
+    : null;
+  const cadastroPorUsuario = !cadastroPorLogin && usuarioDb?.nome
+    ? await prisma.cadastroFornecedor.findFirst({
+        where: { responsavel: { equals: usuarioDb.nome, mode: "insensitive" } },
+        select: { colaboradorCodigo: true, responsavel: true, cnpjNormalizado: true },
+      })
+    : null;
+  const codigo = cadastroPorLogin?.colaboradorCodigo ?? cadastroPorUsuario?.colaboradorCodigo ?? toColaboradorCodigo(usuario);
   const codigos = new Set<string>(codigo ? [codigo] : []);
 
   const profissional = codigo
@@ -36,7 +48,7 @@ export async function getColaboradorCodigoAliases(usuario: string | null | undef
     : null;
   const profissionalCnpj = onlyDigits(decryptSensitive(profissional?.cnpj));
 
-  const cadastroDireto = cadastroPorLogin ?? (codigo
+  const cadastroDireto = cadastroPorLogin ?? cadastroPorUsuario ?? (codigo
     ? await prisma.cadastroFornecedor.findFirst({
         where: { OR: [{ colaboradorCodigo: codigo }, { responsavel: codigo }] },
         select: { colaboradorCodigo: true, responsavel: true, cnpjNormalizado: true },

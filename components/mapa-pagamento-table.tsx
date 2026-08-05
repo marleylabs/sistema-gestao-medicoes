@@ -249,7 +249,7 @@ export function MapaPagamentoTable({
               Pesquisar
               <span className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" size={14} />
-                <Input className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Código, nome ou empresa" />
+                <Input className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ID, nome ou empresa" />
               </span>
             </label>
             <label className="grid min-w-[140px] gap-1.5 text-xs font-semibold text-[#555555]">
@@ -1107,12 +1107,12 @@ function PaymentModal({
               </datalist>
             </MField>
 
-            {/* Nome (código) — autocomplete */}
-            <MField label="Nome (código)">
+            {/* Nome (ID) - autocomplete */}
+            <MField label="Nome (ID)">
               <div className="relative" ref={suggestionsRef}>
                 <input
                   className="h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] hover:border-[#D1D5DB] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
-                  placeholder="Digite o código ou nome…"
+                  placeholder="Digite o ID ou nome…"
                   value={codigoQuery}
                   onChange={(e) => { setCodigoQuery(e.target.value); setShowSuggestions(true); }}
                   onFocus={() => setShowSuggestions(true)}

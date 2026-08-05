@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { toColaboradorCodigo } from "@/lib/usuario-format";
+import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
 
 const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
 
@@ -29,8 +29,11 @@ export async function POST(request: NextRequest) {
   const isFornecedor = user.perfil === "COLABORADOR";
   const isMedicao = ["MEDICAO", "ADMIN"].includes(user.perfil);
   if (!isFornecedor && !isMedicao) return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
-  if (isFornecedor && sgc.colaboradorCodigo !== toColaboradorCodigo(user.usuario)) {
-    return NextResponse.json({ error: "Acesso restrito ao fornecedor." }, { status: 403 });
+  if (isFornecedor) {
+    const aliases = await getColaboradorCodigoAliases(user.usuario, sgc.ciclo);
+    if (!aliases.includes(sgc.colaboradorCodigo)) {
+      return NextResponse.json({ error: "Acesso restrito ao fornecedor." }, { status: 403 });
+    }
   }
   if (sgc.status !== "REVISAO_SOLICITADA") {
     return NextResponse.json({ error: "Áudios só podem ser enviados enquanto a revisão estiver aberta." }, { status: 409 });

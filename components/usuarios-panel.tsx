@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Eye, EyeOff, KeyRound, Plus, RefreshCw, ShieldCheck, ShieldOff, Trash2, UserCog, X } from "lucide-react";
-import { Badge, Button, Card, Input, SectionHeader } from "@/components/ui";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { EllipsisVertical, Eye, EyeOff, Info, KeyRound, Plus, RefreshCw, ShieldCheck, ShieldOff, Trash2, UserCog, X } from "lucide-react";
+import { Button, Card, Input, SectionHeader } from "@/components/ui";
 
 type Usuario = {
   id: string;
@@ -51,19 +51,6 @@ const PERFIL_GROUPS = [
   { value: "DEPARTAMENTO_PESSOAL", label: "Departamento Pessoal", description: "Usuários reservados para etapa futura." },
 ];
 
-function onlyDigits(value: string) {
-  return value.replace(/\D/g, "");
-}
-
-function maskCnpj(value: string) {
-  const digits = onlyDigits(value).slice(0, 14);
-  return digits
-    .replace(/^(\d{2})(\d)/, "$1.$2")
-    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/\.(\d{3})(\d)/, ".$1/$2")
-    .replace(/(\d{4})(\d)/, "$1-$2");
-}
-
 function fmtDate(iso: string | null) {
   if (!iso) return "–";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));
@@ -108,8 +95,18 @@ function UsuarioCard({ u, onRefresh, canDelete }: { u: Usuario; onRefresh: () =>
   const [showTemp, setShowTemp] = useState(false);
   const [showSetSenha, setShowSetSenha] = useState(false);
   const [showSetPerfil, setShowSetPerfil] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [novoPerfil, setNovoPerfil] = useState(u.perfil);
   const [loading, setLoading] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function onPointerDown(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, []);
 
   async function salvarPerfil() {
     setLoading(true);
@@ -159,76 +156,135 @@ function UsuarioCard({ u, onRefresh, canDelete }: { u: Usuario; onRefresh: () =>
     onRefresh();
   }
 
+  function runMenuAction(action: () => void) {
+    setMenuOpen(false);
+    action();
+  }
+
   const perfilLabel = PERFIL_LABEL[u.perfil] ?? u.perfil;
   const isInternal = ["MEDICAO", "ADMIN", "FINANCEIRO", "ADMINISTRATIVO"].includes(u.perfil);
-  const accent = u.perfil === "ADMIN"
-    ? "border-[#AF1B1B]/30 bg-[#FFF5F5]"
-    : u.perfil === "MEDICAO"
-    ? "border-[#2563EB]/25 bg-[#EFF6FF]"
-    : u.perfil === "FINANCEIRO"
-    ? "border-[#16A34A]/25 bg-[#F0FDF4]"
-    : u.perfil === "ADMINISTRATIVO"
-    ? "border-[#0F766E]/25 bg-[#F0FDFA]"
-    : "border-[#E5E7EB] bg-white";
+  const accent = u.ativo ? "border-[#E5E7EB] bg-white" : "border-[#E5E7EB] bg-[#F9FAFB] opacity-75";
 
   return (
-    <div className={`flex min-h-[190px] flex-col rounded-xl border p-4 shadow-sm transition-colors ${u.ativo ? accent : "border-[#E5E7EB] bg-[#F9FAFB] opacity-70"}`}>
-      <div className="flex items-start gap-3">
+    <div className={`flex min-h-[124px] flex-col overflow-visible rounded-xl border px-4 py-4 shadow-sm transition-colors sm:px-5 ${accent}`}>
+      <div className="flex items-start gap-3.5">
         <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-          isInternal ? "bg-white text-[#AF1B1B] ring-1 ring-[#FECACA]" : "bg-[#EFF6FF] text-[#2563EB]"
+          isInternal ? "bg-[#FEF2F2] text-[#AF1B1B] ring-1 ring-[#FECACA]" : "bg-[#EFF6FF] text-[#2563EB]"
         }`}>
           {(u.nome || u.usuario).split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="truncate text-sm font-bold text-[#1A1A1A]">{u.nome || u.usuario}</span>
-            <Badge variant={u.ativo ? "brand" : "neutral"}>{u.ativo ? "Ativo" : "Inativo"}</Badge>
-            {u.primeiroLogin && <span className="rounded bg-[#FFFBEB] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#D97706]">1º acesso pendente</span>}
-          </div>
-          <p className="mt-1 truncate font-mono text-[11px] uppercase tracking-wide text-[#9CA3AF]">{u.usuario}</p>
-          <p className="mt-1 text-[11px] text-[#6B7280]">Último acesso: {fmtDate(u.ultimoLoginAt)}</p>
-          <span className="mt-2 inline-flex rounded bg-white/80 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#555555] ring-1 ring-[#E5E7EB]">{perfilLabel}</span>
-        </div>
-      </div>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold leading-5 text-[#111827]">{u.nome || u.usuario}</p>
+              <p className="mt-0.5 truncate font-mono text-xs font-medium uppercase text-[#6B7280]">{u.usuario}</p>
+            </div>
 
-      <div className="mt-auto pt-4">
-        <div className={`grid grid-cols-2 gap-2 ${canDelete ? "sm:grid-cols-5" : "sm:grid-cols-4"}`}>
-          <button onClick={toggleAtivo} disabled={loading} title={u.ativo ? "Desativar" : "Ativar"}
-            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2 text-xs font-medium text-[#555555] transition-colors hover:border-[#AF1B1B] hover:text-[#AF1B1B] disabled:opacity-40">
-            {u.ativo ? <ShieldOff size={13} className="mr-1 inline" /> : <ShieldCheck size={13} className="mr-1 inline" />}
-            {u.ativo ? "Desativar" : "Ativar"}
-          </button>
-          <button onClick={resetSenha} disabled={loading} title="Resetar senha"
-            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2 text-xs font-medium text-[#555555] transition-colors hover:border-[#2563EB] hover:text-[#2563EB] disabled:opacity-40">
-            <RefreshCw size={13} className="mr-1 inline" />Resetar
-          </button>
-          <button onClick={() => setShowSetSenha((v) => !v)} title="Definir senha"
-            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2 text-xs font-medium text-[#555555] transition-colors hover:border-[#16A34A] hover:text-[#16A34A]">
-            <KeyRound size={13} className="mr-1 inline" />Senha
-          </button>
-          <button onClick={() => { setShowSetPerfil((v) => !v); setNovoPerfil(u.perfil); }} title="Alterar função"
-            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2 text-xs font-medium text-[#555555] transition-colors hover:border-[#7C3AED] hover:text-[#7C3AED]">
-            <UserCog size={13} className="mr-1 inline" />Função
-          </button>
-          {canDelete && (
-            <button onClick={excluirUsuario} disabled={loading} title="Excluir usuário"
-              className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-[#FECACA] bg-white px-2 text-xs font-medium text-[#B91C1C] transition-colors hover:border-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-40">
-              <Trash2 size={13} className="mr-1 inline" />Excluir
-            </button>
-          )}
+            <div className="flex shrink-0 items-start gap-2">
+              <div className="flex flex-wrap justify-end gap-1.5">
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                  u.ativo ? "bg-[#DCFCE7] text-[#15803D] ring-1 ring-[#BBF7D0]" : "bg-[#F3F4F6] text-[#6B7280] ring-1 ring-[#E5E7EB]"
+                }`}>
+                  {u.ativo ? "Ativo" : "Inativo"}
+                </span>
+                {u.primeiroLogin && (
+                  <span className="rounded-full bg-[#FFFBEB] px-2 py-0.5 text-[10px] font-bold uppercase text-[#D97706] ring-1 ring-[#FDE68A]">
+                    1º acesso pendente
+                  </span>
+                )}
+              </div>
+              <div ref={menuRef} className="relative">
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#E5E7EB] bg-white text-[#4B5563] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] hover:text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25"
+                  onClick={() => setMenuOpen((value) => !value)}
+                  aria-label={`Ações de ${u.nome || u.usuario}`}
+                  aria-expanded={menuOpen}
+                >
+                  <EllipsisVertical size={16} />
+                </button>
+
+                {menuOpen && (
+                  <div className="absolute right-0 top-9 z-30 w-52 overflow-hidden rounded-xl border border-[#E5E7EB] bg-white p-1.5 shadow-xl">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#374151] transition hover:bg-[#F9FAFB] hover:text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20"
+                      onClick={() => runMenuAction(toggleAtivo)}
+                      disabled={loading}
+                    >
+                      {u.ativo ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
+                      {u.ativo ? "Desativar usuário" : "Ativar usuário"}
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#374151] transition hover:bg-[#F9FAFB] hover:text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20"
+                      onClick={() => runMenuAction(resetSenha)}
+                      disabled={loading}
+                    >
+                      <RefreshCw size={14} />
+                      Resetar senha
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#374151] transition hover:bg-[#F9FAFB] hover:text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20"
+                      onClick={() => runMenuAction(() => setShowSetSenha((value) => !value))}
+                    >
+                      <KeyRound size={14} />
+                      Definir senha
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#374151] transition hover:bg-[#F9FAFB] hover:text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20"
+                      onClick={() => runMenuAction(() => { setShowSetPerfil((value) => !value); setNovoPerfil(u.perfil); })}
+                    >
+                      <UserCog size={14} />
+                      Alterar função
+                    </button>
+                    {canDelete && (
+                      <div className="mt-1 border-t border-[#F3F4F6] pt-1">
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-[#B91C1C] transition hover:bg-[#FEF2F2] focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20"
+                          onClick={() => runMenuAction(excluirUsuario)}
+                          disabled={loading}
+                        >
+                          <Trash2 size={14} />
+                          Excluir usuário
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <span className="inline-flex rounded-full bg-[#F9FAFB] px-2.5 py-1 text-[10px] font-semibold uppercase text-[#4B5563] ring-1 ring-[#E5E7EB]">
+              {perfilLabel}
+            </span>
+            <span className="text-xs font-medium text-[#6B7280]">Último acesso: <span className="font-semibold text-[#374151]">{fmtDate(u.ultimoLoginAt)}</span></span>
+          </div>
         </div>
       </div>
 
       {u.senhaTemporaria && (
-        <div className="mt-3 flex items-center gap-2 rounded-lg bg-[#FFFBEB] px-3 py-2">
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#FEF3C7] bg-[#FFFBEB] px-2.5 py-1.5">
           <KeyRound size={13} className="shrink-0 text-[#D97706]" />
-          <span className="text-xs text-[#92400E]">Senha temporária:</span>
+          <span className="text-xs font-medium text-[#92400E]">Senha temporária:</span>
           <span className={`font-mono text-sm font-bold tracking-widest text-[#92400E] ${showTemp ? "" : "blur-sm select-none"}`}>
             {u.senhaTemporaria}
           </span>
           <button className="ml-1 text-[#D97706] hover:text-[#92400E]" onClick={() => setShowTemp((v) => !v)} title={showTemp ? "Ocultar" : "Revelar"}>
             {showTemp ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
+        </div>
+      )}
+
+      {u.primeiroLogin && !u.senhaTemporaria && (
+        <div className="mt-3 inline-flex max-w-full items-center gap-2 self-start rounded-lg border border-[#FEF3C7] bg-[#FFFBEB] px-2.5 py-1.5 text-xs font-medium text-[#92400E]">
+          <Info size={13} className="shrink-0 text-[#D97706]" />
+          <span>Senha temporária não registrada. Resete a senha no menu de ações.</span>
         </div>
       )}
 
@@ -284,7 +340,7 @@ function CriarUsuarioModal({
   const [saving, setSaving] = useState(false);
 
   function updateField(field: keyof NovoUsuarioForm, value: string) {
-    setForm((prev) => ({ ...prev, [field]: field === "usuario" ? maskCnpj(value) : value }));
+    setForm((prev) => ({ ...prev, [field]: value }));
   }
 
   function resetAndClose() {
@@ -353,24 +409,12 @@ function CriarUsuarioModal({
               onChange={(e) => updateField("nome", e.target.value)}
             />
           </label>
-          {form.perfil === "COLABORADOR" ? (
-            <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
-              CNPJ de acesso
-              <Input
-                inputMode="numeric"
-                placeholder="00.000.000/0000-00"
-                value={form.usuario}
-                onChange={(e) => updateField("usuario", e.target.value)}
-              />
-            </label>
-          ) : (
-            <div className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
-              Código de acesso
-              <div className="flex h-9 items-center rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-sm text-[#6B7280]">
-                Gerado automaticamente no padrão P0XXXXXX
-              </div>
+          <div className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
+            ID de acesso
+            <div className="flex h-9 items-center rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-sm text-[#6B7280]">
+              Gerado automaticamente no padrão P0XXXXXX
             </div>
-          )}
+          </div>
           <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
             Perfil
             <select

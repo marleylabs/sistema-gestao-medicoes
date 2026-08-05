@@ -14,7 +14,7 @@ export function ProfissionaisTable({ profissionais }: { profissionais: Profissio
         <table className="w-full min-w-[1180px] border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-[#F5F5F5]">
             <tr>
-              <th className="border-b border-[#d8dee8] px-3 py-3 text-left text-xs font-bold uppercase text-[#1A1A1A]">Código</th>
+              <th className="border-b border-[#d8dee8] px-3 py-3 text-left text-xs font-bold uppercase text-[#1A1A1A]">ID</th>
               <th className="border-b border-[#d8dee8] px-3 py-3 text-left text-xs font-bold uppercase text-[#1A1A1A]">Nome completo</th>
               <th className="border-b border-[#d8dee8] px-3 py-3 text-left text-xs font-bold uppercase text-[#1A1A1A]">CPF</th>
               <th className="border-b border-[#d8dee8] px-3 py-3 text-left text-xs font-bold uppercase text-[#1A1A1A]">Razão social</th>

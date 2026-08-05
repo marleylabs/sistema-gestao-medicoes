@@ -76,14 +76,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: "Responsável e razão social são obrigatórios." }, { status: 400 });
   }
 
-  const duplicate = await prisma.cadastroFornecedor.findFirst({
-    where: { cnpjNormalizado, id: { not: id } },
-    select: { responsavel: true },
-  });
-  if (duplicate) {
-    return NextResponse.json({ error: `CNPJ já vinculado ao cadastro de ${duplicate.responsavel}.` }, { status: 409 });
-  }
-
   const updated = await prisma.cadastroFornecedor.update({
     where: { id },
     data: {

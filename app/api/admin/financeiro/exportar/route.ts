@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
   const pagamentoPorCodigo = new Map(pagamentos.map((item) => [item.projetistaCodigo, item]));
   const headers = [
     "Ciclo",
-    "Código",
+    "ID",
     "Fornecedor",
     "CPF / CNPJ",
     "Razão Social",

@@ -130,7 +130,7 @@ create unique index if not exists idx_profissionais_codigo_unique
 -- ─── cadastros administrativos de fornecedores ───────────────
 create table if not exists cadastros_fornecedores (
     id                   uuid        primary key default gen_random_uuid(),
-    cnpj_normalizado      text        not null unique,
+    cnpj_normalizado      text        not null,
     colaborador_codigo    text,
     responsavel           text        not null,
     razao_social          text        not null,
@@ -156,7 +156,10 @@ create table if not exists cadastros_fornecedores (
     updated_at            timestamptz not null default now()
 );
 
+alter table cadastros_fornecedores drop constraint if exists cadastros_fornecedores_cnpj_normalizado_key;
+drop index if exists cadastros_fornecedores_cnpj_normalizado_key;
 create index if not exists idx_cadastros_fornecedores_colaborador_codigo on cadastros_fornecedores(colaborador_codigo);
+create index if not exists idx_cadastros_fornecedores_cnpj_normalizado on cadastros_fornecedores(cnpj_normalizado);
 create index if not exists idx_cadastros_fornecedores_final on cadastros_fornecedores(final);
 
 -- ─── sgc_aprovacoes_medicao ──────────────────────────────────

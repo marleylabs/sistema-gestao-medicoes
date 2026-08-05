@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
 import { prisma } from "@/lib/prisma";
-import { toColaboradorCodigo } from "@/lib/usuario-format";
 
 function avatarUrl(updatedAt: Date | null) {
   return updatedAt ? `/api/usuario/avatar?v=${updatedAt.getTime()}` : null;
@@ -28,7 +27,12 @@ export async function GET() {
 
   const dadosCadastrais = dbUser.perfil === "COLABORADOR"
     ? await prisma.cadastroFornecedor.findFirst({
-        where: { colaboradorCodigo: toColaboradorCodigo(dbUser.usuario) },
+        where: {
+          OR: [
+            { responsavel: { equals: dbUser.nome, mode: "insensitive" } },
+            { colaboradorCodigo: dbUser.nome },
+          ],
+        },
       })
     : null;
 

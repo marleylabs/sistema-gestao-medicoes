@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { generateTempPassword, generateUniqueInternalAccessCode, hashPassword, isInternalUserProfile, validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { normalizeFornecedorAccessCnpj } from "@/lib/usuario-format";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
@@ -31,7 +30,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const tempHash = await hashPassword(tempPass);
     await prisma.usuario.update({
       where: { id },
-      data: { senhaHash: tempHash, senhaTemporaria: null, primeiroLogin: true, updatedAt: new Date() },
+      data: { senhaHash: tempHash, senhaTemporaria: tempPass, primeiroLogin: true, updatedAt: new Date() },
     });
     return NextResponse.json({ senhaTemporaria: tempPass });
   }
@@ -45,8 +44,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (isInternalUserProfile(perfil) && !/^P0\d{6}$/.test(user.usuario)) {
       data.usuario = await generateUniqueInternalAccessCode();
     }
-    if (perfil === "COLABORADOR" && !normalizeFornecedorAccessCnpj(user.usuario)) {
-      return NextResponse.json({ error: "Para alterar para Fornecedor, o usuário precisa estar vinculado a um CNPJ válido." }, { status: 400 });
+    if (perfil === "COLABORADOR" && !/^P0\d{6}$/.test(user.usuario)) {
+      data.usuario = await generateUniqueInternalAccessCode();
     }
     await prisma.usuario.update({ where: { id }, data });
     return NextResponse.json({ ok: true });

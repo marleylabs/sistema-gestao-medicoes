@@ -1,6 +1,6 @@
 import "server-only";
 
-import { generateTempPassword, hashPassword } from "@/lib/auth";
+import { generateTempPassword, generateUniqueInternalAccessCode, hashPassword } from "@/lib/auth";
 import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 import { excelSerialToDate, parseSimpleXlsx } from "@/lib/xlsx";
@@ -170,7 +170,6 @@ export function parseCadastroFornecedorWorkbook(buffer: Buffer) {
   const headers = sheet[headerIndex].map(normalizeHeader);
   const documentoIndex = headers.findIndex((header) => header === "DOCUMENTO");
   const rows: CadastroRow[] = [];
-  const cnpjOwners = new Map<string, string>();
   for (const row of sheet.slice(headerIndex + 1)) {
     const rawPayload: Record<string, string | number | null> = {};
     const record: Partial<CadastroRow> = { rawPayload };
@@ -203,11 +202,6 @@ export function parseCadastroFornecedorWorkbook(buffer: Buffer) {
     const responsavel = asText(record.responsavel);
     const cnpjNormalizado = normalizeCnpjDigits(record.cnpj);
     if (!responsavel || cnpjNormalizado.length !== 14) continue;
-    const existingOwner = cnpjOwners.get(cnpjNormalizado);
-    if (existingOwner && !isSamePersonName(existingOwner, responsavel)) {
-      throw new Error(`CNPJ ${formatCnpj(cnpjNormalizado)} aparece para mais de um fornecedor na máscara: ${existingOwner} e ${responsavel}.`);
-    }
-    cnpjOwners.set(cnpjNormalizado, responsavel);
     rows.push({
       statusContrato: record.statusContrato ?? null,
       responsavel,
@@ -265,12 +259,12 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
     const codigoResponsavel = codigoFromName(row.responsavel);
     let colaboradorCodigo = await findProfissionalCodigoByName(row.responsavel);
     if (!colaboradorCodigo) colaboradorCodigo = codigoResponsavel;
-    const usuario = row.cnpjNormalizado;
     const now = new Date();
 
     await prisma.$transaction(async (tx) => {
       const existingByResponsavel = await tx.cadastroFornecedor.findFirst({
         where: {
+          cnpjNormalizado: row.cnpjNormalizado,
           OR: [
             { colaboradorCodigo },
             { colaboradorCodigo: codigoResponsavel },
@@ -279,17 +273,7 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
         },
         select: { id: true, cnpjNormalizado: true },
       });
-      const existingByCnpj = await tx.cadastroFornecedor.findUnique({
-        where: { cnpjNormalizado: row.cnpjNormalizado },
-        select: { id: true, responsavel: true, colaboradorCodigo: true },
-      });
-      if (existingByCnpj && existingByResponsavel && existingByCnpj.id !== existingByResponsavel.id) {
-        throw new Error(`CNPJ ${formatCnpj(row.cnpjNormalizado)} já está vinculado ao cadastro de ${existingByCnpj.responsavel}.`);
-      }
-      if (existingByCnpj && !isSamePersonName(existingByCnpj.responsavel, row.responsavel) && !isSamePersonName(existingByCnpj.colaboradorCodigo, colaboradorCodigo)) {
-        throw new Error(`CNPJ ${formatCnpj(row.cnpjNormalizado)} já está vinculado ao cadastro de ${existingByCnpj.responsavel}.`);
-      }
-      const existing = existingByResponsavel ?? existingByCnpj;
+      const existing = existingByResponsavel;
       const data = {
         cnpjNormalizado: row.cnpjNormalizado,
         colaboradorCodigo,
@@ -353,16 +337,20 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
         },
       });
 
-      if (usuario) {
-        const existingUser = await tx.usuario.findUnique({ where: { usuario }, select: { id: true, excluidoAt: true } });
+      {
+        const existingUser = await tx.usuario.findFirst({
+          where: { perfil: "COLABORADOR", nome: { equals: row.responsavel, mode: "insensitive" } },
+          select: { id: true, usuario: true, excluidoAt: true },
+        });
         if (!existingUser) {
           const senha = generateTempPassword();
+          const usuario = await generateUniqueInternalAccessCode(tx);
           await tx.usuario.create({
             data: {
               usuario,
               nome: row.responsavel,
               senhaHash: await hashPassword(senha),
-              senhaTemporaria: null,
+              senhaTemporaria: senha,
               primeiroLogin: true,
               perfil: "COLABORADOR",
             },
@@ -382,10 +370,10 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
   return { total: rows.length, criados, atualizados, usuariosCriados, senhasTemporarias };
 }
 
-export async function validateFornecedorForNfUpload(colaboradorCodigo: string) {
+export async function validateFornecedorForNfUpload(colaboradorCodigo: string, usuarioNome?: string | null) {
   const loginCnpj = normalizeCnpjDigits(colaboradorCodigo);
   const cadastroByLoginCnpj = loginCnpj.length === 14
-    ? await prisma.cadastroFornecedor.findUnique({ where: { cnpjNormalizado: loginCnpj } })
+    ? await prisma.cadastroFornecedor.findFirst({ where: { cnpjNormalizado: loginCnpj } })
     : null;
   const codigoProfissional = cadastroByLoginCnpj?.colaboradorCodigo ?? colaboradorCodigo;
   const profissional = await prisma.profissional.findUnique({
@@ -394,7 +382,12 @@ export async function validateFornecedorForNfUpload(colaboradorCodigo: string) {
   });
   const profissionalCnpj = onlyDigits(decryptSensitive(profissional?.cnpj));
   const cadastroByCodigo = await prisma.cadastroFornecedor.findFirst({ where: { colaboradorCodigo: codigoProfissional } });
-  const cadastro = cadastroByLoginCnpj ?? cadastroByCodigo ?? (
+  const cadastroByNome = !cadastroByLoginCnpj && !cadastroByCodigo && usuarioNome
+    ? await prisma.cadastroFornecedor.findFirst({
+        where: { responsavel: { equals: usuarioNome, mode: "insensitive" } },
+      })
+    : null;
+  const cadastro = cadastroByLoginCnpj ?? cadastroByCodigo ?? cadastroByNome ?? (
     profissionalCnpj.length === 14
       ? await prisma.cadastroFornecedor.findFirst({
           where: {

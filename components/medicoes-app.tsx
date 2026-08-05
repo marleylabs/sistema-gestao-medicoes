@@ -1031,7 +1031,7 @@ function SgcReviewModal({
               {
                 title: "Fornecedor",
                 fields: [
-                  ["Código", alerta.colaborador.codigo],
+                  ["ID", alerta.colaborador.codigo],
                   ["Nome", alerta.colaborador.nome],
                   ["CPF / CNPJ", alerta.colaborador.cpf || alerta.colaborador.cnpj],
                   ["Razão social", alerta.colaborador.razaoSocial],

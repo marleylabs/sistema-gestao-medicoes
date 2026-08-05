@@ -789,7 +789,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                 </div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                <SummaryField label="Código" value={data.usuario.codigo} />
+                <SummaryField label="ID" value={data.usuario.codigo} />
                 <SummaryField label="Função" value={data.usuario.funcao} />
                 <SummaryField label="CPF / CNPJ" value={data.usuario.cpf || data.usuario.cnpj} />
                 <SummaryField label="E-mail" value={data.usuario.email} />
@@ -853,7 +853,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             <div>
               <h2 className="text-sm font-bold text-[#1A1A1A]">Documentos da Medição do Ciclo</h2>
               <p className="mt-0.5 text-sm text-[#555555]">
-                {data.documentos.length} documentos vinculados ao código {data.usuario.codigo} no ciclo {data.cicloAtivo}.
+                {data.documentos.length} documentos vinculados ao ID {data.usuario.codigo} no ciclo {data.cicloAtivo}.
               </p>
             </div>
             <ChevronDown className={`shrink-0 text-[#9CA3AF] transition-transform duration-200 ${documentsOpen ? "rotate-180" : ""}`} size={18} />

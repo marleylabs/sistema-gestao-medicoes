@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { safeDownloadName } from "@/lib/file-security";
 import { prisma } from "@/lib/prisma";
-import { toColaboradorCodigo } from "@/lib/usuario-format";
+import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -24,8 +24,11 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "Áudio não encontrado." }, { status: 404 });
   }
 
-  if (user.perfil === "COLABORADOR" && log.colaboradorCodigo !== toColaboradorCodigo(user.usuario)) {
-    return NextResponse.json({ error: "Acesso restrito ao fornecedor." }, { status: 403 });
+  if (user.perfil === "COLABORADOR") {
+    const aliases = await getColaboradorCodigoAliases(user.usuario);
+    if (!aliases.includes(log.colaboradorCodigo)) {
+      return NextResponse.json({ error: "Acesso restrito ao fornecedor." }, { status: 403 });
+    }
   }
   if (!["COLABORADOR", "MEDICAO", "ADMIN"].includes(user.perfil)) {
     return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });

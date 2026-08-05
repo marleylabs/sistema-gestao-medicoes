@@ -97,7 +97,7 @@ Os campos sensíveis também são removidos dos objetos `raw_payload` antes da g
 O ETL cria ou atualiza os cadastros normalizados e recarrega as tabelas importadas como um snapshot da fonte atual:
 
 - `projetos`: cadastro único por `codigo_projeto`.
-- `profissionais`: cadastro único por nome/código.
+- `profissionais`: cadastro único por nome/ID.
 - `medicoes`: tabela fato vinculada por chaves estrangeiras.
 - `mapa_pagamento_itens`: linhas da `Tabela5`.
 - `bm_aux_medicoes`: dados revisados da aba `BM AUX`.

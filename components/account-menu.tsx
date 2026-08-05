@@ -1,9 +1,9 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, CheckCircle2, ChevronRight, KeyRound, LogOut, Settings, ShieldCheck, Trash2, UserRound, X } from "lucide-react";
+import { Camera, CheckCircle2, ChevronRight, Clock3, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, Monitor, Settings, ShieldCheck, Smartphone, Trash2, X } from "lucide-react";
 import { clsx } from "clsx";
-import { Button, IconButton, Input } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import type { AuthUser } from "@/lib/session";
 
 type ProfileData = {
@@ -59,10 +59,67 @@ function dateLabel(value: string | null | undefined) {
 
 function ReadOnlyField({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div className="rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] px-3 py-2.5">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-[#9CA3AF]">{label}</p>
-      <p className="mt-1 break-words text-sm font-semibold text-[#1A1A1A]">{value || "-"}</p>
+    <div className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-3 shadow-sm">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">{label}</p>
+        <LockKeyhole size={13} className="shrink-0 text-[#9CA3AF]" aria-hidden="true" />
+      </div>
+      <p className="mt-1.5 break-words text-sm font-semibold text-[#111827]">{value || "-"}</p>
     </div>
+  );
+}
+
+function PasswordField({
+  id,
+  label,
+  value,
+  onChange,
+  visible,
+  onToggle,
+  autoComplete,
+  helper,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  visible: boolean;
+  onToggle: () => void;
+  autoComplete: string;
+  helper?: string;
+}) {
+  return (
+    <label className="grid gap-1.5 text-sm font-semibold text-[#111827]" htmlFor={id}>
+      {label}
+      <span className="relative">
+        <Input
+          id={id}
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          autoComplete={autoComplete}
+          className="pr-11"
+        />
+        <button
+          type="button"
+          className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[#4B5563] transition hover:bg-[#F3F4F6] hover:text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25"
+          onClick={onToggle}
+          aria-label={visible ? `Ocultar ${label.toLowerCase()}` : `Mostrar ${label.toLowerCase()}`}
+        >
+          {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </span>
+      {helper && <span className="text-xs font-normal text-[#6B7280]">{helper}</span>}
+    </label>
+  );
+}
+
+function Requirement({ ok, children }: { ok: boolean; children: React.ReactNode }) {
+  return (
+    <li className={clsx("flex items-center gap-2 text-xs font-medium", ok ? "text-[#15803D]" : "text-[#6B7280]")}>
+      <span className={clsx("h-1.5 w-1.5 rounded-full", ok ? "bg-[#16A34A]" : "bg-[#D1D5DB]")} />
+      {children}
+    </li>
   );
 }
 
@@ -97,6 +154,15 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [sessionInfo, setSessionInfo] = useState({
+    browser: "Navegador atual",
+    os: "Sistema operacional",
+    device: "desktop" as "desktop" | "mobile",
+    location: "Localização não informada",
+  });
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -114,6 +180,12 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
   };
 
   const avatarSrc = useMemo(() => displayProfile.avatarUrl ?? null, [displayProfile.avatarUrl]);
+  const passwordRules = useMemo(() => ({
+    length: newPassword.length >= 12,
+    uppercase: /[A-ZÁÉÍÓÚÂÊÔÃÕÇ]/.test(newPassword),
+    number: /\d/.test(newPassword),
+    match: !!newPassword && newPassword === confirmPassword,
+  }), [confirmPassword, newPassword]);
 
   async function loadProfile() {
     const res = await fetch("/api/usuario/me", { cache: "no-store" });
@@ -124,6 +196,34 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
 
   useEffect(() => {
     loadProfile();
+  }, []);
+
+  useEffect(() => {
+    const ua = navigator.userAgent;
+    const browser = ua.includes("Edg/")
+      ? "Microsoft Edge"
+      : ua.includes("Chrome/")
+        ? "Chrome"
+        : ua.includes("Firefox/")
+          ? "Firefox"
+          : ua.includes("Safari/")
+            ? "Safari"
+            : "Navegador atual";
+    const os = ua.includes("Windows")
+      ? "Windows"
+      : ua.includes("Mac OS")
+        ? "macOS"
+        : ua.includes("Android")
+          ? "Android"
+          : /iPhone|iPad/.test(ua)
+            ? "iOS"
+            : ua.includes("Linux")
+              ? "Linux"
+              : "Sistema operacional";
+    const device = /Android|iPhone|iPad|Mobile/i.test(ua) ? "mobile" : "desktop";
+    const localeParts = Intl.DateTimeFormat().resolvedOptions().timeZone?.split("/") ?? [];
+    const location = localeParts.length > 1 ? localeParts[localeParts.length - 1].replace(/_/g, " ") : "Localização não informada";
+    setSessionInfo({ browser, os, device, location });
   }, []);
 
   useEffect(() => {
@@ -218,40 +318,64 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
         </button>
 
         {menuOpen && (
-          <div className="absolute right-0 top-12 z-50 w-[280px] overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-xl">
-            <div className="flex flex-col items-center border-b border-[#F3F4F6] px-4 py-5 text-center">
-              <Avatar name={displayProfile.nome} src={avatarSrc} />
-              <p className="mt-3 max-w-full truncate text-sm font-bold text-[#1A1A1A]">{displayProfile.nome}</p>
-              <p className="max-w-full truncate text-xs text-[#6B7280]">{displayProfile.usuario}</p>
+          <div className="absolute right-0 top-12 z-50 w-[288px] overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-xl">
+            <div className="border-b border-[#E5E7EB] bg-[#FAFAFA] px-4 py-5">
+              <div className="flex items-center gap-3">
+                <Avatar name={displayProfile.nome} src={avatarSrc} />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-[#111827]">{displayProfile.nome}</p>
+                  <p className="mt-0.5 truncate font-mono text-xs font-semibold text-[#4B5563]">{displayProfile.usuario}</p>
+                  <span className="mt-2 inline-flex max-w-full items-center rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2 py-0.5 text-[11px] font-bold text-[#1D4ED8]">
+                    {roleLabel}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="p-2">
+
+            <div className="grid gap-1 p-2">
               <button
                 type="button"
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold text-[#1A1A1A] hover:bg-[#EFF6FF] hover:text-[#2563EB]"
+                className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[#111827] transition hover:bg-[#EFF6FF] hover:text-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25"
                 onClick={() => openSettings("account")}
               >
-                <Settings size={16} />
-                Configurações
-                <ChevronRight size={15} className="ml-auto" />
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#F3F4F6] text-[#4B5563]">
+                  <Settings size={16} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">Configurações</span>
+                  <span className="block truncate text-xs font-medium text-[#6B7280]">Conta e dados pessoais</span>
+                </span>
+                <ChevronRight size={15} className="shrink-0 text-[#9CA3AF]" />
               </button>
               <button
                 type="button"
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold text-[#1A1A1A] hover:bg-[#EFF6FF] hover:text-[#2563EB]"
+                className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[#111827] transition hover:bg-[#EFF6FF] hover:text-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25"
                 onClick={() => openSettings("security")}
               >
-                <KeyRound size={16} />
-                Segurança
-                <ChevronRight size={15} className="ml-auto" />
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#F3F4F6] text-[#4B5563]">
+                  <KeyRound size={16} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">Segurança</span>
+                  <span className="block truncate text-xs font-medium text-[#6B7280]">Senha e sessões</span>
+                </span>
+                <ChevronRight size={15} className="shrink-0 text-[#9CA3AF]" />
               </button>
             </div>
-            <div className="border-t border-[#F3F4F6] p-2">
+
+            <div className="border-t border-[#E5E7EB] bg-white p-2">
               <button
                 type="button"
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold text-[#AF1B1B] hover:bg-[#FEF2F2]"
+                className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-bold text-[#B91C1C] transition hover:bg-[#FEF2F2] focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20"
                 onClick={onLogout}
               >
-                <LogOut size={16} />
-                Sair
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#FEF2F2] text-[#B91C1C]">
+                  <LogOut size={16} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">Sair</span>
+                  <span className="block truncate text-xs font-semibold text-[#991B1B]">Encerrar sessão atual</span>
+                </span>
               </button>
             </div>
           </div>
@@ -265,14 +389,14 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  className={clsx("rounded-md px-3 py-1.5 text-sm font-medium transition", tab === "account" ? "bg-[#F3F4F6] text-[#1A1A1A]" : "text-[#6B7280] hover:bg-[#F9FAFB] hover:text-[#1A1A1A]")}
+                  className={clsx("rounded-md px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25", tab === "account" ? "bg-[#2563EB] text-white shadow-sm" : "text-[#4B5563] hover:bg-[#F3F4F6] hover:text-[#111827]")}
                   onClick={() => setTab("account")}
                 >
                   Conta
                 </button>
                 <button
                   type="button"
-                  className={clsx("rounded-md px-3 py-1.5 text-sm font-medium transition", tab === "security" ? "bg-[#F3F4F6] text-[#1A1A1A]" : "text-[#6B7280] hover:bg-[#F9FAFB] hover:text-[#1A1A1A]")}
+                  className={clsx("rounded-md px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25", tab === "security" ? "bg-[#2563EB] text-white shadow-sm" : "text-[#4B5563] hover:bg-[#F3F4F6] hover:text-[#111827]")}
                   onClick={() => setTab("security")}
                 >
                   Segurança
@@ -300,112 +424,222 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
               )}
 
               {tab === "account" ? (
-                <div className="grid gap-10 md:grid-cols-[130px_1fr]">
-                  <div className="flex flex-col items-center gap-3">
-                    <Avatar name={displayProfile.nome} src={avatarSrc} size="lg" />
-                    <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={uploadAvatar} />
-                    <button
-                      type="button"
-                      className="text-sm font-medium text-[#1A1A1A] transition hover:text-[#2563EB]"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={avatarUploading}
-                    >
-                      Editar
-                    </button>
-                    {avatarSrc && (
-                      <button
-                        type="button"
-                        className="text-xs font-medium text-[#AF1B1B] hover:underline"
-                        onClick={removeAvatar}
-                        disabled={avatarUploading}
-                      >
-                        Remover foto
-                      </button>
-                    )}
-                  </div>
+                <div className="grid gap-7">
+                  <section className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-5">
+                    <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+                      <div className="relative h-28 w-28 shrink-0">
+                        <Avatar name={displayProfile.nome} src={avatarSrc} size="lg" />
+                        <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={uploadAvatar} />
+                        <button
+                          type="button"
+                          className="absolute bottom-1 right-1 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#D1D5DB] bg-white text-[#374151] shadow-sm transition hover:border-[#2563EB] hover:text-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/30"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={avatarUploading}
+                          aria-label="Alterar foto de perfil"
+                          title="Alterar foto"
+                        >
+                          <Camera size={16} />
+                        </button>
+                      </div>
 
-                  <div className="grid gap-8">
-                    <section className="grid gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="truncate text-2xl font-bold text-[#111827]">{displayProfile.nome}</h2>
+                          <span className="inline-flex items-center rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-1 text-xs font-bold text-[#1D4ED8]">
+                            {roleLabel}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm font-medium text-[#4B5563]">ID de acesso {displayProfile.usuario}</p>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-2 rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm font-semibold text-[#374151] shadow-sm transition hover:border-[#2563EB] hover:text-[#2563EB] disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={avatarUploading}
+                          >
+                            <Camera size={15} />
+                            Alterar foto
+                          </button>
+                          {avatarSrc && (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-2 rounded-lg border border-[#FECACA] bg-white px-3 py-2 text-sm font-semibold text-[#991B1B] shadow-sm transition hover:bg-[#FEF2F2] disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() => {
+                                if (window.confirm("Remover a foto de perfil?")) removeAvatar();
+                              }}
+                              disabled={avatarUploading}
+                            >
+                              <Trash2 size={15} />
+                              Remover
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="grid gap-4">
+                    <div className="flex items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-base font-medium text-[#1A1A1A]">Nome</h3>
-                        <p className="mt-4 text-sm text-[#1A1A1A]">{displayProfile.nome}</p>
-                        <p className="mt-1 text-xs text-[#6B7280]">Dados gerenciados pelo Administrativo.</p>
+                        <h3 className="text-base font-bold text-[#111827]">Dados pessoais</h3>
+                        <p className="mt-1 text-sm text-[#4B5563]">Informações bloqueadas para edição direta.</p>
+                      </div>
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-semibold text-[#4B5563]">
+                        <LockKeyhole size={13} />
+                        Somente leitura
+                      </span>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <ReadOnlyField label="Nome" value={displayProfile.nome} />
+                      <ReadOnlyField label="Permissão" value={roleLabel} />
+                    </div>
+                  </section>
+
+                  {displayProfile.dadosCadastrais && (
+                    <section className="grid gap-4">
+                      <div>
+                        <h3 className="text-base font-bold text-[#111827]">Dados cadastrais</h3>
+                        <p className="mt-1 text-sm text-[#4B5563]">Atualizados pelo Painel Administrativo.</p>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <ReadOnlyField label="Responsável" value={displayProfile.dadosCadastrais.responsavel} />
+                        <ReadOnlyField label="Cargo" value={displayProfile.dadosCadastrais.cargo} />
+                        <ReadOnlyField label="Razão social" value={displayProfile.dadosCadastrais.razaoSocial} />
+                        <ReadOnlyField label="CNPJ" value={displayProfile.dadosCadastrais.cnpj} />
+                        <ReadOnlyField label="CPF" value={displayProfile.dadosCadastrais.cpf} />
+                        <ReadOnlyField label="E-mail" value={displayProfile.dadosCadastrais.email} />
+                        <ReadOnlyField label="Telefone" value={displayProfile.dadosCadastrais.telefone} />
+                        <ReadOnlyField label="Validade" value={`${dateLabel(displayProfile.dadosCadastrais.final)} - ${displayProfile.dadosCadastrais.validadeLabel}`} />
                       </div>
                     </section>
+                  )}
 
-                    {displayProfile.dadosCadastrais && (
-                      <section className="grid gap-4">
-                        <div>
-                          <h3 className="text-base font-medium text-[#1A1A1A]">Dados cadastrais</h3>
-                          <p className="mt-1 text-sm text-[#6B7280]">Essas informações vêm do Painel Administrativo.</p>
+                  <section className="grid gap-4">
+                    <h3 className="text-base font-bold text-[#111827]">Dados de acesso</h3>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-[#1D4ED8]">ID de acesso</p>
+                          <LockKeyhole size={13} className="text-[#2563EB]" aria-hidden="true" />
                         </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <ReadOnlyField label="Responsável" value={displayProfile.dadosCadastrais.responsavel} />
-                          <ReadOnlyField label="Cargo" value={displayProfile.dadosCadastrais.cargo} />
-                          <ReadOnlyField label="Razão social" value={displayProfile.dadosCadastrais.razaoSocial} />
-                          <ReadOnlyField label="CNPJ" value={displayProfile.dadosCadastrais.cnpj} />
-                          <ReadOnlyField label="CPF" value={displayProfile.dadosCadastrais.cpf} />
-                          <ReadOnlyField label="E-mail" value={displayProfile.dadosCadastrais.email} />
-                          <ReadOnlyField label="Telefone" value={displayProfile.dadosCadastrais.telefone} />
-                          <ReadOnlyField label="Validade" value={`${dateLabel(displayProfile.dadosCadastrais.final)} - ${displayProfile.dadosCadastrais.validadeLabel}`} />
-                        </div>
-                      </section>
-                    )}
-
-                    <section className="grid gap-5">
-                      <h3 className="text-base font-medium text-[#1A1A1A]">Acesso</h3>
-                      <div className="grid gap-5 text-sm">
-                        <div>
-                          <p className="mb-3 text-[#1A1A1A]">{displayProfile.usuario}</p>
-                          <p className="text-[#6B7280]">Gerenciado pela plataforma</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium uppercase text-[#9CA3AF]">Perfil</p>
-                          <p className="mt-1 text-[#1A1A1A]">{roleLabel}</p>
-                        </div>
+                        <p className="mt-2 font-mono text-lg font-bold tracking-wide text-[#111827]">{displayProfile.usuario}</p>
                       </div>
-                    </section>
-                  </div>
+                      <div className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 shadow-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">Perfil</p>
+                          <ShieldCheck size={14} className="text-[#16A34A]" aria-hidden="true" />
+                        </div>
+                        <p className="mt-2 text-sm font-bold text-[#111827]">{roleLabel}</p>
+                      </div>
+                    </div>
+                  </section>
                 </div>
               ) : (
-                <div className="grid gap-9">
-                  <form className="grid max-w-md gap-3" onSubmit={changePassword}>
+                <div className="grid gap-7">
+                  <section className="grid gap-4">
                     <div>
-                      <h3 className="text-base font-medium text-[#1A1A1A]">Alterar senha</h3>
-                      <p className="mt-1 text-sm text-[#6B7280]">Use uma senha com pelo menos 12 caracteres, letras maiúsculas, minúsculas e números.</p>
+                      <h3 className="text-base font-bold text-[#111827]">Alterar senha</h3>
+                      <p className="mt-1 text-sm text-[#4B5563]">Atualize sua senha mantendo os requisitos mínimos de segurança.</p>
                     </div>
-                    <Input type="password" placeholder="Senha atual" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" />
-                    <Input type="password" placeholder="Nova senha" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" />
-                    <Input type="password" placeholder="Confirmar nova senha" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" />
-                    <div>
-                      <Button type="submit" disabled={passwordSaving}>
-                        <KeyRound size={14} />
-                        Atualizar senha
+
+                    <form className="grid gap-5 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-5" onSubmit={changePassword}>
+                      <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
+                        <div className="grid gap-4">
+                          <PasswordField
+                            id="current-password"
+                            label="Senha atual"
+                            value={currentPassword}
+                            onChange={setCurrentPassword}
+                            visible={showCurrentPassword}
+                            onToggle={() => setShowCurrentPassword((value) => !value)}
+                            autoComplete="current-password"
+                            helper="Necessária para confirmar sua identidade."
+                          />
+                          <PasswordField
+                            id="new-password"
+                            label="Nova senha"
+                            value={newPassword}
+                            onChange={setNewPassword}
+                            visible={showNewPassword}
+                            onToggle={() => setShowNewPassword((value) => !value)}
+                            autoComplete="new-password"
+                            helper="Evite repetir senhas usadas anteriormente."
+                          />
+                          <PasswordField
+                            id="confirm-password"
+                            label="Confirmar nova senha"
+                            value={confirmPassword}
+                            onChange={setConfirmPassword}
+                            visible={showConfirmPassword}
+                            onToggle={() => setShowConfirmPassword((value) => !value)}
+                            autoComplete="new-password"
+                            helper="Digite novamente para evitar erros."
+                          />
+                        </div>
+
+                        <div className="rounded-lg border border-[#E5E7EB] bg-white p-4">
+                          <p className="text-sm font-bold text-[#111827]">Requisitos</p>
+                          <ul className="mt-3 grid gap-2">
+                            <Requirement ok={passwordRules.length}>12 ou mais caracteres</Requirement>
+                            <Requirement ok={passwordRules.uppercase}>Ao menos uma letra maiúscula</Requirement>
+                            <Requirement ok={passwordRules.number}>Ao menos um número</Requirement>
+                            <Requirement ok={passwordRules.match}>Confirmação igual à nova senha</Requirement>
+                          </ul>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E5E7EB] pt-4">
+                        <p className="text-xs text-[#6B7280]">A alteração será aplicada imediatamente após a confirmação.</p>
+                        <Button
+                          type="submit"
+                          disabled={passwordSaving || !currentPassword || !passwordRules.length || !passwordRules.uppercase || !passwordRules.number || !passwordRules.match}
+                        >
+                          <KeyRound size={14} />
+                          Atualizar senha
+                        </Button>
+                      </div>
+                    </form>
+                  </section>
+
+                  <section className="grid gap-4 border-t border-[#E5E7EB] pt-7">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck size={18} className="text-[#2563EB]" />
+                          <h3 className="text-base font-bold text-[#111827]">Sessões ativas</h3>
+                        </div>
+                        <p className="mt-1 text-sm text-[#4B5563]">Acompanhe os acessos e encerre sessões que você não reconhece.</p>
+                      </div>
+                      <Button variant="secondary" onClick={onLogout}>
+                        <LogOut size={14} />
+                        Encerrar sessão atual
                       </Button>
                     </div>
-                  </form>
 
-                  <div className="border-t border-[#E5E7EB] pt-7">
-                    <div className="mb-4 flex items-center gap-2">
-                      <ShieldCheck size={18} className="text-[#2563EB]" />
-                      <h3 className="text-base font-medium text-[#1A1A1A]">Sessões</h3>
+                    <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+                      <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+                            {sessionInfo.device === "mobile" ? <Smartphone size={20} /> : <Monitor size={20} />}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-bold text-[#111827]">{sessionInfo.browser} em {sessionInfo.os}</p>
+                              <span className="rounded-full bg-[#DCFCE7] px-2 py-0.5 text-xs font-bold text-[#15803D]">Atual</span>
+                            </div>
+                            <p className="mt-1 text-sm text-[#4B5563]">{sessionInfo.location}</p>
+                          </div>
+                        </div>
+                        <div className="grid gap-1 text-sm sm:text-right">
+                          <span className="inline-flex items-center gap-1.5 font-semibold text-[#111827] sm:justify-end">
+                            <Clock3 size={14} className="text-[#6B7280]" />
+                            {dateTimeLabel(displayProfile.ultimoLoginAt)}
+                          </span>
+                          <span className="text-xs font-medium text-[#6B7280]">Último acesso registrado</span>
+                        </div>
+                      </div>
                     </div>
-                    <p className="mb-7 text-sm text-[#1A1A1A]">Todas as suas sessões ativas aparecem abaixo. Encerre acessos que você não reconhece.</p>
-                    <div className="grid gap-3 rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-4 text-sm sm:grid-cols-[1fr_1fr_120px]">
-                      <div>
-                        <p className="text-xs font-bold uppercase text-[#9CA3AF]">Dispositivo</p>
-                        <p className="font-semibold text-[#1A1A1A]">Sessão atual</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold uppercase text-[#9CA3AF]">Último acesso</p>
-                        <p className="font-semibold text-[#1A1A1A]">{dateTimeLabel(displayProfile.ultimoLoginAt)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold uppercase text-[#9CA3AF]">Status</p>
-                        <p className="font-semibold text-[#16A34A]">Ativa</p>
-                      </div>
-                    </div>
-                  </div>
+                  </section>
                 </div>
               )}
             </div>

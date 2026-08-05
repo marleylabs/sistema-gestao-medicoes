@@ -8,7 +8,7 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ i
 
   const { id } = await context.params;
   if (!/^[0-9a-fA-F-]{36}$/.test(id)) {
-    return NextResponse.json({ error: "Identificador SGC inválido." }, { status: 400 });
+    return NextResponse.json({ error: "ID SGC inválido." }, { status: 400 });
   }
 
   const current = await prisma.sgcAprovacaoMedicao.findUnique({ where: { id } });

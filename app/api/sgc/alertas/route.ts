@@ -86,12 +86,13 @@ export async function GET(request: NextRequest) {
           OR: [
             { usuario: alerta.colaboradorCodigo },
             { usuario: normalizeAccessUsername(alerta.colaboradorCodigo) },
+            ...(alerta.colaboradorNome ? [{ nome: { equals: alerta.colaboradorNome, mode: "insensitive" as const } }] : []),
             ...(chatUserIds.length ? [{ id: { in: chatUserIds } }] : []),
           ],
         },
-        select: { id: true, usuario: true, avatarAtualizadoAt: true, onlineAt: true },
+        select: { id: true, usuario: true, nome: true, avatarAtualizadoAt: true, onlineAt: true },
       });
-      const fornecedorUsuario = usuariosChat.find((usuario) => toColaboradorCodigo(usuario.usuario) === alerta.colaboradorCodigo);
+      const fornecedorUsuario = usuariosChat.find((usuario) => toColaboradorCodigo(usuario.usuario) === alerta.colaboradorCodigo || usuario.nome === alerta.colaboradorNome);
       const fornecedorAvatarUrl = fornecedorUsuario ? avatarUrlByUsuario(fornecedorUsuario.usuario, fornecedorUsuario.avatarAtualizadoAt) : null;
       const medicaoAvatarUrlsByUsuarioId = Object.fromEntries(
         usuariosChat.map((usuario) => [usuario.id, avatarUrlByUserId(usuario.id, usuario.avatarAtualizadoAt)]),
