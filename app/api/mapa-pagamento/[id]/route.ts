@@ -25,6 +25,13 @@ function normalizeMatch(value: string | null | undefined) {
     .toUpperCase();
 }
 
+function samePersonMatch(left: string | null | undefined, right: string | null | undefined) {
+  const a = normalizeMatch(left);
+  const b = normalizeMatch(right);
+  if (!a || !b) return false;
+  return a === b || a.startsWith(b) || b.startsWith(a);
+}
+
 function cadastroOverride(result: CadastroMatch | undefined) {
   if (!result) return null;
   const { cadastro, match } = result;
@@ -40,10 +47,10 @@ function cadastroByItem(item: any, cadastros: CadastroResumo[]): CadastroMatch |
   const responsavel = normalizeMatch(item.responsavel);
   const cpfCnpj = onlyDigits(decryptSensitive(item.cpfCnpj));
 
-  const byCodigo = cadastros.find((cadastro) => normalizeMatch(cadastro.colaboradorCodigo) === codigo);
+  const byCodigo = cadastros.find((cadastro) => samePersonMatch(cadastro.colaboradorCodigo, item.projetistaCodigo));
   if (byCodigo) return { cadastro: byCodigo, match: "codigo" };
 
-  const byResponsavel = cadastros.find((cadastro) => normalizeMatch(cadastro.responsavel) === responsavel);
+  const byResponsavel = cadastros.find((cadastro) => samePersonMatch(cadastro.responsavel, item.responsavel));
   if (byResponsavel) return { cadastro: byResponsavel, match: "responsavel" };
 
   const byCnpj = cadastros.find((cadastro) => cadastro.cnpjNormalizado && cadastro.cnpjNormalizado === cpfCnpj);

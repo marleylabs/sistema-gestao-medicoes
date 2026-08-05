@@ -55,10 +55,10 @@ function fmtDate(value: string | null) {
 }
 
 const toneClass: Record<CadastroFornecedor["validadeTone"], string> = {
-  danger: "bg-[#FEF2F2] text-[#B91C1C] ring-[#FECACA]",
-  warning: "bg-[#FFF7ED] text-[#C2410C] ring-[#FDBA74]",
-  notice: "bg-[#EFF6FF] text-[#1D4ED8] ring-[#BFDBFE]",
-  success: "bg-[#F0FDF4] text-[#15803D] ring-[#BBF7D0]",
+  danger: "bg-[#FFF1F1] text-[#DC3545] ring-[#DC3545]/30",
+  warning: "bg-[#FFF8E1] text-[#B77900] ring-[#FFC107]/70",
+  notice: "bg-[#EAF3FF] text-[#007BFF] ring-[#007BFF]/30",
+  success: "bg-[#EAF7ED] text-[#28A745] ring-[#28A745]/30",
   neutral: "bg-[#F3F4F6] text-[#6B7280] ring-[#E5E7EB]",
 };
 
@@ -246,7 +246,7 @@ function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: ()
       ) : (
         <div className="grid gap-3 p-4 text-xs text-[#555555] sm:grid-cols-2">
           <div><span className="font-bold text-[#1A1A1A]">CNPJ:</span> {item.cnpj ?? "-"}</div>
-          <div><span className="font-bold text-[#1A1A1A]">Código:</span> {item.colaboradorCodigo ?? "-"}</div>
+          <div><span className="font-bold text-[#1A1A1A]">Identificador:</span> {item.cnpjNormalizado ?? "-"}</div>
           <div><span className="font-bold text-[#1A1A1A]">E-mail:</span> {item.email ?? "-"}</div>
           <div><span className="font-bold text-[#1A1A1A]">Telefone:</span> {item.telefone ?? "-"}</div>
           <div><span className="font-bold text-[#1A1A1A]">Início:</span> {fmtDate(item.inicio)}</div>
@@ -438,7 +438,7 @@ export function AdministrativoPanel() {
             </button>
           ))}
         </div>
-        <Input placeholder="Buscar por responsável, razão social, CNPJ, código ou e-mail..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input placeholder="Buscar por responsável, razão social, CNPJ ou e-mail..." value={search} onChange={(e) => setSearch(e.target.value)} />
       </Card>
 
       {loading ? (

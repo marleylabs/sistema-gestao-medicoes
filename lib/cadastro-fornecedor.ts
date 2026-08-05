@@ -3,7 +3,6 @@ import "server-only";
 import { generateTempPassword, hashPassword } from "@/lib/auth";
 import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
-import { normalizeAccessUsername } from "@/lib/usuario-format";
 import { excelSerialToDate, parseSimpleXlsx } from "@/lib/xlsx";
 
 export const CADASTRO_FORNECEDOR_SHEET = "CONTRATOS_ATIVOS";
@@ -100,13 +99,20 @@ function asNumber(value: unknown) {
 
 function asDate(value: unknown) {
   if (value instanceof Date) return value;
-  if (typeof value === "number") return excelSerialToDate(value);
+  if (typeof value === "number") return value >= 20000 ? excelSerialToDate(value) : null;
   const text = String(value ?? "").trim();
   if (!text) return null;
   const match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (match) return new Date(Date.UTC(Number(match[3]), Number(match[2]) - 1, Number(match[1])));
   const parsed = new Date(text);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isSamePersonName(left: string | null | undefined, right: string | null | undefined) {
+  const a = codigoFromName(left ?? "");
+  const b = codigoFromName(right ?? "");
+  if (!a || !b) return false;
+  return a === b || a.startsWith(b) || b.startsWith(a);
 }
 
 export function codigoFromName(name: string) {
@@ -127,12 +133,29 @@ export function diasAteVencimento(final: Date | string | null | undefined) {
   return Math.ceil((finalUtc - todayUtc) / 86400000);
 }
 
-export function cadastroStatusVisual(final: Date | string | null | undefined) {
+function normalizeCadastroStatus(value: string | null | undefined) {
+  return stripAccents(String(value ?? ""))
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+function isCadastroPendente(statusCadastro: string | null | undefined) {
+  const status = normalizeCadastroStatus(statusCadastro);
+  return status === "PENDENCIA" || status === "PENDENTE" || status.includes("PENDENCIA");
+}
+
+function isKnownCadastroStatus(value: string | null | undefined) {
+  const status = normalizeCadastroStatus(value);
+  return status === "VALIDO" || status === "VENCIDO" || status === "PENDENTE" || status.includes("PENDENCIA");
+}
+
+export function cadastroStatusVisual(final: Date | string | null | undefined, statusCadastro?: string | null) {
   const dias = diasAteVencimento(final);
+  if (isCadastroPendente(statusCadastro)) return { label: "Pendência", tone: "notice", dias };
   if (dias === null) return { label: "Sem validade", tone: "neutral", dias };
   if (dias < 0) return { label: "Vencido", tone: "danger", dias };
-  if (dias <= 30) return { label: `Vence em ${dias} dia(s)`, tone: "warning", dias };
-  if (dias <= 90) return { label: `Vence em ${dias} dia(s)`, tone: "notice", dias };
+  if (dias <= 30) return { label: `Vencendo em ${dias} ${dias === 1 ? "dia" : "dias"}`, tone: "warning", dias };
   return { label: "Válido", tone: "success", dias };
 }
 
@@ -145,7 +168,9 @@ export function parseCadastroFornecedorWorkbook(buffer: Buffer) {
   if (headerIndex < 0) throw new Error("Cabeçalho da planilha não encontrado.");
 
   const headers = sheet[headerIndex].map(normalizeHeader);
+  const documentoIndex = headers.findIndex((header) => header === "DOCUMENTO");
   const rows: CadastroRow[] = [];
+  const cnpjOwners = new Map<string, string>();
   for (const row of sheet.slice(headerIndex + 1)) {
     const rawPayload: Record<string, string | number | null> = {};
     const record: Partial<CadastroRow> = { rawPayload };
@@ -160,9 +185,29 @@ export function parseCadastroFornecedorWorkbook(buffer: Buffer) {
       else (record as any)[field] = asText(value);
     });
 
+    if (documentoIndex >= 0) {
+      const dateCandidates = row
+        .map((value, index) => ({ date: asDate(value), index }))
+        .filter((candidate) => candidate.index > documentoIndex && candidate.date);
+      if (dateCandidates.length >= 2) {
+        record.inicio = dateCandidates[0].date;
+        record.final = dateCandidates[1].date;
+        const statusCandidate = row
+          .slice(dateCandidates[1].index + 1)
+          .map(asText)
+          .find(isKnownCadastroStatus);
+        if (statusCandidate) record.statusCadastro = statusCandidate;
+      }
+    }
+
     const responsavel = asText(record.responsavel);
     const cnpjNormalizado = normalizeCnpjDigits(record.cnpj);
     if (!responsavel || cnpjNormalizado.length !== 14) continue;
+    const existingOwner = cnpjOwners.get(cnpjNormalizado);
+    if (existingOwner && !isSamePersonName(existingOwner, responsavel)) {
+      throw new Error(`CNPJ ${formatCnpj(cnpjNormalizado)} aparece para mais de um fornecedor na máscara: ${existingOwner} e ${responsavel}.`);
+    }
+    cnpjOwners.set(cnpjNormalizado, responsavel);
     rows.push({
       statusContrato: record.statusContrato ?? null,
       responsavel,
@@ -188,13 +233,6 @@ export function parseCadastroFornecedorWorkbook(buffer: Buffer) {
     });
   }
   return rows;
-}
-
-async function findProfissionalCodigoByCnpj(cnpjNormalizado: string) {
-  const profissionais = await prisma.profissional.findMany({
-    select: { codigo: true, cnpj: true },
-  });
-  return profissionais.find((p) => onlyDigits(decryptSensitive(p.cnpj)) === cnpjNormalizado)?.codigo ?? null;
 }
 
 async function findProfissionalCodigoByName(name: string) {
@@ -226,16 +264,11 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
   for (const row of rows) {
     const codigoResponsavel = codigoFromName(row.responsavel);
     let colaboradorCodigo = await findProfissionalCodigoByName(row.responsavel);
-    if (!colaboradorCodigo) colaboradorCodigo = await findProfissionalCodigoByCnpj(row.cnpjNormalizado);
     if (!colaboradorCodigo) colaboradorCodigo = codigoResponsavel;
-    const usuario = normalizeAccessUsername(colaboradorCodigo);
+    const usuario = row.cnpjNormalizado;
     const now = new Date();
 
     await prisma.$transaction(async (tx) => {
-      const existingByCnpj = await tx.cadastroFornecedor.findUnique({
-        where: { cnpjNormalizado: row.cnpjNormalizado },
-        select: { id: true },
-      });
       const existingByResponsavel = await tx.cadastroFornecedor.findFirst({
         where: {
           OR: [
@@ -246,7 +279,17 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
         },
         select: { id: true, cnpjNormalizado: true },
       });
-      const existing = existingByCnpj ?? existingByResponsavel;
+      const existingByCnpj = await tx.cadastroFornecedor.findUnique({
+        where: { cnpjNormalizado: row.cnpjNormalizado },
+        select: { id: true, responsavel: true, colaboradorCodigo: true },
+      });
+      if (existingByCnpj && existingByResponsavel && existingByCnpj.id !== existingByResponsavel.id) {
+        throw new Error(`CNPJ ${formatCnpj(row.cnpjNormalizado)} já está vinculado ao cadastro de ${existingByCnpj.responsavel}.`);
+      }
+      if (existingByCnpj && !isSamePersonName(existingByCnpj.responsavel, row.responsavel) && !isSamePersonName(existingByCnpj.colaboradorCodigo, colaboradorCodigo)) {
+        throw new Error(`CNPJ ${formatCnpj(row.cnpjNormalizado)} já está vinculado ao cadastro de ${existingByCnpj.responsavel}.`);
+      }
+      const existing = existingByResponsavel ?? existingByCnpj;
       const data = {
         cnpjNormalizado: row.cnpjNormalizado,
         colaboradorCodigo,
@@ -340,19 +383,30 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
 }
 
 export async function validateFornecedorForNfUpload(colaboradorCodigo: string) {
+  const loginCnpj = normalizeCnpjDigits(colaboradorCodigo);
+  const cadastroByLoginCnpj = loginCnpj.length === 14
+    ? await prisma.cadastroFornecedor.findUnique({ where: { cnpjNormalizado: loginCnpj } })
+    : null;
+  const codigoProfissional = cadastroByLoginCnpj?.colaboradorCodigo ?? colaboradorCodigo;
   const profissional = await prisma.profissional.findUnique({
-    where: { codigo: colaboradorCodigo },
+    where: { codigo: codigoProfissional },
     select: { cnpj: true, nomeCompleto: true, nome: true },
   });
   const profissionalCnpj = onlyDigits(decryptSensitive(profissional?.cnpj));
-  const cadastro = await prisma.cadastroFornecedor.findFirst({
-    where: {
-      OR: [
-        { colaboradorCodigo },
-        ...(profissionalCnpj.length === 14 ? [{ cnpjNormalizado: profissionalCnpj }] : []),
-      ],
-    },
-  });
+  const cadastroByCodigo = await prisma.cadastroFornecedor.findFirst({ where: { colaboradorCodigo: codigoProfissional } });
+  const cadastro = cadastroByLoginCnpj ?? cadastroByCodigo ?? (
+    profissionalCnpj.length === 14
+      ? await prisma.cadastroFornecedor.findFirst({
+          where: {
+            cnpjNormalizado: profissionalCnpj,
+            OR: [
+              ...(profissional?.nome ? [{ responsavel: { contains: profissional.nome, mode: "insensitive" as const } }] : []),
+              ...(profissional?.nomeCompleto ? [{ responsavel: { equals: profissional.nomeCompleto, mode: "insensitive" as const } }] : []),
+            ],
+          },
+        })
+      : null
+  );
 
   if (!cadastro) {
     return {
@@ -370,7 +424,7 @@ export async function validateFornecedorForNfUpload(colaboradorCodigo: string) {
     };
   }
 
-  const validade = cadastroStatusVisual(cadastro.final);
+  const validade = cadastroStatusVisual(cadastro.final, cadastro.statusCadastro);
   if (validade.dias !== null && validade.dias < 0) {
     return {
       ok: false,
@@ -383,8 +437,9 @@ export async function validateFornecedorForNfUpload(colaboradorCodigo: string) {
 }
 
 export function serializeCadastroFornecedor(item: any) {
-  const visual = cadastroStatusVisual(item.final);
+  const visual = cadastroStatusVisual(item.final, item.statusCadastro);
   const pendencias: string[] = [];
+  if (isCadastroPendente(item.statusCadastro)) pendencias.push("Cadastro com pendência");
   if (!item.colaboradorCodigo) pendencias.push("Sem vínculo com fornecedor");
   if (!item.cnpjNormalizado) pendencias.push("CNPJ não informado");
   if (visual.dias !== null && visual.dias < 0) pendencias.push("Cadastro vencido");

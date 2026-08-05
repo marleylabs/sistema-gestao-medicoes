@@ -3,6 +3,7 @@ import "server-only";
 import { promisify } from "node:util";
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
+import { decryptSensitive } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 import {
   createSessionToken,
@@ -11,11 +12,33 @@ import {
   SESSION_DURATION_SECONDS,
   verifySessionToken,
 } from "@/lib/session";
-import { normalizeAccessUsername } from "@/lib/usuario-format";
+import { isInternalAccessCode, normalizeAccessUsername, normalizeFornecedorAccessCnpj } from "@/lib/usuario-format";
 
 const scrypt = promisify(scryptCallback);
 export { createSessionToken, SESSION_COOKIE, verifySessionToken };
 export type { AuthUser };
+
+export const INTERNAL_USER_PROFILES = ["ADMIN", "MEDICAO", "FINANCEIRO", "ADMINISTRATIVO", "DEPARTAMENTO_PESSOAL"] as const;
+
+export function isInternalUserProfile(perfil: string | null | undefined) {
+  return !!perfil && (INTERNAL_USER_PROFILES as readonly string[]).includes(perfil);
+}
+
+type UsuarioDelegate = {
+  usuario: {
+    findUnique: typeof prisma.usuario.findUnique;
+  };
+};
+
+export async function generateUniqueInternalAccessCode(tx: UsuarioDelegate = prisma) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const suffix = String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0");
+    const usuario = `P0${suffix}`;
+    const exists = await tx.usuario.findUnique({ where: { usuario }, select: { id: true } });
+    if (!exists) return usuario;
+  }
+  throw new Error("Não foi possível gerar um código interno único.");
+}
 
 export function generateTempPassword(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
@@ -58,7 +81,8 @@ export async function ensureBootstrapAdmin() {
     return;
   }
 
-  const usuario = normalizeAccessUsername(process.env.AUTH_BOOTSTRAP_USERNAME);
+  const requestedUsuario = normalizeAccessUsername(process.env.AUTH_BOOTSTRAP_USERNAME);
+  const usuario = requestedUsuario || await generateUniqueInternalAccessCode();
   const password = process.env.AUTH_BOOTSTRAP_PASSWORD;
   const nome = process.env.AUTH_BOOTSTRAP_NAME?.trim() || "Administrador";
   if (!usuario || !password || password.length < 12) {
@@ -91,16 +115,23 @@ export async function ensureDefaultAccessUsers() {
   const now = new Date();
 
   const medicaoUsers = [
-    { usuario: "ANDERSON.MARLEY", nome: "Anderson Marley" },
-    { usuario: "GABRIEL.SOUSA", nome: "Gabriel Sousa" },
+    { nome: "Anderson Marley" },
+    { nome: "Gabriel Sousa" },
   ];
-  const medicaoUsernames = new Set(medicaoUsers.map((user) => user.usuario));
+  const medicaoUsernames = new Set<string>();
 
   for (const medicaoUser of medicaoUsers) {
+    const existingByName = await prisma.usuario.findFirst({
+      where: { nome: medicaoUser.nome, perfil: "MEDICAO", excluidoAt: null },
+      select: { usuario: true },
+    });
+    const usuario = existingByName?.usuario ?? await generateUniqueInternalAccessCode();
+    medicaoUsernames.add(usuario);
     await prisma.usuario.upsert({
-      where: { usuario: medicaoUser.usuario },
+      where: { usuario },
       create: {
         ...medicaoUser,
+        usuario,
         senhaHash,
         perfil: "MEDICAO",
       },
@@ -116,11 +147,11 @@ export async function ensureDefaultAccessUsers() {
 
   const colaboradores = await prisma.profissional.findMany({
     where: { codigo: { not: null } },
-    select: { codigo: true, nomeCompleto: true, nome: true },
+    select: { codigo: true, nomeCompleto: true, nome: true, cnpj: true },
   });
 
   for (const colaborador of colaboradores) {
-    const usuario = normalizeAccessUsername(colaborador.codigo);
+    const usuario = normalizeAccessUsername(decryptSensitive((colaborador as any).cnpj) || colaborador.codigo);
     if (!usuario) continue;
     if (medicaoUsernames.has(usuario)) continue;
 
@@ -150,12 +181,37 @@ export async function ensureDefaultAccessUsers() {
 
 async function migrateAccessUsernames() {
   const usuarios = await prisma.usuario.findMany({
-    where: { usuario: { contains: " " } },
-    select: { id: true, usuario: true },
+    where: { excluidoAt: null },
+    select: { id: true, usuario: true, nome: true, perfil: true },
   });
 
   for (const user of usuarios) {
-    const usuario = normalizeAccessUsername(user.usuario);
+    let usuario = normalizeAccessUsername(user.usuario);
+    if (isInternalUserProfile(user.perfil)) {
+      usuario = isInternalAccessCode(user.usuario) ? user.usuario : await generateUniqueInternalAccessCode();
+    } else if (user.perfil === "COLABORADOR") {
+      const currentCnpj = normalizeFornecedorAccessCnpj(user.usuario);
+      if (currentCnpj) {
+        usuario = currentCnpj;
+      } else {
+        const legacyCodigo = user.usuario
+          .trim()
+          .replace(/\.+/g, " ")
+          .replace(/\s+/g, " ")
+          .toUpperCase();
+        const cadastro = await prisma.cadastroFornecedor.findFirst({
+          where: {
+            OR: [
+              { colaboradorCodigo: legacyCodigo },
+              { responsavel: { equals: user.nome, mode: "insensitive" } },
+              { responsavel: { equals: legacyCodigo, mode: "insensitive" } },
+            ],
+          },
+          select: { cnpjNormalizado: true },
+        });
+        usuario = cadastro?.cnpjNormalizado ?? "";
+      }
+    }
     if (!usuario || usuario === user.usuario) continue;
 
     const exists = await prisma.usuario.findUnique({ where: { usuario }, select: { id: true } });

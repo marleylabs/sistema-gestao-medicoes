@@ -1,6 +1,6 @@
 import "server-only";
 
-import { onlyDigits } from "@/lib/cadastro-fornecedor";
+import { normalizeCnpjDigits, onlyDigits } from "@/lib/cadastro-fornecedor";
 import { decryptSensitive } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
@@ -18,7 +18,14 @@ function unique(values: Array<string | null | undefined>) {
 }
 
 export async function getColaboradorCodigoAliases(usuario: string | null | undefined, ciclo?: string | null) {
-  const codigo = toColaboradorCodigo(usuario);
+  const usuarioCnpj = normalizeCnpjDigits(usuario);
+  const cadastroPorLogin = usuarioCnpj.length === 14
+    ? await prisma.cadastroFornecedor.findUnique({
+        where: { cnpjNormalizado: usuarioCnpj },
+        select: { colaboradorCodigo: true, responsavel: true, cnpjNormalizado: true },
+      })
+    : null;
+  const codigo = cadastroPorLogin?.colaboradorCodigo ?? toColaboradorCodigo(usuario);
   const codigos = new Set<string>(codigo ? [codigo] : []);
 
   const profissional = codigo
@@ -29,39 +36,27 @@ export async function getColaboradorCodigoAliases(usuario: string | null | undef
     : null;
   const profissionalCnpj = onlyDigits(decryptSensitive(profissional?.cnpj));
 
-  const cadastro = codigo || profissionalCnpj
+  const cadastroDireto = cadastroPorLogin ?? (codigo
+    ? await prisma.cadastroFornecedor.findFirst({
+        where: { OR: [{ colaboradorCodigo: codigo }, { responsavel: codigo }] },
+        select: { colaboradorCodigo: true, responsavel: true, cnpjNormalizado: true },
+      })
+    : null);
+  const cadastroPorCnpj = !cadastroDireto && profissionalCnpj.length === 14
     ? await prisma.cadastroFornecedor.findFirst({
         where: {
+          cnpjNormalizado: profissionalCnpj,
           OR: [
-            ...(codigo ? [{ colaboradorCodigo: codigo }, { responsavel: codigo }] : []),
-            ...(profissionalCnpj.length === 14 ? [{ cnpjNormalizado: profissionalCnpj }] : []),
+            ...(profissional?.nome ? [{ responsavel: { contains: profissional.nome, mode: "insensitive" as const } }] : []),
+            ...(profissional?.nomeCompleto ? [{ responsavel: { equals: profissional.nomeCompleto, mode: "insensitive" as const } }] : []),
           ],
         },
         select: { colaboradorCodigo: true, responsavel: true, cnpjNormalizado: true },
       })
     : null;
+  const cadastro = cadastroDireto ?? cadastroPorCnpj;
 
   unique([cadastro?.colaboradorCodigo, cadastro?.responsavel, profissional?.codigo, profissional?.nome, profissional?.nomeCompleto]).forEach((value) => codigos.add(value));
-  const cnpjNormalizado = cadastro?.cnpjNormalizado ?? profissionalCnpj;
-
-  if (cnpjNormalizado.length === 14) {
-    const profissionais = await prisma.profissional.findMany({
-      select: { codigo: true, nome: true, nomeCompleto: true, cnpj: true },
-    });
-    profissionais
-      .filter((item) => onlyDigits(decryptSensitive(item.cnpj)) === cnpjNormalizado)
-      .flatMap((item) => [item.codigo, item.nome, item.nomeCompleto])
-      .forEach((value) => value && codigos.add(value));
-
-    const pagamentos = await prisma.mapaPagamentoItem.findMany({
-      where: ciclo ? { ciclo } : undefined,
-      select: { projetistaCodigo: true, responsavel: true, cpfCnpj: true },
-    });
-    pagamentos
-      .filter((item) => onlyDigits(decryptSensitive(item.cpfCnpj)) === cnpjNormalizado)
-      .flatMap((item) => [item.projetistaCodigo, item.responsavel])
-      .forEach((value) => value && codigos.add(value));
-  }
 
   const normalizedCadastroName = normalizeText(cadastro?.responsavel ?? profissional?.nomeCompleto ?? codigo);
   if (normalizedCadastroName) {

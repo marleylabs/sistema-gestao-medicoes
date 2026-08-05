@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { hashPassword, validatePasswordStrength } from "@/lib/auth";
+import { generateUniqueInternalAccessCode, hashPassword, isInternalUserProfile, validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { normalizeAccessUsername } from "@/lib/usuario-format";
+import { normalizeFornecedorAccessCnpj } from "@/lib/usuario-format";
 
 const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "ADMINISTRATIVO", "DEPARTAMENTO_PESSOAL"];
 
@@ -51,19 +51,21 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => null);
-  const usuario = typeof body?.usuario === "string" ? normalizeAccessUsername(body.usuario) : "";
   const nome = typeof body?.nome === "string" ? body.nome.trim() : "";
   const perfil = typeof body?.perfil === "string" ? body.perfil : "";
   const senha = typeof body?.senha === "string" ? body.senha : "";
+  const usuario = isInternalUserProfile(perfil)
+    ? await generateUniqueInternalAccessCode()
+    : normalizeFornecedorAccessCnpj(typeof body?.usuario === "string" ? body.usuario : "");
 
-  if (usuario.length < 3) {
-    return NextResponse.json({ error: "Informe um usuário com pelo menos 3 caracteres." }, { status: 400 });
-  }
   if (nome.length < 3) {
     return NextResponse.json({ error: "Informe um nome com pelo menos 3 caracteres." }, { status: 400 });
   }
   if (!VALID_PERFIS.includes(perfil)) {
     return NextResponse.json({ error: "Perfil inválido." }, { status: 400 });
+  }
+  if (perfil === "COLABORADOR" && !usuario) {
+    return NextResponse.json({ error: "Informe um CNPJ válido para o fornecedor." }, { status: 400 });
   }
   const passwordError = validatePasswordStrength(senha);
   if (passwordError) {

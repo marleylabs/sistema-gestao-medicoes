@@ -60,15 +60,22 @@ export function LoginForm() {
             <div className="rounded-lg border border-[#d8dee8] bg-white p-6 shadow-sm">
               <div className="mb-6">
                 <h1 className="text-2xl font-bold text-[#1A1A1A]">Acessar plataforma</h1>
-                <p className="mt-1 text-sm text-[#1A1A1A]">Use seu usuário de Medição ou código de fornecedor.</p>
+                <p className="mt-1 text-sm text-[#1A1A1A]">Use CNPJ do fornecedor ou código interno P0XXXXXX.</p>
               </div>
 
               <form className="grid gap-4" onSubmit={submit}>
                 <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
-                  <span>Usuário ou código</span>
+                  <span>CNPJ ou código interno</span>
                   <span className="relative">
                     <UserRound className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#1A1A1A]" size={17} />
-                    <Input className="pl-10" autoComplete="username" value={usuario} onChange={(event) => setUsuario(event.target.value)} required />
+                    <Input
+                      className="pl-10"
+                      autoComplete="username"
+                      placeholder="00.000.000/0000-00 ou P0123456"
+                      value={usuario}
+                      onChange={(event) => setUsuario(event.target.value)}
+                      required
+                    />
                   </span>
                 </label>
 

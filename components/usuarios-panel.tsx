@@ -51,6 +51,19 @@ const PERFIL_GROUPS = [
   { value: "DEPARTAMENTO_PESSOAL", label: "Departamento Pessoal", description: "Usuários reservados para etapa futura." },
 ];
 
+function onlyDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function maskCnpj(value: string) {
+  const digits = onlyDigits(value).slice(0, 14);
+  return digits
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d)/, ".$1/$2")
+    .replace(/(\d{4})(\d)/, "$1-$2");
+}
+
 function fmtDate(iso: string | null) {
   if (!iso) return "–";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));
@@ -271,7 +284,7 @@ function CriarUsuarioModal({
   const [saving, setSaving] = useState(false);
 
   function updateField(field: keyof NovoUsuarioForm, value: string) {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => ({ ...prev, [field]: field === "usuario" ? maskCnpj(value) : value }));
   }
 
   function resetAndClose() {
@@ -340,14 +353,24 @@ function CriarUsuarioModal({
               onChange={(e) => updateField("nome", e.target.value)}
             />
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
-            Usuário
-            <Input
-              placeholder="Login de acesso"
-              value={form.usuario}
-              onChange={(e) => updateField("usuario", e.target.value)}
-            />
-          </label>
+          {form.perfil === "COLABORADOR" ? (
+            <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
+              CNPJ de acesso
+              <Input
+                inputMode="numeric"
+                placeholder="00.000.000/0000-00"
+                value={form.usuario}
+                onChange={(e) => updateField("usuario", e.target.value)}
+              />
+            </label>
+          ) : (
+            <div className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
+              Código de acesso
+              <div className="flex h-9 items-center rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-sm text-[#6B7280]">
+                Gerado automaticamente no padrão P0XXXXXX
+              </div>
+            </div>
+          )}
           <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
             Perfil
             <select

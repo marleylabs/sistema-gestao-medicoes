@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { generateTempPassword, hashPassword, validatePasswordStrength } from "@/lib/auth";
+import { generateTempPassword, generateUniqueInternalAccessCode, hashPassword, isInternalUserProfile, validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { normalizeFornecedorAccessCnpj } from "@/lib/usuario-format";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
@@ -40,7 +41,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (action === "set_perfil") {
     const perfil = typeof body?.perfil === "string" ? body.perfil : "";
     if (!VALID_PERFIS.includes(perfil)) return NextResponse.json({ error: "Perfil inválido." }, { status: 400 });
-    await prisma.usuario.update({ where: { id }, data: { perfil, updatedAt: new Date() } });
+    const data: { perfil: string; usuario?: string; updatedAt: Date } = { perfil, updatedAt: new Date() };
+    if (isInternalUserProfile(perfil) && !/^P0\d{6}$/.test(user.usuario)) {
+      data.usuario = await generateUniqueInternalAccessCode();
+    }
+    if (perfil === "COLABORADOR" && !normalizeFornecedorAccessCnpj(user.usuario)) {
+      return NextResponse.json({ error: "Para alterar para Fornecedor, o usuário precisa estar vinculado a um CNPJ válido." }, { status: 400 });
+    }
+    await prisma.usuario.update({ where: { id }, data });
     return NextResponse.json({ ok: true });
   }
 

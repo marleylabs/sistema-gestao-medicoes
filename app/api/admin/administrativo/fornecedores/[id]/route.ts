@@ -78,10 +78,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const duplicate = await prisma.cadastroFornecedor.findFirst({
     where: { cnpjNormalizado, id: { not: id } },
-    select: { id: true },
+    select: { responsavel: true },
   });
   if (duplicate) {
-    return NextResponse.json({ error: "Já existe um cadastro com este CNPJ." }, { status: 409 });
+    return NextResponse.json({ error: `CNPJ já vinculado ao cadastro de ${duplicate.responsavel}.` }, { status: 409 });
   }
 
   const updated = await prisma.cadastroFornecedor.update({

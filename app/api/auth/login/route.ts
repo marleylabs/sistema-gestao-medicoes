@@ -8,7 +8,7 @@ import {
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { normalizeLoginUsername, toColaboradorCodigo } from "@/lib/usuario-format";
+import { normalizeLoginUsername } from "@/lib/usuario-format";
 
 const MAX_FAILURES = 5;
 const LOCK_MINUTES = 15;
@@ -18,7 +18,6 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => null);
   const usuario = typeof body?.usuario === "string" ? normalizeLoginUsername(body.usuario) : "";
-  const usuarioLegado = toColaboradorCodigo(usuario);
   const password = typeof body?.senha === "string" ? body.senha : "";
   if (!usuario || !password) {
     return NextResponse.json({ message: "Informe usuário e senha." }, { status: 400 });
@@ -33,10 +32,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const user = await prisma.usuario.findFirst({
-    where: { OR: [{ usuario }, { usuario: usuarioLegado }] },
-    orderBy: { updatedAt: "desc" },
-  });
+  const user = await prisma.usuario.findUnique({ where: { usuario } });
   const now = new Date();
   if (!user || user.excluidoAt || !user.ativo || (user.bloqueadoAte && user.bloqueadoAte > now)) {
     return NextResponse.json({ message: "Credenciais inválidas ou acesso temporariamente bloqueado." }, { status: 401 });

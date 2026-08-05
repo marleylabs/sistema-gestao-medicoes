@@ -248,11 +248,16 @@ def normalize_for_compare(value: str | None) -> str:
         return ""
     normalized = unicodedata.normalize("NFKD", value)
     normalized = "".join(char for char in normalized if not unicodedata.combining(char))
-    return normalized.casefold().strip()
+    normalized = normalized.replace("\xa0", " ")
+    return " ".join(normalized.casefold().strip().split())
+
+
+def should_keep_vba(excel_path: Path) -> bool:
+    return excel_path.suffix.casefold() == ".xlsm"
 
 
 def resolve_sheet_name(excel_path: Path, requested_name: str, aliases: list[str] | None = None) -> str:
-    workbook = load_workbook(excel_path, read_only=True, data_only=True, keep_vba=True)
+    workbook = load_workbook(excel_path, read_only=False, data_only=True, keep_vba=should_keep_vba(excel_path))
     try:
         available = {normalize_for_compare(name): name for name in workbook.sheetnames}
     finally:
@@ -649,53 +654,63 @@ def derive_ciclo_from_mes_referencia(mes_referencia: str | None) -> str | None:
 
 
 def build_payment_map_context(excel_path: Path, sheet_name: str, ciclo: str | None = None) -> dict[str, Any]:
-    workbook = load_workbook(excel_path, read_only=True, data_only=True, keep_vba=True)
-    sheet = workbook[sheet_name]
-    contract_columns = range(7, 12)
+    workbook = load_workbook(excel_path, read_only=False, data_only=True, keep_vba=should_keep_vba(excel_path))
+    try:
+        sheet = workbook[sheet_name]
+        contract_columns = range(7, 12)
+        first_row_headers = {
+            normalize_for_compare(clean_text(sheet.cell(1, column).value))
+            for column in range(1, sheet.max_column + 1)
+            if clean_text(sheet.cell(1, column).value)
+        }
+        header_only_layout = {"ato", "projetista", "valor"}.issubset(first_row_headers)
 
-    contratos = []
-    rateio = []
-    for column in contract_columns:
-        nome = clean_text(sheet.cell(4, column).value)
-        if not nome:
-            continue
-        contratos.append(
-            {
-                "contrato": nome,
-                "valor": float(clean_decimal(sheet.cell(5, column).value) or 0),
-            }
-        )
-        rateio.append(
-            {
-                "contrato": nome,
-                "percentual": float(clean_decimal(sheet.cell(6, column).value) or 0),
-            }
-        )
+        contratos = []
+        rateio = []
+        if not header_only_layout:
+            for column in contract_columns:
+                nome = clean_text(sheet.cell(4, column).value)
+                if not nome:
+                    continue
+                contratos.append(
+                    {
+                        "contrato": nome,
+                        "valor": float(clean_decimal(sheet.cell(5, column).value) or 0),
+                    }
+                )
+                rateio.append(
+                    {
+                        "contrato": nome,
+                        "percentual": float(clean_decimal(sheet.cell(6, column).value) or 0),
+                    }
+                )
 
-    mes_referencia = clean_text(sheet["H1"].value)
-    if not ciclo:
-        ciclo = derive_ciclo_from_mes_referencia(mes_referencia)
-    if not ciclo:
-        raise ValueError(
-            f"Não foi possível derivar o ciclo a partir de '{mes_referencia}'. "
-            "Informe o ciclo explicitamente (ex: 2606) no campo da interface."
-        )
+        mes_referencia = None if header_only_layout else clean_text(sheet["H1"].value)
+        if not ciclo:
+            ciclo = derive_ciclo_from_mes_referencia(mes_referencia)
+        if not ciclo:
+            raise ValueError(
+                f"Não foi possível derivar o ciclo a partir de '{mes_referencia}'. "
+                "Informe o ciclo explicitamente (ex: 2606) no campo da interface."
+            )
 
-    return {
-        "ciclo": ciclo,
-        "mes_referencia": mes_referencia,
-        "producao_label": clean_text(sheet["G2"].value),
-        "producao_inicio": clean_date(sheet["H2"].value),
-        "producao_fim": clean_date(sheet["K2"].value),
-        "ato_label": clean_text(sheet["H3"].value),
-        "ato_ciclo": clean_text(sheet["K3"].value),
-        "contratos": contratos,
-        "rateio": rateio,
-    }
+        return {
+            "ciclo": ciclo,
+            "mes_referencia": mes_referencia,
+            "producao_label": None if header_only_layout else clean_text(sheet["G2"].value),
+            "producao_inicio": None if header_only_layout else clean_date(sheet["H2"].value),
+            "producao_fim": None if header_only_layout else clean_date(sheet["K2"].value),
+            "ato_label": None if header_only_layout else clean_text(sheet["H3"].value),
+            "ato_ciclo": None if header_only_layout else clean_text(sheet["K3"].value),
+            "contratos": contratos,
+            "rateio": rateio,
+        }
+    finally:
+        workbook.close()
 
 
 def read_excel_table(excel_path: Path, sheet_name: str, table_name: str | list[str]) -> pd.DataFrame:
-    workbook = load_workbook(excel_path, read_only=False, data_only=True, keep_vba=True)
+    workbook = load_workbook(excel_path, read_only=False, data_only=True, keep_vba=should_keep_vba(excel_path))
     try:
         sheet = workbook[sheet_name]
         table_names = [table_name] if isinstance(table_name, str) else table_name
@@ -721,10 +736,13 @@ def read_excel_table(excel_path: Path, sheet_name: str, table_name: str | list[s
 
 
 def dataframe_from_excel_rows(rows: list[list[Any]]) -> pd.DataFrame:
-    if len(rows) < 2:
+    if not rows:
         return pd.DataFrame()
 
     headers = [clean_text(value) or f"unnamed_{index + 1}" for index, value in enumerate(rows[0])]
+    if len(rows) < 2:
+        return pd.DataFrame(columns=headers)
+
     df = pd.DataFrame(rows[1:], columns=headers)
     return df.dropna(how="all").reset_index(drop=True)
 
@@ -736,7 +754,7 @@ def read_excel_header_region(
     key_header: str,
     max_header_row: int = 100,
 ) -> pd.DataFrame:
-    workbook = load_workbook(excel_path, read_only=False, data_only=True, keep_vba=True)
+    workbook = load_workbook(excel_path, read_only=False, data_only=True, keep_vba=should_keep_vba(excel_path))
     try:
         sheet = workbook[sheet_name]
         header_row = None
@@ -810,7 +828,7 @@ def read_measurements_sheet(excel_path: Path, sheet_name: str) -> pd.DataFrame:
 
 
 def read_bm_aux_sheet(excel_path: Path, sheet_name: str) -> pd.DataFrame:
-    workbook = load_workbook(excel_path, read_only=True, data_only=True, keep_vba=True)
+    workbook = load_workbook(excel_path, read_only=False, data_only=True, keep_vba=should_keep_vba(excel_path))
     try:
         if sheet_name not in workbook.sheetnames:
             return pd.DataFrame()

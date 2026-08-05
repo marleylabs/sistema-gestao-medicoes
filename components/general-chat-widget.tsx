@@ -40,17 +40,34 @@ type ChatMensagem = {
   meu: boolean;
 };
 
-type BubblePosition = { x: number; y: number };
+type BubblePosition = { right: number; bottom: number };
 
 const CHAT_BUBBLE_POSITION_KEY = "general_chat_bubble_position";
 const MEDIA_ACCEPT = "image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime";
+const BUBBLE_VIEWPORT_MARGIN = 8;
+
+function clampBubbleViewportPosition(position: { x: number; y: number }, width: number, height: number) {
+  if (typeof window === "undefined") return position;
+  return {
+    x: Math.min(Math.max(BUBBLE_VIEWPORT_MARGIN, position.x), Math.max(BUBBLE_VIEWPORT_MARGIN, window.innerWidth - width - BUBBLE_VIEWPORT_MARGIN)),
+    y: Math.min(Math.max(BUBBLE_VIEWPORT_MARGIN, position.y), Math.max(BUBBLE_VIEWPORT_MARGIN, window.innerHeight - height - BUBBLE_VIEWPORT_MARGIN)),
+  };
+}
 
 function clampBubblePosition(position: BubblePosition, width: number, height: number): BubblePosition {
   if (typeof window === "undefined") return position;
   return {
-    x: Math.min(Math.max(8, position.x), Math.max(8, window.innerWidth - width - 8)),
-    y: Math.min(Math.max(8, position.y), Math.max(8, window.innerHeight - height - 8)),
+    right: Math.min(Math.max(BUBBLE_VIEWPORT_MARGIN, position.right), Math.max(BUBBLE_VIEWPORT_MARGIN, window.innerWidth - width - BUBBLE_VIEWPORT_MARGIN)),
+    bottom: Math.min(Math.max(BUBBLE_VIEWPORT_MARGIN, position.bottom), Math.max(BUBBLE_VIEWPORT_MARGIN, window.innerHeight - height - BUBBLE_VIEWPORT_MARGIN)),
   };
+}
+
+function edgePositionFromViewportPosition(position: { x: number; y: number }, width: number, height: number): BubblePosition {
+  if (typeof window === "undefined") return { right: 20, bottom: 20 };
+  return clampBubblePosition({
+    right: window.innerWidth - position.x - width,
+    bottom: window.innerHeight - position.y - height,
+  }, width, height);
 }
 
 function initials(value: string | null | undefined) {
@@ -130,8 +147,8 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     pointerId: number;
     startClientX: number;
     startClientY: number;
-    startX: number;
-    startY: number;
+    startLeft: number;
+    startTop: number;
     moved: boolean;
     lastPosition: BubblePosition | null;
   } | null>(null);
@@ -164,10 +181,15 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     if (!raw) return;
     try {
       const parsed = JSON.parse(raw) as Partial<BubblePosition>;
-      if (typeof parsed.x !== "number" || typeof parsed.y !== "number") return;
       const width = bubbleRef.current?.offsetWidth ?? 150;
       const height = bubbleRef.current?.offsetHeight ?? 48;
-      const nextPosition = clampBubblePosition({ x: parsed.x, y: parsed.y }, width, height);
+      const nextPosition =
+        typeof parsed.right === "number" && typeof parsed.bottom === "number"
+          ? clampBubblePosition({ right: parsed.right, bottom: parsed.bottom }, width, height)
+          : typeof (parsed as any).x === "number" && typeof (parsed as any).y === "number"
+          ? edgePositionFromViewportPosition({ x: (parsed as any).x, y: (parsed as any).y }, width, height)
+          : null;
+      if (!nextPosition) return;
       setBubblePosition(nextPosition);
       localStorage.setItem(CHAT_BUBBLE_POSITION_KEY, JSON.stringify(nextPosition));
     } catch {
@@ -335,7 +357,12 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     const deltaY = clientY - drag.startClientY;
     if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) drag.moved = true;
 
-    const nextPosition = clampBubblePosition({ x: drag.startX + deltaX, y: drag.startY + deltaY }, button.offsetWidth, button.offsetHeight);
+    const nextViewportPosition = clampBubbleViewportPosition(
+      { x: drag.startLeft + deltaX, y: drag.startTop + deltaY },
+      button.offsetWidth,
+      button.offsetHeight,
+    );
+    const nextPosition = edgePositionFromViewportPosition(nextViewportPosition, button.offsetWidth, button.offsetHeight);
     drag.lastPosition = nextPosition;
     setBubblePosition(nextPosition);
   }
@@ -347,10 +374,10 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
       pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      startX: rect.left,
-      startY: rect.top,
+      startLeft: rect.left,
+      startTop: rect.top,
       moved: false,
-      lastPosition: { x: rect.left, y: rect.top },
+      lastPosition: edgePositionFromViewportPosition({ x: rect.left, y: rect.top }, rect.width, rect.height),
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -393,7 +420,7 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
       <button
         ref={bubbleRef}
         className={`fixed z-[60] inline-flex h-12 touch-none select-none items-center gap-2 rounded-full px-4 text-sm font-semibold text-white shadow-xl transition-colors ${bubblePosition ? "" : `right-5 ${className || "bottom-5"}`} ${unreadCount ? "bg-[#16A34A] hover:bg-[#15803D]" : "bg-[#2563EB] hover:bg-[#1D4ED8]"}`}
-        style={bubblePosition ? { left: bubblePosition.x, top: bubblePosition.y } : undefined}
+        style={bubblePosition ? { right: bubblePosition.right, bottom: bubblePosition.bottom } : undefined}
         onPointerDown={handleBubblePointerDown}
         onPointerMove={handleBubblePointerMove}
         onPointerUp={handleBubblePointerUp}
