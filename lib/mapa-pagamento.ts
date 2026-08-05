@@ -18,6 +18,10 @@ type PaymentPayload = {
   valor?: unknown;
   rev?: unknown;
   status?: unknown;
+  valorFixo?: unknown;
+  tipoContratacao?: unknown;
+  adicionaisFixos?: unknown;
+  observacoesContrato?: unknown;
 };
 
 type CadastroOverride = {
@@ -38,6 +42,11 @@ function manualHash(payload: unknown) {
 }
 
 export function serializeMapaPagamentoItem(item: any, cadastro?: CadastroOverride | null) {
+  const rawPayload = typeof item.rawPayload === "object" && item.rawPayload !== null ? item.rawPayload : {};
+  const condicoesFixas = typeof rawPayload.condicoesFixas === "object" && rawPayload.condicoesFixas !== null
+    ? rawPayload.condicoesFixas as Record<string, unknown>
+    : {};
+
   return {
     id: item.id,
     ordem: item.ordem,
@@ -54,6 +63,12 @@ export function serializeMapaPagamentoItem(item: any, cadastro?: CadastroOverrid
     valor: toNumber(item.valor),
     rev: toNumber(item.rev),
     status: item.status,
+    condicoesFixas: {
+      valorFixo: text(condicoesFixas.valorFixo),
+      tipoContratacao: text(condicoesFixas.tipoContratacao),
+      adicionaisFixos: text(condicoesFixas.adicionaisFixos),
+      observacoesContrato: text(condicoesFixas.observacoesContrato),
+    },
     updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : (item.updatedAt ?? null),
   };
 }
@@ -72,6 +87,12 @@ export function mapaPagamentoData(payload: PaymentPayload, sourceRowHash?: strin
     valor: parseDecimal(payload.valor),
     rev: parseDecimal(payload.rev),
     status: text(payload.status),
+    condicoesFixas: {
+      valorFixo: text(payload.valorFixo),
+      tipoContratacao: text(payload.tipoContratacao),
+      adicionaisFixos: text(payload.adicionaisFixos),
+      observacoesContrato: text(payload.observacoesContrato),
+    },
   };
 
   return {

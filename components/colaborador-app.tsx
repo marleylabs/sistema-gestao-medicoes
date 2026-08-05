@@ -60,7 +60,18 @@ type ColaboradorData = {
     avatarUrl: string | null; razaoSocial: string | null; email: string | null; funcao: string | null; statusColaborador: string | null;
   };
   alocacao: { ato: string | null; intrSossego: number; salobo: number; acg: number; escadasAlumar: number; } | null;
-  pagamento: { valor: number; rev: number; responsavel: string | null; razaoSocial: string | null; } | null;
+  pagamento: {
+    valor: number;
+    rev: number;
+    responsavel: string | null;
+    razaoSocial: string | null;
+    condicoesFixas?: {
+      valorFixo: string | null;
+      tipoContratacao: string | null;
+      adicionaisFixos: string | null;
+      observacoesContrato: string | null;
+    };
+  } | null;
   documentos: Array<{
     id: string; projetoReferente: string; tituloPrimario: string | null;
     dataCadastro: string | null; formato: string | null; quantidade: number;
@@ -95,6 +106,22 @@ function readableFileSize(size: number) {
 
 function fileExtension(name: string) {
   return name.split(".").pop()?.toUpperCase() || "ARQ";
+}
+
+function normalizeText(value: string | null | undefined) {
+  return (value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+}
+
+function parseCurrencyNumber(value: string | null | undefined) {
+  const cleaned = String(value ?? "").replace(/[^\d,.-]/g, "");
+  if (!cleaned) return 0;
+  const normalized = cleaned.includes(",") ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isDiscountDocument(documento: Pick<ColaboradorData["documentos"][number], "tipo2" | "projetoReferente" | "numeroDocumento">) {
+  return normalizeText(documento.tipo2) === "DESCONTO" || normalizeText(documento.projetoReferente) === "DESCONTO" || normalizeText(documento.numeroDocumento) === "DESCONTO";
 }
 
 function hasUnreadMedicaoMessages(messages: SgcChatMessage[]) {
@@ -160,6 +187,10 @@ function SummaryField({ label, value }: { label: string; value: React.ReactNode 
       </p>
     </div>
   );
+}
+
+function displayEmail(value: string | null | undefined) {
+  return value?.trim().toLowerCase() || null;
 }
 
 // ─── ColaboradorApp ───────────────────────────────────────────────────────────
@@ -790,11 +821,11 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <SummaryField label="ID" value={data.usuario.codigo} />
-                <SummaryField label="Função" value={data.usuario.funcao} />
-                <SummaryField label="CPF / CNPJ" value={data.usuario.cpf || data.usuario.cnpj} />
-                <SummaryField label="E-mail" value={data.usuario.email} />
+                <SummaryField label="Função" value={data.usuario.funcao || "Cadastro em atualização"} />
+                <SummaryField label="CPF / CNPJ" value={data.usuario.cnpj || data.usuario.cpf || "Cadastro em atualização"} />
+                <SummaryField label="E-mail" value={displayEmail(data.usuario.email) || "Cadastro em atualização"} />
                 <div className="sm:col-span-2">
-                  <SummaryField label="Razão social" value={data.usuario.razaoSocial} />
+                  <SummaryField label="Razão social" value={data.usuario.razaoSocial || "Cadastro em atualização"} />
                 </div>
               </div>
             </section>
@@ -853,7 +884,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             <div>
               <h2 className="text-sm font-bold text-[#1A1A1A]">Documentos da Medição do Ciclo</h2>
               <p className="mt-0.5 text-sm text-[#555555]">
-                {data.documentos.length} documentos vinculados ao ID {data.usuario.codigo} no ciclo {data.cicloAtivo}.
+                {data.documentos.filter((documento) => !isDiscountDocument(documento)).length} documentos vinculados ao ID {data.usuario.codigo} no ciclo {data.cicloAtivo}.
               </p>
             </div>
             <ChevronDown className={`shrink-0 text-[#9CA3AF] transition-transform duration-200 ${documentsOpen ? "rotate-180" : ""}`} size={18} />
@@ -863,52 +894,126 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
             const fmtN = (v: number) => new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(v);
             const fmtP = (v: number) => new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(v);
-            const hasObs = data.documentos.some((d) => d.obs);
+            const valorDocumento = (documento: ColaboradorData["documentos"][number]) =>
+              documento.valorMedido ?? (documento.equivalenteA1Horas * (parseFloat(documento.condicao ?? "0") || 0) * documento.percentualEmissao);
+            const documentosMedidos = data.documentos.filter((documento) => !isDiscountDocument(documento));
+            const descontos = data.documentos.filter((documento) => isDiscountDocument(documento));
+            const condicoesFixas = data.pagamento?.condicoesFixas;
+            const valorFixo = parseCurrencyNumber(condicoesFixas?.valorFixo);
+            const adicionaisFixos = parseCurrencyNumber(condicoesFixas?.adicionaisFixos);
+            const totalCondicoesFixas = valorFixo + adicionaisFixos;
+            const totalDocumentos = documentosMedidos.reduce((sum, documento) => sum + valorDocumento(documento), 0);
+            const totalDescontos = descontos.reduce((sum, documento) => sum + Math.abs(valorDocumento(documento)), 0);
+            const totalLiquido = totalCondicoesFixas + totalDocumentos - totalDescontos;
+            const hasFinancialAdjustments = totalCondicoesFixas > 0 || totalDescontos > 0;
+            const tipoCondicaoFixa = normalizeText(condicoesFixas?.tipoContratacao) || "FIXO PJ";
+            const hasObs = documentosMedidos.some((d) => d.obs) || descontos.some((d) => d.obs);
             const headers = ["SE", "NR VALE / Projeto", "CTO", "Formato", "A1eq / HH", "% Emissão", "Tipo DG/DOC/HH", "Preço Unit.", "Valor Medido", "Total", ...(hasObs ? ["Observação"] : [])];
             return (
-              <div className="overflow-auto border-t border-[#E5E7EB]">
-                <table className="w-full border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-[#F9FAFB]">
-                      {headers.map((h) => (
-                        <th key={h} className="whitespace-nowrap border-b border-[#E5E7EB] px-4 py-2.5 text-left font-semibold uppercase tracking-wide text-[#555555]">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.documentos.map((d, i) => {
-                      const valorMedido = d.valorMedido ?? (d.equivalenteA1Horas * (parseFloat(d.condicao ?? "0") || 0) * d.percentualEmissao);
-                      return (
-                        <tr key={d.id} className={`border-b border-[#F3F4F6] last:border-0 hover:bg-[#FAFAFA] ${i % 2 !== 0 ? "bg-[#FAFAFA]" : ""}`}>
-                          <td className="px-4 py-3 font-medium text-[#1A1A1A]">{d.projetoReferente}</td>
-                          <td className="px-4 py-3 text-[#555555]">{d.numeroDocumento ?? "–"}</td>
-                          <td className="px-4 py-3 text-[#555555]">{d.contrato ?? "–"}</td>
-                          <td className="px-4 py-3 text-[#555555]">{d.formato ?? "–"}</td>
-                          <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{fmtN(d.equivalenteA1Horas)}</td>
-                          <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{d.percentualEmissao ? fmtP(d.percentualEmissao) : "100%"}</td>
-                          <td className="px-4 py-3 text-[#555555]">{d.tipo2 ?? "–"}</td>
-                          <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{d.precoUnitario ? currency.format(d.precoUnitario) : (d.condicao ?? "–")}</td>
-                          <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{currency.format(valorMedido)}</td>
-                          <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#1A1A1A]">{currency.format(valorMedido)}</td>
-                          {hasObs && <td className="px-4 py-3 text-[#555555]">{d.obs ?? ""}</td>}
+              <div className="border-t border-[#E5E7EB]">
+                <div className="overflow-x-auto pb-2">
+                  <table className="w-full border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-[#F9FAFB]">
+                        {headers.map((h) => (
+                          <th key={h} className="whitespace-nowrap border-b border-[#E5E7EB] px-4 py-2.5 text-left font-semibold uppercase tracking-wide text-[#555555]">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {totalCondicoesFixas > 0 && (
+                        <tr className="border-b border-[#DBEAFE] bg-[#EFF6FF]/70 text-[#1D4ED8]">
+                          <td className="px-4 py-3">
+                            <span className="inline-flex rounded-md border border-[#BFDBFE] bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#2563EB]">
+                              Condição fixa
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-[#2563EB]" colSpan={7}>
+                            Provento base contratual - {tipoCondicaoFixa}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums font-bold text-[#1D4ED8]">{currency.format(totalCondicoesFixas)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums font-bold text-[#1D4ED8]">{currency.format(totalCondicoesFixas)}</td>
+                          {hasObs && <td className="px-4 py-3 text-[#2563EB]">{condicoesFixas?.observacoesContrato ?? "Base fixa"}</td>}
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                  {data.documentos.length > 0 && (() => {
-                    const total = data.documentos.reduce((s, d) => s + (d.valorMedido ?? 0), 0);
-                    return (
+                      )}
+
+                      {documentosMedidos.map((d, i) => {
+                        const valorMedido = valorDocumento(d);
+                        return (
+                          <tr key={d.id} className={`border-b border-[#F3F4F6] last:border-0 hover:bg-[#FAFAFA] ${i % 2 !== 0 ? "bg-[#FAFAFA]" : ""}`}>
+                            <td className="px-4 py-3 font-medium text-[#1A1A1A]">{d.projetoReferente}</td>
+                            <td className="px-4 py-3 text-[#555555]">{d.numeroDocumento ?? "–"}</td>
+                            <td className="px-4 py-3 text-[#555555]">{d.contrato ?? "–"}</td>
+                            <td className="px-4 py-3 text-[#555555]">{d.formato ?? "–"}</td>
+                            <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{fmtN(d.equivalenteA1Horas)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{d.percentualEmissao ? fmtP(d.percentualEmissao) : "100%"}</td>
+                            <td className="px-4 py-3 text-[#555555]">{d.tipo2 ?? "–"}</td>
+                            <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{d.precoUnitario ? currency.format(d.precoUnitario) : (d.condicao ?? "–")}</td>
+                            <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{currency.format(valorMedido)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#1A1A1A]">{currency.format(valorMedido)}</td>
+                            {hasObs && <td className="px-4 py-3 text-[#555555]">{d.obs ?? ""}</td>}
+                          </tr>
+                        );
+                      })}
+
+                      {descontos.map((d) => {
+                        const valorDesconto = Math.abs(valorDocumento(d));
+                        return (
+                          <tr key={d.id} className="border-b border-[#FEE2E2] text-[#DC2626] last:border-0">
+                            <td className="px-4 py-3">
+                              <span className="inline-flex rounded-md border border-[#FECACA] bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#DC2626]">
+                                Desconto
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-[#DC2626]" colSpan={7}>
+                              {d.obs || d.numeroDocumento || "Desconto aplicado"}
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums font-bold text-[#DC2626]">- {currency.format(valorDesconto)}</td>
+                            <td className="px-4 py-3 text-right tabular-nums font-bold text-[#DC2626]">- {currency.format(valorDesconto)}</td>
+                            {hasObs && <td className="px-4 py-3 text-[#DC2626]">{d.obs ?? "Dedução"}</td>}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    {!hasFinancialAdjustments && documentosMedidos.length > 0 && (
                       <tfoot>
                         <tr className="border-t-2 border-[#E5E7EB] bg-[#F9FAFB]">
                           <td colSpan={8} className="px-4 py-2.5 text-right text-xs font-bold text-[#555555]">Total medido:</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-xs font-bold text-[#1A1A1A]">{currency.format(total)}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-xs font-bold text-[#1A1A1A]">{currency.format(total)}</td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-xs font-bold text-[#1A1A1A]">{currency.format(totalDocumentos)}</td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-xs font-bold text-[#1A1A1A]">{currency.format(totalDocumentos)}</td>
                           {hasObs && <td />}
                         </tr>
                       </tfoot>
-                    );
-                  })()}
-                </table>
+                    )}
+                  </table>
+                </div>
+
+                {hasFinancialAdjustments && (
+                  <div className="flex justify-end px-5 pb-5 pt-4">
+                    <div className="grid w-80 min-w-[280px] gap-1.5 rounded-xl border border-[#E5E7EB] bg-white px-4 py-3 text-xs shadow-sm">
+                      {totalCondicoesFixas > 0 && (
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-[#6B7280]">Condições fixas:</span>
+                          <span className="tabular-nums font-semibold text-[#1F2937]">{currency.format(totalCondicoesFixas)}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-[#6B7280]">Documentos medidos:</span>
+                        <span className="tabular-nums font-semibold text-[#1F2937]">{currency.format(totalDocumentos)}</span>
+                      </div>
+                      {totalDescontos > 0 && (
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-[#6B7280]">Descontos:</span>
+                          <span className="tabular-nums font-semibold text-[#DC2626]">- {currency.format(totalDescontos)}</span>
+                        </div>
+                      )}
+                      <div className="mt-2 flex items-center justify-between gap-4 border-t border-[#E5E7EB] pt-2">
+                        <span className="font-bold text-[#111827]">Total medido líquido:</span>
+                        <span className="tabular-nums text-sm font-bold text-[#111827]">{currency.format(totalLiquido)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}

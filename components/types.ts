@@ -35,6 +35,12 @@ export type MapaPagamentoItem = {
   valor: number;
   rev: number;
   status: string | null;
+  condicoesFixas?: {
+    valorFixo: string | null;
+    tipoContratacao: string | null;
+    adicionaisFixos: string | null;
+    observacoesContrato: string | null;
+  };
   updatedAt: string | null;
 };
 

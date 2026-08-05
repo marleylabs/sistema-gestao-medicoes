@@ -119,6 +119,37 @@ function formatCurrencyInput(value: string) {
   return currencyInputValue(Number.isFinite(parsed) ? parsed : 0);
 }
 
+function parseCurrencyNumber(value: string) {
+  const cleaned = String(value ?? "").replace(/[^\d,.-]/g, "");
+  if (!cleaned) return 0;
+  const normalized = cleaned.includes(",") ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+type CondicaoFixaReferencia = {
+  tipoContratacao: string;
+  valorFixo: number;
+};
+
+const CONDICOES_FIXAS_REFERENCIA: Record<string, CondicaoFixaReferencia> = {
+  CRISTIANO_JEFERSON: { tipoContratacao: "FIXO (PJ)", valorFixo: 5130 },
+  MAURICIO_SPINDOLA: { tipoContratacao: "FIXO (PJ)", valorFixo: 8640 },
+  RONALD_LEAL: { tipoContratacao: "FIXO (PJ)", valorFixo: 21300 },
+  DIOGO_DINIZ: { tipoContratacao: "FIXO (PJ)", valorFixo: 300 },
+};
+
+function condicaoLookupText(value: string | null | undefined) {
+  return normalizeText(value ?? null)
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function fixedConditionFor(...values: Array<string | null | undefined>) {
+  const searchable = values.map(condicaoLookupText).filter(Boolean).join("_");
+  return Object.entries(CONDICOES_FIXAS_REFERENCIA).find(([key]) => searchable.includes(key))?.[1] ?? null;
+}
+
 function ratio(value: number) {
   return value ? percent.format(value) : "–";
 }
@@ -835,10 +866,31 @@ function newDocLine(): DocLine {
 }
 
 function docValorMedido(doc: DocLine): number {
+  if (isDiscountDoc(doc)) return -Math.abs(parseCurrencyNumber(doc.condicao));
   const a1eq  = parseFloat(doc.equivalenteA1Horas) || 0;
   const pct   = (parseFloat(doc.percentualEmissao) || 0) / 100;
   const preco = parseFloat(doc.condicao) || 0;
   return a1eq * preco * pct;
+}
+
+function isDiscountDoc(doc: Pick<DocLine, "tipo2" | "se" | "numeroDocumento">) {
+  return normalizeText(doc.tipo2) === "DESCONTO" || normalizeText(doc.se) === "DESCONTO" || normalizeText(doc.numeroDocumento) === "DESCONTO";
+}
+
+function newDiscountLine(): DocLine {
+  return {
+    _key: Math.random().toString(36).slice(2),
+    se: "DESCONTO",
+    contrato: "",
+    numeroDocumento: "DESCONTO",
+    formato: "",
+    equivalenteA1Horas: "1",
+    percentualEmissao: "100",
+    tipo2: "DESCONTO",
+    condicao: "0",
+    obs: "",
+    _dirty: true,
+  };
 }
 
 type PaymentForm = {
@@ -855,9 +907,15 @@ type PaymentForm = {
   valor: string;
   rev: string;
   status: string;
+  valorFixo: string;
+  tipoContratacao: string;
+  adicionaisFixos: string;
+  observacoesContrato: string;
 };
 
 function paymentForm(item: MapaPagamentoItem | null): PaymentForm {
+  const condicoesFixas = item?.condicoesFixas;
+  const mappedCondition = fixedConditionFor(item?.projetistaCodigo, item?.responsavel, item?.razaoSocial);
   return {
     ato: item?.ato ?? "",
     projetistaCodigo: item?.projetistaCodigo ?? "",
@@ -872,6 +930,10 @@ function paymentForm(item: MapaPagamentoItem | null): PaymentForm {
     valor: currencyInputValue(item?.valor ?? 0),
     rev: String(item?.rev ?? 0),
     status: item?.status ?? "",
+    valorFixo: condicoesFixas?.valorFixo ?? (mappedCondition ? currencyInputValue(mappedCondition.valorFixo) : ""),
+    tipoContratacao: condicoesFixas?.tipoContratacao ?? mappedCondition?.tipoContratacao ?? "",
+    adicionaisFixos: condicoesFixas?.adicionaisFixos ?? "",
+    observacoesContrato: condicoesFixas?.observacoesContrato ?? "",
   };
 }
 
@@ -912,29 +974,61 @@ function PaymentModal({
     fetch(`/api/mapa-pagamento/documentos?codigo=${encodeURIComponent(codigo)}&ciclo=${encodeURIComponent(ciclo)}`)
       .then((r) => r.json())
       .then((data: Array<{ id: string; se: string; contrato: string | null; numeroDocumento: string | null; formato: string | null; equivalenteA1Horas: number; percentualEmissao: number; tipo2: string | null; condicao: string | null; obs: string | null; }>) => {
-        setDocs(data.map((d) => ({
-          _key: d.id,
-          id: d.id,
-          se: d.se ?? "",
-          contrato: d.contrato ?? "",
-          numeroDocumento: d.numeroDocumento ?? "",
-          formato: d.formato ?? "",
-          equivalenteA1Horas: String(d.equivalenteA1Horas),
-          percentualEmissao: String(Math.round(d.percentualEmissao * 100)),
-          tipo2: d.tipo2 ?? "",
-          condicao: d.condicao ?? "0",
-          obs: d.obs ?? "",
-          _dirty: false,
-        })));
+        setDocs(data.map((d) => {
+          const line = {
+            _key: d.id,
+            id: d.id,
+            se: d.se ?? "",
+            contrato: d.contrato ?? "",
+            numeroDocumento: d.numeroDocumento ?? "",
+            formato: d.formato ?? "",
+            equivalenteA1Horas: String(d.equivalenteA1Horas),
+            percentualEmissao: String(Math.round(d.percentualEmissao * 100)),
+            tipo2: d.tipo2 ?? "",
+            condicao: d.condicao ?? "0",
+            obs: d.obs ?? "",
+            _dirty: false,
+          };
+          return isDiscountDoc(line) ? { ...line, condicao: currencyInputValue(Math.abs(parseCurrencyNumber(line.condicao))) } : line;
+        }));
       })
       .catch(() => {})
       .finally(() => setDocsLoading(false));
   }, [item, codigo, ciclo]);
 
-  const totalDocsValor = docs.reduce((s, d) => s + docValorMedido(d), 0);
+  const documentosMedidos = docs.filter((doc) => !isDiscountDoc(doc));
+  const descontos = docs.filter(isDiscountDoc);
+  const totalDocsValorBruto = documentosMedidos.reduce((s, d) => s + docValorMedido(d), 0);
+  const totalDescontos = descontos.reduce((s, d) => s + Math.abs(docValorMedido(d)), 0);
+  const valorFixoBase = parseCurrencyNumber(form.valorFixo);
+  const adicionaisFixos = parseCurrencyNumber(form.adicionaisFixos);
+  const totalCondicoesFixas = valorFixoBase + adicionaisFixos;
+  const valorPrevistoBase = totalCondicoesFixas + totalDocsValorBruto;
+  const valorPrevistoLiquido = valorPrevistoBase - totalDescontos;
+
+  useEffect(() => {
+    if (valorPrevistoBase <= 0 && totalDescontos <= 0) return;
+    setForm((cur) => ({ ...cur, valor: currencyInputValue(valorPrevistoLiquido) }));
+  }, [totalDescontos, valorPrevistoBase, valorPrevistoLiquido]);
 
   function updateDoc(key: string, field: keyof Omit<DocLine, "_key" | "id" | "_dirty">, value: string) {
     setDocs((cur) => cur.map((d) => d._key === key ? { ...d, [field]: value, _dirty: true } : d));
+  }
+
+  function updateDiscount(key: string, field: "obs" | "condicao", value: string) {
+    setDocs((cur) => cur.map((d) => {
+      if (d._key !== key) return d;
+      return {
+        ...d,
+        se: "DESCONTO",
+        numeroDocumento: "DESCONTO",
+        tipo2: "DESCONTO",
+        equivalenteA1Horas: "1",
+        percentualEmissao: "100",
+        [field]: field === "condicao" ? value.replace(/[^\d,.-]/g, "") : value,
+        _dirty: true,
+      };
+    }));
   }
 
   async function saveDocLine(doc: DocLine) {
@@ -950,7 +1044,7 @@ function PaymentModal({
         equivalenteA1Horas: parseFloat(doc.equivalenteA1Horas) || 0,
         percentualEmissao: (parseFloat(doc.percentualEmissao) || 0) / 100,
         tipo2: doc.tipo2,
-        condicao: doc.condicao,
+        condicao: isDiscountDoc(doc) ? String(-Math.abs(parseCurrencyNumber(doc.condicao))) : doc.condicao,
         obs: doc.obs || null,
       };
 
@@ -985,6 +1079,16 @@ function PaymentModal({
     }
   }
 
+  async function handleSavePayment() {
+    const shouldUseLiquidTotal = valorPrevistoBase > 0 || totalDescontos > 0;
+    const finalForm = shouldUseLiquidTotal ? { ...form, valor: currencyInputValue(valorPrevistoLiquido) } : form;
+    const dirtyDocs = docs.filter((doc) => doc._dirty);
+    for (const doc of dirtyDocs) {
+      await saveDocLine(doc);
+    }
+    await onSave(finalForm);
+  }
+
   useEffect(() => {
     fetch("/api/mapa-pagamento/alocacoes")
       .then((r) => r.json())
@@ -1010,6 +1114,7 @@ function PaymentModal({
   }, [codigoQuery, profissionais]);
 
   function selectProfissional(p: Profissional) {
+    const mappedCondition = fixedConditionFor(p.codigo, p.nomeCompleto, p.nome, p.razaoSocial);
     setCodigoQuery(p.codigo ?? "");
     setForm((cur) => ({
       ...cur,
@@ -1017,6 +1122,8 @@ function PaymentModal({
       responsavel: p.nomeCompleto || p.nome || "",
       cpfCnpj: maskCpfCnpj(p.cpf || p.cnpj || cur.cpfCnpj),
       razaoSocial: p.razaoSocial || cur.razaoSocial,
+      valorFixo: mappedCondition ? currencyInputValue(mappedCondition.valorFixo) : cur.valorFixo,
+      tipoContratacao: mappedCondition?.tipoContratacao ?? cur.tipoContratacao,
     }));
     setShowSuggestions(false);
   }
@@ -1024,6 +1131,19 @@ function PaymentModal({
   function update(field: keyof PaymentForm, value: string) {
     setForm((cur) => ({ ...cur, [field]: value }));
   }
+
+  useEffect(() => {
+    const mappedCondition = fixedConditionFor(form.projetistaCodigo, form.responsavel, codigoQuery, form.razaoSocial);
+    if (!mappedCondition) return;
+    setForm((cur) => {
+      if (parseCurrencyNumber(cur.valorFixo) > 0 && cur.tipoContratacao) return cur;
+      return {
+        ...cur,
+        valorFixo: parseCurrencyNumber(cur.valorFixo) > 0 ? cur.valorFixo : currencyInputValue(mappedCondition.valorFixo),
+        tipoContratacao: cur.tipoContratacao || mappedCondition.tipoContratacao,
+      };
+    });
+  }, [codigoQuery, form.projetistaCodigo, form.razaoSocial, form.responsavel]);
 
   function maskCpfCnpj(v: string) {
     const d = v.replace(/\D/g, "");
@@ -1213,17 +1333,151 @@ function PaymentModal({
             </MField>
           </div>
 
+          {/* Seção: Condições fixas */}
+          <div className="mt-6 rounded-xl border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Condições fixas</p>
+                <p className="mt-1 text-xs text-[#6B7280]">Regras contratuais usadas como referência para compor o valor previsto.</p>
+              </div>
+              {totalCondicoesFixas > 0 && (
+                <span className="rounded-full bg-[#EFF6FF] px-3 py-1 text-xs font-bold text-[#2563EB] ring-1 ring-[#BFDBFE]">
+                  Base: {currency.format(totalCondicoesFixas)}
+                </span>
+              )}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <MField label="Valor fixo mensal/contratual">
+                <Input
+                  inputMode="decimal"
+                  value={form.valorFixo}
+                  onChange={(e) => update("valorFixo", e.target.value)}
+                  onBlur={(e) => update("valorFixo", currencyInputValue(parseCurrencyNumber(e.target.value)))}
+                  placeholder="R$ 0,00"
+                />
+              </MField>
+              <MField label="Tipo de contratação/regime">
+                <Input
+                  value={form.tipoContratacao}
+                  onChange={(e) => update("tipoContratacao", e.target.value)}
+                  placeholder="Mensal, por demanda, escopo fechado..."
+                />
+              </MField>
+              <MField label="Adicionais fixos">
+                <Input
+                  inputMode="decimal"
+                  value={form.adicionaisFixos}
+                  onChange={(e) => update("adicionaisFixos", e.target.value)}
+                  onBlur={(e) => update("adicionaisFixos", currencyInputValue(parseCurrencyNumber(e.target.value)))}
+                  placeholder="R$ 0,00"
+                />
+              </MField>
+              <MField label="Valor previsto líquido">
+                <Input value={currencyInputValue(valorPrevistoLiquido)} readOnly className="bg-[#F3F4F6] font-semibold text-[#1F2937]" />
+              </MField>
+              <MField label="Observações de contrato" className="xl:col-span-4">
+                <textarea
+                  value={form.observacoesContrato}
+                  onChange={(e) => update("observacoesContrato", e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] hover:border-[#D1D5DB] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+                  placeholder="Observações sobre regra fixa, reajuste, exceções ou composição contratual."
+                />
+              </MField>
+            </div>
+          </div>
+
+          {/* Seção: Descontos */}
+          <div className="mt-6 rounded-xl border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Descontos</p>
+                <p className="mt-1 text-xs text-[#6B7280]">Inclua deduções que devem abater o valor previsto e o total medido.</p>
+              </div>
+              <button
+                type="button"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#374151] transition hover:border-[#D1D5DB] hover:bg-[#F5F5F5]"
+                onClick={() => setDocs((cur) => [...cur, newDiscountLine()])}
+              >
+                <Plus size={13} /> Adicionar desconto
+              </button>
+            </div>
+
+            {descontos.length === 0 ? (
+              <p className="mt-3 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-xs text-[#6B7280]">
+                Nenhum desconto aplicado.
+              </p>
+            ) : (
+              <div className="mt-3 grid gap-2">
+                {descontos.map((desconto) => {
+                  const isDeleting = desconto.id ? deletingDocIds.has(desconto.id) : false;
+                  return (
+                    <div key={desconto._key} className="grid gap-2 rounded-lg border border-[#FECACA] bg-white p-3 sm:grid-cols-[1fr_180px_auto] sm:items-end">
+                      <label className="grid gap-1 text-xs font-semibold text-[#7F1D1D]">
+                        Descrição do desconto
+                        <Input
+                          value={desconto.obs}
+                          onChange={(e) => updateDiscount(desconto._key, "obs", e.target.value)}
+                          placeholder="Ex: retenção, ajuste, abatimento..."
+                          className="border-[#FECACA] focus:border-[#DC2626] focus:ring-[#DC2626]/20"
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs font-semibold text-[#7F1D1D]">
+                        Valor do desconto
+                        <Input
+                          inputMode="decimal"
+                          value={desconto.condicao}
+                          onChange={(e) => updateDiscount(desconto._key, "condicao", e.target.value)}
+                          onBlur={(e) => updateDiscount(desconto._key, "condicao", currencyInputValue(Math.abs(parseCurrencyNumber(e.target.value))))}
+                          placeholder="R$ 0,00"
+                          className="border-[#FECACA] font-semibold text-[#DC2626] focus:border-[#DC2626] focus:ring-[#DC2626]/20"
+                        />
+                      </label>
+                      <div className="flex gap-1 sm:justify-end">
+                        <button
+                          type="button"
+                          disabled={docsSaving}
+                          className="rounded-lg border border-[#FECACA] px-3 py-2 text-xs font-semibold text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-40"
+                          onClick={() => saveDocLine(desconto)}
+                        >
+                          Salvar
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isDeleting}
+                          className="rounded-lg border border-[#FECACA] p-2 text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-40"
+                          onClick={() => deleteDocLine(desconto)}
+                          title="Excluir desconto"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {totalDescontos > 0 && (
+              <div className="mt-3 flex flex-wrap items-center justify-end gap-3 text-xs">
+                <span className="font-semibold text-[#6B7280]">Total de descontos</span>
+                <span className="font-bold text-[#DC2626]">- {currency.format(totalDescontos)}</span>
+              </div>
+            )}
+          </div>
+
           {/* Seção: Documentos medidos */}
           <div className="mt-6 flex items-center justify-between">
             <p className="text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Documentos medidos</p>
             <div className="flex items-center gap-3">
-              {totalDocsValor > 0 && (
+              {(valorPrevistoBase > 0 || totalDescontos > 0) && (
                 <button
                   type="button"
                   className="rounded-md border border-[#2563EB]/30 bg-[#EFF6FF] px-3 py-1 text-xs font-semibold text-[#2563EB] hover:bg-[#DBEAFE]"
-                  onClick={() => update("valor", formatCurrencyInput(String(totalDocsValor)))}
+                  onClick={() => update("valor", formatCurrencyInput(String(valorPrevistoLiquido)))}
                 >
-                  Usar total ({currency.format(totalDocsValor)})
+                  Usar total ({currency.format(valorPrevistoLiquido)})
                 </button>
               )}
               <button
@@ -1238,22 +1492,63 @@ function PaymentModal({
 
           {docsLoading ? (
             <p className="mt-3 text-center text-xs text-[#9CA3AF]">Carregando documentos…</p>
-          ) : docs.length === 0 ? (
+          ) : docs.length === 0 && totalCondicoesFixas <= 0 ? (
             <p className="mt-3 text-center text-xs text-[#9CA3AF]">Nenhum documento. Clique em "Adicionar linha" para inserir.</p>
           ) : (
-            <div className="mt-3 overflow-x-auto rounded-xl border border-[#E5E7EB]">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB]">
-                    {["SE", "CTO", "NR VALE", "Formato", "A1eq/HH", "% Emissão", "TIPO DG/DOC/HH", "Preço Unit.", "Valor Medido", "Observação", ""].map((h) => (
-                      <th key={h} className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[#555555]">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
+            <div className="mt-3 grid gap-4 pb-6">
+              <div className="overflow-x-auto rounded-xl border border-[#E5E7EB] pb-2">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB]">
+                      {["SE", "CTO", "NR VALE", "Formato", "A1eq/HH", "% Emissão", "TIPO DG/DOC/HH", "Preço Unit.", "Valor Medido", "Observação", ""].map((h) => (
+                        <th key={h} className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[#555555]">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                  {totalCondicoesFixas > 0 && (
+                    <tr className="border-b border-[#DBEAFE] bg-[#EFF6FF]/70 text-[#1D4ED8]">
+                      <td className="px-2 py-2">
+                        <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-[#2563EB] ring-1 ring-[#BFDBFE]">
+                          Fixo
+                        </span>
+                      </td>
+                      <td className="px-2 py-2 font-semibold text-[#2563EB]">
+                        {form.tipoContratacao || "FIXO (PJ)"}
+                      </td>
+                      <td className="px-2 py-2 text-[#2563EB]" colSpan={6}>
+                        Provento base contratual{adicionaisFixos > 0 ? " + adicionais fixos" : ""}
+                      </td>
+                      <td className="px-2 py-2 text-right font-bold text-[#1D4ED8]">
+                        {currency.format(totalCondicoesFixas)}
+                      </td>
+                      <td className="px-2 py-2 text-[#2563EB]">Base fixa</td>
+                      <td className="px-2 py-2" />
+                    </tr>
+                  )}
                   {docs.map((doc) => {
                     const valorMedido = docValorMedido(doc);
+                    const desconto = isDiscountDoc(doc);
                     const isDeleting = doc.id ? deletingDocIds.has(doc.id) : false;
+                    if (desconto) {
+                      return (
+                        <tr key={doc._key} className="border-b border-[#FEE2E2] bg-white text-[#DC2626] last:border-0">
+                          <td className="px-2 py-2">
+                            <span className="rounded-full bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-bold uppercase text-[#DC2626] ring-1 ring-[#FECACA]">
+                              Desconto
+                            </span>
+                          </td>
+                          <td className="px-2 py-2 text-[#DC2626]" colSpan={7}>
+                            <span className="font-semibold">{doc.obs || "Desconto aplicado"}</span>
+                          </td>
+                          <td className="px-2 py-2 text-right font-bold text-[#DC2626]">
+                            - {currency.format(Math.abs(valorMedido))}
+                          </td>
+                          <td className="px-2 py-2 text-[#DC2626]">Dedução</td>
+                          <td className="px-2 py-2" />
+                        </tr>
+                      );
+                    }
                     return (
                       <tr key={doc._key} className="border-b border-[#F3F4F6] last:border-0 hover:bg-[#FAFAFA]">
                         <td className="px-2 py-1.5">
@@ -1322,17 +1617,32 @@ function PaymentModal({
                       </tr>
                     );
                   })}
-                </tbody>
-                {docs.length > 0 && (
-                  <tfoot>
-                    <tr className="border-t-2 border-[#E5E7EB] bg-[#F9FAFB]">
-                      <td colSpan={8} className="px-2 py-2 text-right text-xs font-bold text-[#555555]">Total medido:</td>
-                      <td className="px-2 py-2 text-right text-xs font-bold text-[#1A1A1A]">{currency.format(totalDocsValor)}</td>
-                      <td colSpan={2} />
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex justify-end">
+                <div className="grid w-80 min-w-[280px] gap-1.5 rounded-xl border border-[#E5E7EB] bg-white px-4 py-3 text-xs shadow-sm">
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-6 text-[#475569]">
+                    <span>Condições fixas</span>
+                    <span className="whitespace-nowrap text-right font-semibold text-[#1F2937]">{currency.format(totalCondicoesFixas)}</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-6 text-[#475569]">
+                    <span>Documentos medidos</span>
+                    <span className="whitespace-nowrap text-right font-semibold text-[#1F2937]">{currency.format(totalDocsValorBruto)}</span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] items-center gap-6 text-[#475569]">
+                    <span>Descontos</span>
+                    <span className={`whitespace-nowrap text-right font-semibold ${totalDescontos > 0 ? "text-[#DC2626]" : "text-[#1F2937]"}`}>
+                      - {currency.format(totalDescontos)}
+                    </span>
+                  </div>
+                  <div className="mt-1 grid grid-cols-[1fr_auto] items-center gap-6 border-t border-[#E5E7EB] pt-2 text-sm">
+                    <span className="font-bold text-[#111827]">Total medido líquido</span>
+                    <span className="whitespace-nowrap text-right font-bold text-[#111827]">{currency.format(valorPrevistoLiquido)}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -1340,7 +1650,7 @@ function PaymentModal({
         {/* Footer */}
         <div className="flex justify-end gap-3 border-t border-[#E5E7EB] px-6 py-4">
           <Button variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</Button>
-          <Button onClick={() => onSave(form)} disabled={saving}>
+          <Button onClick={handleSavePayment} disabled={saving || docsSaving}>
             {saving ? "Salvando…" : item ? "Salvar alterações" : "Cadastrar"}
           </Button>
         </div>

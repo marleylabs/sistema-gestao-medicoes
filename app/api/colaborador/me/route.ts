@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
 import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
+import { onlyDigits } from "@/lib/cadastro-fornecedor";
 
 function dateOnly(value: Date | null) {
   return value?.toISOString().slice(0, 10) ?? null;
@@ -116,18 +117,75 @@ export async function GET() {
     medicaoUsuarios.map((usuario) => [usuario.id, avatarUrlByUserId(usuario.id, usuario.avatarAtualizadoAt)]),
   );
   const mensagens = sgc ? buildSgcChatMessages(sgc, logs, { fornecedorAvatarUrl, medicaoAvatarUrlsByUsuarioId }) : [];
+  const profissionalCpf = decryptSensitive(profissional?.cpf);
+  const profissionalCnpj = decryptSensitive(profissional?.cnpj);
+  const cadastroLookupKeys = Array.from(
+    new Set(
+      [
+        ...codigoAliases,
+        codigo,
+        user.usuario,
+        user.nome,
+        profissional?.codigo,
+        profissional?.nome,
+        profissional?.nomeCompleto,
+        pagamento?.projetistaCodigo,
+        pagamento?.responsavel,
+      ]
+        .map((value) => value?.trim())
+        .filter((value): value is string => !!value),
+    ),
+  );
+  const cadastroFornecedorDireto = cadastroLookupKeys.length
+    ? await prisma.cadastroFornecedor.findFirst({
+        where: {
+          OR: [
+            { colaboradorCodigo: { in: cadastroLookupKeys } },
+            ...cadastroLookupKeys.map((key) => ({ responsavel: { equals: key, mode: "insensitive" as const } })),
+          ],
+        },
+        select: {
+          responsavel: true,
+          razaoSocial: true,
+          cargo: true,
+          cpf: true,
+          cnpj: true,
+          email: true,
+        },
+        orderBy: { updatedAt: "desc" },
+      })
+    : null;
+  const cadastroCnpj = onlyDigits(profissionalCnpj || user.usuario);
+  const cadastroFornecedorPorCnpj = !cadastroFornecedorDireto && cadastroCnpj.length === 14
+    ? await prisma.cadastroFornecedor.findFirst({
+        where: { cnpjNormalizado: cadastroCnpj },
+        select: {
+          responsavel: true,
+          razaoSocial: true,
+          cargo: true,
+          cpf: true,
+          cnpj: true,
+          email: true,
+        },
+        orderBy: { updatedAt: "desc" },
+      })
+    : null;
+  const cadastroFornecedor = cadastroFornecedorDireto ?? cadastroFornecedorPorCnpj;
+  const cadastroCpf = decryptSensitive(cadastroFornecedor?.cpf);
+  const cadastroCnpjFormatado = decryptSensitive(cadastroFornecedor?.cnpj);
+  const cadastroEmail = decryptSensitive(cadastroFornecedor?.email);
 
   return NextResponse.json({
     cicloAtivo,
     usuario: {
       codigo,
-      nome: profissional?.nomeCompleto || profissional?.nome || user.nome,
+      nome: profissional?.nomeCompleto || cadastroFornecedor?.responsavel || profissional?.nome || user.nome,
       avatarUrl: fornecedorAvatarUrl,
-      cpf: decryptSensitive(profissional?.cpf),
-      cnpj: decryptSensitive(profissional?.cnpj),
-      razaoSocial: profissional?.razaoSocial ?? null,
-      email: decryptSensitive(profissional?.email),
-      funcao: profissional?.funcao ?? null,
+      cpf: cadastroCpf || profissionalCpf,
+      cnpj: cadastroCnpjFormatado || profissionalCnpj,
+      razaoSocial: cadastroFornecedor?.razaoSocial || profissional?.razaoSocial || pagamento?.razaoSocial || null,
+      email: cadastroEmail || decryptSensitive(profissional?.email),
+      funcao: cadastroFornecedor?.cargo || profissional?.funcao || null,
       statusColaborador: profissional?.statusColaborador ?? null,
     },
     alocacao: pagamento
