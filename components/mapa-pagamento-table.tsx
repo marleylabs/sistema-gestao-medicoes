@@ -133,10 +133,8 @@ type CondicaoFixaReferencia = {
 };
 
 const CONDICOES_FIXAS_REFERENCIA: Record<string, CondicaoFixaReferencia> = {
-  CRISTIANO_JEFERSON: { tipoContratacao: "FIXO (PJ)", valorFixo: 5130 },
   MAURICIO_SPINDOLA: { tipoContratacao: "FIXO (PJ)", valorFixo: 8640 },
   RONALD_LEAL: { tipoContratacao: "FIXO (PJ)", valorFixo: 21300 },
-  DIOGO_DINIZ: { tipoContratacao: "FIXO (PJ)", valorFixo: 300 },
 };
 
 function condicaoLookupText(value: string | null | undefined) {
@@ -145,9 +143,24 @@ function condicaoLookupText(value: string | null | undefined) {
     .replace(/^_+|_+$/g, "");
 }
 
+function fixedConditionSearchText(values: Array<string | null | undefined>) {
+  return values.map(condicaoLookupText).filter(Boolean).join("_");
+}
+
+function isCristianoJeferson(...values: Array<string | null | undefined>) {
+  return fixedConditionSearchText(values).includes("CRISTIANO_JEFERSON");
+}
+
 function fixedConditionFor(...values: Array<string | null | undefined>) {
   const searchable = values.map(condicaoLookupText).filter(Boolean).join("_");
+  if (searchable.includes("CRISTIANO_JEFERSON")) {
+    return { tipoContratacao: "FIXO (PJ)", valorFixo: 12000 };
+  }
   return Object.entries(CONDICOES_FIXAS_REFERENCIA).find(([key]) => searchable.includes(key))?.[1] ?? null;
+}
+
+function cristianoConditionalFixedCondition(hasMeasuredDocuments: boolean): CondicaoFixaReferencia {
+  return { tipoContratacao: "FIXO (PJ)", valorFixo: hasMeasuredDocuments ? 8640 : 12000 };
 }
 
 function ratio(value: number) {
@@ -231,7 +244,7 @@ export function MapaPagamentoTable({
       const matchStatus      = status ? s === status : true;
       const matchColab       = selectedCodigo ? item.projetistaCodigo === selectedCodigo : true;
       const matchContract    = selectedContrato ? contractParticipation(item, selectedContrato) > 0 : true;
-      const searchable       = [item.ato, item.projetistaCodigo, item.responsavel, item.cpfCnpj, item.razaoSocial]
+      const searchable       = [item.ato, item.projetistaCodigo, item.responsavel, item.cpfCnpj, item.razaoSocial, item.fornecedor?.cpfCnpj, item.fornecedor?.razaoSocial]
         .filter(Boolean).join(" ").toLocaleLowerCase("pt-BR");
       return matchStatus && matchColab && matchContract && (!q || searchable.includes(q));
     });
@@ -412,8 +425,8 @@ export function MapaPagamentoTable({
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-[#555555]"><BlurValue>{item.cpfCnpj ?? "–"}</BlurValue></td>
-                  <td className="px-4 py-3 text-[#555555]">{item.razaoSocial ?? "–"}</td>
+                  <td className="px-4 py-3 text-[#555555]"><BlurValue>{item.fornecedor?.cpfCnpj ?? item.cpfCnpj ?? "–"}</BlurValue></td>
+                  <td className="px-4 py-3 text-[#555555]">{item.fornecedor?.razaoSocial ?? item.razaoSocial ?? "–"}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{ratio(item.intrSossego)}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{ratio(item.salobo)}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{ratio(item.acg)}</td>
@@ -915,13 +928,15 @@ type PaymentForm = {
 
 function paymentForm(item: MapaPagamentoItem | null): PaymentForm {
   const condicoesFixas = item?.condicoesFixas;
-  const mappedCondition = fixedConditionFor(item?.projetistaCodigo, item?.responsavel, item?.razaoSocial);
+  const razaoSocial = item?.fornecedor?.razaoSocial ?? item?.razaoSocial ?? "";
+  const cpfCnpj = item?.fornecedor?.cpfCnpj ?? item?.cpfCnpj ?? "";
+  const mappedCondition = fixedConditionFor(item?.projetistaCodigo, item?.responsavel, razaoSocial);
   return {
     ato: item?.ato ?? "",
     projetistaCodigo: item?.projetistaCodigo ?? "",
     responsavel: item?.responsavel ?? "",
-    cpfCnpj: item?.cpfCnpj ?? "",
-    razaoSocial: item?.razaoSocial ?? "",
+    cpfCnpj,
+    razaoSocial,
     intrSossego: String(item?.intrSossego ?? 0),
     salobo: String(item?.salobo ?? 0),
     acg: String(item?.acg ?? 0),
@@ -1005,6 +1020,20 @@ function PaymentModal({
   const totalCondicoesFixas = valorFixoBase + adicionaisFixos;
   const valorPrevistoBase = totalCondicoesFixas + totalDocsValorBruto;
   const valorPrevistoLiquido = valorPrevistoBase - totalDescontos;
+
+  useEffect(() => {
+    if (!isCristianoJeferson(form.projetistaCodigo, form.responsavel, codigoQuery, form.razaoSocial)) return;
+    const mappedCondition = cristianoConditionalFixedCondition(totalDocsValorBruto > 0);
+    const nextValorFixo = currencyInputValue(mappedCondition.valorFixo);
+    setForm((cur) => {
+      if (cur.valorFixo === nextValorFixo && cur.tipoContratacao === mappedCondition.tipoContratacao) return cur;
+      return {
+        ...cur,
+        valorFixo: nextValorFixo,
+        tipoContratacao: mappedCondition.tipoContratacao,
+      };
+    });
+  }, [codigoQuery, form.projetistaCodigo, form.razaoSocial, form.responsavel, totalDocsValorBruto]);
 
   useEffect(() => {
     if (valorPrevistoBase <= 0 && totalDescontos <= 0) return;

@@ -13,6 +13,15 @@ function fmt(v: number) { return v ? brl.format(v) : "R$0,00"; }
 function fmtN(v: number) { return v ? num.format(v) : "0,000"; }
 function fmtP(v: number) { return v ? pct.format(v) : "0%"; }
 
+function parseCurrencyNumber(value: string | number | null | undefined) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const cleaned = String(value ?? "").replace(/[^\d,.-]/g, "");
+  if (!cleaned) return 0;
+  const normalized = cleaned.includes(",") ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function dateLabel(v: string | null) {
   if (!v) return "–";
   return new Intl.DateTimeFormat("pt-BR").format(new Date(`${v}T00:00:00`));
@@ -55,6 +64,12 @@ export type BmData = {
     ato: string | null; valor: number; rev: number; horas: number;
     intrSossego: number; salobo: number; acg: number; escadasAlumar: number;
     razaoSocial: string | null; cpfCnpj: string | null;
+    condicoesFixas?: {
+      valorFixo: string | null;
+      tipoContratacao: string | null;
+      adicionaisFixos: string | null;
+      observacoesContrato: string | null;
+    } | null;
   } | null;
   documentos: Array<{
     id: string; projetoReferente: string; tituloPrimario: string | null;
@@ -111,7 +126,8 @@ export function BoletimMedicao({ data }: { data: BmData }) {
   const atoInicio      = datas.atoInicio;
   const atoFim         = datas.atoFim;
 
-  const totalHorasDocs = data.documentos.reduce((s, d) => s + d.equivalenteA1Horas, 0);
+  const documentosProdutivos = data.documentos.filter((d) => (d.tipo2 ?? "").toUpperCase().trim() !== "DESCONTO");
+  const totalHorasDocs = documentosProdutivos.reduce((s, d) => s + d.equivalenteA1Horas, 0);
   const totalHoras = totalHorasDocs || pagamento?.horas || 0;
   const totalValor = pagamento?.valor ?? 0;
   const totalRev   = pagamento?.rev ?? 0;
@@ -127,10 +143,16 @@ export function BoletimMedicao({ data }: { data: BmData }) {
   const ccDoc       = sumByTipo("DOC");
   const ccHhDocs    = sumByTipo("HH");
   const ccDesenhosMc = ccDesenhos + sumByTipo("MC");
+  const ccDescontosLiquido = sumByTipo("DESCONTO");
+  const ccDescontos = Math.abs(ccDescontosLiquido);
+  const documentosDesconto = data.documentos.filter((d) => (d.tipo2 ?? "").toUpperCase().trim() === "DESCONTO");
 
-  // Se pagamento.valor > soma dos docs → diferença é o valor FIXO (PJ ou CLT)
-  const docBasedTotal = ccDesenhos + ccDoc + ccHhDocs;
-  const fixoAmount    = Math.round(Math.max(0, totalValor - docBasedTotal) * 100) / 100;
+  // Prioriza a condição fixa cadastrada no pagamento; a diferença fica como fallback para BMs antigos.
+  const docBasedTotal = ccDesenhosMc + ccDoc + ccHhDocs + ccDescontosLiquido;
+  const fixedFromCadastro = parseCurrencyNumber(pagamento?.condicoesFixas?.valorFixo);
+  const fixoAmount    = fixedFromCadastro > 0.01
+    ? fixedFromCadastro
+    : Math.round(Math.max(0, totalValor - docBasedTotal) * 100) / 100;
   const isPj          = !!(data.colaborador.cnpj && data.colaborador.cnpj.trim() !== "–");
   const ccFixoPj      = isPj && fixoAmount > 0.01 ? fixoAmount : 0;
   const ccFixoClt     = !isPj && fixoAmount > 0.01 ? fixoAmount : 0;
@@ -147,6 +169,7 @@ export function BoletimMedicao({ data }: { data: BmData }) {
   }
   const inicialDg  = sumHrsByTipo("DG");
   const inicialDoc = sumHrsByTipo("DOC");
+  const inicialHh  = sumHrsByTipo("HH");
 
   // rateio por contrato
   const totalPart = (pagamento?.intrSossego ?? 0) + (pagamento?.salobo ?? 0) + (pagamento?.acg ?? 0) + (pagamento?.escadasAlumar ?? 0);
@@ -237,7 +260,7 @@ export function BoletimMedicao({ data }: { data: BmData }) {
 
             {/* ── Linhas 5-12: OBSERVAÇÕES + CONDIÇÕES COMERCIAIS ── */}
             <tr>
-              <Th rowSpan={4} colSpan={2} className="text-left pl-2 align-top">
+              <Th rowSpan={4} colSpan={2} className="text-center align-middle">
                 <div>OBSERVAÇÕES</div>
               </Th>
               <Th colSpan={7}>CONDIÇÕES COMERCIAIS</Th>
@@ -279,7 +302,7 @@ export function BoletimMedicao({ data }: { data: BmData }) {
               <Th>DOC</Th>
               <Th>HH</Th>
               <Th>A1</Th>
-              <Td colSpan={4} className="text-center font-bold">{fmtN(totalHoras)}</Td>
+              <Td colSpan={4} rowSpan={2} className="bg-[#FFD966]" />
             </tr>
             <tr>
               <Td colSpan={2} className="bg-[#F3F3F3]" />
@@ -287,8 +310,8 @@ export function BoletimMedicao({ data }: { data: BmData }) {
               <Td className="text-center">{fmtN(inicialDoc)}</Td>
               <Td className="text-center">{fmtN(inicialDg)}</Td>
               <Td className="text-center">{fmtN(inicialDoc)}</Td>
-              <Td className="text-center font-bold">{fmtN(totalHoras)}</Td>
-              <Td className="text-center">{fmtN(totalHorasDocs)}</Td>
+              <Td className="text-center font-bold">{fmtN(inicialHh)}</Td>
+              <Td className="text-center font-bold">{fmtN(totalHorasDocs)}</Td>
               <Td colSpan={4} />
             </tr>
 
@@ -324,7 +347,7 @@ export function BoletimMedicao({ data }: { data: BmData }) {
               <Td className="text-center">{fmtP(pctSalobo)}</Td>
               <Td className="text-center">{fmtP(pctAcg)}</Td>
               <Td className="text-center">{fmtP(pctEscadas)}</Td>
-              <Td colSpan={2} className="text-center">–</Td>
+              <Td colSpan={2} className="text-center">{ccDescontos > 0 ? `- ${fmt(ccDescontos)}` : "–"}</Td>
             </tr>
 
             {/* ── Linha separador ── */}
@@ -332,7 +355,8 @@ export function BoletimMedicao({ data }: { data: BmData }) {
 
             {/* ── Cabeçalho da tabela de documentos ── */}
             {(() => {
-              const totalDocMedido = data.documentos.reduce((s, d) => s + d.valorMedido, 0);
+              const totalDocumentosMedidos = documentosProdutivos.reduce((s, d) => s + d.valorMedido, 0);
+              const totalMedidoLiquido = ccFixoClt + ccFixoPj + totalDocumentosMedidos - ccDescontos;
               return (
                 <>
                   <tr>
@@ -349,12 +373,12 @@ export function BoletimMedicao({ data }: { data: BmData }) {
                   </tr>
 
                   {/* ── Linhas de documentos ── */}
-                  {data.documentos.length === 0 ? (
+                  {documentosProdutivos.length === 0 ? (
                     <tr>
                       <Td colSpan={12} className="text-center text-[#9CA3AF] py-3">Nenhum documento vinculado a este ciclo.</Td>
                     </tr>
                   ) : (
-                    data.documentos.map((doc) => (
+                    documentosProdutivos.map((doc) => (
                       <tr key={doc.id}>
                         <Td className="text-center">{doc.projetoReferente}</Td>
                         <Td colSpan={2}>{doc.numeroDocumento ?? "–"}</Td>
@@ -370,14 +394,55 @@ export function BoletimMedicao({ data }: { data: BmData }) {
                     ))
                   )}
 
+                  {documentosDesconto.map((doc) => {
+                    const valorDesconto = Math.abs(doc.valorMedido);
+                    return (
+                      <tr key={doc.id}>
+                        <Td colSpan={1} className="text-center">
+                          <span className="inline-block rounded border border-[#FECACA] px-2 py-0.5 text-[9px] font-bold uppercase text-[#DC2626]">
+                            Desconto
+                          </span>
+                        </Td>
+                        <Td colSpan={8} className="font-bold text-[#DC2626]">{doc.obs || doc.numeroDocumento || "Dedução"}</Td>
+                        <Td className="text-right text-[#DC2626]">–</Td>
+                        <Td className="text-right font-bold text-[#DC2626]">- {fmt(valorDesconto)}</Td>
+                        <Td className="text-right font-bold text-[#DC2626]">Dedução</Td>
+                      </tr>
+                    );
+                  })}
+
                   {/* ── Totais finais ── */}
                   <tr>
                     <Td colSpan={5} className="bg-[#F3F3F3]" />
                     <Td className="text-center font-bold bg-[#D9D9D9]">{fmtN(totalHoras)}</Td>
                     <Td className="bg-[#F3F3F3]" />
                     <Td colSpan={3} className="bg-[#F3F3F3]" />
-                    <Td className="text-right font-bold bg-[#FFD966]">{fmt(totalDocMedido || totalMedicao)}</Td>
-                    <Td className="text-right font-bold bg-[#FFD966]">{fmt(totalDocMedido || totalMedicao)}</Td>
+                    <Td className="text-right font-bold bg-[#FFD966]">{fmt(totalMedidoLiquido || totalMedicao)}</Td>
+                    <Td className="text-right font-bold bg-[#FFD966]">{fmt(totalMedidoLiquido || totalMedicao)}</Td>
+                  </tr>
+
+                  <tr>
+                    <Td colSpan={8} className="border-0" />
+                    <Td colSpan={4} className="p-0">
+                      <div className="m-2 rounded border border-[#D1D5DB] bg-white p-3 text-[10px] shadow-sm">
+                        <div className="flex justify-between gap-4 py-0.5">
+                          <span>Condições fixas</span>
+                          <strong>{fmt(ccFixoClt + ccFixoPj)}</strong>
+                        </div>
+                        <div className="flex justify-between gap-4 py-0.5">
+                          <span>Documentos medidos</span>
+                          <strong>{fmt(totalDocumentosMedidos)}</strong>
+                        </div>
+                        <div className="flex justify-between gap-4 py-0.5">
+                          <span>Descontos</span>
+                          <strong className="text-[#DC2626]">- {fmt(ccDescontos)}</strong>
+                        </div>
+                        <div className="mt-1 flex justify-between gap-4 border-t border-[#D1D5DB] pt-1 font-bold">
+                          <span>Total medido líquido</span>
+                          <strong>{fmt(totalMedidoLiquido)}</strong>
+                        </div>
+                      </div>
+                    </Td>
                   </tr>
                 </>
               );

@@ -1312,7 +1312,7 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
                 className="h-9 w-40 rounded-lg border border-[#E5E7EB] px-3 text-xs outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
               />
             </div>
-            <p className="text-[11px] text-[#9CA3AF]">O ciclo informado separa as cargas. Importar 2606 substitui somente 2606 e preserva 2605.</p>
+            <p className="text-[11px] text-[#9CA3AF]">O ciclo informado separa as cargas. Se o ciclo já existir, a importação atualiza somente os fornecedores presentes no arquivo.</p>
           </div>
 
           {msg && (

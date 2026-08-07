@@ -94,6 +94,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       valorHora: numberValue(body.valorHora),
       valorA1Equivalente: numberValue(body.valorA1Equivalente),
       valorDocumento: numberValue(body.valorDocumento),
+      valorCondicaoFixa: numberValue(body.valorCondicaoFixa),
       inicio: dateValue(body.inicio),
       final: dateValue(body.final),
       statusCadastro: text(body.statusCadastro),

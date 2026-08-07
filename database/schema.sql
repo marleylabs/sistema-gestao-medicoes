@@ -146,6 +146,7 @@ create table if not exists cadastros_fornecedores (
     valor_hora            numeric(16,4),
     valor_a1_equivalente  numeric(16,4),
     valor_documento       numeric(16,4),
+    valor_condicao_fixa   numeric(16,4),
     inicio                date,
     final                 date,
     status_cadastro       text,
@@ -161,6 +162,7 @@ drop index if exists cadastros_fornecedores_cnpj_normalizado_key;
 create index if not exists idx_cadastros_fornecedores_colaborador_codigo on cadastros_fornecedores(colaborador_codigo);
 create index if not exists idx_cadastros_fornecedores_cnpj_normalizado on cadastros_fornecedores(cnpj_normalizado);
 create index if not exists idx_cadastros_fornecedores_final on cadastros_fornecedores(final);
+alter table cadastros_fornecedores add column if not exists valor_condicao_fixa numeric(16,4);
 
 -- ─── sgc_aprovacoes_medicao ──────────────────────────────────
 create table if not exists sgc_aprovacoes_medicao (

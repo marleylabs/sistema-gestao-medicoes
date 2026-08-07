@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { decryptSensitive } from "@/lib/encryption";
 import { toNumber } from "@/lib/format";
+import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
 import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
@@ -51,6 +52,7 @@ export async function GET() {
           orderBy: [{ dataCadastro: "asc" }, { createdAt: "asc" }],
         }),
       ]);
+      const pagamentoSerializado = pagamento ? serializeMapaPagamentoItem(pagamento) : null;
 
       return {
         id: sgc.id,
@@ -85,8 +87,9 @@ export async function GET() {
           salobo: toNumber((pagamento as any).salobo),
           acg: toNumber((pagamento as any).acg),
           escadasAlumar: toNumber((pagamento as any).escadasAlumar),
-          razaoSocial: decryptSensitive(pagamento.razaoSocial),
-          cpfCnpj: decryptSensitive(pagamento.cpfCnpj),
+          razaoSocial: pagamentoSerializado?.razaoSocial ?? null,
+          cpfCnpj: pagamentoSerializado?.cpfCnpj ?? null,
+          condicoesFixas: pagamentoSerializado?.condicoesFixas ?? null,
         } : null,
         documentos: documentos.map((d) => {
           const a1eq = toNumber(d.equivalenteA1Horas);

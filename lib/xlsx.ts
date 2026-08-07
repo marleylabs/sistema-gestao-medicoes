@@ -117,9 +117,10 @@ type WorkbookSheet = {
   headers: string[];
   rows?: CellValue[][];
   headerRow?: number;
+  columnWidths?: number[];
 };
 
-function worksheetXml(headers: string[], rows: CellValue[][], headerRow = 1) {
+function worksheetXml(headers: string[], rows: CellValue[][], headerRow = 1, columnWidths?: number[]) {
   const blankRows = Array.from({ length: Math.max(0, headerRow - 1) }, () => [] as CellValue[]);
   const allRows = [...blankRows, headers, ...rows];
   const xmlRows = allRows.map((row, rowIndex) => {
@@ -144,7 +145,7 @@ function worksheetXml(headers: string[], rows: CellValue[][], headerRow = 1) {
   <dimension ref="A1:${lastCell}"/>
   <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
   <sheetFormatPr defaultRowHeight="15"/>
-  <cols>${headers.map((_, index) => `<col min="${index + 1}" max="${index + 1}" width="${index === 2 ? 34 : 18}" customWidth="1"/>`).join("")}</cols>
+  <cols>${headers.map((_, index) => `<col min="${index + 1}" max="${index + 1}" width="${columnWidths?.[index] ?? (index === 2 ? 34 : 18)}" customWidth="1"/>`).join("")}</cols>
   <sheetData>${xmlRows}</sheetData>
 </worksheet>`);
 }
@@ -209,7 +210,7 @@ export function createWorkbookXlsx(sheets: WorkbookSheet[]) {
     },
     ...sheets.map((sheet, index) => ({
       name: `xl/worksheets/sheet${index + 1}.xml`,
-      data: worksheetXml(sheet.headers, sheet.rows ?? [], sheet.headerRow ?? 1),
+      data: worksheetXml(sheet.headers, sheet.rows ?? [], sheet.headerRow ?? 1, sheet.columnWidths),
     })),
   ];
 

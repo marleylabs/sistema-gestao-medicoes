@@ -110,7 +110,9 @@ export function Dashboard({ data }: { data: DashboardData | null }) {
 // ─── TiposPrecos ──────────────────────────────────────────────────────────────
 
 function TiposPrecos({ itens }: { itens: DashboardData["tiposPrecos"] }) {
-  if (!itens.length) {
+  const itensVisiveis = itens.filter((item) => item.tipo2?.trim().toUpperCase() !== "DESCONTO");
+
+  if (!itensVisiveis.length) {
     return (
       <Card className="p-5">
         <div className="mb-4 flex items-center gap-2">
@@ -124,7 +126,7 @@ function TiposPrecos({ itens }: { itens: DashboardData["tiposPrecos"] }) {
     );
   }
 
-  const porColaborador = itens.reduce<Record<string, { nome: string; docs: Array<{ tipo2: string; condicao: string }> }>>((acc, r) => {
+  const porColaborador = itensVisiveis.reduce<Record<string, { nome: string; docs: Array<{ tipo2: string; condicao: string }> }>>((acc, r) => {
     if (!acc[r.codigo]) acc[r.codigo] = { nome: r.nome, docs: [] };
     acc[r.codigo].docs.push({ tipo2: r.tipo2, condicao: r.condicao });
     return acc;

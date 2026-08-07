@@ -25,6 +25,7 @@ type PaymentPayload = {
 };
 
 type CadastroOverride = {
+  id?: string | null;
   responsavel?: string | null;
   cpfCnpj?: string | null;
   razaoSocial?: string | null;
@@ -55,6 +56,14 @@ export function serializeMapaPagamentoItem(item: any, cadastro?: CadastroOverrid
     responsavel: cadastro?.responsavel ?? item.responsavel,
     cpfCnpj: cadastro?.cpfCnpj ?? decryptSensitive(item.cpfCnpj),
     razaoSocial: cadastro?.razaoSocial ?? item.razaoSocial,
+    fornecedor: cadastro
+      ? {
+          id: cadastro.id ?? null,
+          cpfCnpj: cadastro.cpfCnpj ?? null,
+          razaoSocial: cadastro.razaoSocial ?? null,
+          responsavel: cadastro.responsavel ?? null,
+        }
+      : null,
     intrSossego: toNumber(item.intrSossego),
     salobo: toNumber(item.salobo),
     acg: toNumber(item.acg),

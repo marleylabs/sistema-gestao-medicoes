@@ -23,6 +23,7 @@ type CadastroRow = {
   valorHora?: number | null;
   valorA1Equivalente?: number | null;
   valorDocumento?: number | null;
+  valorCondicaoFixa?: number | null;
   inicio?: Date | null;
   final?: Date | null;
   statusCadastro?: string | null;
@@ -47,6 +48,7 @@ const HEADER_MAP: Record<string, keyof CadastroRow> = {
   "HORA": "valorHora",
   "A1 EQUIVALENTE": "valorA1Equivalente",
   "DOCUMENTO": "valorDocumento",
+  "CONDICAO FIXA": "valorCondicaoFixa",
   "INICIO": "inicio",
   "FINAL": "final",
   "STATUS": "statusCadastro",
@@ -180,7 +182,7 @@ export function parseCadastroFornecedorWorkbook(buffer: Buffer) {
       const field = HEADER_MAP[header];
       if (!field) return;
       if (field === "inicio" || field === "final") (record as any)[field] = asDate(value);
-      else if (field === "valorHora" || field === "valorA1Equivalente" || field === "valorDocumento") (record as any)[field] = asNumber(value);
+      else if (field === "valorHora" || field === "valorA1Equivalente" || field === "valorDocumento" || field === "valorCondicaoFixa") (record as any)[field] = asNumber(value);
       else (record as any)[field] = asText(value);
     });
 
@@ -218,6 +220,7 @@ export function parseCadastroFornecedorWorkbook(buffer: Buffer) {
       valorHora: record.valorHora ?? null,
       valorA1Equivalente: record.valorA1Equivalente ?? null,
       valorDocumento: record.valorDocumento ?? null,
+      valorCondicaoFixa: record.valorCondicaoFixa ?? null,
       inicio: record.inicio ?? null,
       final: record.final ?? null,
       statusCadastro: record.statusCadastro ?? null,
@@ -291,6 +294,7 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
         valorHora: row.valorHora,
         valorA1Equivalente: row.valorA1Equivalente,
         valorDocumento: row.valorDocumento,
+        valorCondicaoFixa: row.valorCondicaoFixa,
         inicio: row.inicio,
         final: row.final,
         statusCadastro: row.statusCadastro,
@@ -454,6 +458,7 @@ export function serializeCadastroFornecedor(item: any) {
     valorHora: item.valorHora === null ? null : Number(item.valorHora),
     valorA1Equivalente: item.valorA1Equivalente === null ? null : Number(item.valorA1Equivalente),
     valorDocumento: item.valorDocumento === null ? null : Number(item.valorDocumento),
+    valorCondicaoFixa: item.valorCondicaoFixa === null ? null : Number(item.valorCondicaoFixa),
     inicio: item.inicio?.toISOString() ?? null,
     final: item.final?.toISOString() ?? null,
     statusCadastro: item.statusCadastro,

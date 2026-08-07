@@ -27,6 +27,12 @@ export type MapaPagamentoItem = {
   responsavel: string | null;
   cpfCnpj: string | null;
   razaoSocial: string | null;
+  fornecedor: {
+    id: string | null;
+    responsavel: string | null;
+    cpfCnpj: string | null;
+    razaoSocial: string | null;
+  } | null;
   intrSossego: number;
   salobo: number;
   acg: number;

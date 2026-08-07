@@ -15,7 +15,7 @@ import pandas as pd
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from openpyxl import load_workbook
 from openpyxl.utils.cell import range_boundaries
-from sqlalchemy import MetaData, create_engine, text
+from sqlalchemy import MetaData, bindparam, create_engine, text
 from sqlalchemy.dialects.postgresql import insert
 
 
@@ -113,11 +113,25 @@ MEASUREMENT_COLUMNS = {
     "valor_bruto": ["Valor Bruto"],
     "valor_total": ["Valor Total"],
     "obs": ["OBS"],
+    "motivo_desconto": [
+        "Motivo Desconto",
+        "MOTIVO DESCONTO",
+        "Descrição do Desconto",
+        "DESCRIÇÃO DO DESCONTO",
+        "Descricao do Desconto",
+        "DESCRICAO DO DESCONTO",
+    ],
+    "valor_desconto": [
+        "Valor Desconto",
+        "VALOR DESCONTO",
+        "Valor do Desconto",
+        "VALOR DO DESCONTO",
+    ],
     "valor_reajuste": ["Valor do Reajuste"],
     "ciclo": ["CICLO"],
     "referencia": ["REFERÊNCIA"],
     "percentual_emissao": ["% EMISSÃO"],
-    "tipo2": ["TIPO2"],
+    "tipo2": ["TIPO", "TIPO2"],
     "condicao": ["CONDIÇÃO"],
     "valor_medicao": ["VALOR DE MEDIÇÃO"],
 }
@@ -356,6 +370,21 @@ def clean_date(value: Any) -> date | None:
     return parsed.date()
 
 
+def only_digits(value: Any) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return "".join(char for char in str(value) if char.isdigit())
+
+
+def format_cnpj(value: Any) -> str | None:
+    digits = only_digits(value)
+    if len(digits) == 13:
+        digits = digits.zfill(14)
+    if len(digits) != 14:
+        return clean_text(value)
+    return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
+
+
 def json_safe(value: Any) -> Any:
     if value is None or pd.isna(value):
         return None
@@ -429,6 +458,155 @@ def clear_imported_database(conn, ciclo: str) -> None:
     conn.execute(text("delete from mapa_pagamento_contexto where ciclo = :ciclo"), params)
     conn.execute(text("delete from bm_aux_medicoes where ciclo = :ciclo"), params)
     conn.execute(text("delete from etl_execucoes where ciclo = :ciclo"), params)
+
+
+def matches_any_collaborator(value: Any, normalized_codes: set[str]) -> bool:
+    normalized = normalize_for_compare(clean_text(value))
+    if not normalized:
+        return False
+    if normalized in normalized_codes:
+        return True
+    return any(same_person_name(normalized, candidate) for candidate in normalized_codes)
+
+
+def collect_import_collaborator_codes(
+    df: pd.DataFrame,
+    bm_aux_df: pd.DataFrame,
+    canonical_codes: dict[str, str],
+    ciclo: str,
+) -> set[str]:
+    codes: set[str] = set()
+
+    def add_code(value: Any) -> None:
+        cleaned = clean_text(value)
+        if not cleaned:
+            return
+        canonical = canonical_codes.get(normalize_for_compare(cleaned), cleaned)
+        if not is_expense_professional_name(canonical):
+            codes.add(canonical)
+
+    for _, row in df.iterrows():
+        project_raw = extract(row, PROJECT_COLUMNS)
+        codigo_projeto = clean_text(project_raw["codigo_projeto"])
+        numero_medicao = clean_text(first_value(row, MEASUREMENT_COLUMNS["numero_medicao"]))
+        valid_measurement = is_valid_measurement_key(numero_medicao, codigo_projeto)
+        discount_only = not valid_measurement and has_discount_data(row)
+        if not valid_measurement and not discount_only:
+            continue
+
+        professional_raw = extract(row, PROFESSIONAL_COLUMNS)
+        if is_bm_aux_only_collaborator(professional_raw["nome"], canonical_codes) and not discount_only:
+            continue
+        add_code(professional_raw["nome"])
+
+    for _, row in bm_aux_df.iterrows():
+        raw = extract(row, BM_AUX_COLUMNS)
+        row_cycle = normalize_cycle(raw["ciclo"])
+        if row_cycle and row_cycle != ciclo:
+            continue
+        for _, codigo in bm_aux_people(raw, canonical_codes):
+            add_code(codigo)
+
+    return codes
+
+
+def clear_imported_collaborators(conn, ciclo: str, collaborator_codes: set[str]) -> None:
+    # Atualização incremental: remove somente os dados do ciclo pertencentes aos
+    # fornecedores presentes na planilha atual. Fornecedores ausentes no arquivo
+    # permanecem preservados no ciclo.
+    normalized_codes = {normalize_for_compare(code) for code in collaborator_codes if clean_text(code)}
+    if not normalized_codes:
+        return
+
+    professional_rows = conn.execute(
+        text("select id, nome, codigo, nome_completo from profissionais")
+    ).mappings().all()
+    professional_ids = [
+        str(row["id"])
+        for row in professional_rows
+        if (
+            matches_any_collaborator(row.get("codigo"), normalized_codes)
+            or matches_any_collaborator(row.get("nome"), normalized_codes)
+            or matches_any_collaborator(row.get("nome_completo"), normalized_codes)
+        )
+    ]
+
+    payment_rows = conn.execute(
+        text(
+            """
+            select id, projetista_codigo, responsavel, razao_social
+            from mapa_pagamento_itens
+            where ciclo = :ciclo
+            """
+        ),
+        {"ciclo": ciclo},
+    ).mappings().all()
+    payment_ids = [
+        str(row["id"])
+        for row in payment_rows
+        if (
+            matches_any_collaborator(row.get("projetista_codigo"), normalized_codes)
+            or matches_any_collaborator(row.get("responsavel"), normalized_codes)
+            or matches_any_collaborator(row.get("razao_social"), normalized_codes)
+        )
+    ]
+
+    bm_aux_rows = conn.execute(
+        text("select id, responsavel_codigo from bm_aux_medicoes where ciclo = :ciclo"),
+        {"ciclo": ciclo},
+    ).mappings().all()
+    bm_aux_ids = [
+        str(row["id"])
+        for row in bm_aux_rows
+        if matches_any_collaborator(row.get("responsavel_codigo"), normalized_codes)
+    ]
+
+    sgc_rows = conn.execute(
+        text(
+            """
+            select id, colaborador_codigo, colaborador_nome
+            from sgc_aprovacoes_medicao
+            where ciclo = :ciclo
+            """
+        ),
+        {"ciclo": ciclo},
+    ).mappings().all()
+    sgc_ids = [
+        str(row["id"])
+        for row in sgc_rows
+        if (
+            matches_any_collaborator(row.get("colaborador_codigo"), normalized_codes)
+            or matches_any_collaborator(row.get("colaborador_nome"), normalized_codes)
+        )
+    ]
+
+    if sgc_ids:
+        conn.execute(
+            text("delete from sgc_logs where sgc_id in :ids").bindparams(bindparam("ids", expanding=True)),
+            {"ids": sgc_ids},
+        )
+        conn.execute(
+            text("delete from sgc_aprovacoes_medicao where id in :ids").bindparams(bindparam("ids", expanding=True)),
+            {"ids": sgc_ids},
+        )
+
+    if professional_ids:
+        conn.execute(
+            text("delete from medicoes where ciclo = :ciclo and id_profissional in :ids").bindparams(bindparam("ids", expanding=True)),
+            {"ciclo": ciclo, "ids": professional_ids},
+        )
+
+    if payment_ids:
+        conn.execute(
+            text("delete from mapa_pagamento_itens where id in :ids").bindparams(bindparam("ids", expanding=True)),
+            {"ids": payment_ids},
+        )
+
+    if bm_aux_ids:
+        conn.execute(
+            text("delete from bm_aux_medicoes where id in :ids").bindparams(bindparam("ids", expanding=True)),
+            {"ids": bm_aux_ids},
+        )
 
 
 def upsert_project(conn, projetos, data: dict[str, Any]) -> int:
@@ -709,6 +887,64 @@ def build_payment_map_context(excel_path: Path, sheet_name: str, ciclo: str | No
         workbook.close()
 
 
+def build_generated_payment_context(df: pd.DataFrame, bm_aux_df: pd.DataFrame, ciclo: str | None = None) -> dict[str, Any]:
+    if not ciclo:
+        ciclos: list[str] = []
+        for source_df, mapping in [(df, MEASUREMENT_COLUMNS), (bm_aux_df, BM_AUX_COLUMNS)]:
+            if source_df.empty:
+                continue
+            for _, row in source_df.iterrows():
+                raw = extract(row, mapping)
+                row_cycle = normalize_cycle(raw.get("ciclo"))
+                if row_cycle:
+                    ciclos.append(row_cycle)
+        ciclo = next((value for value in ciclos if value), None)
+    if not ciclo:
+        raise ValueError("Informe o ciclo explicitamente no campo da interface para importar sem MAPA PAGTO.")
+
+    contratos_por_nome: dict[str, Decimal] = {}
+    for source_df, mapping, value_key in [
+        (df, MEASUREMENT_COLUMNS, "valor_medicao"),
+        (bm_aux_df, BM_AUX_COLUMNS, "valor_medicao"),
+    ]:
+        if source_df.empty:
+            continue
+        for _, row in source_df.iterrows():
+            raw = extract(row, mapping)
+            contrato = clean_text(raw.get("contrato"))
+            if not contrato:
+                continue
+            valor = clean_decimal(raw.get(value_key))
+            if valor < 0:
+                continue
+            contratos_por_nome[contrato] = contratos_por_nome.get(contrato, Decimal("0")) + valor
+
+    total_contratos = sum(contratos_por_nome.values(), Decimal("0"))
+    contratos = [
+        {"contrato": nome, "valor": float(valor)}
+        for nome, valor in sorted(contratos_por_nome.items())
+    ]
+    rateio = [
+        {
+            "contrato": nome,
+            "percentual": float(valor / total_contratos) if total_contratos > 0 else 0,
+        }
+        for nome, valor in sorted(contratos_por_nome.items())
+    ]
+
+    return {
+        "ciclo": ciclo,
+        "mes_referencia": None,
+        "producao_label": "PRODUÇÃO",
+        "producao_inicio": None,
+        "producao_fim": None,
+        "ato_label": "ATO",
+        "ato_ciclo": ciclo,
+        "contratos": contratos,
+        "rateio": rateio,
+    }
+
+
 def read_excel_table(excel_path: Path, sheet_name: str, table_name: str | list[str]) -> pd.DataFrame:
     workbook = load_workbook(excel_path, read_only=False, data_only=True, keep_vba=should_keep_vba(excel_path))
     try:
@@ -753,6 +989,7 @@ def read_excel_header_region(
     required_headers: set[str],
     key_header: str,
     max_header_row: int = 100,
+    row_key_headers: list[str] | None = None,
 ) -> pd.DataFrame:
     workbook = load_workbook(excel_path, read_only=False, data_only=True, keep_vba=should_keep_vba(excel_path))
     try:
@@ -775,6 +1012,11 @@ def read_excel_header_region(
             return pd.DataFrame()
 
         headers = [clean_text(sheet.cell(header_row, column).value) for column in range(min_col, max_col + 1)]
+        normalized_row_keys = {
+            normalize_for_compare(header)
+            for header in ([key_header, *(row_key_headers or [])])
+            if clean_text(header)
+        }
         key_index = next(
             (
                 index
@@ -785,10 +1027,15 @@ def read_excel_header_region(
         )
         if key_index is None:
             return pd.DataFrame()
+        row_key_indexes = [
+            index
+            for index, header in enumerate(headers)
+            if normalize_for_compare(header) in normalized_row_keys
+        ]
 
         last_row = header_row
         for row_number in range(header_row + 1, sheet.max_row + 1):
-            if clean_text(sheet.cell(row_number, min_col + key_index).value):
+            if any(clean_text(sheet.cell(row_number, min_col + index).value) for index in row_key_indexes):
                 last_row = row_number
 
         rows = [
@@ -819,6 +1066,15 @@ def read_measurements_sheet(excel_path: Path, sheet_name: str) -> pd.DataFrame:
         sheet_name,
         required_headers={"Número da Medição", "Projeto Referente", "PROJETISTA"},
         key_header="Número da Medição",
+        row_key_headers=[
+            "PROJETISTA",
+            "Motivo Desconto",
+            "Descrição do Desconto",
+            "DESCRIÇÃO DO DESCONTO",
+            "Valor Desconto",
+            "Valor do Desconto",
+            "VALOR DO DESCONTO",
+        ],
     )
     if not df.empty:
         return normalize_measurements_layout(df)
@@ -1120,6 +1376,283 @@ def build_payment_map_item(row: pd.Series, ordem: int, canonical_codes: dict[str
     return payload
 
 
+CONTRACT_PAYMENT_COLUMNS = {
+    "intr sossego": "intr_sossego",
+    "integridade sossego": "intr_sossego",
+    "salobo": "salobo",
+    "acg": "acg",
+    "escadas alumar": "escadas_alumar",
+}
+
+CRISTIANO_FIXED_WITH_DOCUMENTS = Decimal("8640")
+CRISTIANO_FIXED_WITHOUT_DOCUMENTS = Decimal("12000")
+
+FIXED_CONDITION_REFERENCE = {
+    "mauricio spindola": Decimal("8640"),
+    "ronald leal": Decimal("21300"),
+}
+
+NAME_STOP_WORDS = {"da", "de", "do", "das", "dos", "e", "ltda", "me", "eireli"}
+
+
+def name_tokens(value: Any) -> list[str]:
+    normalized = normalize_for_compare(clean_text(value))
+    return [token for token in normalized.split() if len(token) >= 2 and token not in NAME_STOP_WORDS]
+
+
+def edit_distance(left: str, right: str) -> int:
+    previous = list(range(len(right) + 1))
+    for i, left_char in enumerate(left, start=1):
+        current = [i]
+        for j, right_char in enumerate(right, start=1):
+            current.append(
+                previous[j - 1]
+                if left_char == right_char
+                else min(previous[j - 1], previous[j], current[j - 1]) + 1
+            )
+        previous = current
+    return previous[-1]
+
+
+def similar_name_token(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    min_length = min(len(left), len(right))
+    if min_length < 4:
+        return False
+    return edit_distance(left, right) <= (2 if min_length >= 8 else 1)
+
+
+def same_person_name(left: Any, right: Any) -> bool:
+    left_normalized = normalize_for_compare(clean_text(left))
+    right_normalized = normalize_for_compare(clean_text(right))
+    if not left_normalized or not right_normalized:
+        return False
+    if left_normalized == right_normalized:
+        return True
+    if min(len(left_normalized), len(right_normalized)) >= 8 and (
+        left_normalized.startswith(right_normalized) or right_normalized.startswith(left_normalized)
+    ):
+        return True
+
+    left_tokens = name_tokens(left)
+    right_tokens = name_tokens(right)
+    if not left_tokens or not right_tokens:
+        return False
+    matches = sum(1 for token in left_tokens if any(similar_name_token(token, right_token) for right_token in right_tokens))
+    required = 2 if min(len(left_tokens), len(right_tokens)) >= 2 else 1
+    return matches >= required and matches / min(len(left_tokens), len(right_tokens)) >= 0.5
+
+
+def fixed_condition_reference_for(value: Any) -> Decimal:
+    normalized = normalize_for_compare(clean_text(value))
+    for key, amount in FIXED_CONDITION_REFERENCE.items():
+        if same_person_name(normalized, key):
+            return amount
+    return Decimal("0")
+
+
+def is_cristiano_jeferson(value: Any) -> bool:
+    return same_person_name(value, "cristiano jeferson")
+
+
+def fixed_condition_reference_for_payment(item: dict[str, Any]) -> Decimal:
+    if is_cristiano_jeferson(item.get("codigo")) or is_cristiano_jeferson(item.get("nome_completo")):
+        return CRISTIANO_FIXED_WITH_DOCUMENTS if clean_decimal(item.get("documentos")) > 0 else CRISTIANO_FIXED_WITHOUT_DOCUMENTS
+    return fixed_condition_reference_for(item.get("codigo")) or fixed_condition_reference_for(item.get("nome_completo"))
+
+
+def payment_contract_column(value: Any) -> str | None:
+    normalized = normalize_for_compare(clean_text(value))
+    if not normalized:
+        return None
+    if normalized in CONTRACT_PAYMENT_COLUMNS:
+        return CONTRACT_PAYMENT_COLUMNS[normalized]
+    for key, column in CONTRACT_PAYMENT_COLUMNS.items():
+        if key in normalized or normalized in key:
+            return column
+    return None
+
+
+def payment_contract_label(column: str | None) -> str:
+    return {
+        "intr_sossego": "Intr. Sossego",
+        "salobo": "Salobo",
+        "acg": "ACG",
+        "escadas_alumar": "Escadas Alumar",
+    }.get(column or "", "PRODUÇÃO")
+
+
+def latest_cadastros_by_collaborator(conn) -> dict[str, dict[str, Any]]:
+    rows = conn.execute(
+        text(
+            """
+            select distinct on (coalesce(colaborador_codigo, responsavel))
+                   colaborador_codigo,
+                   responsavel,
+                   razao_social,
+                   cnpj_normalizado,
+                   tipo_contrato,
+                   valor_condicao_fixa
+              from cadastros_fornecedores
+             order by coalesce(colaborador_codigo, responsavel), updated_at desc
+            """
+        )
+    ).mappings().all()
+
+    cadastros: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        keys = [
+            normalize_for_compare(row.get("colaborador_codigo")),
+            normalize_for_compare(row.get("responsavel")),
+        ]
+        cadastro = dict(row)
+        for key in keys:
+            if key and key not in cadastros:
+                cadastros[key] = cadastro
+    return cadastros
+
+
+def find_cadastro_for_generated_payment(cadastros: dict[str, dict[str, Any]], item: dict[str, Any]) -> dict[str, Any] | None:
+    candidates = [item.get("codigo"), item.get("nome"), item.get("nome_completo")]
+    for candidate in candidates:
+        direct = cadastros.get(normalize_for_compare(candidate))
+        if direct:
+            return direct
+
+    for cadastro in cadastros.values():
+        for candidate in candidates:
+            if (
+                same_person_name(candidate, cadastro.get("colaborador_codigo"))
+                or same_person_name(candidate, cadastro.get("responsavel"))
+                or same_person_name(candidate, cadastro.get("razao_social"))
+            ):
+                return cadastro
+    return None
+
+
+def generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo: str) -> int:
+    rows = conn.execute(
+        text(
+            """
+            select
+                coalesce(p.codigo, p.nome) as codigo,
+                p.nome as nome,
+                p.nome_completo as nome_completo,
+                pr.contrato as contrato,
+                m.tipo2 as tipo,
+                sum(coalesce(m.valor_medicao, 0)) as valor,
+                sum(coalesce(m.medido_horas, 0)) as horas
+            from medicoes m
+            left join profissionais p on p.id = m.id_profissional
+            left join projetos pr on pr.id = m.id_projeto
+            where m.ciclo = :ciclo
+              and m.id_profissional is not null
+            group by coalesce(p.codigo, p.nome), p.nome, p.nome_completo, pr.contrato, m.tipo2
+            """
+        ),
+        {"ciclo": ciclo},
+    ).mappings().all()
+
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        codigo = clean_text(row.get("codigo"))
+        if not codigo:
+            continue
+        key = normalize_for_compare(codigo)
+        item = grouped.setdefault(
+            key,
+            {
+                "codigo": codigo,
+                "nome": clean_text(row.get("nome")),
+                "nome_completo": clean_text(row.get("nome_completo")),
+                "contratos": {
+                    "intr_sossego": Decimal("0"),
+                    "salobo": Decimal("0"),
+                    "acg": Decimal("0"),
+                    "escadas_alumar": Decimal("0"),
+                },
+                "horas": Decimal("0"),
+                "documentos": Decimal("0"),
+                "descontos": Decimal("0"),
+            },
+        )
+
+        valor = clean_decimal(row.get("valor"))
+        horas = clean_decimal(row.get("horas"))
+        tipo = normalize_for_compare(row.get("tipo"))
+        if tipo == "desconto" or valor < 0:
+            item["descontos"] += abs(valor)
+        else:
+            item["documentos"] += valor
+            item["horas"] += horas
+            column = payment_contract_column(row.get("contrato"))
+            if column:
+                item["contratos"][column] += valor
+
+    cadastros = latest_cadastros_by_collaborator(conn)
+    loaded = 0
+    for ordem, item in enumerate(grouped.values(), start=1):
+        cadastro = find_cadastro_for_generated_payment(cadastros, item)
+        cadastro_valor_fixo = clean_decimal(cadastro.get("valor_condicao_fixa") if cadastro else None)
+        referencia_valor_fixo = fixed_condition_reference_for_payment(item)
+        is_cristiano = is_cristiano_jeferson(item["codigo"]) or is_cristiano_jeferson(item["nome_completo"])
+        valor_fixo = referencia_valor_fixo if is_cristiano else max(cadastro_valor_fixo, referencia_valor_fixo)
+        total_documentos = item["documentos"] - item["descontos"]
+        valor_total = valor_fixo + total_documentos
+        if valor_fixo == 0 and item["documentos"] == 0 and item["descontos"] == 0:
+            continue
+
+        contract_values = item["contratos"]
+        dominant_column = max(contract_values, key=lambda column: contract_values[column])
+        dominant_value = contract_values[dominant_column]
+        ato = payment_contract_label(dominant_column if dominant_value > 0 else None)
+        base_rateio = item["documentos"] if item["documentos"] > 0 else Decimal("0")
+        ratios = {
+            column: (contract_values[column] / base_rateio if base_rateio > 0 else Decimal("0"))
+            for column in contract_values
+        }
+
+        responsavel = clean_text(cadastro.get("responsavel") if cadastro else None) or item["nome_completo"] or item["codigo"]
+        razao_social = clean_text(cadastro.get("razao_social") if cadastro else None)
+        cnpj = format_cnpj(cadastro.get("cnpj_normalizado") if cadastro else None)
+        raw_payload = {
+            "origem": "calculado_documentos",
+            "documentos": str(item["documentos"]),
+            "descontos": str(item["descontos"]),
+            "condicoesFixas": {
+                "valorFixo": str(valor_fixo),
+                "tipoContratacao": clean_text(cadastro.get("tipo_contrato") if cadastro else None) or ("FIXO (PJ)" if valor_fixo > 0 else None),
+                "adicionaisFixos": None,
+                "observacoesContrato": "Gerado automaticamente por Documentos e Documentos Auxiliares.",
+            },
+        }
+
+        payment_item = {
+            "ciclo": ciclo,
+            "ordem": ordem,
+            "ato": ato,
+            "projetista_codigo": item["codigo"],
+            "responsavel": responsavel,
+            "cpf_cnpj": encrypt_sensitive(cnpj),
+            "razao_social": razao_social,
+            "intr_sossego": ratios["intr_sossego"],
+            "salobo": ratios["salobo"],
+            "acg": ratios["acg"],
+            "escadas_alumar": ratios["escadas_alumar"],
+            "horas": item["horas"],
+            "valor": valor_total,
+            "rev": Decimal("0"),
+            "status": "PENDENTE",
+            "raw_payload": raw_payload,
+            "source_row_hash": source_hash({"ciclo": ciclo, "origem": "calculado_documentos", "codigo": item["codigo"]}),
+        }
+        upsert_payment_map_item(conn, mapa_pagamento_itens, payment_item)
+        loaded += 1
+
+    return loaded
+
+
 def bm_aux_people(raw: dict[str, Any], canonical_codes: dict[str, str]) -> list[tuple[str, str]]:
     people: list[tuple[str, str]] = []
     seen: set[str] = set()
@@ -1260,6 +1793,7 @@ def upsert_payment_map_item(conn, mapa_pagamento_itens, data: dict[str, Any]) ->
             "salobo": stmt.excluded.salobo,
             "acg": stmt.excluded.acg,
             "escadas_alumar": stmt.excluded.escadas_alumar,
+            "horas": stmt.excluded.horas,
             "valor": stmt.excluded.valor,
             "rev": stmt.excluded.rev,
             "status": stmt.excluded.status,
@@ -1326,6 +1860,96 @@ def build_measurement(row: pd.Series) -> dict[str, Any]:
     return payload
 
 
+def build_discount_measurement(row: pd.Series, base_measurement: dict[str, Any], ciclo: str) -> dict[str, Any] | None:
+    raw_measurement = extract(row, MEASUREMENT_COLUMNS)
+    valor_desconto = clean_decimal(raw_measurement["valor_desconto"], default=None)
+    if valor_desconto is None or valor_desconto == 0:
+        return None
+
+    desconto = abs(valor_desconto)
+    motivo = clean_text(raw_measurement["motivo_desconto"]) or clean_text(base_measurement.get("obs")) or "Desconto"
+    payload = {
+        "numero_medicao": base_measurement.get("numero_medicao"),
+        "mesclado": base_measurement.get("mesclado"),
+        "numero_documento": "DESCONTO",
+        "evidencia": base_measurement.get("evidencia"),
+        "data_cadastro": base_measurement.get("data_cadastro"),
+        "formato": None,
+        "quantidade": Decimal("1"),
+        "multiplicador": Decimal("1"),
+        "equivalente_a1_horas": Decimal("1"),
+        "porcentagem_revisao": None,
+        "emissao_inicial": None,
+        "retorno_vale": None,
+        "encerramento": None,
+        "arquivamento": None,
+        "medido_horas": Decimal("0"),
+        "item_qqp": None,
+        "valor_unitario": desconto,
+        "valor_bruto": desconto,
+        "valor_total": desconto,
+        "obs": motivo,
+        "valor_reajuste": Decimal("0"),
+        "ciclo": ciclo,
+        "referencia": base_measurement.get("referencia"),
+        "percentual_emissao": Decimal("1"),
+        "tipo2": "DESCONTO",
+        "condicao": str(desconto),
+        "valor_medicao": desconto,
+    }
+    raw_payload = safe_raw_payload(row, "Unnamed")
+    raw_payload["__linha_gerada"] = "DESCONTO"
+    raw_payload["Motivo Desconto"] = motivo
+    raw_payload["Valor Desconto"] = str(desconto)
+    payload["raw_payload"] = raw_payload
+    payload["source_row_hash"] = source_hash({"ciclo": ciclo, **raw_payload})
+    return payload
+
+
+def has_discount_data(row: pd.Series) -> bool:
+    raw_measurement = extract(row, MEASUREMENT_COLUMNS)
+    valor_desconto = clean_decimal(raw_measurement["valor_desconto"], default=None)
+    motivo = clean_text(raw_measurement["motivo_desconto"])
+    return bool((valor_desconto is not None and valor_desconto != 0) or motivo)
+
+
+def build_discount_only_base_measurement(row: pd.Series, ciclo: str) -> dict[str, Any]:
+    raw_measurement = extract(row, MEASUREMENT_COLUMNS)
+    raw_payload = safe_raw_payload(row, "Unnamed")
+    payload = {
+        "numero_medicao": clean_text(raw_measurement["numero_medicao"]) or "DESCONTO",
+        "mesclado": clean_text(raw_measurement["mesclado"]),
+        "numero_documento": "DESCONTO",
+        "evidencia": clean_text(raw_measurement["evidencia"]),
+        "data_cadastro": clean_date(raw_measurement["data_cadastro"]),
+        "formato": None,
+        "quantidade": Decimal("1"),
+        "multiplicador": Decimal("1"),
+        "equivalente_a1_horas": Decimal("1"),
+        "porcentagem_revisao": None,
+        "emissao_inicial": None,
+        "retorno_vale": None,
+        "encerramento": None,
+        "arquivamento": None,
+        "medido_horas": Decimal("0"),
+        "item_qqp": None,
+        "valor_unitario": Decimal("0"),
+        "valor_bruto": Decimal("0"),
+        "valor_total": Decimal("0"),
+        "obs": clean_text(raw_measurement["motivo_desconto"]),
+        "valor_reajuste": Decimal("0"),
+        "ciclo": ciclo,
+        "referencia": clean_text(raw_measurement["referencia"]),
+        "percentual_emissao": Decimal("1"),
+        "tipo2": "DESCONTO",
+        "condicao": "0",
+        "valor_medicao": Decimal("0"),
+        "raw_payload": raw_payload,
+        "source_row_hash": source_hash({"ciclo": ciclo, **raw_payload}),
+    }
+    return payload
+
+
 def ingest(
     excel_path: Path,
     sheet_name: str,
@@ -1343,7 +1967,7 @@ def ingest(
 
     sheet_name = resolve_sheet_name(excel_path, sheet_name, SHEET_ALIASES["Documentos"])
     base_sheet_name = resolve_optional_sheet_name(excel_path, base_sheet_name, SHEET_ALIASES["Base"])
-    payment_map_sheet_name = resolve_sheet_name(
+    payment_map_sheet_name = resolve_optional_sheet_name(
         excel_path,
         payment_map_sheet_name,
         SHEET_ALIASES["MAPA PAGTO"],
@@ -1360,16 +1984,22 @@ def ingest(
         if base_sheet_name
         else pd.DataFrame()
     )
-    payment_map_items_df = read_payment_map_items(excel_path, payment_map_sheet_name)
+    payment_map_items_df = read_payment_map_items(excel_path, payment_map_sheet_name) if payment_map_sheet_name else pd.DataFrame()
     payment_map_df = payment_map_items_df
     bm_aux_df = read_bm_aux_sheet(excel_path, bm_aux_sheet_name)
     positive_payment_codes = build_positive_payment_codes(df)
     canonical_codes = build_canonical_professional_codes(base_df)
-    canonical_codes.update(build_payment_map_canonical_codes(payment_map_items_df))
+    if not payment_map_items_df.empty:
+        canonical_codes.update(build_payment_map_canonical_codes(payment_map_items_df))
 
     projetos, profissionais, medicoes, mapa_pagamento_contexto, mapa_pagamento_itens, bm_aux_medicoes = reflect_tables(engine)
-    payment_context = build_payment_map_context(excel_path, payment_map_sheet_name, ciclo=ciclo)
+    payment_context = (
+        build_payment_map_context(excel_path, payment_map_sheet_name, ciclo=ciclo)
+        if payment_map_sheet_name
+        else build_generated_payment_context(df, bm_aux_df, ciclo=ciclo)
+    )
     ciclo_efetivo = payment_context["ciclo"]
+    affected_collaborator_codes = collect_import_collaborator_codes(df, bm_aux_df, canonical_codes, ciclo_efetivo)
     base_loaded = 0
     payment_status_loaded = 0
     payment_items_loaded = 0
@@ -1382,7 +2012,7 @@ def ingest(
 
     with engine.begin() as conn:
         if full_refresh:
-            clear_imported_database(conn, ciclo_efetivo)
+            clear_imported_collaborators(conn, ciclo_efetivo, affected_collaborator_codes)
 
         upsert_payment_map_context(conn, mapa_pagamento_contexto, payment_context)
 
@@ -1394,19 +2024,20 @@ def ingest(
             base_loaded += 1
 
         conn.execute(text("update profissionais set status_colaborador = null"))
-        for _, row in payment_map_df.iterrows():
-            payment_status = build_payment_map_status(row, positive_payment_codes, canonical_codes)
-            if not payment_status:
-                continue
-            upsert_payment_map_status(conn, profissionais, payment_status)
-            payment_status_loaded += 1
+        if not payment_map_df.empty:
+            for _, row in payment_map_df.iterrows():
+                payment_status = build_payment_map_status(row, positive_payment_codes, canonical_codes)
+                if not payment_status:
+                    continue
+                upsert_payment_map_status(conn, profissionais, payment_status)
+                payment_status_loaded += 1
 
-        for index, row in payment_map_items_df.iterrows():
-            payment_item = build_payment_map_item(row, index + 1, canonical_codes, ciclo=ciclo_efetivo)
-            if not payment_item:
-                continue
-            upsert_payment_map_item(conn, mapa_pagamento_itens, payment_item)
-            payment_items_loaded += 1
+            for index, row in payment_map_items_df.iterrows():
+                payment_item = build_payment_map_item(row, index + 1, canonical_codes, ciclo=ciclo_efetivo)
+                if not payment_item:
+                    continue
+                upsert_payment_map_item(conn, mapa_pagamento_itens, payment_item)
+                payment_items_loaded += 1
 
         for index, row in bm_aux_df.iterrows():
             raw = extract(row, BM_AUX_COLUMNS)
@@ -1464,13 +2095,19 @@ def ingest(
             project_raw = extract(row, PROJECT_COLUMNS)
             codigo_projeto = clean_text(project_raw["codigo_projeto"])
             numero_medicao = clean_text(first_value(row, MEASUREMENT_COLUMNS["numero_medicao"]))
-            if not is_valid_measurement_key(numero_medicao, codigo_projeto):
+            valid_measurement = is_valid_measurement_key(numero_medicao, codigo_projeto)
+            discount_only = not valid_measurement and has_discount_data(row)
+            if not valid_measurement and not discount_only:
                 skipped += 1
                 continue
             professional_raw = extract(row, PROFESSIONAL_COLUMNS)
-            if is_bm_aux_only_collaborator(professional_raw["nome"], canonical_codes):
+            if is_bm_aux_only_collaborator(professional_raw["nome"], canonical_codes) and not discount_only:
                 skipped += 1
                 continue
+
+            contrato = clean_text(project_raw["contrato"])
+            if discount_only:
+                codigo_projeto = f"DESCONTO-{normalize_for_compare(contrato).upper() or 'GERAL'}"
 
             id_projeto = upsert_project(
                 conn,
@@ -1480,45 +2117,81 @@ def ingest(
                     "titulo_primario": clean_text(project_raw["titulo_primario"]),
                     "centro_custo": clean_text(project_raw["centro_custo"]),
                     "localizacao": clean_text(project_raw["localizacao"]),
-                    "contrato": clean_text(project_raw["contrato"]),
+                    "contrato": contrato,
                 },
             )
 
             id_profissional = upsert_professional(conn, profissionais, professional_raw)
             id_coordenador = upsert_professional(conn, profissionais, extract(row, COORDINATOR_COLUMNS))
-            measurement = build_measurement(row)
-            # O ciclo efetivo da carga é a fonte da verdade. Isso evita manter
-            # linhas antigas quando a planilha é atualizada com outro ciclo.
-            measurement["ciclo"] = ciclo_efetivo
-            measurement["source_row_hash"] = source_hash(
-                {"ciclo": ciclo_efetivo, **measurement["raw_payload"]}
-            )
-            measurement.update(
-                {
-                    "id_projeto": id_projeto,
-                    "id_coordenador": id_coordenador,
-                    "id_profissional": id_profissional,
-                }
-            )
-            if measurement["source_row_hash"] in source_hashes:
-                duplicate_source_rows += 1
-            source_hashes.add(measurement["source_row_hash"])
-
-            stmt = insert(medicoes).values(**measurement)
-            stmt = (
-                stmt
-                .on_conflict_do_update(
-                    index_elements=[medicoes.c.source_row_hash],
-                    set_={
-                        column: stmt.excluded[column]
-                        for column in measurement
-                        if column not in {"source_row_hash"}
-                    }
-                    | {"updated_at": text("now()")},
+            if discount_only:
+                measurement = build_discount_only_base_measurement(row, ciclo_efetivo)
+            else:
+                measurement = build_measurement(row)
+                # O ciclo efetivo da carga é a fonte da verdade. Isso evita manter
+                # linhas antigas quando a planilha é atualizada com outro ciclo.
+                measurement["ciclo"] = ciclo_efetivo
+                measurement["source_row_hash"] = source_hash(
+                    {"ciclo": ciclo_efetivo, **measurement["raw_payload"]}
                 )
-            )
-            conn.execute(stmt)
-            inserted_or_updated += 1
+                measurement.update(
+                    {
+                        "id_projeto": id_projeto,
+                        "id_coordenador": id_coordenador,
+                        "id_profissional": id_profissional,
+                    }
+                )
+                if measurement["source_row_hash"] in source_hashes:
+                    duplicate_source_rows += 1
+                source_hashes.add(measurement["source_row_hash"])
+
+                stmt = insert(medicoes).values(**measurement)
+                stmt = (
+                    stmt
+                    .on_conflict_do_update(
+                        index_elements=[medicoes.c.source_row_hash],
+                        set_={
+                            column: stmt.excluded[column]
+                            for column in measurement
+                            if column not in {"source_row_hash"}
+                        }
+                        | {"updated_at": text("now()")},
+                    )
+                )
+                conn.execute(stmt)
+                inserted_or_updated += 1
+
+            discount_measurement = build_discount_measurement(row, measurement, ciclo_efetivo)
+            if discount_measurement:
+                discount_measurement.update(
+                    {
+                        "id_projeto": id_projeto,
+                        "id_coordenador": id_coordenador,
+                        "id_profissional": id_profissional,
+                    }
+                )
+                if discount_measurement["source_row_hash"] in source_hashes:
+                    duplicate_source_rows += 1
+                source_hashes.add(discount_measurement["source_row_hash"])
+
+                discount_stmt = insert(medicoes).values(**discount_measurement)
+                discount_stmt = (
+                    discount_stmt
+                    .on_conflict_do_update(
+                        index_elements=[medicoes.c.source_row_hash],
+                        set_={
+                            column: discount_stmt.excluded[column]
+                            for column in discount_measurement
+                            if column not in {"source_row_hash"}
+                        }
+                        | {"updated_at": text("now()")},
+                    )
+                )
+                conn.execute(discount_stmt)
+                inserted_or_updated += 1
+
+        if payment_map_df.empty:
+            payment_items_loaded = generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo_efetivo)
+            payment_status_loaded = payment_items_loaded
 
     return {
         "rows_read": len(df),

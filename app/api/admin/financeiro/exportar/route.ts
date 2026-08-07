@@ -3,7 +3,8 @@ import { requireFinanceiro } from "@/lib/admin";
 import { decryptSensitive } from "@/lib/encryption";
 import { toNumber } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
-import { createSimpleXlsx } from "@/lib/xlsx";
+import { createWorkbookXlsx } from "@/lib/xlsx";
+import { cadastroFornecedorOverrideForMapaItem, normalizeCadastroMatch } from "@/lib/mapa-pagamento-cadastro";
 
 function safeFilename(value: string) {
   return value.replace(/[^\w.-]+/g, "_");
@@ -30,38 +31,44 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  const codigos = sgcList.map((item) => item.colaboradorCodigo);
   const pagamentos = await prisma.mapaPagamentoItem.findMany({
-    where: { ciclo, projetistaCodigo: { in: codigos } },
+    where: { ciclo },
     select: {
       projetistaCodigo: true,
-      ato: true,
+      responsavel: true,
       cpfCnpj: true,
       razaoSocial: true,
-      intrSossego: true,
-      salobo: true,
-      acg: true,
-      escadasAlumar: true,
       valor: true,
-      rev: true,
-      status: true,
+      rawPayload: true,
     },
   });
+  const cadastros = await prisma.cadastroFornecedor.findMany({
+    select: {
+      id: true,
+      colaboradorCodigo: true,
+      responsavel: true,
+      razaoSocial: true,
+      cnpjNormalizado: true,
+    },
+    orderBy: { updatedAt: "desc" },
+  });
 
-  const pagamentoPorCodigo = new Map(pagamentos.map((item) => [item.projetistaCodigo, item]));
+  const findPagamento = (codigo: string | null, nome: string | null) => {
+    const codigoNorm = normalizeCadastroMatch(codigo);
+    const nomeNorm = normalizeCadastroMatch(nome);
+    return pagamentos.find((p) => {
+      const projetistaNorm = normalizeCadastroMatch(p.projetistaCodigo);
+      const responsavelNorm = normalizeCadastroMatch(p.responsavel);
+      return (!!codigoNorm && (projetistaNorm === codigoNorm || responsavelNorm === codigoNorm)) ||
+        (!!nomeNorm && (projetistaNorm === nomeNorm || responsavelNorm === nomeNorm));
+    });
+  };
   const headers = [
     "Ciclo",
     "ID",
     "Fornecedor",
     "CPF / CNPJ",
     "Razão Social",
-    "Atuação",
-    "Intr. Sossego",
-    "Salobo",
-    "ACG",
-    "Escadas Alumar",
-    "Valor",
-    "Revisão",
     "Valor total",
     "Status financeiro",
     "NF",
@@ -71,23 +78,19 @@ export async function GET(request: NextRequest) {
   ];
 
   const rows = sgcList.map((sgc) => {
-    const pagamento = pagamentoPorCodigo.get(sgc.colaboradorCodigo);
+    const pagamento = findPagamento(sgc.colaboradorCodigo, sgc.colaboradorNome);
+    const cadastro = cadastroFornecedorOverrideForMapaItem(
+      pagamento ?? { projetistaCodigo: sgc.colaboradorCodigo, responsavel: sgc.colaboradorNome, cpfCnpj: null },
+      cadastros,
+    );
     const valor = toNumber(pagamento?.valor ?? 0);
-    const rev = toNumber(pagamento?.rev ?? 0);
     return [
       ciclo,
       sgc.colaboradorCodigo,
       sgc.colaboradorNome ?? sgc.colaboradorCodigo,
-      decryptSensitive(pagamento?.cpfCnpj) ?? "",
-      decryptSensitive(pagamento?.razaoSocial) ?? "",
-      pagamento?.ato ?? "",
-      toNumber(pagamento?.intrSossego ?? 0),
-      toNumber(pagamento?.salobo ?? 0),
-      toNumber(pagamento?.acg ?? 0),
-      toNumber(pagamento?.escadasAlumar ?? 0),
+      cadastro?.cpfCnpj ?? decryptSensitive(pagamento?.cpfCnpj) ?? "",
+      cadastro?.razaoSocial ?? pagamento?.razaoSocial ?? "",
       valor,
-      rev,
-      valor + rev,
       "Concluído",
       sgc.nfArquivoNome ?? "",
       sgc.nfCarregadoAt ?? null,
@@ -96,7 +99,12 @@ export async function GET(request: NextRequest) {
     ];
   });
 
-  const workbook = createSimpleXlsx(headers, rows);
+  const workbook = createWorkbookXlsx([{
+    name: "Pagamentos concluídos",
+    headers,
+    rows,
+    columnWidths: [18, 18, 34, 18, 34, 18, 18, 24, 18, 26, 18],
+  }]);
   const filename = `pagamentos_concluidos_${safeFilename(ciclo)}.xlsx`;
 
   return new NextResponse(workbook, {

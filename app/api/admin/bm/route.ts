@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { decryptSensitive } from "@/lib/encryption";
 import { toNumber } from "@/lib/format";
+import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
 
 function dateOnly(value: Date | null) {
@@ -68,6 +69,7 @@ export async function GET(request: NextRequest) {
   ]);
 
   const revisaoNumero = sgc?.revisaoNumero ?? 0;
+  const pagamentoSerializado = pagamento ? serializeMapaPagamentoItem(pagamento) : null;
 
   return NextResponse.json({
     ciclo,
@@ -99,8 +101,9 @@ export async function GET(request: NextRequest) {
       salobo: toNumber((pagamento as any).salobo),
       acg: toNumber((pagamento as any).acg),
       escadasAlumar: toNumber((pagamento as any).escadasAlumar),
-      razaoSocial: decryptSensitive(pagamento.razaoSocial),
-      cpfCnpj: decryptSensitive(pagamento.cpfCnpj),
+      razaoSocial: pagamentoSerializado?.razaoSocial ?? null,
+      cpfCnpj: pagamentoSerializado?.cpfCnpj ?? null,
+      condicoesFixas: pagamentoSerializado?.condicoesFixas ?? null,
     } : null,
     documentos: documentos.map((d) => {
       const a1eq = toNumber(d.equivalenteA1Horas);

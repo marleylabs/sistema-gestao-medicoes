@@ -22,6 +22,7 @@ type CadastroFornecedor = {
   valorHora: number | null;
   valorA1Equivalente: number | null;
   valorDocumento: number | null;
+  valorCondicaoFixa: number | null;
   inicio: string | null;
   final: string | null;
   statusCadastro: string | null;
@@ -121,6 +122,10 @@ function vigenciaLabel(inicio: string | null, final: string | null) {
   return `${fmtDate(inicio)} a ${fmtDate(final)}`;
 }
 
+function fmtCurrency(value: number | null | undefined) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value ?? 0);
+}
+
 function formatCadastroInput(field: string, value: string) {
   if (field === "cnpj") return maskCnpj(value);
   if (field === "cpf") return maskCpf(value);
@@ -148,6 +153,7 @@ function cadastroFormFromItem(item: CadastroFornecedor) {
     valorHora: item.valorHora?.toString() ?? "",
     valorA1Equivalente: item.valorA1Equivalente?.toString() ?? "",
     valorDocumento: item.valorDocumento?.toString() ?? "",
+    valorCondicaoFixa: item.valorCondicaoFixa?.toString() ?? "",
     primeiroAditivo: item.primeiroAditivo ?? "",
     segundoAditivo: item.segundoAditivo ?? "",
   };
@@ -223,6 +229,7 @@ function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: ()
             ["valorHora", "Hora"],
             ["valorA1Equivalente", "A1 equivalente"],
             ["valorDocumento", "Documento"],
+            ["valorCondicaoFixa", "Condição fixa"],
             ["primeiroAditivo", "1º Adi"],
             ["segundoAditivo", "2º Ad"],
           ].map(([field, label]) => (
@@ -290,6 +297,10 @@ function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: ()
           <div className="min-w-0">
             <span className="text-[#64748B]">Telefone</span>
             <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{maskPhone(item.telefone) || "-"}</p>
+          </div>
+          <div className="min-w-0">
+            <span className="text-[#64748B]">Condição fixa</span>
+            <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{item.valorCondicaoFixa ? fmtCurrency(item.valorCondicaoFixa) : "-"}</p>
           </div>
           <div className="min-w-0 sm:col-span-2">
             <span className="text-[#64748B]">Vigência</span>

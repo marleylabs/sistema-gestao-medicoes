@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { toNumber } from "@/lib/format";
+import { cadastroFornecedorOverrideForMapaItem } from "@/lib/mapa-pagamento-cadastro";
 
 const emptyDashboard = {
   cards: {
@@ -105,7 +106,17 @@ export async function GET(request: NextRequest) {
                 `
             : Prisma.empty;
 
-  const [totals, colaboradoresAtivos, porCiclo, porProjeto, contexto, mapaFinanceiro, tiposPrecos] = await Promise.all([
+  const [
+    totals,
+    colaboradoresAtivos,
+    porCiclo,
+    porProjeto,
+    contexto,
+    mapaFinanceiro,
+    tiposPrecos,
+    condicoesFixasPrecos,
+    cadastros,
+  ] = await Promise.all([
     prisma.$queryRaw<
       Array<{
         total_medido: unknown;
@@ -264,18 +275,68 @@ export async function GET(request: NextRequest) {
     `,
     prisma.$queryRaw<Array<{ nome: string; codigo: string; tipo2: string; condicao: string }>>`
       select distinct
-        coalesce(pr.nome_completo, pr.nome) as nome,
-        pr.codigo,
+        coalesce(pr.nome_completo, pr.nome, pr.codigo, 'Fornecedor sem nome') as nome,
+        coalesce(pr.codigo, pr.nome_completo, pr.nome, m.id_profissional::text) as codigo,
         m.tipo2,
         m.condicao
       from medicoes m
       join profissionais pr on pr.id = m.id_profissional
       where m.tipo2 is not null and m.tipo2 != ''
+        and upper(trim(m.tipo2)) <> 'DESCONTO'
         and m.condicao is not null and m.condicao != ''
         ${medicaoCicloFilter}
         ${codigoFilter}
       order by nome, m.tipo2
     `,
+    prisma.$queryRaw<Array<{ nome: string; codigo: string; tipo2: string; condicao: string }>>`
+      with condicoes as (
+        select
+          mpi.*,
+          coalesce(
+            nullif(
+              case
+                when regexp_replace(coalesce(mpi.raw_payload->'condicoesFixas'->>'valorFixo', ''), '[^0-9,.-]', '', 'g') like '%,%'
+                  then replace(replace(regexp_replace(coalesce(mpi.raw_payload->'condicoesFixas'->>'valorFixo', ''), '[^0-9,.-]', '', 'g'), '.', ''), ',', '.')
+                else regexp_replace(coalesce(mpi.raw_payload->'condicoesFixas'->>'valorFixo', ''), '[^0-9.-]', '', 'g')
+              end,
+              ''
+            )::numeric,
+            0
+          ) as valor_fixo,
+          coalesce(
+            nullif(
+              case
+                when regexp_replace(coalesce(mpi.raw_payload->'condicoesFixas'->>'adicionaisFixos', ''), '[^0-9,.-]', '', 'g') like '%,%'
+                  then replace(replace(regexp_replace(coalesce(mpi.raw_payload->'condicoesFixas'->>'adicionaisFixos', ''), '[^0-9,.-]', '', 'g'), '.', ''), ',', '.')
+                else regexp_replace(coalesce(mpi.raw_payload->'condicoesFixas'->>'adicionaisFixos', ''), '[^0-9.-]', '', 'g')
+              end,
+              ''
+            )::numeric,
+            0
+          ) as adicionais_fixos
+        from mapa_pagamento_itens mpi
+      )
+      select
+        coalesce(responsavel, projetista_codigo, 'Fornecedor sem nome') as nome,
+        coalesce(projetista_codigo, responsavel, id::text) as codigo,
+        'FIXO (PJ)' as tipo2,
+        (valor_fixo + adicionais_fixos)::text as condicao
+      from condicoes mpi
+      where (valor_fixo + adicionais_fixos) > 0
+        ${isGeral ? Prisma.sql`AND mpi.ciclo = ANY(${ciclosPermitidos}::text[])` : Prisma.sql`AND mpi.ciclo = ${ciclo}`}
+        ${codigo ? Prisma.sql`AND mpi.projetista_codigo = ${codigo}` : Prisma.empty}
+      order by nome
+    `,
+    prisma.cadastroFornecedor.findMany({
+      select: {
+        id: true,
+        colaboradorCodigo: true,
+        responsavel: true,
+        razaoSocial: true,
+        cnpjNormalizado: true,
+      },
+      orderBy: { updatedAt: "desc" },
+    }),
   ]);
 
   const mapa = mapaFinanceiro[0];
@@ -327,9 +388,9 @@ export async function GET(request: NextRequest) {
   const distribuicao = contrato
     ? distribuicaoCompleta.filter((item) => item.contrato === contrato)
     : distribuicaoCompleta;
-  const totalMedido = contrato
-    ? distribuicao.reduce((total, item) => total + item.valor, 0)
-    : distribuicao.reduce((total, item) => total + item.valor, 0);
+  const totalPagamentos = toNumber(mapa?.total_pagamentos as any);
+  const totalDistribuido = distribuicao.reduce((total, item) => total + item.valor, 0);
+  const totalMedido = contrato ? totalDistribuido : totalPagamentos;
   const rateio = distribuicao.map((item) => ({
     contrato: item.contrato,
     percentual: totalMedido > 0 ? item.valor / totalMedido : 0,
@@ -378,11 +439,24 @@ export async function GET(request: NextRequest) {
       totalHoras: toNumber(item.total_horas as any),
       totalRegistros: Number(item.total_registros),
     })),
-    tiposPrecos: tiposPrecos.map((r) => ({
-      nome: r.nome,
-      codigo: r.codigo,
-      tipo2: r.tipo2,
-      condicao: r.condicao,
-    })),
+    tiposPrecos: [...tiposPrecos, ...condicoesFixasPrecos].map((r) => {
+      const cadastro = cadastroFornecedorOverrideForMapaItem(
+        {
+          projetistaCodigo: r.codigo,
+          responsavel: r.nome,
+          rawPayload: {
+            projetistaCodigo: r.codigo,
+            responsavel: r.nome,
+          },
+        },
+        cadastros,
+      );
+      return {
+        nome: cadastro?.responsavel ?? r.nome,
+        codigo: r.codigo,
+        tipo2: r.tipo2,
+        condicao: r.condicao,
+      };
+    }),
   });
 }

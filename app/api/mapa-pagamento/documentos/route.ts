@@ -40,7 +40,16 @@ export async function GET(request: NextRequest) {
   }
 
   const docs = await prisma.medicao.findMany({
-    where: { profissional: { codigo }, ciclo },
+    where: {
+      ciclo,
+      profissional: {
+        OR: [
+          { codigo: { equals: codigo, mode: "insensitive" } },
+          { nome: { equals: codigo, mode: "insensitive" } },
+          { nomeCompleto: { equals: codigo, mode: "insensitive" } },
+        ],
+      },
+    },
     select: {
       id: true, numeroDocumento: true, formato: true, obs: true,
       equivalenteA1Horas: true, percentualEmissao: true, tipo2: true, condicao: true,
@@ -63,7 +72,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "codigo e ciclo são obrigatórios." }, { status: 400 });
   }
 
-  const profissional = await prisma.profissional.findFirst({ where: { codigo } });
+  const profissional = await prisma.profissional.findFirst({
+    where: {
+      OR: [
+        { codigo: { equals: codigo, mode: "insensitive" } },
+        { nome: { equals: codigo, mode: "insensitive" } },
+        { nomeCompleto: { equals: codigo, mode: "insensitive" } },
+      ],
+    },
+  });
   if (!profissional) {
     return NextResponse.json({ error: "Fornecedor não encontrado." }, { status: 404 });
   }

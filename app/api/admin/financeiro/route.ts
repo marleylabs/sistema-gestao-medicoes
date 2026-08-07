@@ -4,6 +4,7 @@ import { decryptSensitive } from "@/lib/encryption";
 import { toNumber } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { logBmAction } from "@/lib/bm-log";
+import { cadastroFornecedorOverrideForMapaItem, normalizeCadastroMatch } from "@/lib/mapa-pagamento-cadastro";
 
 export async function GET(request: NextRequest) {
   const fin = await requireFinanceiro();
@@ -19,14 +20,36 @@ export async function GET(request: NextRequest) {
 
   const pagamentoList = await prisma.mapaPagamentoItem.findMany({
     where: { ciclo },
-    select: { projetistaCodigo: true, valor: true, rev: true, cpfCnpj: true, razaoSocial: true },
+    select: { projetistaCodigo: true, responsavel: true, valor: true, rev: true, cpfCnpj: true, razaoSocial: true, rawPayload: true },
+  });
+  const cadastros = await prisma.cadastroFornecedor.findMany({
+    select: {
+      id: true,
+      colaboradorCodigo: true,
+      responsavel: true,
+      razaoSocial: true,
+      cnpjNormalizado: true,
+    },
+    orderBy: { updatedAt: "desc" },
   });
 
-  const pagMap = new Map<string, typeof pagamentoList[0]>();
-  for (const p of pagamentoList) if (p.projetistaCodigo) pagMap.set(p.projetistaCodigo, p);
+  const findPagamento = (codigo: string | null, nome: string | null) => {
+    const codigoNorm = normalizeCadastroMatch(codigo);
+    const nomeNorm = normalizeCadastroMatch(nome);
+    return pagamentoList.find((p) => {
+      const projetistaNorm = normalizeCadastroMatch(p.projetistaCodigo);
+      const responsavelNorm = normalizeCadastroMatch(p.responsavel);
+      return (!!codigoNorm && (projetistaNorm === codigoNorm || responsavelNorm === codigoNorm)) ||
+        (!!nomeNorm && (projetistaNorm === nomeNorm || responsavelNorm === nomeNorm));
+    });
+  };
 
   const items = sgcList.map((s) => {
-    const pag = pagMap.get(s.colaboradorCodigo);
+    const pag = findPagamento(s.colaboradorCodigo, s.colaboradorNome);
+    const cadastro = cadastroFornecedorOverrideForMapaItem(
+      pag ?? { projetistaCodigo: s.colaboradorCodigo, responsavel: s.colaboradorNome, cpfCnpj: null },
+      cadastros,
+    );
     return {
       id: s.id,
       colaboradorCodigo: s.colaboradorCodigo,
@@ -39,8 +62,8 @@ export async function GET(request: NextRequest) {
       comprovanteCarregadoAt: (s as any).comprovanteCarregadoAt?.toISOString() ?? null,
       valor: toNumber(pag?.valor ?? 0),
       rev: toNumber(pag?.rev ?? 0),
-      cpfCnpj: decryptSensitive(pag?.cpfCnpj) ?? null,
-      razaoSocial: decryptSensitive(pag?.razaoSocial) ?? null,
+      cpfCnpj: cadastro?.cpfCnpj ?? decryptSensitive(pag?.cpfCnpj) ?? null,
+      razaoSocial: cadastro?.razaoSocial ?? pag?.razaoSocial ?? null,
     };
   });
 

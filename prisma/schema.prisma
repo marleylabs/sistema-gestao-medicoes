@@ -167,6 +167,7 @@ model CadastroFornecedor {
   valorHora          Decimal?  @map("valor_hora") @db.Decimal(16, 4)
   valorA1Equivalente Decimal?  @map("valor_a1_equivalente") @db.Decimal(16, 4)
   valorDocumento     Decimal?  @map("valor_documento") @db.Decimal(16, 4)
+  valorCondicaoFixa  Decimal?  @map("valor_condicao_fixa") @db.Decimal(16, 4)
   inicio             DateTime? @db.Date
   final              DateTime? @db.Date
   statusCadastro     String?   @map("status_cadastro")

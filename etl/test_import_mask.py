@@ -6,10 +6,9 @@ from pathlib import Path
 from openpyxl import Workbook
 
 from ingest_medicoes import (
-    build_payment_map_context,
+    build_generated_payment_context,
     read_bm_aux_sheet,
     read_measurements_sheet,
-    read_payment_map_items,
 )
 
 
@@ -41,27 +40,16 @@ DOCUMENTOS_HEADERS = [
     "OBS",
     "FUNÇÃO",
     "Localização",
+    "Motivo Desconto",
+    "Valor Desconto",
     "CICLO",
     "PROJETISTA",
     "REFERÊNCIA",
     "% EMISSÃO",
     "CONTRATO",
-    "TIPO2",
+    "TIPO",
     "CONDIÇÃO",
     "VALOR DE MEDIÇÃO",
-]
-
-MAPA_PAGTO_HEADERS = [
-    "ATO",
-    "Projetista",
-    "Responsável",
-    "Intr. Sossego",
-    "Salobo",
-    "ACG",
-    "Escadas Alumar",
-    "Valor",
-    "REV",
-    "Status",
 ]
 
 DOCUMENTOS_AUXILIARES_HEADERS = [
@@ -103,9 +91,6 @@ def create_mask(path: Path) -> None:
     documents = workbook.create_sheet("Documentos")
     documents.append(DOCUMENTOS_HEADERS)
 
-    payment = workbook.create_sheet("MAPA PAGTO")
-    payment.append(MAPA_PAGTO_HEADERS)
-
     aux = workbook.create_sheet("Documentos Auxiliares")
     aux.append(DOCUMENTOS_AUXILIARES_HEADERS)
 
@@ -124,22 +109,19 @@ def main() -> None:
         create_mask(excel_path)
 
         documents = read_measurements_sheet(excel_path, "Documentos")
-        payment = read_payment_map_items(excel_path, "MAPA PAGTO")
         aux = read_bm_aux_sheet(excel_path, "Documentos Auxiliares")
-        context = build_payment_map_context(excel_path, "MAPA PAGTO", ciclo="2607")
+        context = build_generated_payment_context(documents, aux, ciclo="2607")
 
     assert documents.shape == (0, len(DOCUMENTOS_HEADERS))
-    assert payment.shape == (0, len(MAPA_PAGTO_HEADERS))
     assert aux.shape == (0, len(DOCUMENTOS_AUXILIARES_HEADERS))
     assert context["ciclo"] == "2607"
     assert context["contratos"] == []
     assert context["rateio"] == []
 
     assert_columns("Documentos", list(documents.columns), DOCUMENTOS_HEADERS)
-    assert_columns("MAPA PAGTO", list(payment.columns), MAPA_PAGTO_HEADERS)
     assert_columns("Documentos Auxiliares", list(aux.columns), DOCUMENTOS_AUXILIARES_HEADERS)
 
-    print("OK: padrão de importação de medições validado.")
+    print("OK: padrão de importação sem MAPA PAGTO validado.")
 
 
 if __name__ == "__main__":
