@@ -79,7 +79,7 @@ function KpiCard({ label, value, color }: { label: string; value: number; color:
 
 // ─── FinanceiroPanel ─────────────────────────────────────────────────────────
 
-export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
+export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloEntry[]; exportOnly?: boolean }) {
   const { blur } = useBlur();
   const [selectedCiclo, setSelectedCiclo] = useState(ciclos[0]?.ciclo ?? "");
   const [items, setItems]                 = useState<FinanceiroItem[]>([]);
@@ -97,12 +97,12 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
   }, [ciclos, selectedCiclo]);
 
   const load = useCallback(async () => {
-    if (!selectedCiclo) return;
+    if (!selectedCiclo || exportOnly) return;
     setLoading(true);
     const res = await fetch(`/api/admin/financeiro?ciclo=${encodeURIComponent(selectedCiclo)}`);
     if (res.ok) setItems(await res.json());
     setLoading(false);
-  }, [selectedCiclo]);
+  }, [exportOnly, selectedCiclo]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -163,7 +163,7 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
       <SectionHeader
         title="Painel Financeiro"
         description="Acompanhe o fluxo de notas fiscais e pagamentos por ciclo."
-        action={
+        action={!exportOnly ? (
           <div className="flex flex-wrap justify-end gap-2">
             <Button variant="secondary" onClick={exportarPagamentosConcluidos} disabled={!selectedCiclo || loading}>
               <Download size={14} />
@@ -174,8 +174,28 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
               Atualizar
             </Button>
           </div>
-        }
+        ) : null}
       />
+
+      {exportOnly && (
+        <Card className="p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="grid w-full gap-1.5 text-xs font-semibold text-[#555555] sm:w-auto">
+              Ciclo
+              <Select value={selectedCiclo} onChange={(e) => setSelectedCiclo(e.target.value)} className="sm:min-w-[160px]">
+                {ciclos.map((c) => <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>)}
+              </Select>
+            </label>
+            <Button variant="secondary" onClick={exportarPagamentosConcluidos} disabled={!selectedCiclo}>
+              <Download size={14} />
+              Exportar concluídos
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {!exportOnly && (
+      <>
 
       {/* Fluxo do processo */}
       <Card className="p-4">
@@ -412,6 +432,8 @@ export function FinanceiroPanel({ ciclos }: { ciclos: CicloEntry[] }) {
           </>
         )}
       </Card>
+      </>
+      )}
     </div>
   );
 }

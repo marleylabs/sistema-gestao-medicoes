@@ -12,7 +12,6 @@ import {
   FileText,
   History,
   LayoutDashboard,
-  LogOut,
   MessageCircle,
   Plus,
   RefreshCw,
@@ -89,12 +88,11 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   const isMedicao    = user.perfil === "MEDICAO";
   const isFinanceiro = user.perfil === "FINANCEIRO";
   const isAdministrativo = user.perfil === "ADMINISTRATIVO";
-  const isDP         = user.perfil === "DEPARTAMENTO_PESSOAL";
 
   const VALID_SECTIONS: Section[] = isFinanceiro
     ? ["financeiro"]
     : isAdministrativo
-    ? ["administrativo"]
+    ? ["administrativo", "financeiro"]
     : isMedicao
     ? ["visao", "importar", "evidencias"]
     : isFullAdmin
@@ -124,22 +122,24 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   );
 
   const loadDashboard = useCallback(async () => {
+    if (!isAdmin) return;
     const p = new URLSearchParams();
     p.set("ciclo", activeCiclo);
     if (selectedCodigo) p.set("codigo", selectedCodigo);
     if (selectedContrato) p.set("contrato", selectedContrato);
     const res = await fetch(`/api/dashboard?${p}`);
     if (res.ok) setDashboard(await res.json());
-  }, [activeCiclo, selectedCodigo, selectedContrato]);
+  }, [activeCiclo, isAdmin, selectedCodigo, selectedContrato]);
 
   const loadLookups = useCallback(async () => {
+    if (!isAdmin) return;
     const [p, m] = await Promise.all([
       fetch("/api/profissionais"),
       fetch(`/api/mapa-pagamento?ciclo=${activeCiclo}`),
     ]);
-    setProfissionais(await p.json());
+    if (p.ok) setProfissionais(await p.json());
     if (m.ok) setMapaItens(await m.json());
-  }, [activeCiclo]);
+  }, [activeCiclo, isAdmin]);
 
   const refresh    = useCallback(async () => { await loadDashboard(); }, [loadDashboard]);
   const refreshAll = useCallback(async () => { await Promise.all([loadDashboard(), loadLookups()]); }, [loadDashboard, loadLookups]);
@@ -385,7 +385,10 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   const navItems = isFinanceiro
     ? [{ id: "financeiro", label: "Financeiro", icon: <Wallet size={17} /> }]
     : isAdministrativo
-    ? [{ id: "administrativo", label: "Administrativo", icon: <FileText size={17} /> }]
+    ? [
+        { id: "administrativo", label: "Administrativo", icon: <FileText size={17} /> },
+        { id: "financeiro", label: "Financeiro", icon: <Wallet size={17} /> },
+      ]
     : isMedicao
     ? [
         { id: "visao",      label: "Visão Geral", icon: <LayoutDashboard size={17} /> },
@@ -473,7 +476,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       <div className="border-l border-[#E5E7EB] pl-2">
         <AccountMenu
           user={user}
-          roleLabel={isFinanceiro ? "Financeiro" : isFullAdmin ? "Administrador" : isMedicao ? "Medição" : isDP ? "Dep. Pessoal" : "Usuário"}
+          roleLabel={isFinanceiro ? "Financeiro" : isFullAdmin ? "Administrador" : isMedicao ? "Medição" : isAdministrativo ? "Administrativo" : "Usuário"}
           onLogout={logout}
         />
       </div>
@@ -672,21 +675,6 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
-  if (isDP) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F5F5F5] p-6">
-        <div className="rounded-2xl border border-[#E5E7EB] bg-white p-10 text-center shadow-sm max-w-sm w-full">
-          <ShieldCheck size={40} className="mx-auto mb-4 text-[#9CA3AF]" />
-          <p className="text-base font-bold text-[#1A1A1A]">Acesso não disponível</p>
-          <p className="mt-2 text-sm text-[#555555]">O Departamento Pessoal ainda não tem acesso ao sistema.</p>
-          <button onClick={logout} className="mt-6 rounded-lg border border-[#E5E7EB] px-4 py-2 text-xs font-medium text-[#555555] hover:bg-[#F3F4F6]">
-            <LogOut size={13} className="mr-1 inline" />Sair
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <AppShell
       activeSection={section}
@@ -753,8 +741,8 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
         <EvidenciasSection colaboradores={colaboradores} ciclos={ciclos} />
       )}
 
-      {section === "financeiro" && (isAdmin || isFinanceiro) && (
-        <FinanceiroPanel ciclos={ciclos} />
+      {section === "financeiro" && (isAdmin || isFinanceiro || isAdministrativo) && (
+        <FinanceiroPanel ciclos={ciclos} exportOnly={isAdministrativo} />
       )}
 
       {section === "usuarios" && isAdmin && (

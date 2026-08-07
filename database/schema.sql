@@ -26,7 +26,7 @@ create table if not exists usuarios (
     created_at       timestamptz not null default now(),
     updated_at       timestamptz not null default now(),
     constraint usuarios_perfil_check check (
-        perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','DEPARTAMENTO_PESSOAL','ADMINISTRATIVO')
+        perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','ADMINISTRATIVO')
     )
 );
 
@@ -38,9 +38,10 @@ alter table usuarios add column if not exists avatar_mime text;
 alter table usuarios add column if not exists avatar_atualizado_at timestamptz;
 alter table usuarios add column if not exists online_at timestamptz;
 alter table usuarios add column if not exists excluido_at timestamptz;
+update usuarios set perfil = 'ADMINISTRATIVO' where perfil = 'DEPARTAMENTO_PESSOAL';
 alter table usuarios drop constraint if exists usuarios_perfil_check;
 alter table usuarios add constraint usuarios_perfil_check check (
-    perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','DEPARTAMENTO_PESSOAL','ADMINISTRATIVO')
+    perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','ADMINISTRATIVO')
 );
 
 -- ─── chat geral da plataforma ───────────────────────────────

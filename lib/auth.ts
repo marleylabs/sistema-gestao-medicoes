@@ -17,7 +17,7 @@ const scrypt = promisify(scryptCallback);
 export { createSessionToken, SESSION_COOKIE, verifySessionToken };
 export type { AuthUser };
 
-export const INTERNAL_USER_PROFILES = ["ADMIN", "MEDICAO", "FINANCEIRO", "ADMINISTRATIVO", "DEPARTAMENTO_PESSOAL"] as const;
+export const INTERNAL_USER_PROFILES = ["ADMIN", "MEDICAO", "FINANCEIRO", "ADMINISTRATIVO"] as const;
 
 export function isInternalUserProfile(perfil: string | null | undefined) {
   return !!perfil && (INTERNAL_USER_PROFILES as readonly string[]).includes(perfil);

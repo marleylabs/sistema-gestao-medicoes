@@ -30,7 +30,6 @@ const PERFIL_LABEL: Record<string, string> = {
   COLABORADOR: "Fornecedor",
   FINANCEIRO: "Financeiro",
   ADMINISTRATIVO: "Administrativo",
-  DEPARTAMENTO_PESSOAL: "Departamento Pessoal",
 };
 
 const PERFIL_OPTIONS = [
@@ -39,7 +38,6 @@ const PERFIL_OPTIONS = [
   { value: "COLABORADOR",         label: "Fornecedor" },
   { value: "FINANCEIRO",          label: "Financeiro" },
   { value: "ADMINISTRATIVO",      label: "Administrativo" },
-  { value: "DEPARTAMENTO_PESSOAL", label: "Departamento Pessoal" },
 ];
 
 const PERFIL_GROUPS = [
@@ -48,7 +46,6 @@ const PERFIL_GROUPS = [
   { value: "FINANCEIRO", label: "Financeiro", description: "Notas fiscais, pagamentos e comprovantes." },
   { value: "ADMINISTRATIVO", label: "Administrativo", description: "Cadastros, validade documental e dados cadastrais." },
   { value: "COLABORADOR", label: "Fornecedores", description: "Acesso ao portal do fornecedor." },
-  { value: "DEPARTAMENTO_PESSOAL", label: "Departamento Pessoal", description: "Usuários reservados para etapa futura." },
 ];
 
 function fmtDate(iso: string | null) {

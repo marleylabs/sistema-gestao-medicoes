@@ -19,7 +19,7 @@ export async function requireFinanceiro() {
   if (!user) {
     return { user: null, response: NextResponse.json({ error: "Não autenticado." }, { status: 401 }) };
   }
-  if (!["MEDICAO", "ADMIN", "FINANCEIRO"].includes(user.perfil)) {
+  if (!["MEDICAO", "ADMIN", "FINANCEIRO", "ADMINISTRATIVO"].includes(user.perfil)) {
     return { user, response: NextResponse.json({ error: "Acesso restrito." }, { status: 403 }) };
   }
   return { user, response: null };

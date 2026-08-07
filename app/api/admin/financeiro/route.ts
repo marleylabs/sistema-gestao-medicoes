@@ -75,6 +75,9 @@ const MAX_SIZE = 10 * 1024 * 1024;
 export async function PATCH(request: NextRequest) {
   const fin = await requireFinanceiro();
   if (fin.response) return fin.response;
+  if (!["MEDICAO", "ADMIN", "FINANCEIRO"].includes(fin.user?.perfil ?? "")) {
+    return NextResponse.json({ error: "Ação restrita ao Financeiro." }, { status: 403 });
+  }
 
   const formData = await request.formData().catch(() => null);
   if (!formData) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });

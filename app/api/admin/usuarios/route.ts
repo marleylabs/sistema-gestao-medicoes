@@ -3,7 +3,7 @@ import { requireAdmin } from "@/lib/admin";
 import { generateUniqueInternalAccessCode, hashPassword, validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "ADMINISTRATIVO", "DEPARTAMENTO_PESSOAL"];
+const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "ADMINISTRATIVO"];
 
 export async function GET() {
   const admin = await requireAdmin();
