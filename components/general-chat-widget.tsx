@@ -419,7 +419,7 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     return (
       <button
         ref={bubbleRef}
-        className={`fixed z-[60] inline-flex h-12 touch-none select-none items-center gap-2 rounded-full px-4 text-sm font-semibold text-white shadow-xl transition-colors ${bubblePosition ? "" : `right-5 ${className || "bottom-5"}`} ${unreadCount ? "bg-[#16A34A] hover:bg-[#15803D]" : "bg-[#2563EB] hover:bg-[#1D4ED8]"}`}
+        className={`fixed z-30 inline-flex h-10 touch-none select-none items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold text-white shadow-lg transition-colors ${bubblePosition ? "" : `right-4 ${className || "bottom-4"}`} ${unreadCount ? "bg-[#16A34A] hover:bg-[#15803D]" : "bg-[var(--primary)] hover:bg-[var(--primary-hover)]"}`}
         style={bubblePosition ? { right: bubblePosition.right, bottom: bubblePosition.bottom } : undefined}
         onPointerDown={handleBubblePointerDown}
         onPointerMove={handleBubblePointerMove}
@@ -440,7 +440,7 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
   }
 
   return (
-    <div className={`fixed right-5 z-[70] grid h-[min(560px,calc(100vh-40px))] min-h-0 w-[min(860px,calc(100vw-24px))] grid-cols-1 overflow-hidden rounded-xl border border-[#D1D5DB] bg-white shadow-2xl md:grid-cols-[300px_1fr] ${className || "bottom-5"}`}>
+    <div className={`fixed right-4 z-30 grid h-[min(560px,calc(100vh-32px))] min-h-0 w-[min(860px,calc(100vw-24px))] grid-cols-1 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-2xl md:grid-cols-[300px_1fr] ${className || "bottom-4"}`}>
       <aside className="hidden min-h-0 min-w-0 border-r border-[#E5E7EB] bg-white md:flex md:flex-col">
         <div className="border-b border-[#E5E7EB] px-4 py-3">
           <p className="text-base font-bold text-[#1A1A1A]">Conversas</p>

@@ -158,7 +158,10 @@ export async function GET() {
   const cadastroCnpj = onlyDigits(profissionalCnpj || user.usuario);
   const cadastroFornecedorPorCnpj = !cadastroFornecedorDireto && cadastroCnpj.length === 14
     ? await prisma.cadastroFornecedor.findFirst({
-        where: { cnpjNormalizado: cadastroCnpj },
+        where: {
+          cnpjNormalizado: cadastroCnpj,
+          responsavel: { equals: user.nome, mode: "insensitive" },
+        },
         select: {
           responsavel: true,
           razaoSocial: true,

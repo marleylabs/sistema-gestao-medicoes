@@ -289,14 +289,14 @@ export function MapaPagamentoTable({
             <p className="mt-0.5 text-sm text-[#555555]">{filterDescription}</p>
           </div>
           <div className="flex flex-1 flex-wrap items-end gap-3 xl:justify-end">
-            <label className="grid min-w-[200px] flex-1 gap-1.5 text-xs font-semibold text-[#555555]">
+            <label className="grid min-w-[200px] flex-1 gap-1.5 text-label text-[var(--muted-foreground)]">
               Pesquisar
               <span className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" size={14} />
                 <Input className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ID, nome ou empresa" />
               </span>
             </label>
-            <label className="grid min-w-[140px] gap-1.5 text-xs font-semibold text-[#555555]">
+            <label className="grid min-w-[140px] gap-1.5 text-label text-[var(--muted-foreground)]">
               Tipo de atuação
               <Select value={status} onChange={(e) => setStatus(e.target.value)}>
                 <option value="">Todos</option>
@@ -304,7 +304,7 @@ export function MapaPagamentoTable({
                 <option value="PRODUÇÃO">Produção</option>
               </Select>
             </label>
-            <label className="grid min-w-[160px] gap-1.5 text-xs font-semibold text-[#555555]">
+            <label className="grid min-w-[160px] gap-1.5 text-label text-[var(--muted-foreground)]">
               Ordenar por nome
               <Select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
                 <option value="">Padrão da planilha</option>
@@ -372,7 +372,7 @@ export function MapaPagamentoTable({
               ].map(({ label, align }) => (
                 <th
                   key={label}
-                  className={`border-b border-[#E5E7EB] px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-[#555555] text-${align}`}
+                  className={`text-table-header border-b border-[#E5E7EB] px-4 py-2.5 text-[var(--muted-foreground)] text-${align}`}
                 >
                   {label}
                 </th>
@@ -425,7 +425,7 @@ export function MapaPagamentoTable({
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-[#555555]"><BlurValue>{item.fornecedor?.cpfCnpj ?? item.cpfCnpj ?? "–"}</BlurValue></td>
+                  <td className="font-technical px-4 py-3 text-[#555555]"><BlurValue>{item.fornecedor?.cpfCnpj ?? item.cpfCnpj ?? "–"}</BlurValue></td>
                   <td className="px-4 py-3 text-[#555555]">{item.fornecedor?.razaoSocial ?? item.razaoSocial ?? "–"}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{ratio(item.intrSossego)}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{ratio(item.salobo)}</td>
@@ -1216,8 +1216,8 @@ function PaymentModal({
   }, [onCancel]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-0 sm:p-4 sm:items-center backdrop-blur-sm">
-      <div className="w-full max-w-5xl overflow-hidden rounded-none sm:rounded-2xl border-0 sm:border border-[#E5E7EB] bg-white shadow-2xl min-h-screen sm:min-h-0">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
+      <div className="ds-dialog min-h-screen w-full max-w-[1400px] overflow-hidden rounded-none border-0 sm:min-h-0 sm:rounded-[14px] sm:border">
 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#E5E7EB] px-6 py-4">
@@ -1233,7 +1233,7 @@ function PaymentModal({
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto p-6" style={{ maxHeight: "calc(100vh - 220px)" }}>
+        <div className="overflow-y-auto p-4 sm:p-5" style={{ maxHeight: "calc(100vh - 180px)" }}>
 
           {/* Seção: Identificação */}
           <p className="mb-3 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Identificação</p>
@@ -1690,7 +1690,7 @@ function PaymentModal({
 
 function MField({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
-    <label className={`grid gap-1.5 text-xs font-semibold text-[#555555] ${className ?? ""}`}>
+    <label className={`grid gap-1.5 text-label text-[var(--muted-foreground)] ${className ?? ""}`}>
       <span>{label}</span>
       {children}
     </label>

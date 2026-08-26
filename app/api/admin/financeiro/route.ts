@@ -46,10 +46,23 @@ export async function GET(request: NextRequest) {
 
   const items = sgcList.map((s) => {
     const pag = findPagamento(s.colaboradorCodigo, s.colaboradorNome);
-    const cadastro = cadastroFornecedorOverrideForMapaItem(
-      pag ?? { projetistaCodigo: s.colaboradorCodigo, responsavel: s.colaboradorNome, cpfCnpj: null },
-      cadastros,
+    const codigoNorm = normalizeCadastroMatch(s.colaboradorCodigo);
+    const nomeNorm = normalizeCadastroMatch(s.colaboradorNome);
+    const cadastroExato = cadastros.find((item) =>
+      (!!codigoNorm && normalizeCadastroMatch(item.colaboradorCodigo) === codigoNorm) ||
+      (!!nomeNorm && normalizeCadastroMatch(item.responsavel) === nomeNorm),
     );
+    const cadastro = cadastroExato
+      ? {
+          id: cadastroExato.id,
+          responsavel: cadastroExato.responsavel,
+          cpfCnpj: cadastroExato.cnpjNormalizado ? cadastroExato.cnpjNormalizado.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : null,
+          razaoSocial: cadastroExato.razaoSocial,
+        }
+      : cadastroFornecedorOverrideForMapaItem(
+          pag ?? { projetistaCodigo: s.colaboradorCodigo, responsavel: s.colaboradorNome, cpfCnpj: null },
+          cadastros,
+        );
     return {
       id: s.id,
       colaboradorCodigo: s.colaboradorCodigo,
@@ -93,7 +106,10 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Formato inválido. Envie PDF, JPG ou PNG." }, { status: 400 });
   }
 
-  const sgc = await prisma.sgcAprovacaoMedicao.findUnique({ where: { id }, select: { status: true } });
+  const sgc = await prisma.sgcAprovacaoMedicao.findUnique({
+    where: { id },
+    select: { status: true, colaboradorCodigo: true, ciclo: true },
+  });
   if (!sgc) return NextResponse.json({ error: "Registro não encontrado." }, { status: 404 });
   if (sgc.status !== "APROVADO") {
     return NextResponse.json({ error: "Somente registros com NF enviada podem ser marcados como pagos." }, { status: 409 });
@@ -112,6 +128,19 @@ export async function PATCH(request: NextRequest) {
       comprovanteCarregadoAt: file ? now : null,
       updatedAt: now,
     },
+  });
+
+  await logBmAction({
+    sgcId: id,
+    colaboradorCodigo: sgc.colaboradorCodigo,
+    ciclo: sgc.ciclo,
+    usuarioId: fin.user?.id,
+    usuarioNome: fin.user?.nome,
+    acao: "REGISTRAR_PAGAMENTO",
+    statusAnterior: "APROVADO",
+    statusNovo: "PAGO",
+    observacao: file ? `Comprovante: ${file.name}` : "Pagamento registrado sem comprovante.",
+    telaOrigem: "Financeiro",
   });
 
   return NextResponse.json({ ok: true });

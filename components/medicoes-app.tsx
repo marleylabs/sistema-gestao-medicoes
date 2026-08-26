@@ -6,15 +6,12 @@ import {
   Bell,
   BellRing,
   Download,
-  Eye,
-  EyeOff,
   FileSearch,
   FileText,
   History,
   LayoutDashboard,
   MessageCircle,
   Plus,
-  RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
@@ -31,8 +28,7 @@ import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { UsuariosPanel } from "@/components/usuarios-panel";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { AdministrativoPanel } from "@/components/administrativo-panel";
-import { Badge, Button, Card, IconButton, SectionHeader, Select } from "@/components/ui";
-import { useBlur } from "@/components/providers";
+import { Badge, Button, Card, IconButton, PageContainer, PageHeader, Select } from "@/components/ui";
 import type { DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
 import type { AuthUser } from "@/lib/session";
@@ -82,7 +78,6 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentSearchParams = searchParams ?? new URLSearchParams();
-  const { blur, toggleBlur } = useBlur();
   const isAdmin      = user.perfil === "MEDICAO" || user.perfil === "ADMIN";
   const isFullAdmin  = user.perfil === "ADMIN";
   const isMedicao    = user.perfil === "MEDICAO";
@@ -405,40 +400,25 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
         { id: "importar",   label: "Importar Planilha", icon: <Upload size={17} />, bottom: true },
       ];
 
-  // ─── Top bar ─────────────────────────────────────────────────────────────────
-
-  const topBar = (
-    <div className="flex shrink-0 items-center gap-2">
-      <IconButton
-        onClick={toggleBlur}
-        title={blur ? "Mostrar valores" : "Ocultar valores"}
-        className={blur ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] hover:bg-[#DBEAFE] hover:text-[#1D4ED8]" : ""}
-      >
-        {blur ? <EyeOff size={16} /> : <Eye size={16} />}
-      </IconButton>
-
-      <Button variant="secondary" onClick={refresh} className="hidden sm:inline-flex">
-        <RefreshCw size={14} />
-        Atualizar
-      </Button>
-
-      {isAdmin && (
-        <div className="relative">
-          <IconButton
-            className={hasUnread ? "border-[#AF1B1B] bg-[#AF1B1B] text-white hover:bg-[#8C1616] hover:text-white" : ""}
+  const floatingNotifications = isAdmin ? (
+        <div className="fixed right-5 top-4 z-30 sm:right-6 sm:top-5">
+          <button
+            type="button"
+            className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--border)] bg-white text-[var(--muted-foreground)] shadow-sm transition-colors hover:bg-[#f2f2ef] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/30"
             onClick={() => { setNotifOpen((v) => !v); markSeen(); }}
             title="Notificações"
+            aria-label="Notificações"
           >
-            {hasUnread ? <BellRing size={16} /> : <Bell size={16} />}
-          </IconButton>
+            {hasUnread ? <BellRing size={17} /> : <Bell size={17} />}
+          </button>
           {sgcAlertas.length > 0 && (
-            <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#F59E0B] px-1 text-[10px] font-bold text-white">
+            <span className="absolute -right-1 -top-1 inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[9px] font-bold text-white">
               {sgcAlertas.length}
             </span>
           )}
 
           {notifOpen && (
-            <div className="absolute right-0 top-11 z-50 w-[min(360px,calc(100vw-16px))] overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-xl">
+            <div className="absolute right-0 top-12 z-40 w-[min(360px,calc(100vw-40px))] overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-xl">
               <div className="border-b border-[#E5E7EB] px-4 py-3">
                 <p className="text-sm font-bold text-[#1A1A1A]">Notificações</p>
                 <p className="text-xs text-[#555555]">{sgcAlertas.length} solicitação(ões) pendente(s)</p>
@@ -471,17 +451,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
             </div>
           )}
         </div>
-      )}
-
-      <div className="border-l border-[#E5E7EB] pl-2">
-        <AccountMenu
-          user={user}
-          roleLabel={isFinanceiro ? "Financeiro" : isFullAdmin ? "Administrador" : isMedicao ? "Medição" : isAdministrativo ? "Administrativo" : "Usuário"}
-          onLogout={logout}
-        />
-      </div>
-    </div>
-  );
+  ) : null;
 
   // ─── Filters ─────────────────────────────────────────────────────────────────
 
@@ -543,13 +513,13 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
 
     return (
       <>
-        <p className="mb-2 text-sm font-semibold text-[#1A1A1A]">Filtros</p>
+        <p className="text-card-title mb-2 text-[#1A1A1A]">Filtros</p>
         <Card className="mb-6 p-4">
           <div className="flex flex-wrap items-end gap-4">
 
             {/* Ciclo ativo */}
             <div className="grid gap-1.5">
-              <span className="text-xs font-semibold text-[#555555]">Ciclo ativo</span>
+              <span className="text-label text-[var(--muted-foreground)]">Ciclo ativo</span>
               <div className="flex items-center gap-1.5">
                 <Select
                   className="min-w-[150px]"
@@ -603,12 +573,12 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
             {/* Produção + ATO — oculto no Geral */}
             {activeCiclo !== CICLO_GERAL && (
               <>
-                <div className="grid gap-1.5">
-                  <span className="text-xs font-semibold text-[#555555]">Produção</span>
-                  <div className="flex items-center gap-1.5">
+                <div className="grid w-full gap-1.5 sm:w-auto">
+                  <span className="text-label text-[var(--muted-foreground)]">Produção</span>
+                  <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
                     <input
                       type="date"
-                      className="h-9 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20"
+                      className="h-9 min-w-0 flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20 sm:flex-none"
                       defaultValue={producaoInicio}
                       key={producaoInicio}
                       onBlur={(e) => { if (e.target.value && e.target.value !== producaoInicio) saveContextDates(e.target.value, producaoFim); }}
@@ -616,7 +586,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
                     <span className="text-xs text-[#9CA3AF]">a</span>
                     <input
                       type="date"
-                      className="h-9 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20"
+                      className="h-9 min-w-0 flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20 sm:flex-none"
                       defaultValue={producaoFim}
                       key={producaoFim}
                       onBlur={(e) => { if (e.target.value && e.target.value !== producaoFim) saveContextDates(producaoInicio, e.target.value); }}
@@ -624,12 +594,12 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
                   </div>
                 </div>
 
-                <div className="grid gap-1.5">
-                  <span className="text-xs font-semibold text-[#555555]">ATO</span>
+                <div className="grid w-full gap-1.5 sm:w-auto">
+                  <span className="text-label text-[var(--muted-foreground)]">ATO</span>
                   <div className="flex items-center gap-1.5">
-                    <div className="flex h-9 items-center rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-sm text-[#1A1A1A] whitespace-nowrap">{fmtDate(atoInicio)}</div>
+                    <div className="flex h-9 flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] sm:flex-none sm:px-3">{fmtDate(atoInicio)}</div>
                     <span className="text-xs text-[#9CA3AF]">a</span>
-                    <div className="flex h-9 items-center rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-sm text-[#1A1A1A] whitespace-nowrap">{fmtDate(atoFim)}</div>
+                    <div className="flex h-9 flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] sm:flex-none sm:px-3">{fmtDate(atoFim)}</div>
                   </div>
                 </div>
               </>
@@ -639,7 +609,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
             <div className="hidden self-stretch border-l border-[#E5E7EB] sm:block" />
 
             {/* Fornecedor */}
-            <label className="grid w-full min-w-0 flex-1 gap-1.5 text-xs font-semibold text-[#555555] sm:min-w-[180px]">
+            <label className="text-label grid w-full min-w-0 basis-full gap-1.5 text-[var(--muted-foreground)] sm:min-w-[180px] sm:flex-1 sm:basis-auto">
               Fornecedor
               <Select value={selectedCodigo} onChange={(e) => setSelectedCodigo(e.target.value)}>
                 <option value="">Todos os fornecedores</option>
@@ -650,7 +620,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
             </label>
 
             {/* Contrato */}
-            <label className="grid w-full min-w-0 flex-1 gap-1.5 text-xs font-semibold text-[#555555] sm:min-w-[180px]">
+            <label className="text-label grid w-full min-w-0 basis-full gap-1.5 text-[var(--muted-foreground)] sm:min-w-[180px] sm:flex-1 sm:basis-auto">
               Contrato
               <Select value={selectedContrato} onChange={(e) => setSelectedContrato(e.target.value)}>
                 <option value="">Todos os contratos</option>
@@ -681,64 +651,93 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       onNavigate={(id) => setSection(id as Section)}
       navItems={navItems}
       pageTitle={TITLES[section]}
-      topBarRight={topBar}
+      sidebarFooter={<AccountMenu user={user} roleLabel={user.perfil} onLogout={logout} compact />}
     >
-      {section !== "importar" && section !== "evidencias" && section !== "usuarios" && section !== "financeiro" && section !== "administrativo" && filtersBar}
-
+      {floatingNotifications}
       {section === "visao" && (
-        <div className="grid gap-6">
-          <Dashboard data={dashboard} />
-          <MapaPagamentoResumo data={dashboard} isAdmin={isAdmin} onChanged={refreshAll} ciclo={activeCiclo} />
-          <MapaPagamentoTable
-            itens={mapaItens}
-            profissionais={profissionais}
-            selectedCodigo={selectedCodigo}
-            selectedContrato={selectedContrato}
-            isAdmin={isAdmin}
-            onChanged={refreshAll}
-            revisoes={sgcAlertas}
-            sgcStatus={sgcStatus}
-            onEnviarBm={enviarBm}
-            onRetornarBm={retornarBm}
-            ciclo={activeCiclo}
+        <PageContainer className="grid gap-6">
+          <PageHeader
+            eyebrow="Visão geral"
+            title="Dashboard"
+            description="Acompanhe os indicadores consolidados de medição e participação."
           />
-        </div>
+          {filtersBar}
+          <div className="grid gap-6">
+            <Dashboard data={dashboard} />
+            <MapaPagamentoResumo data={dashboard} isAdmin={isAdmin} onChanged={refreshAll} ciclo={activeCiclo} />
+            <MapaPagamentoTable
+              itens={mapaItens}
+              profissionais={profissionais}
+              selectedCodigo={selectedCodigo}
+              selectedContrato={selectedContrato}
+              isAdmin={isAdmin}
+              onChanged={refreshAll}
+              revisoes={sgcAlertas}
+              sgcStatus={sgcStatus}
+              onEnviarBm={enviarBm}
+              onRetornarBm={retornarBm}
+              ciclo={activeCiclo}
+            />
+          </div>
+        </PageContainer>
       )}
 
       {section === "historico" && (
-        <HistoricoSection
-          ciclos={ciclos}
-          activeCiclo={activeCiclo}
-          isAdmin={isAdmin}
-          novoCiclo={novoCiclo}
-          setNovoCiclo={setNovoCiclo}
-          criandoCiclo={criandoCiclo}
-          onCriarCiclo={criarCiclo}
-          onSelectCiclo={(c) => { setActiveCiclo(c); setSection("visao"); }}
-          ativandoMedicaoCiclo={ativandoMedicaoCiclo}
-          onAtivarMedicao={ativarCicloMedicao}
-          canResetCiclos={isFullAdmin}
-          resetandoCiclos={resetandoCiclos}
-          onResetCiclos={resetarCiclos}
-        />
+        <PageContainer className="grid gap-6">
+          <PageHeader
+            eyebrow="Medições"
+            title="Histórico de Medições"
+            description="Consulte ciclos concluídos e seus registros operacionais."
+          />
+          {filtersBar}
+          <HistoricoSection
+            ciclos={ciclos}
+            activeCiclo={activeCiclo}
+            isAdmin={isAdmin}
+            novoCiclo={novoCiclo}
+            setNovoCiclo={setNovoCiclo}
+            criandoCiclo={criandoCiclo}
+            onCriarCiclo={criarCiclo}
+            onSelectCiclo={(c) => { setActiveCiclo(c); setSection("visao"); }}
+            ativandoMedicaoCiclo={ativandoMedicaoCiclo}
+            onAtivarMedicao={ativarCicloMedicao}
+            canResetCiclos={isFullAdmin}
+            resetandoCiclos={resetandoCiclos}
+            onResetCiclos={resetarCiclos}
+          />
+        </PageContainer>
       )}
 
       {section === "importar" && isAdmin && (
-        <div className="flex justify-center">
-          <div className="w-full max-w-2xl">
-            <ImportarPlanilhaSection
-              ciclos={ciclos}
-              onImported={() => {
-                loadCiclos();
-                refreshAll();
-              }}
-            />
+        <PageContainer className="grid gap-6">
+          <PageHeader
+            eyebrow="Importação"
+            title="Importar Planilha"
+            description="Atualize a base de medições a partir da planilha operacional."
+          />
+          <div className="flex justify-center">
+            <div className="w-full max-w-2xl">
+              <ImportarPlanilhaSection
+                ciclos={ciclos}
+                onImported={() => {
+                  loadCiclos();
+                  refreshAll();
+                }}
+              />
+            </div>
           </div>
-        </div>
+        </PageContainer>
       )}
 
       {section === "evidencias" && isAdmin && (
-        <EvidenciasSection colaboradores={colaboradores} ciclos={ciclos} />
+        <PageContainer className="grid gap-6">
+          <PageHeader
+            eyebrow="Administrativo"
+            title="Evidências de Medição"
+            description="Visualize e imprima o Boletim de Medição de qualquer fornecedor por ciclo."
+          />
+          <EvidenciasSection colaboradores={colaboradores} ciclos={ciclos} />
+        </PageContainer>
       )}
 
       {section === "financeiro" && (isAdmin || isFinanceiro || isAdministrativo) && (
@@ -817,10 +816,7 @@ function HistoricoSection({
 
   return (
     <div className="grid gap-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold text-[#1A1A1A]">Histórico de Medições</h2>
-        </div>
+      <div className="flex items-center justify-end gap-4">
         {isAdmin && (
           <div className="flex flex-wrap items-center justify-end gap-2">
             <input
@@ -852,7 +848,7 @@ function HistoricoSection({
               {["Ciclo", "Mês de referência", "Última atualização", ""].map((h, i) => (
                 <th
                   key={i}
-                  className={`border-b border-[#E5E7EB] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[#555555] ${i === 3 ? "text-right" : "text-left"}`}
+                  className={`text-table-header border-b border-[#E5E7EB] px-4 py-3 text-[var(--muted-foreground)] ${i === 3 ? "text-right" : "text-left"}`}
                 >
                   {h}
                 </th>
@@ -1072,7 +1068,7 @@ function SgcReviewModal({
                 <thead>
                   <tr className="bg-[#F9FAFB]">
                     {["Projeto", "Título", "Data", "Formato", "Valor"].map((h, i) => (
-                      <th key={h} className={`border-b border-[#E5E7EB] px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-[#555555] ${i === 4 ? "text-right" : "text-left"}`}>{h}</th>
+                      <th key={h} className={`text-table-header border-b border-[#E5E7EB] px-4 py-2.5 text-[var(--muted-foreground)] ${i === 4 ? "text-right" : "text-left"}`}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1216,27 +1212,22 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
 
   return (
     <div className="grid gap-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-base font-bold text-[#1A1A1A]">Importar Planilha</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <a
-            href="/api/admin/templates/medicoes"
-            download
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#555555] shadow-sm transition hover:border-[#2563EB] hover:text-[#2563EB]"
-          >
-            <Download size={14} />
-            Baixar máscara
-          </a>
-          {status?.running && (
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#EFF6FF] px-3 py-1.5 text-xs font-semibold text-[#2563EB]">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-[#2563EB]" />
-              Importando…
-            </span>
-          )}
-        </div>
+      {/* Ações */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <a
+          href="/api/admin/templates/medicoes"
+          download
+          className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#555555] shadow-sm transition hover:border-[#2563EB] hover:text-[#2563EB]"
+        >
+          <Download size={14} />
+          Baixar máscara
+        </a>
+        {status?.running && (
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#EFF6FF] px-3 py-1.5 text-xs font-semibold text-[#2563EB]">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-[#2563EB]" />
+            Importando…
+          </span>
+        )}
       </div>
 
       {/* Upload card */}
@@ -1284,7 +1275,7 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
 
           {/* Ciclo selector */}
           <div className="grid gap-1.5">
-            <p className="text-xs font-semibold text-[#555555]">Ciclo de destino</p>
+            <p className="text-label text-[var(--muted-foreground)]">Ciclo de destino</p>
             <div className="flex gap-2">
               <Select value={ciclo} onChange={(e) => setCiclo(e.target.value)} className="flex-1">
                 <option value="">Selecione ou digite o ciclo</option>
@@ -1417,12 +1408,7 @@ function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissio
   }
 
   return (
-    <div className="grid gap-6 mx-auto w-full" style={{ maxWidth: "80rem" }}>
-      <SectionHeader
-        title="Evidências de Medição"
-        description="Visualize e imprima o Boletim de Medição de qualquer fornecedor por ciclo."
-      />
-
+    <div className="grid gap-6">
       <Card className="overflow-hidden">
         <div className="border-b border-[#E5E7EB] px-5 py-4">
           <div className="flex items-center gap-3">
@@ -1430,14 +1416,14 @@ function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissio
               <FileSearch size={16} />
             </span>
             <div>
-              <p className="text-sm font-semibold text-[#1A1A1A]">Filtros</p>
-              <p className="text-[11px] text-[#9CA3AF]">Selecione o ciclo e o fornecedor para visualizar o boletim</p>
+              <p className="text-card-title text-[#1A1A1A]">Filtros</p>
+              <p className="text-helper text-[#9CA3AF]">Selecione o ciclo e o fornecedor para visualizar o boletim</p>
             </div>
           </div>
         </div>
 
         <div className="flex flex-wrap items-end gap-3 p-5">
-          <label className="grid w-full gap-1.5 text-xs font-semibold text-[#555555] sm:w-auto">
+          <label className="text-label grid w-full gap-1.5 text-[var(--muted-foreground)] sm:w-auto">
             Ciclo
             <Select value={selectedCiclo} onChange={(e) => setSelectedCiclo(e.target.value)} className="sm:min-w-[200px]">
               <option value={TODOS}>Todos os ciclos</option>
@@ -1446,7 +1432,7 @@ function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissio
               ))}
             </Select>
           </label>
-          <label className="grid w-full gap-1.5 text-xs font-semibold text-[#555555] sm:w-auto">
+          <label className="text-label grid w-full gap-1.5 text-[var(--muted-foreground)] sm:w-auto">
             Fornecedor
             <Select value={selectedCodigo} onChange={(e) => setSelectedCodigo(e.target.value)} className="sm:min-w-[220px]" disabled={colaboradoresAprovados.length === 0}>
               <option value="">

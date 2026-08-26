@@ -33,6 +33,7 @@ type AccountMenuProps = {
   user: AuthUser;
   roleLabel: string;
   onLogout: () => void;
+  compact?: boolean;
 };
 
 function initials(value: string | null | undefined) {
@@ -132,7 +133,7 @@ function Avatar({
   src?: string | null;
   size?: "sm" | "md" | "lg";
 }) {
-  const sizeClass = size === "lg" ? "h-28 w-28 text-3xl" : size === "sm" ? "h-9 w-9 text-xs" : "h-12 w-12 text-sm";
+  const sizeClass = size === "lg" ? "h-28 w-28 text-3xl" : size === "sm" ? "h-[34px] w-[34px] text-xs" : "h-12 w-12 text-sm";
   return (
     <span className={clsx("inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#EFF6FF] font-bold text-[#2563EB]", sizeClass)}>
       {src ? (
@@ -145,7 +146,7 @@ function Avatar({
   );
 }
 
-export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
+export function AccountMenu({ user, roleLabel, onLogout, compact = false }: AccountMenuProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [tab, setTab] = useState<"account" | "security">("account");
@@ -234,6 +235,20 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, []);
 
+  useEffect(() => {
+    if (!modalOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setModalOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [modalOpen]);
+
   function openSettings(initialTab: "account" | "security" = "account") {
     setTab(initialTab);
     setModalOpen(true);
@@ -303,22 +318,40 @@ export function AccountMenu({ user, roleLabel, onLogout }: AccountMenuProps) {
 
   return (
     <>
-      <div ref={menuRef} className="relative">
+      <div ref={menuRef} className={clsx("relative", compact && "flex items-center gap-1")}>
         <button
           type="button"
           onClick={() => setMenuOpen((value) => !value)}
-          className="flex items-center gap-2 rounded-lg border border-transparent px-1.5 py-1 text-left transition hover:border-[#E5E7EB] hover:bg-[#F9FAFB]"
+          className={clsx(
+            "flex items-center gap-2 rounded-lg border border-transparent px-1.5 py-1 text-left transition-colors",
+            compact ? "min-w-0 flex-1 text-white hover:bg-white/[0.06]" : "w-full hover:border-[var(--border)] hover:bg-[#f7f7f5]",
+          )}
           title="Conta"
         >
           <Avatar name={displayProfile.nome} src={avatarSrc} size="sm" />
-          <div className="hidden max-w-40 leading-tight md:block">
-            <p className="truncate text-sm font-semibold text-[#1A1A1A]">{displayProfile.nome}</p>
-            <p className="truncate text-xs text-[#555555]">{roleLabel}</p>
+          <div className={clsx("max-w-40 leading-tight", !compact && "hidden md:block")}>
+            <p className={clsx("truncate text-[12px] font-semibold", compact ? "text-white" : "text-[var(--foreground)]")}>{displayProfile.nome}</p>
+            <p className={clsx("truncate text-[10px] uppercase tracking-wide", compact ? "text-white/45" : "text-[var(--muted-foreground)]")}>{roleLabel}</p>
           </div>
         </button>
 
+        {compact && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className="inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md text-white/55 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+            title="Sair"
+            aria-label="Sair"
+          >
+            <LogOut size={16} />
+          </button>
+        )}
+
         {menuOpen && (
-          <div className="absolute right-0 top-12 z-50 w-[288px] overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-xl">
+          <div className={clsx(
+            "absolute z-50 w-[288px] overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-xl",
+            compact ? "bottom-12 left-0" : "right-0 top-12",
+          )}>
             <div className="border-b border-[#E5E7EB] bg-[#FAFAFA] px-4 py-5">
               <div className="flex items-center gap-3">
                 <Avatar name={displayProfile.nome} src={avatarSrc} />

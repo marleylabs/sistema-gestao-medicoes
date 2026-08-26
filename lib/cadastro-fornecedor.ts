@@ -4,6 +4,7 @@ import { generateTempPassword, generateUniqueInternalAccessCode, hashPassword } 
 import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 import { excelSerialToDate, parseSimpleXlsx } from "@/lib/xlsx";
+import { selectCadastroForAuthenticatedUser } from "@/lib/cadastro-identity";
 
 export const CADASTRO_FORNECEDOR_SHEET = "CONTRATOS_ATIVOS";
 
@@ -376,42 +377,34 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
 
 export async function validateFornecedorForNfUpload(colaboradorCodigo: string, usuarioNome?: string | null) {
   const loginCnpj = normalizeCnpjDigits(colaboradorCodigo);
-  const cadastroByLoginCnpj = loginCnpj.length === 14
-    ? await prisma.cadastroFornecedor.findFirst({ where: { cnpjNormalizado: loginCnpj } })
-    : null;
-  const codigoProfissional = cadastroByLoginCnpj?.colaboradorCodigo ?? colaboradorCodigo;
+  const cadastros = await prisma.cadastroFornecedor.findMany({
+    where: {
+      OR: [
+        { colaboradorCodigo },
+        ...(usuarioNome ? [{ responsavel: { equals: usuarioNome, mode: "insensitive" as const } }] : []),
+        ...(loginCnpj.length === 14 && usuarioNome
+          ? [{ cnpjNormalizado: loginCnpj, responsavel: { equals: usuarioNome, mode: "insensitive" as const } }]
+          : []),
+      ],
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+  const selected = selectCadastroForAuthenticatedUser(cadastros, colaboradorCodigo, usuarioNome);
+  const cadastro = selected.cadastro;
+  if (!cadastro) return { ok: false, error: selected.error, cadastro: null };
+
+  const codigoProfissional = cadastro.colaboradorCodigo;
+  if (!codigoProfissional) {
+    return { ok: false, error: "Upload bloqueado: cadastro administrativo sem código de colaborador.", cadastro };
+  }
   const profissional = await prisma.profissional.findUnique({
     where: { codigo: codigoProfissional },
     select: { cnpj: true, nomeCompleto: true, nome: true },
   });
-  const profissionalCnpj = onlyDigits(decryptSensitive(profissional?.cnpj));
-  const cadastroByCodigo = await prisma.cadastroFornecedor.findFirst({ where: { colaboradorCodigo: codigoProfissional } });
-  const cadastroByNome = !cadastroByLoginCnpj && !cadastroByCodigo && usuarioNome
-    ? await prisma.cadastroFornecedor.findFirst({
-        where: { responsavel: { equals: usuarioNome, mode: "insensitive" } },
-      })
-    : null;
-  const cadastro = cadastroByLoginCnpj ?? cadastroByCodigo ?? cadastroByNome ?? (
-    profissionalCnpj.length === 14
-      ? await prisma.cadastroFornecedor.findFirst({
-          where: {
-            cnpjNormalizado: profissionalCnpj,
-            OR: [
-              ...(profissional?.nome ? [{ responsavel: { contains: profissional.nome, mode: "insensitive" as const } }] : []),
-              ...(profissional?.nomeCompleto ? [{ responsavel: { equals: profissional.nomeCompleto, mode: "insensitive" as const } }] : []),
-            ],
-          },
-        })
-      : null
-  );
-
-  if (!cadastro) {
-    return {
-      ok: false,
-      error: "Upload bloqueado: fornecedor sem cadastro administrativo. Entre em contato com a empresa pelos canais oficiais de atendimento via WhatsApp.",
-      cadastro: null,
-    };
+  if (!profissional) {
+    return { ok: false, error: "Upload bloqueado: cadastro administrativo sem profissional correspondente.", cadastro };
   }
+  const profissionalCnpj = onlyDigits(decryptSensitive(profissional?.cnpj));
 
   if (profissionalCnpj.length !== 14 || profissionalCnpj !== cadastro.cnpjNormalizado) {
     return {

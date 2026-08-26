@@ -1,0 +1,344 @@
+# VALIDAÇÃO END-TO-END CONTROLADA — SISTEMA DE GESTÃO DE MEDIÇÕES
+
+Data: 26/08/2026
+Branch: layout
+Commit inicial: 13b7cd7f7e00d8ea88ff440208e9ae2b9c1dde99
+Regra aplicada: nenhuma funcionalidade foi implementada e nenhum dado operacional foi excluído.
+
+# 1. Estado inicial
+
+- Working tree inicial: limpa.
+- Docker: postgres, etl e web saudáveis.
+- Web: GET /login = HTTP 200.
+- Banco: acessível, database medicoes, 52 usuários antes da preparação dos perfis de teste.
+- ETL: healthcheck interno saudável. A porta 4000 não é publicada no host, conforme docker-compose.
+- Dados iniciais: 117 profissionais, 33 projetos, 745 medições, 95 itens de mapa, 51 cadastros de fornecedores e nenhum workflow SGC.
+- Perfis inicialmente existentes: 1 ADMIN e 51 COLABORADOR. MEDICAO, FINANCEIRO e ADMINISTRATIVO não tinham usuários.
+
+# 2. Dados utilizados no teste
+
+Todos os registros criados foram identificados por TESTE E2E.
+
+- Ciclo ativo: 2607 (JUNHO DE 2026).
+- Usuário ADMIN existente: P0000001.
+- Usuário MEDICAO de teste: P0229039.
+- Usuário FINANCEIRO de teste: P0497780.
+- Usuário ADMINISTRATIVO de teste: P0282715.
+- Usuário COLABORADOR de teste: P0313137.
+- Profissional: TESTE E2E FORNECEDOR.
+- Projeto: TESTE-E2E-2607.
+- Medição: TESTE-E2E-001, valor R$ 1.000,00 e 8 horas.
+- Item de mapa: source_row_hash TESTE-E2E-MAPA-2607, ciclo 2607, valor R$ 1.000,00.
+- Cadastro: TESTE E2E SERVICOS LTDA, CNPJ sintético 11.222.333/0001-81.
+- Workflow principal: TESTE E2E FORNECEDOR / 2607.
+- Workflow de retorno: TESTE E2E RETORNO / 2607.
+- NF sintética: PDF pesquisável, sem validade fiscal e sem dados reais.
+
+Ligação efetivamente exigida pela implementação atual:
+
+usuarios.usuario (P0XXXXXX)
+  -> usuarios.nome
+  -> cadastros_fornecedores.responsavel
+  -> cadastros_fornecedores.colaborador_codigo
+  -> profissionais.codigo
+  -> mapa_pagamento_itens.projetista_codigo ou responsavel
+  -> sgc_aprovacoes_medicao.colaborador_codigo + ciclo
+
+O mapa também é conciliado por nomes normalizados quando o código não coincide. Medições usam FK id_profissional e id_projeto; mapa, cadastro e SGC usam relações lógicas sem FK.
+
+# 3. Perfis testados
+
+| Perfil | Tela/API | Ação | Resultado esperado |
+| ADMIN | Dashboard | Visualizar | Permitido |
+| ADMIN | Usuários | Listar/criar/alterar | Permitido |
+| ADMIN | Financeiro/Administrativo/Mapa/BM/ETL | Acessar | Permitido |
+| MEDICAO | Dashboard/Mapa/BM/ETL | Acessar | Permitido |
+| MEDICAO | Usuários | Gerenciar | Bloqueado |
+| FINANCEIRO | Fila/NF/Pagamento/Comprovante | Acessar | Permitido |
+| FINANCEIRO | Usuários/Mapa/Administrativo | Acessar | Bloqueado |
+| ADMINISTRATIVO | Fornecedores | Acessar/editar/importar | Permitido |
+| ADMINISTRATIVO | Financeiro | Leitura conforme regra atual | Permitido |
+| ADMINISTRATIVO | Usuários/Mapa/Chat | Acessar | Bloqueado ou vazio conforme regra |
+| COLABORADOR | Portal/BM/Histórico/NF/Comprovante/Chat | Acessar dados próprios | Permitido |
+| COLABORADOR | Usuários/Reset/Envio de BM/Financeiro | Chamada direta | Bloqueado |
+
+# 4. Resultado por perfil
+
+- ADMIN: login 200; dashboard 200; usuários 200; financeiro 200; administrativo 200; ETL status 200.
+- MEDICAO: login 200; dashboard 200; mapa 200; ETL status 200; usuários 403.
+- FINANCEIRO: login 200; fila 200; usuários 403; mapa 403; administrativo 403.
+- ADMINISTRATIVO: login 200; fornecedores 200; financeiro em leitura 200; usuários 403; mapa 403.
+- COLABORADOR: login 200; portal 200; histórico/medições 200; chat/usuários 200; usuários 403; financeiro 403; envio de BM 403; reset 403.
+- Anônimo: endpoint administrativo retornou 401.
+
+# 5. Importação
+
+Resultado: NÃO EXECUTADA por conflito com a regra de preservação.
+
+Evidência técnica:
+
+- pages/api/admin/etl.ts limita GET/POST a ADMIN e MEDICAO.
+- ETL status retornou 200 para ADMIN/MEDICAO e 403 para COLABORADOR.
+- etl/server.py chama ingest(..., full_refresh=True).
+- etl/ingest_medicoes.py executa globalmente: update profissionais set status_colaborador = null.
+- Em seguida, apenas profissionais encontrados no mapa importado recebem novamente ATO ou PRODUÇÃO.
+- Impacto exato: qualquer profissional existente que não seja recomposto pela planilha atual perde status_colaborador.
+- Estado antes do teste: 53 nulos, 18 ATO e 47 PRODUÇÃO.
+
+Classificação: 🟠 ALTO. A importação operacional não deve ser executada até limitar o update ao ciclo/conjunto afetado ou garantir recomposição integral comprovada.
+
+# 6. Mapa de pagamento
+
+- Ciclos 2605 e 2607 encontrados; 2607 está ativo.
+- Item TESTE E2E apareceu na fila financeira com valor 1000 e revisão 0.
+- Conciliação real usa projetista_codigo/responsavel, nomes normalizados, cadastro.colaborador_codigo e CNPJ.
+- Divergências entre ID P0 e código de negócio podem ser absorvidas parcialmente por alias/nome, mas não em todas as rotas.
+- MEDICAO/ADMIN acessam o mapa; FINANCEIRO, ADMINISTRATIVO e COLABORADOR receberam 403.
+
+# 7. BM
+
+Fluxo executado:
+
+AGUARDANDO_ENVIO -> PENDENTE
+
+- POST /api/sgc/enviar = 200.
+- Registro atualizado com colaborador, ciclo, status e revisão 0.
+- Log ENVIAR_BM criado com usuário TESTE E2E MEDICAO.
+- Notificação foi direcionada ao endereço de teste, mas falhou por SMTP não configurado; log ERRO_EMAIL criado.
+
+# 8. Revisão
+
+Fluxo executado:
+
+PENDENTE -> REVISAO_SOLICITADA -> PENDENTE
+
+- Solicitação de revisão pelo COLABORADOR = 200.
+- Mensagem de discordância armazenada e log SOLICITAR_REVISAO criado.
+- Resposta da equipe = 200 e log RESPONDER_REVISAO criado.
+- Reenvio = 200.
+- revisao_numero incrementou de 0 para 1.
+- Novo log REENVIAR_BM criado.
+
+# 9. Aprovação
+
+Fluxo executado:
+
+PENDENTE -> AGUARDANDO_NF
+
+- SALVAR = 200 e salvo_at preenchido.
+- ENVIAR = 200 e aprovado_at preenchido.
+- Logs SALVAR e ENVIAR criados.
+- Registro passou a aparecer na fila financeira em AGUARDANDO_NF.
+
+# 10. Nota fiscal
+
+Rejeições confirmadas após adequar o vínculo exigido pelo código:
+
+- Formato text/plain: 400.
+- Arquivo com extensão PDF e magic bytes inválidos: 400.
+- PDF sem texto: 409.
+- Arquivo acima de 10 MB: 400.
+- Razão social divergente: 409.
+
+Bloqueadores encontrados:
+
+1. 🔴 O vínculo normal usuário P0 -> cadastro por nome não é aplicado antes da busca do profissional em validateFornecedorForNfUpload. A função tenta buscar profissionais.codigo usando inicialmente o ID P0 e bloqueia por divergência de CNPJ. Para continuar o teste, somente o profissional/cadastro TESTE E2E foi vinculado ao P0313137.
+2. 🔴 Mesmo após o vínculo, um PDF sintético válido, pesquisável, renderizado e contendo CNPJ/razão social corretos do prestador e tomador foi rejeitado como ilegível ou razão social divergente. A biblioteca pdf-parse legada também apresentou bad XRef entry ao analisar o artefato no contêiner.
+
+Resultado real: o upload válido não chegou a APROVADO. O fluxo foi bypassado apenas no registro TESTE E2E por gravação direta do PDF em bytea e log BYPASS_TESTE_NF.
+
+# 11. Financeiro
+
+- Fila financeira retornou o TESTE E2E em APROVADO após o bypass documentado.
+- Valor: R$ 1.000,00; revisão: 0 no mapa; colaborador e ciclo corretos.
+- ADMIN, MEDICAO, FINANCEIRO e ADMINISTRATIVO têm leitura conforme requireFinanceiro.
+- COLABORADOR recebeu 403.
+
+# 12. Pagamento
+
+Fluxo downstream executado após bypass da NF:
+
+APROVADO -> PAGO
+
+- PATCH /api/admin/financeiro como FINANCEIRO = 200.
+- pago_at preenchido.
+- Comprovante PDF armazenado em bytea, 1805 bytes.
+- Nome do comprovante preservado.
+- Portal/histórico do colaborador já havia respondido 200 e os downloads são protegidos por aliases.
+
+Bug: 🟠 o pagamento não cria sgc_logs. A mudança para PAGO fica sem usuário executor, status anterior/novo e trilha de auditoria.
+
+# 13. Chat
+
+Chat geral confirmado:
+
+- Conversa COLABORADOR -> MEDICAO criada.
+- Mensagem de texto criada.
+- Anexo text/plain criado e baixado por participante autorizado.
+- MEDICAO leu duas mensagens.
+- Marcação de lido retornou 200.
+- Anexo inexistente retornou 404.
+
+Chat de BM:
+
+- Mensagens de revisão aparecem em sgc_logs e são transformadas em conversa pela rota SGC.
+- Áudio do BM não foi executado no estado apropriado; permanece não confirmado end-to-end.
+
+# 14. Administrativo
+
+- ADMIN e ADMINISTRATIVO listaram fornecedores com 200.
+- FINANCEIRO recebeu 403.
+- A tabela possui índice comum em cnpj_normalizado, não unique constraint.
+- Teste transacional inseriu um segundo cadastro com o mesmo CNPJ; o banco aceitou e a contagem chegou a 2. A transação foi revertida e permaneceu apenas o cadastro TESTE E2E.
+
+Classificação: 🟠 ALTO. Duplicidade de CNPJ é possível por concorrência, importação ou gravação direta e pode tornar findFirst não determinístico.
+
+# 15. Segurança/autorização
+
+Resultados diretos relevantes:
+
+- Sem sessão -> /api/admin/usuarios: 401.
+- COLABORADOR -> criar usuário: 403.
+- COLABORADOR -> reset de banco: 403.
+- COLABORADOR -> enviar BM como equipe: 403.
+- COLABORADOR -> financeiro: 403.
+- COLABORADOR -> ETL: 403.
+- FINANCEIRO -> administrativo: 403.
+- FINANCEIRO -> mapa: 403.
+- ADMINISTRATIVO -> mapa: 403.
+- MEDICAO -> gestão de usuários: 403.
+- GET /api/ciclos é permitido para qualquer usuário autenticado e retornou 200 ao COLABORADOR; confirmar se essa exposição é desejada.
+- VOLTAR_BM sem NF: 200 e transição para AGUARDANDO_ENVIO registrada.
+- VOLTAR_BM com NF: 409 e log TENTATIVA_VOLTAR_COM_NF criado.
+
+# 16. Bugs encontrados
+
+| Prioridade | Problema | Causa provável | Arquivo principal |
+| 🔴 BLOQUEADOR | Colaborador P0 não resolve profissional corretamente no upload de NF | profissional é buscado antes de cadastroByNome definir codigoProfissional | lib/cadastro-fornecedor.ts |
+| 🔴 BLOQUEADOR | PDF pesquisável válido rejeitado | parser pdf-parse legado/extração excessivamente dependente do layout | lib/nf-document-validation.ts |
+| 🟠 ALTO | Pagamento não gera log nem registra usuário executor | PATCH atualiza SGC sem chamar logBmAction | app/api/admin/financeiro/route.ts |
+| 🟠 ALTO | CNPJ duplicado aceito | ausência de unique constraint e verificação transacional | database/schema.sql e rotas administrativo |
+| 🟠 ALTO | Importação zera status de todos os profissionais | UPDATE global antes da recomposição parcial | etl/ingest_medicoes.py:2026 |
+| 🟡 MÉDIO | E-mails de BM falham | SMTP não configurado | configuração de ambiente/lib/email.ts |
+| 🟡 MÉDIO | Schema Prisma versionado diverge do banco real | mapa_pagamento_contexto no arquivo usa id; banco usa ciclo como PK, além de outros campos divergentes | database/schema.prisma / prisma/schema.prisma / banco |
+| 🔵 BAIXO | Ciclos expostos a qualquer autenticado | GET exige login, mas não perfil | app/api/ciclos/route.ts |
+
+# 17. Funcionalidades confirmadas
+
+- Login dos cinco perfis.
+- Dashboard e segregação principal de APIs.
+- Mapa para ADMIN/MEDICAO.
+- Envio do BM.
+- Solicitação de revisão.
+- Resposta e reenvio.
+- Incremento da revisão.
+- Salvar e aprovar BM.
+- Fila financeira.
+- Pagamento e armazenamento de comprovante, após bypass da NF.
+- Retorno de BM sem NF.
+- Bloqueio de retorno com NF.
+- Chat geral: conversa, texto, anexo, leitura e download.
+- Exportação financeira: ciclo, fornecedor, CNPJ, razão social, valor, status, NF, data de pagamento e comprovante conferem com o banco.
+- Proteções backend testadas retornaram 401/403/409 adequadamente.
+
+# 18. Funcionalidades não confirmadas
+
+- Importação completa, por risco incompatível com preservação.
+- Upload bem-sucedido de NF real/sintética pelo endpoint.
+- Fluxo natural AGUARDANDO_NF -> APROVADO.
+- Fluxo natural completo até PAGO, pois exigiu bypass da NF.
+- Áudio no chat do BM.
+- Validação visual manual de todas as variações de tela/responsividade; APIs e respostas funcionais foram priorizadas.
+- Importação administrativa por planilha e edição visual completa.
+- Rejeição de CNPJ errado isolada no parser: algumas amostras foram classificadas antes como PDF ilegível.
+
+# 19. Bloqueadores
+
+Resposta objetiva para uso com usuários reais hoje:
+
+- Autenticação, autorização principal, BM, revisão e aprovação funcionam no cenário controlado.
+- O fluxo não funciona de ponta a ponta porque a etapa de NF está bloqueada pelo vínculo P0/profissional e pela fragilidade do parser PDF.
+- Pagamento funciona tecnicamente após APROVADO, mas perde a trilha de auditoria.
+- Importação não deve ser considerada segura até corrigir o reset global de status_colaborador.
+- Cadastro administrativo não garante unicidade de CNPJ.
+
+Matriz final:
+
+| Fluxo | Resultado | Problema | Prioridade |
+| Login ADMIN | ✅ | Nenhum no cenário | — |
+| Login MEDICAO | ✅ | Usuário de teste precisou ser criado | — |
+| Login FINANCEIRO | ✅ | Usuário de teste precisou ser criado | — |
+| Login ADMINISTRATIVO | ✅ | Usuário de teste precisou ser criado | — |
+| Login COLABORADOR | ✅ | Nenhum no cenário | — |
+| Importação | — | full_refresh e reset global impedem teste preservativo | 🟠 |
+| Mapa de pagamento | ✅ | Relações lógicas frágeis | 🟡 |
+| Envio BM | ✅ | SMTP ausente | 🟡 |
+| Revisão/reenvio | ✅ | Nenhum no cenário | — |
+| Aprovação BM | ✅ | Nenhum no cenário | — |
+| Nota fiscal | ❌ | Vínculo P0 e parser PDF | 🔴 |
+| Fila financeira | ✅ | Confirmada após bypass | — |
+| Pagamento | ⚠️ | Funciona, mas sem log | 🟠 |
+| Comprovante | ✅ | Confirmado após bypass | — |
+| Exportação | ✅ | Conteúdo conferido | — |
+| Voltar BM | ✅ | Com e sem NF conforme regra | — |
+| Chat geral | ✅ | Texto/anexo/leitura/download | — |
+| Chat BM áudio | — | Não confirmado | 🟡 |
+| Administrativo/CNPJ | ❌ | Duplicidade aceita | 🟠 |
+
+Checklist:
+
+AUTENTICAÇÃO
+[✅] Login ADMIN
+[✅] Login MEDICAO
+[✅] Login FINANCEIRO
+[✅] Login ADMINISTRATIVO
+[✅] Login COLABORADOR
+
+BM
+[✅] Disponibilização
+[✅] Revisão
+[✅] Resposta e reenvio
+[✅] Aprovação
+[✅] Voltar BM sem NF
+[✅] Bloquear Voltar BM com NF
+
+NOTA FISCAL
+[✅] Rejeição de formato
+[✅] Magic bytes
+[✅] PDF sem texto
+[✅] Limite de 10 MB
+[✅] Razão social divergente
+[❌] Aceitação de PDF válido
+
+FINANCEIRO
+[✅] Fila
+[⚠️] Pagamento sem log
+[✅] Comprovante
+[✅] Exportação
+
+CHAT
+[✅] Conversa geral
+[✅] Texto
+[✅] Anexo
+[✅] Leitura
+[ ] Áudio BM
+
+IMPORTAÇÃO
+[✅] Autorização e status do ETL
+[ ] Execução operacional preservativa
+[❌] Segurança do reset global de status_colaborador
+
+# 20. Plano de correção
+
+Ordem recomendada antes de novas funcionalidades:
+
+1. Corrigir validateFornecedorForNfUpload para resolver primeiro cadastro/aliases do usuário P0 e somente depois buscar o profissional pelo colaborador_codigo canônico.
+2. Criar testes automatizados com PDFs de fixtures reais anonimizados e atualizar/substituir pdf-parse; separar extração de prestador/tomador de forma tolerante a layouts.
+3. Fazer o PATCH de pagamento chamar logBmAction com usuário, PAGO, data e metadados do comprovante.
+4. Adicionar migração segura para UNIQUE(cnpj_normalizado), precedida de relatório e saneamento de duplicidades existentes.
+5. Restringir o reset de status_colaborador ao conjunto afetado pela importação ou preservar explicitamente profissionais ausentes; testar importação em clone do banco.
+6. Configurar SMTP/test sink e validar entrega sem destinatários reais.
+7. Reconciliar os schemas Prisma versionados com o schema efetivo do banco e estabelecer uma única fonte de verdade.
+8. Reexecutar este roteiro em clone do banco, incluindo importação, NF válida, áudio BM e testes visuais completos.
+
+Conclusão: usuários reais podem autenticar e operar o BM até a aprovação, mas hoje não há evidência de que consigam concluir NF -> financeiro -> pagamento sem intervenção. As correções 1 a 5 são pré-requisitos para retomar novas funcionalidades com segurança.

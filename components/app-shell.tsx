@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronLeft, Menu, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Menu, X } from "lucide-react";
 import { clsx } from "clsx";
 
 type NavItem = {
@@ -18,33 +18,52 @@ type AppShellProps = {
   onNavigate: (id: string) => void;
   navItems: NavItem[];
   pageTitle: string;
-  topBarRight?: React.ReactNode;
+  sidebarFooter?: React.ReactNode;
   children: React.ReactNode;
 };
 
-function NavButton({ item, active, collapsed, onNavigate, onClose }: {
-  item: NavItem; active: boolean; collapsed: boolean;
+function NavButton({ item, active, onNavigate, onClose }: {
+  item: NavItem; active: boolean;
   onNavigate: (id: string) => void; onClose?: () => void;
 }) {
   return (
     <button
       onClick={() => { onNavigate(item.id); onClose?.(); }}
-      title={collapsed ? item.label : undefined}
       className={clsx(
-        "group relative flex min-h-[40px] w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium transition-all duration-150",
-        active ? "bg-white text-[#AF1B1B] shadow-sm" : "text-white/80 hover:bg-white/15 hover:text-white",
+        "group relative flex h-[38px] w-full items-center gap-2.5 rounded-lg px-3 text-left text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+        active ? "bg-[var(--primary)] text-white" : "text-white/75 hover:bg-white/[0.06] hover:text-white",
       )}
     >
-      <span className={clsx("shrink-0 transition-transform duration-150", active && "scale-105")}>{item.icon}</span>
-      {!collapsed && <span className="truncate">{item.label}</span>}
-      {!collapsed && item.badge ? (
+      <span className="shrink-0">{item.icon}</span>
+      <span className="truncate">{item.label}</span>
+      {item.badge ? (
         <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#F59E0B] px-1 text-xs font-bold text-white">
           {item.badge}
         </span>
       ) : null}
-      {collapsed && item.badge ? (
-        <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#F59E0B]" />
-      ) : null}
+    </button>
+  );
+}
+
+function OperationalAction({ item, active, onNavigate, onClose }: {
+  item: NavItem; active: boolean; onNavigate: (id: string) => void; onClose?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => { onNavigate(item.id); onClose?.(); }}
+      className={clsx(
+        "group mx-2.5 flex min-h-[54px] w-[calc(100%-20px)] items-center gap-3 rounded-lg border px-3 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/50",
+        active
+          ? "border-[var(--primary)] bg-[var(--primary)] text-white"
+          : "border-[rgba(175,27,27,0.55)] bg-[rgba(175,27,27,0.08)] text-white hover:border-[var(--primary)] hover:bg-[var(--primary)]",
+      )}
+    >
+      <span className="shrink-0 text-[#ef8d8d] transition-colors group-hover:text-white">{item.icon}</span>
+      <span className="min-w-0 leading-tight">
+        <span className="block truncate text-[12px] font-semibold">{item.label}</span>
+        <span className="mt-1 block truncate text-[10px] text-white/45 transition-colors group-hover:text-white/75">Nova base de medições</span>
+      </span>
     </button>
   );
 }
@@ -54,35 +73,42 @@ export function AppShell({
   onNavigate,
   navItems,
   pageTitle,
-  topBarRight,
+  sidebarFooter,
   children,
 }: AppShellProps) {
-  const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileOpen]);
 
   const sidebarContent = (mobile = false) => (
     <>
       {/* Logo */}
-      <div
-        className={clsx(
-          "flex min-h-[64px] items-center gap-3 border-b border-white/15",
-          collapsed && !mobile ? "justify-center px-0" : "px-4",
-        )}
-      >
+      <div className="flex min-h-[70px] shrink-0 items-center gap-3 border-b border-white/[0.08] px-4">
         <span className="inline-flex h-11 w-11 shrink-0 overflow-hidden rounded-lg">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo2.png" alt="PMF - PROJETA" className="h-full w-full object-cover" />
         </span>
-        {(!collapsed || mobile) && (
-          <div className="min-w-0 leading-tight">
-            <div className="truncate text-sm font-bold text-white">En Passant</div>
-            <div className="text-[10px] italic font-bold text-white/60 leading-snug">Movimento lateral em busca de novos objetivos</div>
-          </div>
-        )}
+        <div className="min-w-0 leading-tight">
+            <div className="truncate text-[13px] font-semibold text-white">En Passant</div>
+            <div className="mt-0.5 truncate text-[10px] text-white/45">Gestão de medições</div>
+        </div>
         {mobile && (
           <button
             className="ml-auto rounded-lg p-1.5 text-white/70 hover:text-white"
             onClick={() => setMobileOpen(false)}
+            aria-label="Fechar menu"
           >
             <X size={18} />
           </button>
@@ -90,7 +116,7 @@ export function AppShell({
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-1 flex-col gap-0.5 p-2 pt-3" aria-label="Menu principal">
+      <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-3" aria-label="Menu principal">
         {navItems
           .filter((item) => !item.hidden && !item.bottom)
           .map((item) => (
@@ -98,51 +124,35 @@ export function AppShell({
               key={item.id}
               item={item}
               active={activeSection === item.id}
-              collapsed={collapsed && !mobile}
               onNavigate={onNavigate}
               onClose={mobile ? () => setMobileOpen(false) : undefined}
             />
           ))}
 
-        <div className="flex-1" />
-
-        {navItems
-          .filter((item) => !item.hidden && item.bottom)
-          .map((item) => (
-            <NavButton
-              key={item.id}
-              item={item}
-              active={activeSection === item.id}
-              collapsed={collapsed && !mobile}
-              onNavigate={onNavigate}
-              onClose={mobile ? () => setMobileOpen(false) : undefined}
-            />
-          ))}
       </nav>
 
-      {/* Collapse toggle — desktop only */}
-      {!mobile && (
-        <button
-          onClick={() => setCollapsed((v) => !v)}
-          className="flex justify-center items-center border-t border-white/15 py-3 text-white/50 transition-colors hover:text-white"
-          title={collapsed ? "Expandir menu" : "Recolher menu"}
-        >
-          <ChevronLeft
-            size={20}
-            className={clsx("shrink-0 transition-transform duration-300", collapsed && "rotate-180")}
+      <div className="shrink-0 border-t border-white/[0.08] py-2.5">
+        {navItems.filter((item) => !item.hidden && item.bottom).map((item) => (
+          <OperationalAction
+            key={item.id}
+            item={item}
+            active={activeSection === item.id}
+            onNavigate={onNavigate}
+            onClose={mobile ? () => setMobileOpen(false) : undefined}
           />
-        </button>
-      )}
+        ))}
+        {sidebarFooter && <div className={clsx("px-2.5", navItems.some((item) => !item.hidden && item.bottom) && "mt-2.5 border-t border-white/[0.08] pt-2.5")}>{sidebarFooter}</div>}
+      </div>
     </>
   );
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#F5F5F5]">
+    <div className="flex h-screen w-full overflow-hidden bg-[var(--background)]">
 
       {/* ── Mobile overlay ── */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[1px] lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -150,7 +160,7 @@ export function AppShell({
       {/* ── Mobile drawer ── */}
       <aside
         className={clsx(
-          "fixed inset-y-0 left-0 z-50 flex w-[220px] flex-col bg-[#AF1B1B] transition-transform duration-300 ease-in-out lg:hidden",
+          "fixed inset-y-0 left-0 z-50 flex w-[min(288px,calc(100vw-24px))] flex-col bg-[var(--sidebar)] transition-transform duration-200 ease-out lg:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
@@ -159,18 +169,15 @@ export function AppShell({
 
       {/* ── Desktop sidebar ── */}
       <aside
-        className={clsx(
-          "relative hidden h-full shrink-0 flex-col bg-[#AF1B1B] transition-all duration-300 ease-in-out lg:flex",
-          collapsed ? "w-[64px]" : "w-[212px]",
-        )}
+        className="relative hidden h-full w-[264px] shrink-0 flex-col bg-[var(--sidebar)] lg:flex"
       >
         {sidebarContent(false)}
       </aside>
 
       {/* ── Main ── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Top bar */}
-        <header className="flex shrink-0 min-h-[56px] items-center justify-between gap-2 border-b border-[#E5E7EB] bg-white px-3 sm:px-6 shadow-[0_1px_3px_0_rgb(0,0,0,0.06)]">
+        {/* Mobile navigation header. Desktop page identity lives in content. */}
+        <header className="flex min-h-[54px] shrink-0 items-center gap-2 border-b border-[var(--border)] bg-white px-3 lg:hidden">
           <div className="flex items-center gap-2 min-w-0">
             {/* Hamburger — mobile only */}
             <button
@@ -180,13 +187,12 @@ export function AppShell({
             >
               <Menu size={20} />
             </button>
-            <h1 className="truncate text-base font-bold text-[#1A1A1A] sm:text-lg">{pageTitle}</h1>
+            <h1 className="truncate text-[16px] font-bold tracking-[-0.01em] text-[var(--foreground)] sm:text-[18px]">{pageTitle}</h1>
           </div>
-          {topBarRight}
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-3 sm:p-6">
+        <main className="flex-1 overflow-y-auto px-3 sm:px-5 lg:px-6 lg:pr-[76px]">
           {children}
         </main>
       </div>

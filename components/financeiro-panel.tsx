@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2, Download, FileText, RefreshCw, X } from "lucide-react";
-import { Badge, BlurValue, Button, Card, Input, Select, SectionHeader } from "@/components/ui";
+import { Badge, BlurValue, Button, Card, Input, Select, PageContainer, PageHeader } from "@/components/ui";
 import { useBlur } from "@/components/providers";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 type CicloEntry = { ciclo: string; mesReferencia: string | null; updatedAt: string };
@@ -71,8 +71,8 @@ const FINANCEIRO_FLOW = [
 function KpiCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <Card className="p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-[#555555]">{label}</p>
-      <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
+      <p className="text-stat-label uppercase tracking-wide text-[var(--muted-foreground)]">{label}</p>
+      <p className={`text-stat-value mt-1 ${color}`}>{value}</p>
     </Card>
   );
 }
@@ -159,8 +159,9 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
   const nConcluido = items.filter((i) => i.status === "PAGO").length;
 
   return (
-    <div className="grid gap-6 mx-auto w-full" style={{ maxWidth: "80rem" }}>
-      <SectionHeader
+    <PageContainer className="grid gap-6">
+      <PageHeader
+        eyebrow="Financeiro"
         title="Painel Financeiro"
         description="Acompanhe o fluxo de notas fiscais e pagamentos por ciclo."
         action={!exportOnly ? (
@@ -180,7 +181,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
       {exportOnly && (
         <Card className="p-4">
           <div className="flex flex-wrap items-end gap-3">
-            <label className="grid w-full gap-1.5 text-xs font-semibold text-[#555555] sm:w-auto">
+            <label className="grid w-full gap-1.5 text-label text-[var(--muted-foreground)] sm:w-auto">
               Ciclo
               <Select value={selectedCiclo} onChange={(e) => setSelectedCiclo(e.target.value)} className="sm:min-w-[160px]">
                 {ciclos.map((c) => <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>)}
@@ -213,13 +214,13 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
       {/* Filtros */}
       <Card className="p-4">
         <div className="flex flex-wrap items-end gap-3">
-          <label className="grid w-full gap-1.5 text-xs font-semibold text-[#555555] sm:w-auto">
+          <label className="grid w-full gap-1.5 text-label text-[var(--muted-foreground)] sm:w-auto">
             Ciclo
             <Select value={selectedCiclo} onChange={(e) => setSelectedCiclo(e.target.value)} className="sm:min-w-[160px]">
               {ciclos.map((c) => <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>)}
             </Select>
           </label>
-          <label className="grid w-full gap-1.5 text-xs font-semibold text-[#555555] sm:w-auto">
+          <label className="grid w-full gap-1.5 text-label text-[var(--muted-foreground)] sm:w-auto">
             Status
             <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="sm:min-w-[180px]">
               <option value="todos">Todos</option>
@@ -229,7 +230,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
             </Select>
           </label>
           <div className="flex-1">
-            <p className="mb-1.5 text-xs font-semibold text-[#555555]">Buscar</p>
+            <p className="mb-1.5 text-label text-[var(--muted-foreground)]">Buscar</p>
             <Input
               placeholder="Nome, ID ou empresa..."
               value={busca}
@@ -242,7 +243,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
 
       {/* Modal BM */}
       {(bmData || bmLoading) && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-0 sm:p-4 sm:pt-10">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:p-4 sm:pt-10">
           <div className="w-full max-w-5xl rounded-none bg-white shadow-2xl sm:rounded-xl min-h-screen sm:min-h-0">
             <div className="flex items-center justify-between border-b border-[#E5E7EB] px-6 py-4">
               <p className="text-sm font-semibold text-[#1A1A1A]">Boletim de Medição</p>
@@ -253,7 +254,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
                 <X size={18} />
               </button>
             </div>
-            <div className="p-6">
+            <div className="p-4 sm:p-5">
               {bmLoading ? (
                 <div className="flex items-center gap-3 py-10 justify-center text-sm text-[#555555]">
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#2563EB]" />
@@ -281,11 +282,11 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
         ) : (
           <>
             <div className="overflow-auto">
-              <table className="w-full border-collapse text-[11px]">
+              <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB]">
                     {["Fornecedor", "CNPJ / CPF", "Razão Social", "Valor", "Boletim", "Nota Fiscal", "Recebida em", "Pagamento em", "Status", ""].map((h, i) => (
-                      <th key={i} className={`whitespace-nowrap px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-[#555555] ${i >= 3 ? "text-right" : "text-left"}`}>
+                      <th key={i} className={`text-table-header whitespace-nowrap px-3 py-2.5 text-[var(--muted-foreground)] ${i >= 3 ? "text-right" : "text-left"}`}>
                         {h}
                       </th>
                     ))}
@@ -303,7 +304,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
                             <p className="font-semibold text-[#1A1A1A]">{item.colaboradorNome}</p>
                             <p className="text-[10px] font-mono text-[#9CA3AF]">{item.colaboradorCodigo}</p>
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-[#555555]">
+                          <td className="font-technical whitespace-nowrap px-3 py-2.5 text-[#555555]">
                             <BlurValue>{item.cpfCnpj ?? "–"}</BlurValue>
                           </td>
                           <td className="px-3 py-2.5 text-[#555555]">{item.razaoSocial ?? "–"}</td>
@@ -381,7 +382,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
                                 </div>
                                 <div className="flex flex-1 flex-wrap items-center gap-3">
                                   <div className="flex-1">
-                                    <p className="mb-1 text-xs font-semibold text-[#555555]">Comprovante de pagamento opcional (PDF, JPG ou PNG)</p>
+                                    <p className="mb-1 text-label text-[var(--muted-foreground)]">Comprovante de pagamento opcional (PDF, JPG ou PNG)</p>
                                     <input
                                       type="file"
                                       accept=".pdf,.jpg,.jpeg,.png"
@@ -434,6 +435,6 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
       </Card>
       </>
       )}
-    </div>
+    </PageContainer>
   );
 }

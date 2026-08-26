@@ -1,7 +1,8 @@
-import "server-only";
+import { PDFParse } from "pdf-parse";
 
-import { onlyDigits } from "@/lib/cadastro-fornecedor";
-import pdf from "pdf-parse/lib/pdf-parse.js";
+function onlyDigits(value: string | number | null | undefined) {
+  return value === null || value === undefined ? "" : String(value).replace(/\D/g, "");
+}
 
 type NfParty = {
   cnpj: string | null;
@@ -122,7 +123,12 @@ function extractRazaoSocial(lines: string[]) {
   for (const pattern of labelPatterns) {
     const index = lines.findIndex((line) => pattern.test(line));
     if (index >= 0) {
-      const value = nextUsefulLine(lines, index);
+      let value = nextUsefulLine(lines, index);
+      let valueIndex = index + 1;
+      while (value && /^(CNPJ|CPF|RAZ[AÃ]O SOCIAL|NOME\s*\/\s*NOME EMPRESARIAL|PRESTADOR(?: DO SERVI[CÇ]O)?)$/i.test(value)) {
+        valueIndex = lines.indexOf(value, valueIndex) + 1;
+        value = nextUsefulLine(lines, valueIndex - 1);
+      }
       if (value && !/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/.test(value)) return value;
     }
   }
@@ -157,8 +163,13 @@ function extractTomador(text: string): NfParty {
 }
 
 async function extractPdfText(buffer: Buffer) {
-  const result = await pdf(buffer);
-  return result.text ?? "";
+  const parser = new PDFParse({ data: new Uint8Array(buffer) });
+  try {
+    const result = await parser.getText();
+    return result.text ?? "";
+  } finally {
+    await parser.destroy();
+  }
 }
 
 export async function validateNfDocumentAgainstCadastro(input: ValidateNfDocumentInput): Promise<ValidateNfDocumentResult> {
@@ -169,7 +180,10 @@ export async function validateNfDocumentAgainstCadastro(input: ValidateNfDocumen
     };
   }
 
-  const text = await extractPdfText(input.buffer).catch(() => "");
+  const text = await extractPdfText(input.buffer).catch((error) => {
+    console.error("Falha ao extrair texto da NF em PDF.", error);
+    return "";
+  });
   if (normalizeText(text).length < 40) {
     return {
       ok: false,

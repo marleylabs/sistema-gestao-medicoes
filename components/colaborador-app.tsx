@@ -14,7 +14,6 @@ import {
   FileText,
   FileUp,
   LayoutDashboard,
-  RefreshCw,
   UserRound,
   History,
   MessageCircle,
@@ -32,7 +31,7 @@ import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { AppShell } from "@/components/app-shell";
 import { AccountMenu } from "@/components/account-menu";
 import { GeneralChatWidget } from "@/components/general-chat-widget";
-import { Badge, Button, Card, IconButton, Textarea } from "@/components/ui";
+import { Badge, Button, Card, IconButton, PageContainer, PageHeader, Textarea } from "@/components/ui";
 import type { AuthUser } from "@/lib/session";
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -206,7 +205,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   const [medicoes, setMedicoes]             = useState<MedicaoAprovada[]>([]);
   const [medLoading, setMedLoading]         = useState(false);
   const [documentsOpen, setDocumentsOpen]   = useState(false);
-  const [actionModal, setActionModal]       = useState<"salvar" | "revisao" | "resposta" | null>(null);
+  const [actionModal, setActionModal]       = useState<"revisao" | "resposta" | null>(null);
   const [pontos, setPontos]                 = useState("");
   const [respostaFornecedor, setRespostaFornecedor] = useState("");
   const [message, setMessage]               = useState<{ text: string; type: "success" | "info" } | null>(null);
@@ -217,13 +216,14 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   const [nfProgress, setNfProgress]         = useState(0);
   const [nfError, setNfError]               = useState<string | null>(null);
   const [draggingNf, setDraggingNf]         = useState(false);
-  const [observacao, setObservacao]         = useState("");
+  const [savingAction, setSavingAction]     = useState<"SALVAR" | "ENVIAR" | null>(null);
   const [salvoAt, setSalvoAt]               = useState<string | null>(null);
   const [chatOpen, setChatOpen]             = useState(false);
   const [chatDraft, setChatDraft]           = useState("");
   const [chatSending, setChatSending]       = useState(false);
   const [pendingChatMessage, setPendingChatMessage] = useState<(SgcChatMessage & { enviando?: boolean }) | null>(null);
   const chatBaselineRef                     = useRef(false);
+  const sgcRequestInFlightRef               = useRef(false);
   const previousMedicaoMessageIdsRef        = useRef<Set<string>>(new Set());
   const nfInputRef                          = useRef<HTMLInputElement | null>(null);
 
@@ -281,7 +281,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     location.assign("/login");
   }
 
-  function openActionModal(kind: "salvar" | "revisao" | "resposta") {
+  function openActionModal(kind: "revisao" | "resposta") {
     setModalError(null);
     if (kind === "resposta") setRespostaFornecedor(data?.sgc.observacaoColaborador ?? "");
     setActionModal(kind);
@@ -292,27 +292,38 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     setActionModal(null);
   }
 
+  const ERROR_FALLBACK: Record<"SALVAR" | "ENVIAR" | "SOLICITAR_REVISAO" | "RESPONDER_MEDICAO", string> = {
+    SALVAR: "Não foi possível salvar sua validação. Tente novamente.",
+    ENVIAR: "Não foi possível enviar o BM. Tente novamente.",
+    SOLICITAR_REVISAO: "Não foi possível enviar a solicitação de revisão. Tente novamente.",
+    RESPONDER_MEDICAO: "Não foi possível enviar sua resposta. Tente novamente.",
+  };
+
   async function sendSgc(action: "SALVAR" | "ENVIAR" | "SOLICITAR_REVISAO" | "RESPONDER_MEDICAO") {
+    if (sgcRequestInFlightRef.current) return; // evita disparo duplicado por duplo clique (ref: imune a stale state)
+    sgcRequestInFlightRef.current = true;
     setSaving(true);
+    setSavingAction(action === "SALVAR" || action === "ENVIAR" ? action : null);
     setMessage(null);
     setModalError(null);
     const res = await fetch("/api/colaborador/sgc", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, observacao, pontosDiscordancia: pontos, respostaFornecedor }),
+      body: JSON.stringify({ action, pontosDiscordancia: pontos, respostaFornecedor }),
     });
     const payload = await res.json().catch(() => ({}));
+    sgcRequestInFlightRef.current = false;
     setSaving(false);
+    setSavingAction(null);
     if (!res.ok) {
-      const errorText = payload.error ?? "Não foi possível atualizar a validação.";
+      const errorText = payload.error ?? ERROR_FALLBACK[action];
       if (actionModal) setModalError(errorText);
       else setMessage({ text: errorText, type: "info" });
       return;
     }
     if (action === "SALVAR") {
       setSalvoAt(payload.salvoAt ?? new Date().toISOString());
-      setMessage({ text: "BM salvo com sucesso. Clique em Enviar quando estiver pronto.", type: "success" });
-      closeActionModal();
+      setMessage({ text: "Validação salva com sucesso.", type: "success" });
       return;
     }
     closeActionModal();
@@ -325,6 +336,15 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     };
     setMessage({ text: msgs[action] ?? "Operação realizada.", type: "success" });
     await loadData();
+  }
+
+  function handleEnviar() {
+    if (sgcRequestInFlightRef.current) return;
+    const confirmado = window.confirm(
+      "Aprovar este BM?\n\nAo continuar, você confirma os dados apresentados e o processo seguirá para envio da Nota Fiscal.",
+    );
+    if (!confirmado) return;
+    void sendSgc("ENVIAR");
   }
 
   async function sendChatMessage() {
@@ -507,23 +527,18 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     { id: "medicoes", label: "Minhas Medições",  icon: <History size={17} /> },
   ];
 
-  const topBar = (
-    <div className="flex items-center gap-2">
-      <Button variant="secondary" onClick={() => loadData()} className="hidden sm:inline-flex">
-        <RefreshCw size={14} />
-        Atualizar
-      </Button>
-      <AccountMenu user={user} roleLabel="Fornecedor" onLogout={logout} />
-    </div>
-  );
-
   const aguardando = data.sgc.status === "AGUARDANDO_ENVIO";
 
   const TITLES: Record<Section, string> = { portal: "Portal do Fornecedor", medicoes: "Minhas Medições" };
 
   return (
-    <AppShell activeSection={section} onNavigate={(id) => setSection(id as Section)} navItems={navItems} pageTitle={TITLES[section]} topBarRight={topBar}>
-      <div className="grid gap-5">
+    <AppShell activeSection={section} onNavigate={(id) => setSection(id as Section)} navItems={navItems} pageTitle={TITLES[section]} sidebarFooter={<AccountMenu user={user} roleLabel="Fornecedor" onLogout={logout} compact />}>
+      <PageContainer className="grid gap-5">
+        <PageHeader
+          eyebrow="Fornecedor"
+          title={TITLES[section]}
+          description={section === "portal" ? "Acompanhe seu BM, nota fiscal, pagamento e comprovante." : "Consulte o histórico dos ciclos concluídos."}
+        />
 
         {/* ── Portal ── */}
         {/* ── Aguardando envio ── */}
@@ -532,7 +547,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#F3F4F6] text-[#9CA3AF]">
               <Clock size={30} />
             </div>
-            <h2 className="text-lg font-bold text-[#1A1A1A]">Aguardando o envio do BM</h2>
+            <h2 className="text-section-title text-[#1A1A1A]">Aguardando o envio do BM</h2>
             <p className="mt-2 text-sm text-[#555555]">
               Sua medição ainda não foi disponibilizada pela equipe de Medição.
               <br />
@@ -549,7 +564,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
         <Card className="p-6">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
             <div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-[#AF1B1B]">SISTEMA APROVAÇÃO</p>
+              <p className="text-eyebrow mb-1 text-[var(--primary)]">SISTEMA APROVAÇÃO</p>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-xl font-bold text-[#1A1A1A]">{statusLabel}</h2>
                 {data.sgc.revisaoLabel && <Badge variant="brand">{data.sgc.revisaoLabel}</Badge>}
@@ -569,9 +584,9 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
 
           {/* Link para Minhas Medições quando segue para acompanhamento financeiro */}
           {isFinancialFollowUpStatus(data.sgc.status) && (
-            <div className="mt-5 flex items-center justify-between rounded-lg border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-3">
+            <div className="mt-5 flex flex-col items-start gap-3 rounded-lg border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-[#15803D]">Acesse <strong>Minhas Medições</strong> para acompanhar o pagamento e os detalhes desta medição.</p>
-              <Button variant="success" className="shrink-0" onClick={() => setSection("medicoes")}>
+              <Button variant="success" className="w-full shrink-0 sm:w-auto" onClick={() => setSection("medicoes")}>
                 <History size={14} />
                 Ver medições
               </Button>
@@ -682,14 +697,14 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
           {canValidate ? (
             <div className="mt-5 space-y-3">
               <div className="flex flex-wrap gap-3">
-                <Button variant="secondary" className="h-10 px-5" onClick={() => openActionModal("salvar")} disabled={saving}>
+                <Button variant="secondary" className="h-10 px-5" onClick={() => sendSgc("SALVAR")} disabled={saving}>
                   <Save size={15} />
-                  Salvar
+                  {savingAction === "SALVAR" ? "Salvando..." : "Salvar"}
                 </Button>
                 <Button
                   variant="success"
                   className="h-10 px-6"
-                  onClick={() => sendSgc("ENVIAR")}
+                  onClick={handleEnviar}
                   disabled={saving || !salvoAt}
                   title={!salvoAt ? "Salve primeiro para habilitar o Envio" : undefined}
                 >
@@ -731,16 +746,14 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
         {actionModal && (canValidate || actionModal === "resposta") && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 p-4">
             <div className="w-full max-w-xl overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-2xl">
-              <div className={`border-b px-5 py-4 ${actionModal === "revisao" || actionModal === "resposta" ? "border-[#FDE68A] bg-[#FFFBEB]" : "border-[#E5E7EB] bg-[#FAFAFA]"}`}>
+              <div className="border-b border-[#FDE68A] bg-[#FFFBEB] px-5 py-4">
                 <p className="text-base font-bold text-[#1A1A1A]">
-                  {actionModal === "salvar" ? "Salvar validação" : actionModal === "revisao" ? "Solicitar revisão" : "Responder equipe de Medição"}
+                  {actionModal === "revisao" ? "Solicitar revisão" : "Responder equipe de Medição"}
                 </p>
                 <p className="mt-1 text-sm text-[#555555]">
-                  {actionModal === "salvar"
-                    ? "Registre uma observação opcional antes de salvar sua análise."
-                    : actionModal === "revisao"
-                      ? "Descreva os pontos de discordância para análise da equipe de Medição."
-                      : "Leia o retorno recebido e envie uma resposta complementar para a equipe."}
+                  {actionModal === "revisao"
+                    ? "Descreva os pontos de discordância para análise da equipe de Medição."
+                    : "Leia o retorno recebido e envie uma resposta complementar para a equipe."}
                 </p>
               </div>
               <div className="grid gap-4 p-5">
@@ -775,18 +788,15 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                 )}
                 <Textarea
                   className="min-h-32 bg-white"
-                  value={actionModal === "salvar" ? observacao : actionModal === "revisao" ? pontos : respostaFornecedor}
+                  value={actionModal === "revisao" ? pontos : respostaFornecedor}
                   onChange={(e) => {
-                    if (actionModal === "salvar") setObservacao(e.target.value);
-                    else if (actionModal === "revisao") setPontos(e.target.value);
+                    if (actionModal === "revisao") setPontos(e.target.value);
                     else setRespostaFornecedor(e.target.value);
                   }}
                   placeholder={
-                    actionModal === "salvar"
-                      ? "Observação opcional para registrar no histórico."
-                      : actionModal === "revisao"
-                        ? "Descreva onde e por que os dados estão incorretos."
-                        : "Digite sua resposta para a equipe de Medição."
+                    actionModal === "revisao"
+                      ? "Descreva onde e por que os dados estão incorretos."
+                      : "Digite sua resposta para a equipe de Medição."
                   }
                 />
                 <div className="flex flex-wrap justify-end gap-2">
@@ -795,10 +805,10 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                   </Button>
                   <Button
                     variant="success"
-                    onClick={() => sendSgc(actionModal === "salvar" ? "SALVAR" : actionModal === "revisao" ? "SOLICITAR_REVISAO" : "RESPONDER_MEDICAO")}
+                    onClick={() => sendSgc(actionModal === "revisao" ? "SOLICITAR_REVISAO" : "RESPONDER_MEDICAO")}
                     disabled={saving}
                   >
-                    {saving ? "Enviando..." : actionModal === "salvar" ? "Salvar" : actionModal === "revisao" ? "Enviar revisão" : "Enviar resposta"}
+                    {saving ? "Enviando..." : actionModal === "revisao" ? "Enviar revisão" : "Enviar resposta"}
                   </Button>
                 </div>
               </div>
@@ -916,7 +926,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                     <thead>
                       <tr className="bg-[#F9FAFB]">
                         {headers.map((h) => (
-                          <th key={h} className="whitespace-nowrap border-b border-[#E5E7EB] px-4 py-2.5 text-left font-semibold uppercase tracking-wide text-[#555555]">{h}</th>
+                          <th key={h} className="text-table-header whitespace-nowrap border-b border-[#E5E7EB] px-4 py-2.5 text-left text-[var(--muted-foreground)]">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1034,7 +1044,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#F3F4F6] text-[#9CA3AF]">
                 <History size={30} />
               </div>
-              <h2 className="text-lg font-bold text-[#1A1A1A]">Nenhuma medição disponível</h2>
+              <h2 className="text-section-title text-[#1A1A1A]">Nenhuma medição disponível</h2>
               <p className="mt-2 text-sm text-[#555555]">
                 As medições aprovadas ou aguardando NF aparecerão aqui.
               </p>
@@ -1047,7 +1057,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             </div>
           )
       )}
-    </div>
+    </PageContainer>
       {section === "portal" && data.sgc.status === "REVISAO_SOLICITADA" && (
         <RevisionChatWidget
           mensagens={data.sgc.mensagens}
@@ -1466,7 +1476,7 @@ function MedicaoAprovadaCard({ med, onReload }: { med: MedicaoAprovada; onReload
             </div>
           </div>
           <div className="text-right">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">Valor total</p>
+            <p className="text-stat-label uppercase tracking-wide text-[#9CA3AF]">Valor total</p>
             <p className="text-base font-bold text-[#1A1A1A]">{cur.format(totalValor)}</p>
           </div>
         </div>

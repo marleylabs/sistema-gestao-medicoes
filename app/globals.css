@@ -1,32 +1,54 @@
 @import "tailwindcss";
 
+/* Tailwind v4 reserva --font-sans/--font-mono como tokens de tema: precisam ser
+   sobrescritos via @theme, não em :root, senão a declaração é ignorada. */
+@theme {
+  --font-sans: var(--font-manrope), Manrope, Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), "Geist Mono", monospace;
+}
+
 :root {
-  --brand:           #AF1B1B;
-  --brand-dark:      #8C1616;
-  --primary:         #2563EB;
-  --primary-hover:   #1D4ED8;
-  --success:         #16A34A;
-  --warning:         #F59E0B;
-  --danger:          #DC2626;
-  --background:      #F5F5F5;
-  --surface:         #FFFFFF;
-  --text:            #1A1A1A;
-  --muted:           #555555;
-  --border:          #E5E7EB;
+  --sidebar: #0a0a0a;
+  --background: #f7f7f5;
+  --surface: #ffffff;
+  --primary: #af1b1b;
+  --primary-hover: #951717;
+  --primary-soft: #fdf1f1;
+  --foreground: #111111;
+  --muted-foreground: #6b6b6b;
+  --border: #e5e5e2;
+  --border-strong: #d4d4d0;
+  --success: #16803c;
+  --success-soft: #edf8f0;
+  --warning: #b86608;
+  --warning-soft: #fff7e8;
+  --error: #c62828;
+  --error-soft: #fff0f0;
+  --info: #4f5965;
+  --info-soft: #f1f3f5;
+  --brand: var(--primary);
+  --brand-dark: var(--primary-hover);
+  --danger: var(--error);
+  --text: var(--foreground);
+  --muted: var(--muted-foreground);
 }
 
 * { box-sizing: border-box; }
+
+html { background: var(--background); }
 
 body {
   margin: 0;
   background: var(--background);
   color: var(--text);
-  font-family: "Inter", Arial, Helvetica, sans-serif;
+  font-family: var(--font-manrope), Manrope, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
-  font-size: 11px;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 button, input, select, textarea { font: inherit; }
+code, kbd, pre, samp, .font-mono { font-family: var(--font-geist-mono), "Geist Mono", monospace !important; }
 
 /* ── Tamanho de fonte base: 11px para todo conteúdo não-título ── */
 .text-sm   { font-size: 11px !important; }
@@ -34,3 +56,68 @@ button, input, select, textarea { font: inherit; }
 .text-base { font-size: 13px !important; }
 button, [role="button"], select, label[for], summary { cursor: pointer; }
 button:disabled, [role="button"][aria-disabled="true"], select:disabled { cursor: not-allowed; opacity: 0.5; }
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 2px;
+}
+
+::selection { background: color-mix(in srgb, var(--primary) 18%, white); }
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c9c9c5 transparent;
+}
+
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: #c9c9c5; border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background-color: #aaa; }
+
+/* Compatibilidade visual durante a migração: antigos azuis de ação passam a usar o token institucional. */
+.bg-\[\#2563EB\] { background-color: var(--primary) !important; }
+.hover\:bg-\[\#1D4ED8\]:hover { background-color: var(--primary-hover) !important; }
+.text-\[\#2563EB\], .text-\[\#1D4ED8\] { color: var(--primary) !important; }
+.border-\[\#2563EB\] { border-color: var(--primary) !important; }
+.focus\:border-\[\#2563EB\]:focus { border-color: var(--primary) !important; }
+.focus\:ring-\[\#2563EB\]\/20:focus, .focus\:ring-\[\#2563EB\]\/25:focus { --tw-ring-color: color-mix(in srgb, var(--primary) 20%, transparent) !important; }
+.bg-\[\#EFF6FF\] { background-color: var(--primary-soft) !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}
+
+table { font-size: 12px; }
+thead th { height: 36px; }
+tbody tr { min-height: 38px; transition: background-color 150ms ease; }
+tbody tr:hover { background-color: #fafaf8; }
+
+.ds-dialog {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.18);
+}
+
+.ds-popover {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.14);
+}
+
+/* ── Escala tipográfica global ── */
+.text-eyebrow        { font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
+.text-page-title      { font-size: 22px; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; }
+.text-page-description { font-size: 12px; font-weight: 400; line-height: 1.5; }
+.text-section-title   { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.text-card-title      { font-size: 13px; font-weight: 600; }
+.text-label            { font-size: 12px; font-weight: 500; }
+.text-helper           { font-size: 11px; font-weight: 400; }
+.text-secondary        { font-size: 12px; font-weight: 400; }
+.text-table-header     { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.text-table-cell       { font-size: 13px; font-weight: 400; }
+.text-badge             { font-size: 10px; font-weight: 600; }
+.text-stat-label        { font-size: 11px; font-weight: 600; }
+.text-stat-value        { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+.font-technical         { font-family: var(--font-geist-mono), "Geist Mono", monospace !important; }

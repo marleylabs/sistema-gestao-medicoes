@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EllipsisVertical, Eye, EyeOff, Info, KeyRound, Plus, RefreshCw, ShieldCheck, ShieldOff, Trash2, UserCog, X } from "lucide-react";
-import { Button, Card, Input, SectionHeader } from "@/components/ui";
+import { Button, Card, Input, PageContainer, PageHeader } from "@/components/ui";
 
 type Usuario = {
   id: string;
@@ -76,7 +76,7 @@ function SetSenhaForm({ userId, onDone }: { userId: string; onDone: () => void }
 
   return (
     <div className="mt-3 grid gap-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
-      <p className="text-xs font-semibold text-[#555555]">Definir nova senha</p>
+      <p className="text-label text-[var(--muted-foreground)]">Definir nova senha</p>
       <Input type="password" placeholder="Nova senha (mín. 12)" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} />
       <Input type="password" placeholder="Confirmar senha" value={confirmar} onChange={(e) => setConfirmar(e.target.value)} />
       {error && <p className="text-xs text-[#B91C1C]">{error}</p>}
@@ -293,7 +293,7 @@ function UsuarioCard({ u, onRefresh, canDelete }: { u: Usuario; onRefresh: () =>
 
       {showSetPerfil && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white p-3">
-          <p className="text-xs font-semibold text-[#555555] shrink-0">Alterar função</p>
+          <p className="text-label text-[var(--muted-foreground)] shrink-0">Alterar função</p>
           <select
             value={novoPerfil}
             onChange={(e) => setNovoPerfil(e.target.value)}
@@ -379,7 +379,7 @@ function CriarUsuarioModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/35 p-4 pt-10">
+    <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-10 backdrop-blur-[1px]">
       <div className="w-full max-w-2xl overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-[#E5E7EB] px-5 py-4">
           <div>
@@ -498,90 +498,83 @@ export function UsuariosPanel({ canCreateUsers = false }: { canCreateUsers?: boo
     .filter((group) => group.usuarios.length > 0);
 
   return (
-    <div className="grid gap-6">
-      <div className="mx-auto w-full" style={{ maxWidth: "80rem" }}>
-        <SectionHeader
-          title="Gestão de usuários"
-          description="Gerencie acessos, senhas e status dos fornecedores e usuários da plataforma."
-          action={
-            <div className="flex flex-wrap gap-2">
-              {canCreateUsers && (
-                <Button onClick={() => setCreateOpen(true)}>
-                  <Plus size={14} />
-                  Novo usuário
-                </Button>
-              )}
-              <Button variant="secondary" onClick={load} disabled={loading}>
-                <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-                Atualizar
+    <PageContainer className="grid gap-6">
+      <PageHeader
+        eyebrow="Administração"
+        title="Gestão de usuários"
+        description="Gerencie acessos, senhas e status dos fornecedores e usuários da plataforma."
+        action={
+          <div className="flex flex-wrap gap-2">
+            {canCreateUsers && (
+              <Button onClick={() => setCreateOpen(true)} aura>
+                <Plus size={14} />
+                Novo usuário
               </Button>
-            </div>
-          }
-        />
-      </div>
+            )}
+            <Button variant="secondary" onClick={load} disabled={loading}>
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              Atualizar
+            </Button>
+          </div>
+        }
+      />
 
       <CriarUsuarioModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={load} />
 
       {/* KPIs */}
-      <div className="grid gap-4 sm:grid-cols-3 mx-auto w-full" style={{ maxWidth: "80rem" }}>
+      <div className="grid gap-4 sm:grid-cols-3">
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#555555]">Total</p>
-          <p className="mt-1 text-2xl font-bold text-[#1A1A1A]">{usuarios.length}</p>
+          <p className="text-stat-label uppercase tracking-wide text-[var(--muted-foreground)]">Total</p>
+          <p className="text-stat-value mt-1 text-[#1A1A1A]">{usuarios.length}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#555555]">Ativos</p>
-          <p className="mt-1 text-2xl font-bold text-[#16A34A]">{ativos}</p>
+          <p className="text-stat-label uppercase tracking-wide text-[var(--muted-foreground)]">Ativos</p>
+          <p className="text-stat-value mt-1 text-[#16A34A]">{ativos}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#555555]">Aguardando 1º acesso</p>
-          <p className="mt-1 text-2xl font-bold text-[#D97706]">{aguardando}</p>
+          <p className="text-stat-label uppercase tracking-wide text-[var(--muted-foreground)]">Aguardando 1º acesso</p>
+          <p className="text-stat-value mt-1 text-[#D97706]">{aguardando}</p>
         </Card>
       </div>
 
       {/* Filtros */}
-      <div style={{ maxWidth: "80rem" }} className="mx-auto w-full">
-        <Card className="p-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Input
-              placeholder="Buscar por nome ou usuário…"
-              className="min-w-[220px] flex-1"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-            />
-            {(["todos", "ativos", "inativos"] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFiltro(f)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium capitalize transition-colors ${filtro === f ? "bg-[#AF1B1B] text-white" : "bg-[#F3F4F6] text-[#555555] hover:bg-[#E5E7EB]"}`}
-              >
-                {f === "todos" ? "Todos" : f === "ativos" ? "Ativos" : "Inativos"}
-              </button>
-            ))}
-          </div>
-        </Card>
-      </div>
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Input
+            placeholder="Buscar por nome ou usuário…"
+            className="min-w-[220px] flex-1"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+          {(["todos", "ativos", "inativos"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFiltro(f)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium capitalize transition-colors ${filtro === f ? "bg-[#AF1B1B] text-white" : "bg-[#F3F4F6] text-[#555555] hover:bg-[#E5E7EB]"}`}
+            >
+              {f === "todos" ? "Todos" : f === "ativos" ? "Ativos" : "Inativos"}
+            </button>
+          ))}
+        </div>
+      </Card>
 
       {/* Lista */}
       {loading ? (
-        <div style={{ maxWidth: "80rem" }} className="mx-auto w-full">
-          <Card className="p-6">
-            <div className="flex items-center gap-3">
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#AF1B1B]" />
-              <span className="text-sm text-[#555555]">Carregando usuários…</span>
-            </div>
-          </Card>
-        </div>
+        <Card className="p-6">
+          <div className="flex items-center gap-3">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#AF1B1B]" />
+            <span className="text-sm text-[#555555]">Carregando usuários…</span>
+          </div>
+        </Card>
       ) : filtered.length === 0 ? (
-        <div style={{ maxWidth: "80rem" }} className="mx-auto w-full">
-          <Card className="p-6">
-            <div className="flex items-center gap-3 text-[#555555]">
-              <UserCog size={18} />
-              <span className="text-sm">Nenhum usuário encontrado.</span>
-            </div>
-          </Card>
-        </div>
+        <Card className="p-6">
+          <div className="flex items-center gap-3 text-[#555555]">
+            <UserCog size={18} />
+            <span className="text-sm">Nenhum usuário encontrado.</span>
+          </div>
+        </Card>
       ) : (
-        <div className="mx-auto grid w-full gap-6" style={{ maxWidth: "80rem" }}>
+        <div className="grid gap-6">
           {grouped.map((group) => (
             <section key={group.value} className="grid gap-3">
               <div className="flex flex-wrap items-end justify-between gap-2">
@@ -602,6 +595,6 @@ export function UsuariosPanel({ canCreateUsers = false }: { canCreateUsers?: boo
           ))}
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

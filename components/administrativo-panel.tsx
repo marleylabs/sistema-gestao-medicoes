@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Copy, Download, Edit3, FileSpreadsheet, RefreshCw, Save, Upload, X } from "lucide-react";
-import { Button, Card, Input, SectionHeader } from "@/components/ui";
+import { Button, Card, Input, PageContainer, PageHeader } from "@/components/ui";
 
 type CadastroFornecedor = {
   id: string;
@@ -233,7 +233,7 @@ function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: ()
             ["primeiroAditivo", "1º Adi"],
             ["segundoAditivo", "2º Ad"],
           ].map(([field, label]) => (
-            <label key={field} className="grid gap-1 text-xs font-semibold text-[#555555]">
+            <label key={field} className="text-label grid gap-1 text-[var(--muted-foreground)]">
               {label}
               <Input
                 type={field === "email" ? "email" : "text"}
@@ -253,11 +253,11 @@ function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: ()
               />
             </label>
           ))}
-          <label className="grid gap-1 text-xs font-semibold text-[#555555]">
+          <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
             Início
             <Input type="date" value={form.inicio} onChange={(e) => update("inicio", e.target.value)} />
           </label>
-          <label className="grid gap-1 text-xs font-semibold text-[#555555]">
+          <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
             Final
             <Input type="date" value={form.final} onChange={(e) => update("final", e.target.value)} />
           </label>
@@ -273,7 +273,7 @@ function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: ()
         <div className="grid flex-1 content-start gap-x-8 gap-y-3 px-5 py-4 text-xs sm:grid-cols-2">
           <div className="min-w-0">
             <span className="text-[#64748B]">CNPJ</span>
-            <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{item.cnpj ?? "-"}</p>
+            <p className="font-technical mt-0.5 truncate font-semibold text-[#1F2937]">{item.cnpj ?? "-"}</p>
           </div>
           <div className="min-w-0">
             <span className="text-[#64748B]">ID</span>
@@ -383,8 +383,9 @@ export function AdministrativoPanel() {
   }
 
   return (
-    <div className="mx-auto grid w-full gap-6" style={{ maxWidth: "88rem" }}>
-      <SectionHeader
+    <PageContainer className="grid w-full gap-6">
+      <PageHeader
+        eyebrow="Administrativo"
         title="Painel Administrativo"
         description="Cadastros cadastrais dos fornecedores, vencimentos e bloqueios para envio de NF."
         action={
@@ -406,10 +407,10 @@ export function AdministrativoPanel() {
       />
 
       <div className="grid gap-4 sm:grid-cols-4">
-        <Card className="p-4"><p className="text-xs font-bold uppercase text-[#6B7280]">Total</p><p className="mt-1 text-2xl font-bold">{items.length}</p></Card>
-        <Card className="p-4"><p className="text-xs font-bold uppercase text-[#6B7280]">Vencidos</p><p className="mt-1 text-2xl font-bold text-[#B91C1C]">{vencidos}</p></Card>
-        <Card className="p-4"><p className="text-xs font-bold uppercase text-[#6B7280]">Vencem em 30 dias</p><p className="mt-1 text-2xl font-bold text-[#D97706]">{vencendo}</p></Card>
-        <Card className="p-4"><p className="text-xs font-bold uppercase text-[#6B7280]">Pendências</p><p className="mt-1 text-2xl font-bold text-[#2563EB]">{pendencias.length}</p></Card>
+        <Card className="p-4"><p className="text-stat-label uppercase text-[var(--muted-foreground)]">Total</p><p className="text-stat-value mt-1">{items.length}</p></Card>
+        <Card className="p-4"><p className="text-stat-label uppercase text-[var(--muted-foreground)]">Vencidos</p><p className="text-stat-value mt-1 text-[#B91C1C]">{vencidos}</p></Card>
+        <Card className="p-4"><p className="text-stat-label uppercase text-[var(--muted-foreground)]">Vencem em 30 dias</p><p className="text-stat-value mt-1 text-[#D97706]">{vencendo}</p></Card>
+        <Card className="p-4"><p className="text-stat-label uppercase text-[var(--muted-foreground)]">Pendências</p><p className="text-stat-value mt-1 text-[#2563EB]">{pendencias.length}</p></Card>
       </div>
 
       <Card className="overflow-hidden">
@@ -508,6 +509,6 @@ export function AdministrativoPanel() {
         </div>
       )}
 
-    </div>
+    </PageContainer>
   );
 }

@@ -1,0 +1,83 @@
+RELATÓRIO FINAL — NOVO DESIGN SYSTEM CORPORATIVO
+Data: 26/08/2026
+
+1. STACK VISUAL UTILIZADA
+
+Next.js 16, React 19, TypeScript, Tailwind CSS 4, HeroUI nos pontos já existentes, Lucide React e componentes próprios. Nenhuma dependência visual foi adicionada. DaisyUI, Shadcn e Radix separado não foram introduzidos.
+
+2. FONTES
+
+Manrope é a fonte principal da interface. Geist Mono é reservada a IDs, ciclos, documentos e demais dados técnicos. As duas foram configuradas uma única vez com next/font/google em app/layout.tsx e expostas como variáveis globais.
+
+3. TOKENS
+
+Foram centralizados em app/globals.css: --sidebar (#0A0A0A), --background (#F7F7F5), --surface (#FFFFFF), --primary (#AF1B1B), --primary-hover (#951717), --primary-soft, --foreground (#111111), --muted-foreground, --border, cores semânticas de sucesso/aviso/erro/informação e aliases de tipografia.
+
+4. COMPONENTES GLOBAIS
+
+Foram padronizados Button, IconButton, Input, Select, Textarea, Field, Badge, Card, SectionHeader e PageHeader. Botões preservam props nativas e suportam variantes primary, secondary, outline, destructive, success e ghost, além de Aura opcional para CTAs. Tabelas, dialogs, popovers, dropdowns, tabs e superfícies de feedback existentes receberam densidade e tokens globais sem troca de biblioteca.
+
+5. LAYOUT
+
+O AppShell foi consolidado com sidebar desktop fixa de 240 px, navegação por permissão já existente, rodapé compacto do usuário, header móvel, drawer com backdrop/Escape e conteúdo principal responsivo. O menu móvel não ocupa largura quando fechado e o scroll de fundo é bloqueado durante sua abertura.
+
+6. PÁGINAS MIGRADAS
+
+Login; Dashboard; Mapa de Pagamento e workspace; Financeiro; Administrativo; Usuários; áreas de ciclos/importação/evidências/BM/histórico cobertas pelo shell e padrões compartilhados; Portal do Fornecedor; Minhas Medições; menu de conta; chat e overlays ativos.
+
+7. ARQUIVOS ALTERADOS NESTA MIGRAÇÃO VISUAL
+
+app/layout.tsx
+app/globals.css
+components/ui.tsx
+components/app-shell.tsx
+components/account-menu.tsx
+components/medicoes-app.tsx
+components/colaborador-app.tsx
+components/login-form.tsx
+components/dashboard.tsx
+components/financeiro-panel.tsx
+components/administrativo-panel.tsx
+components/usuarios-panel.tsx
+components/mapa-pagamento-table.tsx
+components/general-chat-widget.tsx
+
+8. COMPONENTES PRESERVADOS FUNCIONALMENTE
+
+MedicoesApp, ColaboradorApp, MapaPagamentoTable, FinanceiroPanel, AdministrativoPanel, UsuariosPanel e GeneralChatWidget tiveram preservados fetches, estados, efeitos, callbacks, payloads, filtros, cálculos, workflows e verificações de permissão. A migração atuou no markup de apresentação, classes, wrappers, densidade e responsividade.
+
+9. RESPONSIVIDADE
+
+O layout foi verificado nos breakpoints desktop amplo (1920×1080 e 1440×900), desktop operacional (1366×768), notebook/tablet horizontal (1024×768), tablet e celular (390×844). A inspeção visual detalhada foi concentrada em 1366×768, 1024×768 e 390×844. Sidebar, drawer, cards, filtros, tabelas, cabeçalhos e portal mantiveram leitura e hierarquia. Em celular, os filtros e o CTA do portal passaram a empilhar e ocupar a largura disponível.
+
+10. TESTES FUNCIONAIS
+
+Foram exercitados login administrativo, navegação entre Dashboard, Financeiro, Administrativo e Usuários, filtros e dropdowns, logout, login/portal do fornecedor, drawer móvel e chat. Também foram confirmados estados de disabled, handlers nativos, formulários e props preservadas nos componentes compartilhados. Nenhuma ação destrutiva ou alteração de workflow foi disparada durante a validação visual.
+
+11. BUILD
+
+npm run build: aprovado; Prisma Client gerado, compilação Next.js aprovada, TypeScript aprovado e 42 páginas geradas.
+npm run test:targeted: 11 testes aprovados, 0 falhas.
+git diff --check: aprovado; apenas avisos informativos de conversão LF/CRLF.
+docker compose up -d --build: aprovado.
+docker compose ps: web, ETL e PostgreSQL em estado healthy.
+
+12. REGRESSÕES
+
+Regressão visual: ação Atualizar ocupava espaço excessivo no header móvel. Causa: utilitário de visibilidade não prevalecia sobre a classe compartilhada. Correção: regra responsiva explícita.
+
+Regressão visual: filtros de datas e fornecedor se sobrepunham no celular. Causa: bases rígidas herdadas do desktop. Correção: largura integral e flex-wrap nos breakpoints estreitos.
+
+Regressão visual: botão Ver medições comprimia o texto do aviso no portal móvel. Causa: layout horizontal sem quebra. Correção: empilhamento no mobile e largura integral do CTA.
+
+Regressão visual: bolha do chat aparecia sobre o drawer. Causa: z-index superior ao menu móvel. Correção: camada do chat rebaixada em relação ao drawer.
+
+Nenhuma regressão funcional causada pelo redesign foi identificada nos testes executados.
+
+13. PENDÊNCIAS VISUAIS
+
+Nenhuma rota ativa identificada ficou fora do padrão compartilhado nesta etapa. Componentes legados não utilizados foram preservados conforme solicitado. Uma futura rodada, separada deste escopo, pode ampliar testes automatizados de acessibilidade e snapshots visuais sem alterar regras funcionais.
+
+CONCLUSÃO
+
+A camada visual passou a seguir a cadeia tokens → componentes globais → AppShell → páginas. Não foram alterados banco, schema, migrations, Prisma schema, APIs, ETL, autenticação, autorização, roles, workflows, NF, cálculos ou regras cadastrais nesta migração.

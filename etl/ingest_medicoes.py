@@ -707,6 +707,24 @@ def upsert_payment_map_status(conn, profissionais, data: dict[str, Any]) -> int:
     return conn.execute(stmt).scalar_one()
 
 
+def backfill_professional_codigo(conn, profissionais, nome: str, codigo: str) -> None:
+    """Preenche profissionais.codigo a partir do projetista_codigo já usado no mapa de
+    pagamento, sem sobrescrever um codigo já existente e sem tocar em nenhum outro campo
+    (em especial status_colaborador, para não reabrir o bug de reset de status do ETL).
+    Roda para toda linha do mapa de pagamento, independente de classificação ATO/PRODUÇÃO —
+    a mesma cobertura que já alimenta mapa_pagamento_itens — para que profissionais.codigo
+    nunca fique divergente do código que o pagamento e o Portal do Colaborador já reconhecem."""
+    stmt = insert(profissionais).values(nome=nome, codigo=codigo)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[profissionais.c.nome],
+        set_={
+            "codigo": text("coalesce(profissionais.codigo, excluded.codigo)"),
+            "updated_at": text("now()"),
+        },
+    )
+    conn.execute(stmt)
+
+
 def build_base_professional(row: pd.Series) -> dict[str, Any] | None:
     raw = extract(row, BASE_PROFESSIONAL_COLUMNS)
     codigo = clean_text(raw["codigo"])
@@ -2023,7 +2041,6 @@ def ingest(
             upsert_base_professional(conn, profissionais, base_professional)
             base_loaded += 1
 
-        conn.execute(text("update profissionais set status_colaborador = null"))
         if not payment_map_df.empty:
             for _, row in payment_map_df.iterrows():
                 payment_status = build_payment_map_status(row, positive_payment_codes, canonical_codes)
@@ -2038,6 +2055,9 @@ def ingest(
                     continue
                 upsert_payment_map_item(conn, mapa_pagamento_itens, payment_item)
                 payment_items_loaded += 1
+                backfill_professional_codigo(
+                    conn, profissionais, payment_item["projetista_codigo"], payment_item["projetista_codigo"],
+                )
 
         for index, row in bm_aux_df.iterrows():
             raw = extract(row, BM_AUX_COLUMNS)

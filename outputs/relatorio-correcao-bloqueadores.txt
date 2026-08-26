@@ -1,0 +1,139 @@
+RELATÓRIO FINAL — CORREÇÃO CONTROLADA DOS BLOQUEADORES
+Data: 26/08/2026
+Projeto: Sistema de Gestão de Medições
+
+1. CORREÇÕES REALIZADAS
+
+1.1 Vínculo determinístico do colaborador
+Problema: o upload de NF e a resolução de aliases podiam usar CNPJ como fallback de identidade e selecionar outro cadastro quando o CNPJ era compartilhado.
+Causa raiz: identidade operacional e identidade fiscal estavam misturadas em consultas com fallback por CNPJ.
+Arquivos alterados: lib/cadastro-identity.ts, lib/cadastro-fornecedor.ts, lib/colaborador-alias.ts, app/api/colaborador/me/route.ts e app/api/admin/financeiro/route.ts.
+Solução: seleção determinística primeiro pelo colaborador_codigo canônico e depois pelo nome/responsável autenticado; CNPJ não seleciona colaborador. O profissional é buscado somente após resolver o cadastro e seu código canônico. A fila financeira também prioriza o cadastro exato do workflow.
+Teste: testes unitários e E2E com TESTE-A e TESTE-B, usuários distintos, cadastros distintos e o mesmo CNPJ 11.222.333/0001-81.
+Resultado: cada usuário resolveu seu cadastro, razão social, workflow, NF e comprovante próprios.
+
+1.2 Validação de NF em PDF
+Problema: PDFs pesquisáveis válidos e PDFs com XRef regravado eram rejeitados; a versão anterior do parser era antiga e o runtime standalone não continha todos os artefatos necessários.
+Causa raiz: API/parser antigo e, após a atualização, ausência do canvas nativo Linux e do worker pdfjs no rastreamento do build standalone.
+Arquivos alterados: lib/nf-document-validation.ts, next.config.ts, package.json e package-lock.json.
+Solução: atualização para pdf-parse 2.4.5 e sua API PDFParse; inclusão explícita de pdfjs, worker e bindings de canvas no standalone; extração e normalização robustas sem retirar magic bytes, MIME, tamanho, conteúdo pesquisável, CNPJ, razão social, prestador ou tomador.
+Teste: fixtures válida A/B, XRef regravado, quebras alternativas, CNPJ errado, razão errada, tomador errado, sem texto, falso e corrompido.
+Resultado E2E: falso=400; sem texto=409; CNPJ errado=409; razão errada=409; tomador errado=409; NF válida A=200; NF válida B=200.
+
+1.3 Auditoria de pagamento
+Problema: APROVADO → PAGO não gerava registro em sgc_logs.
+Causa raiz: a rota atualizava o workflow, mas não chamava logBmAction.
+Arquivo alterado: app/api/admin/financeiro/route.ts.
+Solução: registro REGISTRAR_PAGAMENTO com workflow, ciclo, executor, data automática, APROVADO, PAGO, tela de origem e nome/presença do comprovante; nenhum binário é gravado no log.
+Teste: pagamentos de TESTE-A e TESTE-B realizados por PATCH normal da API financeira.
+Resultado: ambos retornaram 200, terminaram PAGO e possuem logs executados por TESTE E2E FINANCEIRO, com nomes distintos de comprovante.
+
+1.4 Preservação de status no ETL
+Problema: UPDATE global zerava status_colaborador de todos os profissionais antes da recomposição.
+Causa raiz: a limpeza global tratava uma planilha parcial como fotografia integral da base.
+Arquivo alterado: etl/ingest_medicoes.py.
+Solução: remoção exclusivamente do reset global. Os profissionais presentes continuam sendo recalculados pelo upsert existente; os ausentes preservam seu estado.
+Teste: etl/test_status_preservation.py em tabela temporária, sem modificar a tabela operacional.
+Resultado: A e B foram recalculados; C, ausente da entrada, preservou PRODUÇÃO.
+
+1.5 Fonte de verdade do banco
+Problema: coexistência de schemas com níveis diferentes de atualização.
+Causa raiz: prisma/schema.prisma evoluiu com a aplicação, database/schema.sql mantém criação/evoluções SQL e database/schema.prisma permaneceu legado.
+Arquivo criado: docs/database-source-of-truth.md.
+Solução: documentação formal da fonte ativa e de uma futura estratégia segura de baseline, sem reset, recriação ou migração destrutiva.
+Resultado: nenhuma constraint UNIQUE foi criada para cnpj_normalizado; CNPJ compartilhado permanece permitido.
+
+2. VÍNCULO DO COLABORADOR
+
+usuarios.usuario + usuarios.nome
+→ aliases existentes e identidade autenticada
+→ cadastro específico (colaborador_codigo; fallback determinístico por responsavel)
+→ colaborador_codigo canônico
+→ profissionais.codigo
+→ dados fiscais desse cadastro
+→ validação documental
+
+O CNPJ só é comparado depois que a identidade do colaborador foi estabelecida.
+
+3. CNPJ COMPARTILHADO
+
+Dois fornecedores diferentes podem continuar utilizando o mesmo CNPJ? SIM.
+
+Evidência: TESTE-A e TESTE-B usam 11.222.333/0001-81, mas possuem usuários, códigos, cadastros, razões sociais, workflows, NFs, pagamentos e comprovantes diferentes. Ambos concluíram o fluxo. A fila financeira exibiu TESTE A SERVICOS LTDA para A e TESTE B SERVICOS LTDA para B.
+
+4. NOTA FISCAL
+
+Funciona naturalmente: SIM.
+
+AGUARDANDO_NF → upload multipart normal → parser/validações → APROVADO.
+Não houve inserção de NF, alteração de status ou aprovação por SQL. As APIs rejeitaram todas as fixtures negativas e aceitaram as duas NFs válidas.
+
+5. PAGAMENTO
+
+Funciona naturalmente: SIM.
+
+APROVADO → PATCH da API financeira → PAGO → comprovante armazenado → sgc_logs.
+Estados finais:
+- TESTE-A: PAGO; valida-a.pdf; comprovante-teste-a.pdf.
+- TESTE-B: PAGO; valida-b.pdf; comprovante-teste-b.pdf.
+Logs: REGISTRAR_PAGAMENTO, APROVADO → PAGO, executor TESTE E2E FINANCEIRO e nome do comprovante.
+
+6. ETL
+
+status_colaborador não é mais apagado globalmente. Somente profissionais presentes na importação são atualizados/recalculados pelas rotinas já existentes. Um profissional ausente de uma entrada parcial preserva ATO/PRODUÇÃO. A alteração foi validada com tabela temporária no PostgreSQL.
+
+7. BANCO
+
+Fonte de verdade do ORM/build: prisma/schema.prisma.
+Criação/evolução SQL da infraestrutura: database/schema.sql.
+Estrutura efetiva: PostgreSQL em execução, a ser comparado antes de futuras migrations.
+Legado: database/schema.prisma; não deve ser copiado sobre o schema ativo.
+Estratégia futura: inventário do banco, snapshot, baseline marcado como aplicado e migrations incrementais ensaiadas em clone. Nunca prisma migrate reset no banco com dados.
+Divergência restante: o schema Prisma legado permanece no repositório, agora explicitamente classificado e documentado.
+
+8. PERMISSÕES
+
+Perfil          | Ação                         | Esperado | Resultado
+COLABORADOR     | financeiro                   | 403      | 403
+COLABORADOR     | usuários                     | 403      | 403
+COLABORADOR     | ETL                          | 403      | 403
+FINANCEIRO      | usuários                     | 403      | 403
+FINANCEIRO      | administrativo               | 403      | 403
+MEDICAO         | usuários                     | 403      | 403
+ADMINISTRATIVO  | mapa de pagamento            | 403      | 403
+ADMIN           | usuários                     | 200      | 200
+COLABORADOR A   | própria NF/comprovante       | 200      | 200
+COLABORADOR A   | NF/comprovante de B          | bloqueio | 403
+COLABORADOR B   | própria NF/comprovante       | 200      | 200
+COLABORADOR B   | NF/comprovante de A          | bloqueio | 403
+
+BM/portal: cada usuário recebeu somente sua própria medição no GET /api/colaborador/medicoes. Chat de ambos retornou lista própria vazia, sem exposição cruzada.
+
+9. BUILD E TESTES
+
+- npm run test:targeted: 11/11 aprovados.
+- npm run build: aprovado, incluindo prisma generate e TypeScript.
+- Docker compose rebuild: aprovado.
+- Serviços finais: PostgreSQL healthy, ETL healthy, web healthy.
+- ETL temporário: aprovado; presentes recalculados e ausente preservado.
+- NF E2E: todas as rejeições e aceitações esperadas confirmadas.
+- Pagamento E2E: 2/2 pagamentos por API, 2/2 logs e 2/2 comprovantes.
+- Autorização/ownership: matriz confirmada.
+- git diff --check: sem erros; apenas avisos de normalização CRLF do ambiente Windows.
+- Lint: não executável no estado atual porque ESLint 9 não possui eslint.config no projeto; isso é infraestrutura preexistente, não falha das correções. Build e tipos passaram.
+
+10. PENDÊNCIAS RESTANTES
+
+🔴 BLOQUEADOR: nenhum bloqueador do ciclo BM → NF → Pagamento permaneceu nos cenários validados.
+🟠 ALTO: configurar credenciais SMTP reais e executar envio para destinatário controlado. O ambiente atual não oferece credenciais; não foram inventadas. A falha de SMTP permanece desacoplada da operação de BM.
+🟡 MÉDIO: criar baseline formal de migrations em clone/janela controlada, conforme docs/database-source-of-truth.md.
+🟡 MÉDIO: adicionar configuração flat do ESLint 9 e incorporar lint ao pipeline.
+🟡 MÉDIO: revisar os 9 avisos high reportados pelo npm audit em uma etapa própria, com análise de compatibilidade; nenhuma atualização destrutiva foi aplicada automaticamente.
+🔵 BAIXO: ampliar fixtures com amostras anonimizadas de ERPs reais à medida que estiverem disponíveis.
+⚪ MELHORIA: automatizar o E2E HTTP completo em pipeline isolado; nesta etapa ele foi executado de forma controlada contra o Docker local.
+
+11. DECISÃO FINAL
+
+O sistema está tecnicamente pronto para executar um ciclo completo BM → NF → Pagamento sem intervenção manual? SIM, para o fluxo principal validado.
+
+Justificativa: dois workflows independentes, com usuários e cadastros distintos compartilhando o mesmo CNPJ, avançaram pelas APIs normais de PENDENTE/AGUARDANDO_NF até APROVADO e PAGO, armazenaram NFs e comprovantes corretos, geraram logs completos e bloquearam acesso cruzado. Nenhuma NF ou transição APROVADO/PAGO foi forçada diretamente no banco. O SMTP real permanece uma pendência de ambiente, mas não bloqueia nem reverte o ciclo principal.
