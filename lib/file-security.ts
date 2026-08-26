@@ -14,6 +14,12 @@ export function detectAllowedDocumentMime(buffer: Buffer) {
   return detectAllowedImageMime(buffer);
 }
 
+/** .xlsx/.xlsm são pacotes ZIP (OOXML); assinatura local de arquivo ZIP: "PK\x03\x04". */
+export function detectXlsxMime(buffer: Buffer) {
+  const isZip = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04;
+  return isZip ? "application/zip" : null;
+}
+
 export function safeDownloadName(value: string | null | undefined, fallback: string) {
   const cleaned = (value ?? fallback)
     .replace(/[\r\n"]/g, "")

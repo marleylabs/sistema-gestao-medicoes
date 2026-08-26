@@ -223,6 +223,50 @@ alter table sgc_aprovacoes_medicao add constraint sgc_aprovacoes_status_check ch
     status in ('AGUARDANDO_ENVIO','PENDENTE','REVISAO_SOLICITADA','AGUARDANDO_NF','APROVADO','PAGO','CANCELADO')
 );
 
+-- Conferência prévia de documentos pelo fornecedor, anterior à liberação do PENDENTE de aprovação.
+-- Campo independente de status: não altera o significado nem os valores permitidos de "status".
+alter table sgc_aprovacoes_medicao add column if not exists status_conferencia text not null default 'CONCLUIDA';
+alter table sgc_aprovacoes_medicao add column if not exists conferencia_arquivo bytea;
+alter table sgc_aprovacoes_medicao add column if not exists conferencia_arquivo_nome text;
+alter table sgc_aprovacoes_medicao add column if not exists conferencia_carregado_at timestamptz;
+alter table sgc_aprovacoes_medicao drop constraint if exists sgc_aprovacoes_status_conferencia_check;
+alter table sgc_aprovacoes_medicao add constraint sgc_aprovacoes_status_conferencia_check check (
+    status_conferencia in ('AGUARDANDO_UPLOAD','DIVERGENCIA','CONCLUIDA')
+);
+
+-- ─── divergencias_medicao ───────────────────────────────────────
+create table if not exists divergencias_medicao (
+    id                             uuid        primary key default gen_random_uuid(),
+    sgc_id                         uuid        not null references sgc_aprovacoes_medicao(id) on delete cascade,
+    colaborador_codigo             text        not null,
+    ciclo                          text        not null,
+    id_medicao_existente           uuid,
+    nr_vale                        text        not null,
+    documento_nao_mapeado          boolean     not null default false,
+    comparacao_ambigua             boolean     not null default false,
+    formato_divergente             boolean     not null default false,
+    a1eq_divergente                boolean     not null default false,
+    emissao_divergente             boolean     not null default false,
+    tipo_divergente                boolean     not null default false,
+    equipe_formato                 text,
+    equipe_a1eq_hh                 numeric(14,4),
+    equipe_percentual_emissao      numeric(8,4),
+    equipe_tipo                    text,
+    fornecedor_formato             text        not null,
+    fornecedor_a1eq_hh             numeric(14,4) not null,
+    fornecedor_percentual_emissao  numeric(8,4)  not null,
+    fornecedor_tipo                text        not null,
+    status                         text        not null default 'PENDENTE',
+    observacao                     text,
+    resolvido_por_usuario_id       uuid        references usuarios(id) on delete set null,
+    resolvido_por_nome             text,
+    resolvido_em                   timestamptz,
+    created_at                     timestamptz not null default now(),
+    updated_at                     timestamptz not null default now(),
+    constraint divergencias_medicao_status_check check (status in ('PENDENTE','INCLUIDA','DESCARTADA')),
+    constraint divergencias_medicao_sgc_nrvale_key unique (sgc_id, nr_vale)
+);
+
 -- ─── sgc_logs ─────────────────────────────────────────────────
 create table if not exists sgc_logs (
     id                 uuid        primary key default gen_random_uuid(),
@@ -422,6 +466,10 @@ create index if not exists idx_bm_aux_medicoes_responsavel_codigo   on bm_aux_me
 create index if not exists idx_bm_aux_medicoes_ciclo                on bm_aux_medicoes(ciclo);
 create index if not exists idx_contratos_ativo                      on contratos(ativo);
 create index if not exists idx_etl_execucoes_ciclo                  on etl_execucoes(ciclo);
+create index if not exists idx_sgc_aprovacoes_medicao_status_conf   on sgc_aprovacoes_medicao(status_conferencia);
+create index if not exists idx_divergencias_medicao_colaborador     on divergencias_medicao(colaborador_codigo, ciclo);
+create index if not exists idx_divergencias_medicao_status          on divergencias_medicao(status);
+create index if not exists idx_divergencias_medicao_sgc             on divergencias_medicao(sgc_id);
 
 -- ─── View dashboard ──────────────────────────────────────────
 create or replace view vw_dashboard_medicoes as

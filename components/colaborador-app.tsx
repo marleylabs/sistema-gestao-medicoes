@@ -85,6 +85,7 @@ type ColaboradorData = {
     medicaoOnline: boolean;
     mensagens: SgcChatMessage[];
     aprovadoAt: string | null; revisaoSolicitadaAt: string | null; reenviadoAt: string | null;
+    statusConferencia: string;
   };
 };
 
@@ -216,6 +217,11 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   const [nfProgress, setNfProgress]         = useState(0);
   const [nfError, setNfError]               = useState<string | null>(null);
   const [draggingNf, setDraggingNf]         = useState(false);
+  const [conferenciaFile, setConferenciaFile]         = useState<File | null>(null);
+  const [conferenciaUploading, setConferenciaUploading] = useState(false);
+  const [conferenciaProgress, setConferenciaProgress]   = useState(0);
+  const [conferenciaError, setConferenciaError]         = useState<string | null>(null);
+  const [draggingConferencia, setDraggingConferencia]   = useState(false);
   const [savingAction, setSavingAction]     = useState<"SALVAR" | "ENVIAR" | null>(null);
   const [salvoAt, setSalvoAt]               = useState<string | null>(null);
   const [chatOpen, setChatOpen]             = useState(false);
@@ -227,7 +233,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   const previousMedicaoMessageIdsRef        = useRef<Set<string>>(new Set());
   const nfInputRef                          = useRef<HTMLInputElement | null>(null);
 
-  const canValidate = data?.sgc.status === "PENDENTE";
+  const canValidate = data?.sgc.status === "PENDENTE" && data?.sgc.statusConferencia === "CONCLUIDA";
   const { label: statusLabel, badge: statusBadge } = data ? statusConfig(data.sgc.status) : { label: "", badge: "neutral" as const };
 
   const contratos = useMemo(() => {
@@ -472,6 +478,65 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     }
   }
 
+  function handleConferenciaFileSelect(file: File | null) {
+    setConferenciaError(null);
+    if (!file) {
+      setConferenciaFile(null);
+      return;
+    }
+    if (!/\.(xlsx|xlsm)$/i.test(file.name)) {
+      setConferenciaFile(null);
+      setConferenciaError("Formato inválido. Envie um arquivo .xlsx.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setConferenciaFile(null);
+      setConferenciaError("O arquivo deve ter no máximo 5 MB.");
+      return;
+    }
+    setConferenciaFile(file);
+  }
+
+  async function uploadConferencia() {
+    if (!conferenciaFile) return;
+    setConferenciaUploading(true);
+    setMessage(null);
+    setConferenciaError(null);
+    setConferenciaProgress(4);
+    const form = new FormData();
+    form.append("planilha", conferenciaFile);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/colaborador/conferencia/upload");
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          setConferenciaProgress(Math.min(95, Math.round((event.loaded / event.total) * 100)));
+        };
+        xhr.onload = () => {
+          const payload = (() => {
+            try { return JSON.parse(xhr.responseText || "{}"); } catch { return {}; }
+          })();
+          if (xhr.status >= 200 && xhr.status < 300) {
+            setConferenciaProgress(100);
+            resolve();
+          } else {
+            reject(new Error(payload.error ?? "Não foi possível processar a planilha."));
+          }
+        };
+        xhr.onerror = () => reject(new Error("Erro de conexão ao enviar a planilha."));
+        xhr.send(form);
+      });
+      setConferenciaFile(null);
+      setMessage({ text: "Planilha enviada com sucesso.", type: "success" });
+      await loadData();
+    } catch (error) {
+      setConferenciaError(error instanceof Error ? error.message : "Não foi possível processar a planilha.");
+    } finally {
+      setConferenciaUploading(false);
+    }
+  }
+
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { if (section === "medicoes") loadMedicoes(); }, [section, loadMedicoes]);
   useEffect(() => {
@@ -528,6 +593,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   ];
 
   const aguardando = data.sgc.status === "AGUARDANDO_ENVIO";
+  const precisaConferencia = data.sgc.status === "PENDENTE" && data.sgc.statusConferencia !== "CONCLUIDA";
 
   const TITLES: Record<Section, string> = { portal: "Portal do Fornecedor", medicoes: "Minhas Medições" };
 
@@ -559,8 +625,110 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
           </Card>
         )}
 
-        {/* ── Conteúdo visível após envio do BM ── */}
-        {section === "portal" && !aguardando && <>
+        {/* ── Conferência da medição (antes da liberação do BM) ── */}
+        {section === "portal" && precisaConferencia && data.sgc.statusConferencia === "AGUARDANDO_UPLOAD" && (
+          <Card className="p-6">
+            <p className="text-eyebrow mb-1 text-[var(--primary)]">Fornecedor</p>
+            <h2 className="text-section-title text-[#1A1A1A]">Conferência da Medição</h2>
+            <p className="mt-2 text-sm text-[#555555]">
+              Antes de visualizar e aprovar seu BM, informe os documentos correspondentes a este ciclo. Baixe a máscara, preencha os dados e envie o arquivo para conferência.
+            </p>
+            <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#F9FAFB] px-3 py-1.5">
+              <span className="text-label text-[var(--muted-foreground)]">Ciclo da medição</span>
+              <span className="font-technical text-sm font-bold text-[#1A1A1A]">{data.cicloAtivo}</span>
+            </div>
+
+            {message && (
+              <div className={`mt-4 rounded-lg px-4 py-3 text-sm font-medium ${message.type === "success" ? "bg-[#F0FDF4] text-[#16A34A]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
+                {message.text}
+              </div>
+            )}
+
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <a
+                href="/api/colaborador/conferencia/mascara"
+                download
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#555555] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
+              >
+                <FileUp size={14} />
+                Baixar máscara
+              </a>
+            </div>
+
+            <p className="mt-5 mb-2 text-label text-[var(--muted-foreground)]">Enviar documentos da medição</p>
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDraggingConferencia(true); }}
+              onDragLeave={() => setDraggingConferencia(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDraggingConferencia(false);
+                handleConferenciaFileSelect(e.dataTransfer.files?.[0] ?? null);
+              }}
+              className={`rounded-xl border border-dashed px-4 py-5 text-center transition ${draggingConferencia ? "border-[var(--primary)] bg-[var(--primary-soft)]" : "border-[#D1D5DB] bg-white/65 hover:bg-white"}`}
+            >
+              {!conferenciaFile ? (
+                <>
+                  <UploadCloud className="mx-auto mb-2 text-[#9CA3AF]" size={26} />
+                  <p className="text-sm text-[#555555]">Arraste o arquivo .xlsx aqui ou</p>
+                  <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-[#555555] hover:border-[var(--primary)] hover:text-[var(--primary)]">
+                    Selecionar arquivo
+                    <input
+                      type="file"
+                      accept=".xlsx,.xlsm"
+                      className="hidden"
+                      onChange={(e) => handleConferenciaFileSelect(e.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                </>
+              ) : (
+                <div className="flex items-center justify-between gap-3 text-left">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FileIcon size={18} className="shrink-0 text-[#6B7280]" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#1A1A1A]">{conferenciaFile.name}</p>
+                      <p className="mt-0.5 text-xs text-[#6B7280]">{readableFileSize(conferenciaFile.size)}</p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <IconButton onClick={() => handleConferenciaFileSelect(null)} disabled={conferenciaUploading}>
+                      <X size={14} />
+                    </IconButton>
+                    <Button variant="success" className="h-8 px-4" onClick={uploadConferencia} disabled={conferenciaUploading}>
+                      {conferenciaUploading ? "Enviando..." : "Enviar"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+            {conferenciaUploading && (
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[#F3F4F6]">
+                <div className="h-full rounded-full bg-[#15803D] transition-all duration-200" style={{ width: `${conferenciaProgress}%` }} />
+              </div>
+            )}
+            {conferenciaError && <p className="mt-2 flex items-center gap-1 text-xs text-[#B91C1C]"><AlertCircle size={13} />{conferenciaError}</p>}
+          </Card>
+        )}
+
+        {section === "portal" && precisaConferencia && data.sgc.statusConferencia === "DIVERGENCIA" && (
+          <Card className="p-10 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--error-soft)] text-[var(--error)]">
+              <AlertTriangle size={30} />
+            </div>
+            <h2 className="text-section-title text-[#1A1A1A]">Conferência em andamento</h2>
+            <p className="mt-2 text-sm text-[#555555]">
+              Foram encontradas divergências entre os documentos informados e a medição enviada.
+              <br />
+              A Equipe de Medição está analisando as diferenças.
+            </p>
+            <div className="mx-auto mt-4 inline-flex items-center gap-4 rounded-lg bg-[#F9FAFB] px-4 py-2">
+              <span className="text-label text-[var(--muted-foreground)]">Ciclo <span className="font-technical text-[#1A1A1A]">{data.cicloAtivo}</span></span>
+              <span className="text-label text-[var(--muted-foreground)]">Status <Badge variant="danger" className="ml-1">Divergência</Badge></span>
+            </div>
+          </Card>
+        )}
+
+        {/* ── Conteúdo visível após envio do BM e conclusão da conferência ── */}
+        {section === "portal" && !aguardando && !precisaConferencia && <>
         <Card className="p-6">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
             <div>

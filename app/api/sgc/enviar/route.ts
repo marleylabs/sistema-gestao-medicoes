@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
       colaboradorNome: profissional?.nomeCompleto || profissional?.nome || colaboradorCodigo,
       status: "PENDENTE",
       revisaoNumero: 0,
+      statusConferencia: "AGUARDANDO_UPLOAD",
     },
     update: {
       status: "PENDENTE",
@@ -55,9 +56,19 @@ export async function POST(request: NextRequest) {
       reenviadoAt: isRevisao ? now : undefined,
       resolvidoAt: isRevisao ? now : undefined,
       revisaoNumero: isRevisao ? { increment: 1 } : undefined,
+      statusConferencia: "AGUARDANDO_UPLOAD",
+      conferenciaArquivo: null,
+      conferenciaArquivoNome: null,
+      conferenciaCarregadoAt: null,
       updatedAt: now,
     },
   });
+
+  if (existing) {
+    // Reenvio pós-revisão: descarta divergências de uma rodada de conferência anterior
+    // para que o próximo upload comece limpo, sem misturar decisões de ciclos diferentes.
+    await prisma.divergenciaMedicao.deleteMany({ where: { sgcId: sgc.id } });
+  }
 
   await logBmAction({
     sgcId: sgc.id,

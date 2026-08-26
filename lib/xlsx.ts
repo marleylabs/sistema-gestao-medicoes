@@ -1,6 +1,6 @@
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 
-type CellValue = string | number | Date | null | undefined;
+export type CellValue = string | number | Date | null | undefined;
 
 type ZipEntry = {
   name: string;

@@ -106,6 +106,10 @@ model SgcAprovacaoMedicao {
   salvoAt                 DateTime? @map("salvo_at") @db.Timestamptz
   observacaoColaborador   String?   @map("observacao_colaborador")
   voltadoAt               DateTime? @map("voltado_at") @db.Timestamptz
+  statusConferencia       String    @default("CONCLUIDA") @map("status_conferencia")
+  conferenciaArquivo      Bytes?    @map("conferencia_arquivo")
+  conferenciaArquivoNome  String?   @map("conferencia_arquivo_nome")
+  conferenciaCarregadoAt  DateTime? @map("conferencia_carregado_at") @db.Timestamptz
   createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt               DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
@@ -113,7 +117,49 @@ model SgcAprovacaoMedicao {
   @@index([status])
   @@index([ciclo])
   @@index([revisaoSolicitadaAt])
+  @@index([statusConferencia])
   @@map("sgc_aprovacoes_medicao")
+}
+
+model DivergenciaMedicao {
+  id                          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sgcId                       String    @map("sgc_id") @db.Uuid
+  colaboradorCodigo           String    @map("colaborador_codigo")
+  ciclo                       String
+  idMedicaoExistente          String?   @map("id_medicao_existente") @db.Uuid
+  nrVale                      String    @map("nr_vale")
+
+  documentoNaoMapeado         Boolean   @default(false) @map("documento_nao_mapeado")
+  comparacaoAmbigua           Boolean   @default(false) @map("comparacao_ambigua")
+  formatoDivergente           Boolean   @default(false) @map("formato_divergente")
+  a1eqDivergente               Boolean   @default(false) @map("a1eq_divergente")
+  emissaoDivergente           Boolean   @default(false) @map("emissao_divergente")
+  tipoDivergente               Boolean   @default(false) @map("tipo_divergente")
+
+  equipeFormato                String?   @map("equipe_formato")
+  equipeA1eqHh                  Decimal?  @map("equipe_a1eq_hh") @db.Decimal(14, 4)
+  equipePercentualEmissao       Decimal?  @map("equipe_percentual_emissao") @db.Decimal(8, 4)
+  equipeTipo                    String?   @map("equipe_tipo")
+
+  fornecedorFormato             String    @map("fornecedor_formato")
+  fornecedorA1eqHh               Decimal   @map("fornecedor_a1eq_hh") @db.Decimal(14, 4)
+  fornecedorPercentualEmissao   Decimal   @map("fornecedor_percentual_emissao") @db.Decimal(8, 4)
+  fornecedorTipo                 String    @map("fornecedor_tipo")
+
+  status                       String    @default("PENDENTE")
+  observacao                   String?
+  resolvidoPorUsuarioId         String?   @map("resolvido_por_usuario_id") @db.Uuid
+  resolvidoPorNome              String?   @map("resolvido_por_nome")
+  resolvidoEm                   DateTime? @map("resolvido_em") @db.Timestamptz
+
+  createdAt                    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                    DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@unique([sgcId, nrVale], map: "divergencias_medicao_sgc_nrvale_key")
+  @@index([colaboradorCodigo, ciclo])
+  @@index([status])
+  @@index([sgcId])
+  @@map("divergencias_medicao")
 }
 
 model Projeto {

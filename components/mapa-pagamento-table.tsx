@@ -1,8 +1,8 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useMemo, useState } from "react";
 import { ArrowRight, Check, CheckCheck, Edit3, MessageCircle, Mic, Plus, RotateCcw, Search, Send, StopCircle, Trash2, X } from "lucide-react";
-import { Badge, BlurValue, Button, Card, Field, IconButton, Input, Select } from "@/components/ui";
+import { Badge, BlurValue, Button, Card, Field, IconButton, Input, Select, Textarea } from "@/components/ui";
 import type { MapaPagamentoItem, Profissional } from "@/components/types";
 
 type Revisao = {
@@ -39,6 +39,25 @@ type SgcStatusEntry = {
   status: string;
   revisaoNumero: number;
   id: string;
+  statusConferencia?: string;
+};
+
+type DivergenciaLinha = {
+  id: string;
+  nrVale: string;
+  idMedicaoExistente: string | null;
+  documentoNaoMapeado: boolean;
+  comparacaoAmbigua: boolean;
+  formatoDivergente: boolean;
+  a1eqDivergente: boolean;
+  emissaoDivergente: boolean;
+  tipoDivergente: boolean;
+  equipe: { formato: string | null; a1eqHh: number | null; percentualEmissao: number | null; tipo: string | null };
+  fornecedor: { formato: string; a1eqHh: number; percentualEmissao: number; tipo: string };
+  status: "PENDENTE" | "INCLUIDA" | "DESCARTADA";
+  observacao: string | null;
+  resolvidoPorNome: string | null;
+  resolvidoEm: string | null;
 };
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -394,6 +413,7 @@ export function MapaPagamentoTable({
               const enviando = enviandoCodigo === codigo;
               const isConcluido = ["APROVADO", "AGUARDANDO_NF", "PAGO"].includes(sgcStatusValue);
               const isPendente = sgcStatusValue === "PENDENTE";
+              const isDivergente = isPendente && sgcEntry?.statusConferencia === "DIVERGENCIA";
               const podeEnviar = isAdmin && onEnviarBm && ["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA"].includes(sgcStatusValue) && temAlteracao && !isConcluido;
               const podeRetornar = isAdmin && onRetornarBm && sgcEntry?.id && ["PENDENTE", "REVISAO_SOLICITADA"].includes(sgcStatusValue);
 
@@ -403,6 +423,8 @@ export function MapaPagamentoTable({
                   className={`border-b last:border-0 transition-colors ${
                     isConcluido
                       ? "border-[#BBF7D0] bg-[#F0FDF4] hover:bg-[#DCFCE7]"
+                      : isDivergente
+                      ? "border-[#FCA5A5] bg-[#FEF2F2] hover:bg-[#FEE2E2]"
                       : isPendente
                       ? "border-[#D1D5DB] bg-[#E5E7EB] hover:bg-[#D1D5DB]"
                       : hasRevisao
@@ -418,7 +440,9 @@ export function MapaPagamentoTable({
                         <Badge variant="success" className="shrink-0">Concluído</Badge>
                       )}
                       {isPendente && (
-                        <Badge variant="neutral" className="shrink-0">Aguardando</Badge>
+                        isDivergente
+                          ? <Badge variant="danger" className="shrink-0">Divergência</Badge>
+                          : <Badge variant="neutral" className="shrink-0">Aguardando</Badge>
                       )}
                       {!isConcluido && !isPendente && hasRevisao && (
                         <Badge variant="warning" className="shrink-0">Revisão</Badge>
@@ -1011,6 +1035,65 @@ function PaymentModal({
       .finally(() => setDocsLoading(false));
   }, [item, codigo, ciclo]);
 
+  // ── Divergências da conferência do fornecedor ──
+  const [divergencias, setDivergencias] = useState<DivergenciaLinha[]>([]);
+  const [divergenciasLoading, setDivergenciasLoading] = useState(false);
+  const [observacoesDivergencia, setObservacoesDivergencia] = useState<Record<string, string>>({});
+  const [resolvendoDivergenciaId, setResolvendoDivergenciaId] = useState<string | null>(null);
+  const resolvendoDivergenciaRef = useRef(false);
+
+  const loadDivergencias = useCallback(() => {
+    if (!item || !codigo || !ciclo) return;
+    setDivergenciasLoading(true);
+    fetch(`/api/admin/conferencia?codigo=${encodeURIComponent(codigo)}&ciclo=${encodeURIComponent(ciclo)}`)
+      .then((r) => r.json())
+      .then((data: DivergenciaLinha[]) => setDivergencias(Array.isArray(data) ? data : []))
+      .catch(() => {})
+      .finally(() => setDivergenciasLoading(false));
+  }, [item, codigo, ciclo]);
+
+  useEffect(() => { loadDivergencias(); }, [loadDivergencias]);
+
+  async function resolverDivergencia(id: string, acao: "incluir" | "descartar") {
+    if (resolvendoDivergenciaRef.current) return;
+    resolvendoDivergenciaRef.current = true;
+    setResolvendoDivergenciaId(id);
+    try {
+      const res = await fetch(`/api/admin/conferencia/${id}/${acao}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ observacao: observacoesDivergencia[id]?.trim() ?? "" }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.alert(payload.error ?? "Não foi possível concluir a ação. Tente novamente.");
+        return;
+      }
+      loadDivergencias();
+      // Documentos Medidos pode ter sido criado/atualizado — recarrega para refletir imediatamente.
+      setDocsLoading(true);
+      fetch(`/api/mapa-pagamento/documentos?codigo=${encodeURIComponent(codigo)}&ciclo=${encodeURIComponent(ciclo)}`)
+        .then((r) => r.json())
+        .then((data: Array<{ id: string; se: string; contrato: string | null; numeroDocumento: string | null; formato: string | null; equivalenteA1Horas: number; percentualEmissao: number; tipo2: string | null; condicao: string | null; obs: string | null; }>) => {
+          setDocs(data.map((d) => {
+            const line = {
+              _key: d.id, id: d.id, se: d.se ?? "", contrato: d.contrato ?? "",
+              numeroDocumento: d.numeroDocumento ?? "", formato: d.formato ?? "",
+              equivalenteA1Horas: String(d.equivalenteA1Horas),
+              percentualEmissao: String(Math.round(d.percentualEmissao * 100)),
+              tipo2: d.tipo2 ?? "", condicao: d.condicao ?? "0", obs: d.obs ?? "", _dirty: false,
+            };
+            return isDiscountDoc(line) ? { ...line, condicao: currencyInputValue(Math.abs(parseCurrencyNumber(line.condicao))) } : line;
+          }));
+        })
+        .catch(() => {})
+        .finally(() => setDocsLoading(false));
+    } finally {
+      resolvendoDivergenciaRef.current = false;
+      setResolvendoDivergenciaId(null);
+    }
+  }
+
   const documentosMedidos = docs.filter((doc) => !isDiscountDoc(doc));
   const descontos = docs.filter(isDiscountDoc);
   const totalDocsValorBruto = documentosMedidos.reduce((s, d) => s + docValorMedido(d), 0);
@@ -1495,6 +1578,98 @@ function PaymentModal({
               </div>
             )}
           </div>
+
+          {/* Seção: Divergências da medição (conferência do fornecedor) */}
+          {!divergenciasLoading && divergencias.length > 0 && (
+            <div className="mt-6 rounded-xl border border-[#FCA5A5] bg-[#FEF2F2] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Divergências da Medição</p>
+                {(() => {
+                  const pendentes = divergencias.filter((d) => d.status === "PENDENTE").length;
+                  const resolvidas = divergencias.length - pendentes;
+                  return (
+                    <span className="text-xs text-[#7F1D1D]">
+                      {divergencias.length} divergência{divergencias.length !== 1 ? "s" : ""} encontrada{divergencias.length !== 1 ? "s" : ""} — {pendentes} pendente{pendentes !== 1 ? "s" : ""}, {resolvidas} resolvida{resolvidas !== 1 ? "s" : ""}
+                    </span>
+                  );
+                })()}
+              </div>
+
+              <div className="mt-3 grid gap-3">
+                {divergencias.map((d) => {
+                  const emResolucao = resolvendoDivergenciaId === d.id;
+                  const observacaoAtual = observacoesDivergencia[d.id] ?? "";
+                  const podeDescartar = observacaoAtual.trim().length > 0;
+                  const campos: Array<{ label: string; equipe: string; fornecedor: string; divergente: boolean }> = [
+                    { label: "Formato", equipe: d.equipe.formato ?? "–", fornecedor: d.fornecedor.formato, divergente: d.formatoDivergente },
+                    { label: "A1eq/HH", equipe: d.equipe.a1eqHh === null ? "–" : String(d.equipe.a1eqHh), fornecedor: String(d.fornecedor.a1eqHh), divergente: d.a1eqDivergente },
+                    { label: "% Emissão", equipe: d.equipe.percentualEmissao === null ? "–" : percent.format(d.equipe.percentualEmissao), fornecedor: percent.format(d.fornecedor.percentualEmissao), divergente: d.emissaoDivergente },
+                    { label: "Tipo", equipe: d.equipe.tipo ?? "–", fornecedor: d.fornecedor.tipo, divergente: d.tipoDivergente },
+                  ];
+
+                  return (
+                    <div key={d.id} className="rounded-lg border border-[#FECACA] bg-white p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-technical text-sm font-bold text-[#1A1A1A]">{d.nrVale}</span>
+                          {d.documentoNaoMapeado && <Badge variant="warning">Não mapeado pela Equipe</Badge>}
+                          {d.comparacaoAmbigua && <Badge variant="danger">NR VALE duplicado — ambíguo</Badge>}
+                          {d.status === "INCLUIDA" && <Badge variant="success">Incluída</Badge>}
+                          {d.status === "DESCARTADA" && <Badge variant="neutral">Descartada</Badge>}
+                        </div>
+                      </div>
+
+                      {d.status === "PENDENTE" && !d.comparacaoAmbigua && (
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          {campos.filter((c) => c.divergente || d.documentoNaoMapeado).map((c) => (
+                            <div key={c.label} className="rounded-md bg-[#FEF2F2] px-2.5 py-1.5 text-xs">
+                              <p className="font-semibold text-[#7F1D1D]">{c.label}</p>
+                              <p className="text-[#555555]">Equipe: <span className="font-technical">{c.equipe}</span></p>
+                              <p className="text-[#555555]">Fornecedor: <span className="font-technical">{c.fornecedor}</span></p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {d.status === "PENDENTE" ? (
+                        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                          <Textarea
+                            className="min-h-[38px] bg-white text-xs"
+                            placeholder="Informe uma observação sobre esta divergência..."
+                            value={observacaoAtual}
+                            onChange={(e) => setObservacoesDivergencia((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                          />
+                          <div className="flex items-center gap-2 self-end">
+                            <Button
+                              variant="secondary"
+                              className="h-8 px-3 text-xs"
+                              disabled={!podeDescartar || emResolucao}
+                              onClick={() => resolverDivergencia(d.id, "descartar")}
+                            >
+                              {emResolucao ? "Descartando..." : "Descartar"}
+                            </Button>
+                            <Button
+                              variant="success"
+                              className="h-8 px-3 text-xs"
+                              disabled={emResolucao}
+                              onClick={() => resolverDivergencia(d.id, "incluir")}
+                            >
+                              {emResolucao ? "Incluindo..." : "Incluir"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-2 text-xs text-[#555555]">
+                          <p><span className="font-semibold">{d.status === "INCLUIDA" ? "Incluído" : "Motivo"}:</span> {d.observacao || "—"}</p>
+                          <p className="mt-0.5 text-[#9CA3AF]">Resolvido por {d.resolvidoPorNome ?? "—"}{d.resolvidoEm ? ` em ${new Date(d.resolvidoEm).toLocaleString("pt-BR")}` : ""}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Seção: Documentos medidos */}
           <div className="mt-6 flex items-center justify-between">

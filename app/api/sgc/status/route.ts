@@ -18,15 +18,17 @@ export async function GET(request: NextRequest) {
       status: true,
       revisaoNumero: true,
       id: true,
+      statusConferencia: true,
     },
   });
 
-  const payload: Record<string, { status: string; revisaoNumero: number; id: string }> = {};
+  const payload: Record<string, { status: string; revisaoNumero: number; id: string; statusConferencia: string }> = {};
   for (const r of registros) {
     payload[r.colaboradorCodigo] = {
       status: r.status,
       revisaoNumero: r.revisaoNumero,
       id: r.id,
+      statusConferencia: r.statusConferencia,
     };
   }
 

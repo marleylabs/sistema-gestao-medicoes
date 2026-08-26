@@ -238,6 +238,7 @@ export async function GET() {
           aprovadoAt: sgc.aprovadoAt?.toISOString() ?? null,
           revisaoSolicitadaAt: sgc.revisaoSolicitadaAt?.toISOString() ?? null,
           reenviadoAt: sgc.reenviadoAt?.toISOString() ?? null,
+          statusConferencia: sgc.statusConferencia,
         }
       : {
           id: null,
@@ -252,6 +253,7 @@ export async function GET() {
           aprovadoAt: null,
           revisaoSolicitadaAt: null,
           reenviadoAt: null,
+          statusConferencia: "CONCLUIDA",
         },
   });
 }
