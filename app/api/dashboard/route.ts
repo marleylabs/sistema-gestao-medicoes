@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { toNumber } from "@/lib/format";
 import { cadastroFornecedorOverrideForMapaItem } from "@/lib/mapa-pagamento-cadastro";
+import { getDistribuicaoContratosCiclos } from "@/lib/participacao-contratos";
 
 const emptyDashboard = {
   cards: {
@@ -112,10 +113,10 @@ export async function GET(request: NextRequest) {
     porCiclo,
     porProjeto,
     contexto,
-    mapaFinanceiro,
     tiposPrecos,
     condicoesFixasPrecos,
     cadastros,
+    distribuicaoResultado,
   ] = await Promise.all([
     prisma.$queryRaw<
       Array<{
@@ -216,63 +217,6 @@ export async function GET(request: NextRequest) {
     isGeral ? Promise.resolve(null) : prisma.mapaPagamentoContexto.findUnique({
       where: { ciclo },
     }),
-    prisma.$queryRaw<
-      Array<{
-        total_pagamentos: unknown;
-        total_horas: unknown;
-        intr_sossego: unknown;
-        salobo: unknown;
-        acg: unknown;
-        escadas_alumar: unknown;
-        nao_alocado: unknown;
-      }>
-    >`
-      with pagamentos as (
-        select
-          mpi.valor,
-          mpi.horas,
-          mpi.intr_sossego,
-          mpi.salobo,
-          mpi.acg,
-          mpi.escadas_alumar,
-          mpi.ato,
-          (
-            mpi.intr_sossego
-            + mpi.salobo
-            + mpi.acg
-            + mpi.escadas_alumar
-          ) as total_participacao
-        from mapa_pagamento_itens mpi
-        where mpi.valor > 0
-        ${mapaCicloFilter}
-        ${mapaCodigoFilter}
-      )
-      select
-        coalesce(sum(valor), 0) as total_pagamentos,
-        coalesce(sum(
-          valor * intr_sossego
-        ), 0) as intr_sossego,
-        coalesce(sum(
-          valor * salobo
-        ), 0) as salobo,
-        coalesce(sum(
-          valor * acg
-        ), 0) as acg,
-        coalesce(sum(
-          valor * escadas_alumar
-        ), 0) as escadas_alumar,
-        coalesce(sum(horas), 0) as total_horas,
-        coalesce(sum(valor) filter (
-          where total_participacao = 0
-            and lower(coalesce(ato, '')) not in (
-              lower('Intr. Sossego'),
-              lower('Salobo'),
-              lower('ACG'),
-              lower('Escadas Alumar')
-            )
-        ), 0) as nao_alocado
-      from pagamentos
-    `,
     prisma.$queryRaw<Array<{ nome: string; codigo: string; tipo2: string; condicao: string }>>`
       select distinct
         coalesce(pr.nome_completo, pr.nome, pr.codigo, 'Fornecedor sem nome') as nome,
@@ -338,60 +282,22 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { updatedAt: "desc" },
     }),
+    getDistribuicaoContratosCiclos(isGeral ? ciclosPermitidos : [ciclo], codigo ? { colaboradorCodigo: codigo } : undefined),
   ]);
 
-  const mapa = mapaFinanceiro[0];
-
-  // Ler contratos ativos do banco
-  let contratosAtivos = await prisma.$queryRaw<Array<{ nome: string; coluna_mapa: string | null }>>`
-    SELECT nome, coluna_mapa FROM contratos WHERE ativo = true ORDER BY nome ASC
-  `;
-  if (contratosAtivos.length === 0) {
-    contratosAtivos = [
-      { nome: "Intr. Sossego", coluna_mapa: "intr_sossego" },
-      { nome: "Salobo", coluna_mapa: "salobo" },
-      { nome: "ACG", coluna_mapa: "acg" },
-      { nome: "Escadas Alumar", coluna_mapa: "escadas_alumar" },
-    ];
-  }
-
-  // Para contratos sem coluna_mapa, somar por ato direto
-  const colunasConhecidas = new Set(["intr_sossego", "salobo", "acg", "escadas_alumar"]);
-  const contratosSemColuna = contratosAtivos.filter((c) => !c.coluna_mapa || !colunasConhecidas.has(c.coluna_mapa));
-
-  const valorPorAto: Record<string, number> = {};
-  if (contratosSemColuna.length > 0) {
-    const nomes = contratosSemColuna.map((c) => c.nome);
-    const rows = await prisma.$queryRaw<Array<{ ato: string; total: unknown }>>`
-      SELECT ato, COALESCE(SUM(valor), 0) as total
-      FROM mapa_pagamento_itens
-      WHERE valor > 0
-        AND ato = ANY(${nomes}::text[])
-        ${isGeral ? Prisma.sql`AND ciclo = ANY(${ciclosPermitidos}::text[])` : Prisma.sql`AND ciclo = ${ciclo}`}
-      GROUP BY ato
-    `;
-    for (const r of rows) valorPorAto[r.ato] = toNumber(r.total as any);
-  }
-
-  const colunaParaValor: Record<string, number> = {
-    intr_sossego:   toNumber(mapa?.intr_sossego as any),
-    salobo:         toNumber(mapa?.salobo as any),
-    acg:            toNumber(mapa?.acg as any),
-    escadas_alumar: toNumber(mapa?.escadas_alumar as any),
-  };
-
-  const distribuicaoCompleta = contratosAtivos.map((c) => ({
-    contrato: c.nome,
-    valor: c.coluna_mapa && colunasConhecidas.has(c.coluna_mapa)
-      ? colunaParaValor[c.coluna_mapa] ?? 0
-      : valorPorAto[c.nome] ?? 0,
+  // Distribuição por contrato — mesma fonte dinâmica e mesma fórmula de participação de
+  // Pagamentos por Fornecedor (getParticipacaoPorFornecedorCiclo), aplicada sobre o valor de
+  // pagamento (mapaPagamentoItem.valor) de cada fornecedor. Nunca hardcoded nos 4 contratos antigos.
+  const distribuicaoCompleta = distribuicaoResultado.contratos.map((c) => ({
+    contratoId: c.contratoId,
+    contrato: c.contrato,
+    valor: c.valorMedido,
   }));
   const distribuicao = contrato
     ? distribuicaoCompleta.filter((item) => item.contrato === contrato)
     : distribuicaoCompleta;
-  const totalPagamentos = toNumber(mapa?.total_pagamentos as any);
   const totalDistribuido = distribuicao.reduce((total, item) => total + item.valor, 0);
-  const totalMedido = contrato ? totalDistribuido : totalPagamentos;
+  const totalMedido = contrato ? totalDistribuido : distribuicaoResultado.valorTotalConsiderado;
   const rateio = distribuicao.map((item) => ({
     contrato: item.contrato,
     percentual: totalMedido > 0 ? item.valor / totalMedido : 0,
@@ -422,6 +328,8 @@ export async function GET(request: NextRequest) {
           atoCiclo: contexto.atoCiclo,
           contratos: distribuicao,
           rateio,
+          valorNaoClassificado: distribuicaoResultado.valorNaoClassificado,
+          percentualNaoClassificado: distribuicaoResultado.percentualNaoClassificado,
         }
       : null,
     porCiclo: porCiclo.map((item) => ({

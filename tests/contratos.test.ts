@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   computarParticipacao,
+  consolidarDistribuicaoContratos,
   contratoKey,
   isContratoElegivel,
   isContratoInvalido,
@@ -178,4 +179,76 @@ test("CNPJ compartilhado: dois fornecedores diferentes, contratos calculados iso
 test("normalizeContratoNome preserva acentuação/caixa para exibição", () => {
   assert.equal(normalizeContratoNome("  Salobo  "), "Salobo");
   assert.equal(normalizeContratoNome("Intr.  Sossego"), "Intr. Sossego");
+});
+
+// ─── Distribuição por contrato (Dashboard) — mesma fórmula de Pagamentos por Fornecedor ───
+
+test("distribuição — teste 1: fornecedor 100% em um contrato", () => {
+  const r = consolidarDistribuicaoContratos([
+    { valorBase: 10000, participacoes: { salobo: 100 } },
+  ]);
+  assert.equal(r.valorPorContratoId.salobo, 10000);
+  assert.equal(r.valorTotalConsiderado, 10000);
+  assert.equal(r.valorNaoClassificado, 0);
+});
+
+test("distribuição — teste 2: fornecedor dividido entre dois contratos", () => {
+  const r = consolidarDistribuicaoContratos([
+    { valorBase: 10000, participacoes: { eng: 28.9, salobo: 71.1 } },
+  ]);
+  assert.ok(Math.abs(r.valorPorContratoId.eng - 2890) < 1e-9);
+  assert.ok(Math.abs(r.valorPorContratoId.salobo - 7110) < 1e-9);
+});
+
+test("distribuição — teste 3: múltiplos fornecedores consolidados e participação global", () => {
+  const r = consolidarDistribuicaoContratos([
+    { valorBase: 10000, participacoes: { salobo: 100 } },
+    { valorBase: 5000, participacoes: { salobo: 50, acg: 50 } },
+  ]);
+  assert.equal(r.valorPorContratoId.salobo, 12500);
+  assert.equal(r.valorPorContratoId.acg, 2500);
+  assert.equal(r.valorTotalConsiderado, 15000);
+  const pctSalobo = (r.valorPorContratoId.salobo / r.valorTotalConsiderado) * 100;
+  const pctAcg = (r.valorPorContratoId.acg / r.valorTotalConsiderado) * 100;
+  assert.ok(Math.abs(pctSalobo - 83.33333333333333) < 1e-9);
+  assert.ok(Math.abs(pctAcg - 16.666666666666664) < 1e-9);
+});
+
+test("distribuição — teste 4: fornecedor parcialmente não classificado não vira 100% no contrato conhecido", () => {
+  const r = consolidarDistribuicaoContratos([
+    { valorBase: 10000, participacoes: { salobo: 50 } }, // restante 50% já veio sem contrato (fora de "participacoes")
+  ]);
+  assert.equal(r.valorPorContratoId.salobo, 5000);
+  assert.equal(r.valorNaoClassificado, 5000);
+  assert.notEqual(r.valorPorContratoId.salobo, 10000);
+});
+
+test("distribuição — fornecedor sem nenhuma participação (sem Documentos Medidos) cai 100% em não classificado", () => {
+  const r = consolidarDistribuicaoContratos([
+    { valorBase: 8000, participacoes: {} },
+  ]);
+  assert.equal(r.valorTotalConsiderado, 8000);
+  assert.equal(r.valorClassificado, 0);
+  assert.equal(r.valorNaoClassificado, 8000);
+});
+
+test("distribuição — nunca normaliza para 100%: soma dos contratos pode ficar bem abaixo do total", () => {
+  const r = consolidarDistribuicaoContratos([
+    { valorBase: 500000, participacoes: { eng: 20, salobo: 50, acg: 10 } }, // 20% do próprio fornecedor já pendente
+  ]);
+  const somaContratos = Object.values(r.valorPorContratoId).reduce((s, v) => s + v, 0);
+  assert.ok(somaContratos < r.valorTotalConsiderado);
+  assert.ok(Math.abs(r.valorTotalConsiderado - (somaContratos + r.valorNaoClassificado)) < 1e-9);
+});
+
+test("distribuição — CNPJ compartilhado: dois fornecedores diferentes contribuem isoladamente, nunca consolidados por CNPJ", () => {
+  // Fornecedor A (código A, CNPJ X) e Fornecedor B (código B, mesmo CNPJ X) chegam como entradas
+  // separadas em `fornecedores` (uma por colaborador_codigo) — a função nunca olha para CNPJ.
+  const r = consolidarDistribuicaoContratos([
+    { valorBase: 1000, participacoes: { salobo: 100 } }, // Fornecedor A
+    { valorBase: 2000, participacoes: { acg: 100 } },    // Fornecedor B, mesmo CNPJ de A
+  ]);
+  assert.equal(r.valorPorContratoId.salobo, 1000);
+  assert.equal(r.valorPorContratoId.acg, 2000);
+  assert.equal(r.valorTotalConsiderado, 3000); // nunca um fornecedor único de 3.000
 });

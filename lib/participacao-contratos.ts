@@ -2,7 +2,14 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { calcularValorMedido } from "@/lib/mapa-pagamento";
-import { computarParticipacao, contratoKey, isContratoElegivel, normalizeContratoNome } from "@/lib/contratos";
+import {
+  computarParticipacao,
+  consolidarDistribuicaoContratos,
+  contratoKey,
+  isContratoElegivel,
+  normalizeContratoNome,
+  type FornecedorDistribuicao,
+} from "@/lib/contratos";
 
 export type ContratoResumo = { id: string; nome: string };
 
@@ -148,4 +155,82 @@ export async function getParticipacaoPorFornecedorCiclo(ciclo: string): Promise<
   }
 
   return { contratos, porAlias };
+}
+
+export type DistribuicaoContrato = {
+  contratoId: string;
+  contrato: string;
+  valorMedido: number;
+  /** Participação global 0–100, sobre o valorTotalConsiderado (nunca sobre a soma dos próprios contratos). */
+  participacao: number;
+};
+
+export type DistribuicaoContratosResultado = {
+  contratos: DistribuicaoContrato[];
+  valorTotalConsiderado: number;
+  valorClassificado: number;
+  valorNaoClassificado: number;
+  percentualNaoClassificado: number;
+};
+
+/**
+ * "Distribuição por contrato" (Dashboard) — MESMA fonte de verdade de Pagamentos por Fornecedor:
+ * usa `getParticipacaoPorFornecedorCiclo` (participação por fornecedor, calculada a partir de
+ * Documentos Medidos) e aplica cada percentual sobre `mapaPagamentoItem.valor` — o mesmo campo que
+ * a tabela de Pagamentos por Fornecedor exibe como "Pagamento" para aquele fornecedor no ciclo.
+ * Nunca mistura ciclos: cada ciclo é resolvido com sua própria `getParticipacaoPorFornecedorCiclo`,
+ * os valores resultantes são somados por contrato (mesmo id) só depois de calculados isoladamente.
+ */
+export async function getDistribuicaoContratosCiclos(
+  ciclos: string[],
+  opts?: { colaboradorCodigo?: string },
+): Promise<DistribuicaoContratosResultado> {
+  const contratosVistos = new Map<string, ContratoResumo>();
+  const fornecedores: FornecedorDistribuicao[] = [];
+
+  for (const ciclo of ciclos) {
+    const participacao = await getParticipacaoPorFornecedorCiclo(ciclo);
+    for (const c of participacao.contratos) {
+      if (!contratosVistos.has(c.id)) contratosVistos.set(c.id, c);
+    }
+
+    const itens = await prisma.mapaPagamentoItem.findMany({
+      where: {
+        ciclo,
+        valor: { gt: 0 },
+        ...(opts?.colaboradorCodigo ? { projetistaCodigo: opts.colaboradorCodigo } : {}),
+      },
+      select: { projetistaCodigo: true, valor: true },
+    });
+
+    for (const item of itens) {
+      const alias = normalizeAlias(item.projetistaCodigo);
+      const p = participacao.porAlias[alias];
+      fornecedores.push({
+        valorBase: Number(item.valor ?? 0),
+        // sem Documentos Medidos vinculados neste ciclo (p ausente) → participações vazio, cai
+        // integralmente em "não classificado" dentro de consolidarDistribuicaoContratos.
+        participacoes: p?.participacoes ?? {},
+      });
+    }
+  }
+
+  const consolidado = consolidarDistribuicaoContratos(fornecedores);
+  const contratos: DistribuicaoContrato[] = Array.from(contratosVistos.values()).map((c) => {
+    const valorMedido = consolidado.valorPorContratoId[c.id] ?? 0;
+    return {
+      contratoId: c.id,
+      contrato: c.nome,
+      valorMedido,
+      participacao: consolidado.valorTotalConsiderado > 0 ? (valorMedido / consolidado.valorTotalConsiderado) * 100 : 0,
+    };
+  });
+
+  return {
+    contratos,
+    valorTotalConsiderado: consolidado.valorTotalConsiderado,
+    valorClassificado: consolidado.valorClassificado,
+    valorNaoClassificado: consolidado.valorNaoClassificado,
+    percentualNaoClassificado: consolidado.percentualNaoClassificado,
+  };
 }

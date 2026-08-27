@@ -311,6 +311,11 @@ export function MapaPagamentoResumo({
               </tbody>
             </table>
           </div>
+          {contexto.valorNaoClassificado > 0 && (
+            <p className="border-t border-[#F3F4F6] px-5 py-2.5 text-xs text-[#92400E]">
+              Valor ainda não classificado por contrato: <BlurValue>{currency.format(contexto.valorNaoClassificado)}</BlurValue> ({percent.format(contexto.percentualNaoClassificado / 100)})
+            </p>
+          )}
         </Card>
       </div>
     </section>

@@ -67,10 +67,6 @@ function normalizeText(value: string | null) {
   return (value ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase();
 }
 
-function statusLabel(item: MapaPagamentoItem) {
-  return normalizeText(item.ato) === "PRODUCAO" ? "PRODUÇÃO" : "ATO";
-}
-
 function money(value: number) {
   return value ? currency.format(value) : "–";
 }
@@ -244,7 +240,6 @@ export function MapaPagamentoTable({
   ciclo?: string;
 }) {
   const [search, setSearch]           = useState("");
-  const [status, setStatus]           = useState("");
   const [sortOrder, setSortOrder]     = useState("");
   const [editingItem, setEditingItem] = useState<MapaPagamentoItem | null>(null);
   const [isCreating, setIsCreating]   = useState(false);
@@ -266,13 +261,11 @@ export function MapaPagamentoTable({
   const filteredItems = useMemo(() => {
     const q = search.trim().toLocaleLowerCase("pt-BR");
     const result = itens.filter((item) => {
-      const s = statusLabel(item);
-      const matchStatus      = status ? s === status : true;
       const matchColab       = selectedCodigo ? item.projetistaCodigo === selectedCodigo : true;
       const matchContract    = selectedContrato ? contractParticipation(item, selectedContrato) > 0 : true;
       const searchable       = [item.ato, item.projetistaCodigo, item.responsavel, item.cpfCnpj, item.razaoSocial, item.fornecedor?.cpfCnpj, item.fornecedor?.razaoSocial]
         .filter(Boolean).join(" ").toLocaleLowerCase("pt-BR");
-      return matchStatus && matchColab && matchContract && (!q || searchable.includes(q));
+      return matchColab && matchContract && (!q || searchable.includes(q));
     });
 
     if (!sortOrder) return result;
@@ -321,14 +314,6 @@ export function MapaPagamentoTable({
                 <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" size={14} />
                 <Input className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ID, nome ou empresa" />
               </span>
-            </label>
-            <label className="grid min-w-[140px] gap-1.5 text-label text-[var(--muted-foreground)]">
-              Tipo de atuação
-              <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-                <option value="">Todos</option>
-                <option value="ATO">ATO</option>
-                <option value="PRODUÇÃO">Produção</option>
-              </Select>
             </label>
             <label className="grid min-w-[160px] gap-1.5 text-label text-[var(--muted-foreground)]">
               Ordenar por nome
@@ -391,7 +376,6 @@ export function MapaPagamentoTable({
                 ...contratos.map((c) => ({ label: c.nome, align: "right" as const })),
                 { label: "Pagamento", align: "right" },
                 { label: "Revisão", align: "right" },
-                { label: "Atuação", align: "left" },
                 ...(isAdmin ? [{ label: "Ações", align: "right" }] : []),
               ].map(({ label, align }) => (
                 <th
@@ -472,11 +456,6 @@ export function MapaPagamentoTable({
                   <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#1A1A1A]"><BlurValue>{money(item.valor)}</BlurValue></td>
                   <td className="px-4 py-3 text-right tabular-nums text-[#555555]">
                     {sgcEntry && sgcEntry.revisaoNumero > 0 ? `Rev. ${sgcEntry.revisaoNumero}` : "–"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant={statusLabel(item) === "ATO" ? "primary" : "success"}>
-                      {statusLabel(item)}
-                    </Badge>
                   </td>
                   {isAdmin && (
                     <td className="px-4 py-3">
@@ -574,7 +553,7 @@ export function MapaPagamentoTable({
             })}
             {!filteredItems.length && (
               <tr>
-                <td colSpan={(isAdmin ? 8 : 7) + contratos.length} className="px-4 py-12 text-center text-sm text-[#9CA3AF]">
+                <td colSpan={(isAdmin ? 7 : 6) + contratos.length} className="px-4 py-12 text-center text-sm text-[#9CA3AF]">
                   Nenhuma linha encontrada com os filtros aplicados.
                 </td>
               </tr>

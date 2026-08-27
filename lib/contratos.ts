@@ -111,3 +111,49 @@ export function computarParticipacao(documentos: DocumentoParaParticipacao[]): R
     documentosPendentes,
   };
 }
+
+export type FornecedorDistribuicao = {
+  /** Mesmo campo usado como "Pagamento" em Pagamentos por Fornecedor (mapaPagamentoItem.valor). */
+  valorBase: number;
+  /** Percentuais 0–100 por contratoId — saída de computarParticipacao(...).participacoes, já resolvidos para id canônico. */
+  participacoes: Record<string, number>;
+};
+
+export type DistribuicaoConsolidada = {
+  valorPorContratoId: Record<string, number>;
+  valorTotalConsiderado: number;
+  valorClassificado: number;
+  valorNaoClassificado: number;
+  percentualNaoClassificado: number;
+};
+
+/**
+ * Consolida a "Distribuição por contrato" (Dashboard) a partir de vários fornecedores: para cada
+ * um, aplica os MESMOS percentuais de participação já exibidos em Pagamentos por Fornecedor sobre
+ * o MESMO valor base ("Pagamento") daquela tabela, e soma por contrato. Nunca normaliza para 100%:
+ * um fornecedor sem participação registrada (`participacoes` vazio — sem Documentos Medidos, ou
+ * 100% pendente) contribui integralmente para `valorNaoClassificado`.
+ */
+export function consolidarDistribuicaoContratos(fornecedores: FornecedorDistribuicao[]): DistribuicaoConsolidada {
+  const valorPorContratoId: Record<string, number> = {};
+  let valorTotalConsiderado = 0;
+  let valorClassificado = 0;
+
+  for (const f of fornecedores) {
+    valorTotalConsiderado += f.valorBase;
+    for (const [contratoId, percentual] of Object.entries(f.participacoes)) {
+      const valorAtribuido = f.valorBase * (percentual / 100);
+      valorPorContratoId[contratoId] = (valorPorContratoId[contratoId] ?? 0) + valorAtribuido;
+      valorClassificado += valorAtribuido;
+    }
+  }
+
+  const valorNaoClassificado = Math.max(0, valorTotalConsiderado - valorClassificado);
+  return {
+    valorPorContratoId,
+    valorTotalConsiderado,
+    valorClassificado,
+    valorNaoClassificado,
+    percentualNaoClassificado: valorTotalConsiderado > 0 ? (valorNaoClassificado / valorTotalConsiderado) * 100 : 0,
+  };
+}

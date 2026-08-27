@@ -124,8 +124,10 @@ export type DashboardData = {
     producaoFim: string | null;
     atoLabel: string | null;
     atoCiclo: string | null;
-    contratos: Array<{ contrato: string; valor: number }>;
+    contratos: Array<{ contratoId: string; contrato: string; valor: number }>;
     rateio: Array<{ contrato: string; percentual: number }>;
+    valorNaoClassificado: number;
+    percentualNaoClassificado: number;
   } | null;
   cards: {
     totalMedido: number;
