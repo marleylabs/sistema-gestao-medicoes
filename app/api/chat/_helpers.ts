@@ -7,9 +7,7 @@ export function avatarUrlByUserId(id: string, updatedAt: Date | null) {
   return updatedAt ? `/api/usuario/avatar?userId=${encodeURIComponent(id)}&v=${updatedAt.getTime()}` : null;
 }
 
-export function isOnline(onlineAt: Date | null | undefined) {
-  return !!onlineAt && Date.now() - onlineAt.getTime() <= 2 * 60 * 1000;
-}
+export { isOnline } from "@/lib/presence";
 
 export function canChatWith(current: AuthUser, targetPerfil: string) {
   if (current.perfil === "ADMINISTRATIVO" || targetPerfil === "ADMINISTRATIVO") return false;
@@ -29,6 +27,8 @@ export function isInternalPerfil(perfil: string) {
 export function directChatKey(a: string, b: string) {
   return ["DIRECT", ...[a, b].sort()].join(":");
 }
+
+export { isDisabledTeamChave, teamPerfilFromChave } from "@/lib/chat-teams";
 
 export async function ensureChatParticipant(conversaId: string, usuarioId: string) {
   return prisma.chatParticipante.findUnique({

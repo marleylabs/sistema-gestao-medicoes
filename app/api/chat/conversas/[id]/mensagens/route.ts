@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { safeDownloadName } from "@/lib/file-security";
 import { prisma } from "@/lib/prisma";
-import { avatarUrlByUserId, canUseChatPerfil, ensureChatParticipant } from "@/app/api/chat/_helpers";
+import { avatarUrlByUserId, canUseChatPerfil, ensureChatParticipant, isDisabledTeamChave } from "@/app/api/chat/_helpers";
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_MIMES = new Set([
@@ -86,6 +86,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const participante = await ensureChatParticipant(id, user.id);
   if (!participante) return NextResponse.json({ error: "Conversa não encontrada." }, { status: 404 });
+
+  const conversaAtual = await prisma.chatConversa.findUnique({ where: { id }, select: { chave: true } });
+  if (conversaAtual && isDisabledTeamChave(conversaAtual.chave)) {
+    return NextResponse.json({ error: "Esta conversa foi desabilitada e não aceita novas mensagens." }, { status: 403 });
+  }
 
   const contentType = request.headers.get("content-type") ?? "";
   let texto = "";

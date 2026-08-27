@@ -34,6 +34,7 @@ import { GeneralChatWidget } from "@/components/general-chat-widget";
 import { Badge, Button, Card, IconButton, PageContainer, PageHeader, Textarea } from "@/components/ui";
 import type { AuthUser } from "@/lib/session";
 import { computarParticipacao } from "@/lib/contratos";
+import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "@/lib/presence";
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const percent  = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 });
@@ -543,7 +544,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     fetch("/api/usuario/presenca", { method: "POST" }).catch(() => undefined);
     const interval = setInterval(() => {
       fetch("/api/usuario/presenca", { method: "POST" }).catch(() => undefined);
-    }, 45000);
+    }, PRESENCE_HEARTBEAT_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
   useEffect(() => {

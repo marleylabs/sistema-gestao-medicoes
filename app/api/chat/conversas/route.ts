@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { avatarUrlByUserId, canChatWith, canUseChatPerfil, directChatKey, importSgcChatsForUser, isInternalPerfil, isOnline, joinSharedFornecedorChats } from "@/app/api/chat/_helpers";
+import { avatarUrlByUserId, canChatWith, canUseChatPerfil, directChatKey, importSgcChatsForUser, isDisabledTeamChave, isInternalPerfil, isOnline, joinSharedFornecedorChats } from "@/app/api/chat/_helpers";
 
 function serializePerfil(perfil: string) {
   if (perfil === "COLABORADOR") return "Fornecedor";
@@ -48,9 +48,16 @@ export async function GET() {
     take: 80,
   });
 
-  const payload = await Promise.all(participacoes.map(async (participacao) => {
+  const payload = await Promise.all(participacoes.filter((participacao) => !isDisabledTeamChave(participacao.conversa.chave)).map(async (participacao) => {
     const conversa = participacao.conversa;
-    const targetPerfil = getTeamPerfilFromKey(conversa.chave);
+    const chaveTeamPerfil = getTeamPerfilFromKey(conversa.chave);
+    const temColaborador = conversa.participantes.some((item) => item.usuario.perfil === "COLABORADOR");
+    // "TEAM:<perfil>:<id>" serve dois propósitos: canal interno genérico da equipe (ex.: ADMIN↔MEDICAO)
+    // OU o canal individual de um fornecedor com aquela equipe (chave termina no id do colaborador).
+    // Só o primeiro caso deve exibir o rótulo genérico da equipe — senão duas conversas de fornecedores
+    // diferentes com a mesma equipe aparecem ambas como "Equipe de Medição", mascarando quem é quem.
+    const ehCanalGenericoDaEquipe = !!chaveTeamPerfil && (user.perfil === "COLABORADOR" || !temColaborador);
+    const targetPerfil = ehCanalGenericoDaEquipe ? chaveTeamPerfil : null;
     const outro = isInternalPerfil(user.perfil)
       ? conversa.participantes.find((item) => item.usuario.perfil === "COLABORADOR")?.usuario
         ?? conversa.participantes.find((item) => item.usuarioId !== user.id)?.usuario
@@ -108,6 +115,9 @@ export async function POST(request: NextRequest) {
   const targetPerfil = typeof body?.targetPerfil === "string" ? body.targetPerfil : targetUserId.startsWith("perfil:") ? targetUserId.replace("perfil:", "") : "";
 
   if (targetPerfil) {
+    if (targetPerfil === "FINANCEIRO") {
+      return NextResponse.json({ error: "A conversa com o Financeiro está desabilitada." }, { status: 403 });
+    }
     if (!canChatWith(user, targetPerfil)) {
       return NextResponse.json({ error: "Equipe indisponível para conversa." }, { status: 403 });
     }

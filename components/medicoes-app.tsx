@@ -31,6 +31,7 @@ import { AdministrativoPanel } from "@/components/administrativo-panel";
 import { Badge, Button, Card, IconButton, PageContainer, PageHeader, Select } from "@/components/ui";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
+import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "@/lib/presence";
 import type { AuthUser } from "@/lib/session";
 
 type Section = "visao" | "historico" | "importar" | "evidencias" | "usuarios" | "financeiro" | "administrativo";
@@ -314,7 +315,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
     fetch("/api/usuario/presenca", { method: "POST" }).catch(() => undefined);
     const interval = setInterval(() => {
       fetch("/api/usuario/presenca", { method: "POST" }).catch(() => undefined);
-    }, 45000);
+    }, PRESENCE_HEARTBEAT_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
 

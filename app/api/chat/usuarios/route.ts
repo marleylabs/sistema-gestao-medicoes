@@ -3,13 +3,15 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { avatarUrlByUserId, canChatWith, canUseChatPerfil, isOnline } from "@/app/api/chat/_helpers";
 
-const FIXED_TEAM_PROFILES = new Set(["MEDICAO", "FINANCEIRO", "ADMIN"]);
+// Financeiro foi desabilitado como equipe fixa (chat/conversas: item "isDisabledTeamChave") — não
+// aparece mais como card fixado, mas seu histórico permanece intocado no banco.
+const FIXED_TEAM_PROFILES = new Set(["MEDICAO", "ADMIN"]);
 
 function fixedProfilesFor(perfil: string) {
-  if (perfil === "COLABORADOR") return new Set(["MEDICAO", "FINANCEIRO"]);
-  if (perfil === "MEDICAO") return new Set(["FINANCEIRO", "ADMIN"]);
+  if (perfil === "COLABORADOR") return new Set(["MEDICAO"]);
+  if (perfil === "MEDICAO") return new Set(["ADMIN"]);
   if (perfil === "FINANCEIRO") return new Set(["MEDICAO", "ADMIN"]);
-  if (perfil === "ADMIN") return new Set(["MEDICAO", "FINANCEIRO"]);
+  if (perfil === "ADMIN") return new Set(["MEDICAO"]);
   return new Set<string>();
 }
 

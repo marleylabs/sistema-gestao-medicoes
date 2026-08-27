@@ -1,8 +1,9 @@
 "use client";
 
-import { type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, ImageIcon, MessageCircle, Mic, Paperclip, Search, Send, StopCircle, X } from "lucide-react";
+import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Download, FileText, ImageIcon, MessageCircle, Mic, Paperclip, Search, Send, StopCircle, Users, X } from "lucide-react";
 import { Button } from "@/components/ui";
+import { shouldSendOnEnter } from "@/lib/chat-composer";
 
 type ChatConversa = {
   id: string;
@@ -76,7 +77,14 @@ function initials(value: string | null | undefined) {
   return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
 }
 
-function Avatar({ name, src, className = "h-9 w-9" }: { name: string; src?: string | null; className?: string }) {
+function Avatar({ name, src, isTeam, className = "h-9 w-9" }: { name: string; src?: string | null; isTeam?: boolean; className?: string }) {
+  if (isTeam) {
+    return (
+      <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] text-[var(--primary)] ${className}`}>
+        <Users size={14} />
+      </span>
+    );
+  }
   return (
     <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#EFF6FF] text-xs font-bold text-[#2563EB] ${className}`}>
       {src ? (
@@ -90,6 +98,16 @@ function Avatar({ name, src, className = "h-9 w-9" }: { name: string; src?: stri
 function chatTime(value: string | null | undefined) {
   if (!value) return "";
   return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function isSameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function dateSeparatorLabel(value: string) {
+  const date = new Date(value);
+  if (isSameDay(date, new Date())) return "Hoje";
+  return new Intl.DateTimeFormat("pt-BR").format(date);
 }
 
 function readableFileSize(size: number | null | undefined) {
@@ -124,6 +142,207 @@ function isGenericAttachmentText(message: ChatMensagem) {
   );
 }
 
+/**
+ * Um balão por mensagem — nunca duplicar esse markup em outro lugar. `isOwn` decide o lado
+ * (conceito chat-start/chat-end do DaisyUI, reimplementado com Tailwind, sem instalar a lib).
+ * `showHeader` permite ocultar avatar/nome/horário em mensagens consecutivas do mesmo autor.
+ */
+function ChatMessage({
+  message,
+  isOwn,
+  showHeader,
+  onOpenImage,
+}: {
+  message: ChatMensagem;
+  isOwn: boolean;
+  showHeader: boolean;
+  onOpenImage: (message: ChatMensagem) => void;
+}) {
+  return (
+    <div className={`flex items-end gap-2 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
+      <div className="w-7 shrink-0">{showHeader && <Avatar name={message.autorNome} src={message.autorAvatarUrl} className="h-7 w-7 text-[10px]" />}</div>
+      <div className={`flex min-w-0 max-w-[70%] flex-col ${isOwn ? "items-end" : "items-start"}`}>
+        {showHeader && (
+          <div className={`mb-1 flex items-baseline gap-2 px-0.5 ${isOwn ? "flex-row-reverse" : ""}`}>
+            <span className="truncate text-[11px] font-semibold text-[var(--foreground)]">{message.autorNome}</span>
+            <span className="font-technical shrink-0 text-[10px] text-[var(--muted-foreground)]">{chatTime(message.criadoAt)}</span>
+          </div>
+        )}
+        <div
+          className={`rounded-xl px-3 py-2 text-[13px] leading-relaxed ${
+            isOwn
+              ? "rounded-tr-sm border border-[rgba(175,27,27,0.14)] bg-[rgba(175,27,27,0.08)] text-[var(--foreground)]"
+              : "rounded-tl-sm border border-[var(--border)] bg-white text-[var(--foreground)]"
+          }`}
+        >
+          {message.arquivoUrl && message.tipoMensagem === "AUDIO" && (
+            <audio controls preload="metadata" src={message.arquivoUrl} className="h-9 w-64 max-w-full" />
+          )}
+          {message.arquivoUrl && message.tipoMensagem === "IMAGEM" && (
+            <ChatImagePreview message={message} onOpen={() => onOpenImage(message)} />
+          )}
+          {message.arquivoUrl && message.tipoMensagem === "VIDEO" && (
+            <video controls preload="metadata" src={message.arquivoUrl} className="max-h-64 max-w-full rounded-lg" />
+          )}
+          {message.arquivoUrl && message.tipoMensagem === "ARQUIVO" && (
+            <a
+              href={message.arquivoUrl}
+              download
+              aria-label={`Baixar anexo ${message.arquivoNome ?? "arquivo"}`}
+              className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[color-mix(in_srgb,var(--foreground)_3%,white)] px-2.5 py-2 text-xs font-semibold text-[var(--foreground)] outline-none transition hover:border-[var(--border-strong)] focus-visible:ring-2 focus-visible:ring-[var(--primary)]/30"
+            >
+              <FileText size={15} className="shrink-0 text-[var(--muted-foreground)]" />
+              <span className="min-w-0 flex-1 truncate">{message.arquivoNome ?? "Arquivo"}</span>
+              <span className="shrink-0 text-[10px] font-normal text-[var(--muted-foreground)]">{readableFileSize(message.arquivoTamanho)}</span>
+            </a>
+          )}
+          {(!message.arquivoUrl || !isGenericAttachmentText(message)) && <p className="whitespace-pre-wrap break-words">{message.texto}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Thumbnail clicável dentro do balão — abre o ChatImageViewer. Nunca baixa nem amplia sozinha. */
+function ChatImagePreview({ message, onOpen }: { message: ChatMensagem; onOpen: () => void }) {
+  const [error, setError] = useState(false);
+  if (!message.arquivoUrl) return null;
+
+  if (error) {
+    return (
+      <div className="flex max-w-[380px] flex-col items-center gap-2 rounded-lg border border-dashed border-[var(--border)] bg-[#F9FAFB] px-3 py-4 text-center text-xs text-[var(--muted-foreground)]">
+        <span>Não foi possível carregar esta imagem.</span>
+        <a href={`${message.arquivoUrl}?download=1`} download={message.arquivoNome ?? undefined} className="font-semibold text-[var(--primary)] underline-offset-2 hover:underline">
+          Baixar arquivo
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`Ampliar imagem${message.arquivoNome ? ` ${message.arquivoNome}` : ""}`}
+      className="block max-h-[300px] max-w-[380px] cursor-zoom-in overflow-hidden rounded-[10px] transition hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/40"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={message.arquivoUrl}
+        alt={message.arquivoNome ?? "Imagem enviada"}
+        onError={() => setError(true)}
+        className="max-h-[300px] max-w-[380px] rounded-[10px] object-cover"
+      />
+    </button>
+  );
+}
+
+/** Lightbox de imagem — overlay escuro, imagem ampliada mantendo proporção, download do arquivo original via o mesmo endpoint autorizado do anexo. Único modal montado por vez (estado vive no widget pai). */
+function ChatImageViewer({ message, onClose }: { message: ChatMensagem; onClose: () => void }) {
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
+  }, []);
+
+  useEffect(() => {
+    function handler(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  if (!message.arquivoUrl) return null;
+  const downloadUrl = `${message.arquivoUrl}?download=1`;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/72 p-4" onClick={onClose}>
+      <div className="flex max-h-full max-w-full flex-col items-center" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex w-full items-center justify-end gap-2">
+          <a
+            href={downloadUrl}
+            download={message.arquivoNome ?? undefined}
+            aria-label={`Baixar ${message.arquivoNome ?? "imagem"}`}
+            className="flex h-9 items-center gap-1.5 rounded-lg bg-white/10 px-3 text-xs font-semibold text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+          >
+            <Download size={14} />
+            Baixar
+          </a>
+          <button
+            onClick={onClose}
+            aria-label="Fechar visualizador"
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        {error ? (
+          <div className="flex max-w-sm flex-col items-center gap-3 rounded-lg bg-white/5 px-6 py-10 text-center text-sm text-white/80">
+            <p>Não foi possível carregar esta imagem.</p>
+            <a href={downloadUrl} download={message.arquivoNome ?? undefined} className="rounded-lg bg-white/15 px-3 py-2 text-xs font-semibold text-white hover:bg-white/25">
+              Baixar arquivo
+            </a>
+          </div>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={message.arquivoUrl}
+            alt={message.arquivoNome ?? "Imagem enviada"}
+            onError={() => setError(true)}
+            className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain"
+          />
+        )}
+        {(message.arquivoNome || message.arquivoTamanho) && (
+          <div className="mt-3 flex max-w-full items-center gap-2 text-xs text-white/70">
+            {message.arquivoNome && <span className="truncate">{message.arquivoNome}</span>}
+            {message.arquivoTamanho ? <span className="shrink-0">{readableFileSize(message.arquivoTamanho)}</span> : null}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Presença de uma conversa individual — nunca usada para conversas de equipe (targetPerfil truthy), que mostram sua descrição fixa em vez de online/offline. */
+function UserPresence({ online }: { online: boolean }) {
+  return <span className={`text-xs ${online ? "text-[#16A34A]" : "text-[var(--muted-foreground)]"}`}>{online ? "online" : "offline"}</span>;
+}
+
+function ConversationListItem({
+  conversa,
+  selected,
+  onClick,
+}: {
+  conversa: ChatConversa;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const isTeam = !!conversa.targetPerfil;
+  return (
+    <button
+      className={`flex w-full items-center gap-3 border-b border-[#F3F4F6] px-4 py-3 text-left transition-colors ${
+        selected ? "border-l-2 border-l-[var(--primary)] bg-[rgba(175,27,27,0.06)]" : "border-l-2 border-l-transparent hover:bg-[#F9FAFB]"
+      }`}
+      onClick={onClick}
+    >
+      <Avatar name={conversa.titulo} src={conversa.avatarUrl} isTeam={isTeam} className="h-10 w-10" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate text-sm font-semibold text-[#1A1A1A]">{conversa.titulo}</p>
+          <span className="font-technical shrink-0 text-[10px] text-[#9CA3AF]">{chatTime(conversa.ultimaMensagem?.criadoAt)}</span>
+        </div>
+        <p className="mt-0.5 truncate text-xs text-[#6B7280]">{conversa.ultimaMensagem?.texto ?? conversa.subtitulo}</p>
+      </div>
+      {conversa.unreadCount > 0 && (
+        <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-white">
+          {conversa.unreadCount}
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function GeneralChatWidget({ className = "" }: { className?: string }) {
   const [open, setOpen] = useState(false);
   const [conversas, setConversas] = useState<ChatConversa[]>([]);
@@ -136,8 +355,11 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
   const [recording, setRecording] = useState(false);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [fileAccept, setFileAccept] = useState(MEDIA_ACCEPT);
+  const [viewerMessage, setViewerMessage] = useState<ChatMensagem | null>(null);
   const [bubblePosition, setBubblePosition] = useState<BubblePosition | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
@@ -233,9 +455,21 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     return () => clearTimeout(t);
   }, [loadUsuarios, open, search]);
 
+  // Só acompanha o fim automaticamente se o usuário já estava perto dele — evita puxar a tela
+  // para baixo enquanto alguém lê mensagens antigas.
+  const nearBottomRef = useRef(true);
+  function handleMessagesScroll() {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  }
   useEffect(() => {
+    if (nearBottomRef.current) endRef.current?.scrollIntoView({ block: "end" });
+  }, [messages.length]);
+  useEffect(() => {
+    nearBottomRef.current = true;
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length, selected?.id]);
+  }, [selected?.id]);
 
   async function selectConversa(conversa: ChatConversa) {
     setSelected(conversa);
@@ -291,6 +525,14 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
       await loadMessages(selected.id);
       await loadConversas();
     }
+    // Mantém o foco no composer para permitir continuar digitando rapidamente.
+    textareaRef.current?.focus();
+  }
+
+  function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) event.preventDefault();
+    if (!shouldSendOnEnter({ key: event.key, shiftKey: event.shiftKey, isComposing: event.nativeEvent.isComposing, draft, sending, hasSelected: !!selected })) return;
+    sendMessage();
   }
 
   async function handleFileChange(file: File | null | undefined) {
@@ -404,6 +646,36 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     setOpen(true);
   }
 
+  const messageItems = useMemo(() => {
+    const items: Array<
+      | { kind: "date"; label: string; key: string }
+      | { kind: "message"; message: ChatMensagem; showHeader: boolean }
+    > = [];
+    let lastDateLabel: string | null = null;
+    let lastAuthor: string | null = null;
+    let lastTime = 0;
+    for (const message of messages) {
+      const label = dateSeparatorLabel(message.criadoAt);
+      if (label !== lastDateLabel) {
+        items.push({ kind: "date", label, key: `date-${message.id}` });
+        lastDateLabel = label;
+        lastAuthor = null;
+      }
+      const time = new Date(message.criadoAt).getTime();
+      // Mensagens consecutivas do mesmo autor em menos de 5 min repetem menos avatar/nome/horário.
+      const showHeader = message.autorNome !== lastAuthor || time - lastTime > 5 * 60 * 1000;
+      items.push({ kind: "message", message, showHeader });
+      lastAuthor = message.autorNome;
+      lastTime = time;
+    }
+    return items;
+  }, [messages]);
+
+  // A presença precisa refletir o polling de `conversas` (a cada 5s), não o snapshot congelado no
+  // momento da seleção — senão o header de uma conversa aberta há minutos mostra online/offline
+  // desatualizado mesmo com o resto da lista já atualizado.
+  const selectedLive = selected ? conversas.find((conversa) => conversa.id === selected.id) ?? selected : null;
+
   const filteredConversas = conversas.filter((conversa) => {
     const term = search.trim().toLowerCase();
     if (!term) return true;
@@ -440,22 +712,24 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
   }
 
   return (
-    <div className={`fixed right-4 z-30 grid h-[min(560px,calc(100vh-32px))] min-h-0 w-[min(860px,calc(100vw-24px))] grid-cols-1 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-2xl md:grid-cols-[300px_1fr] ${className || "bottom-4"}`}>
-      <aside className="hidden min-h-0 min-w-0 border-r border-[#E5E7EB] bg-white md:flex md:flex-col">
+    <div
+      className={`fixed right-4 z-30 grid h-[min(720px,80vh)] min-h-0 w-[min(1000px,calc(100vw-32px))] grid-cols-1 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-2xl md:grid-cols-[300px_1fr] ${className || "bottom-4"}`}
+    >
+      <aside className={`min-h-0 min-w-0 flex-col border-r border-[#E5E7EB] bg-white ${selected ? "hidden" : "flex"} md:flex`}>
         <div className="border-b border-[#E5E7EB] px-4 py-3">
-          <p className="text-base font-bold text-[#1A1A1A]">Conversas</p>
-          <div className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-xs text-[#9CA3AF]">
-            <Search size={14} />
-            <input className="min-w-0 flex-1 bg-transparent text-xs text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF]" placeholder="Pesquise usuário ou conversa" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <p className="text-sm font-bold text-[#1A1A1A]">Conversas</p>
+          <div className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-[12px] text-[#9CA3AF]">
+            <Search size={13} />
+            <input className="min-w-0 flex-1 bg-transparent text-[12px] text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF]" placeholder="Pesquisar..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {pinnedUsuarios.map((usuario) => (
-            <button key={`fixed-${usuario.id}`} className="flex w-full gap-3 border-b border-[#F3F4F6] bg-[#F8FAFC] px-4 py-3 text-left hover:bg-[#EFF6FF]" onClick={() => startConversation(usuario)}>
-              <Avatar name={usuario.nome} src={usuario.avatarUrl} className="h-10 w-10" />
+            <button key={`fixed-${usuario.id}`} className="flex w-full items-center gap-3 border-b border-[#F3F4F6] bg-[#FAFAFA] px-4 py-3 text-left transition-colors hover:bg-[rgba(175,27,27,0.05)]" onClick={() => startConversation(usuario)}>
+              <Avatar name={perfilLabel(usuario.perfil)} isTeam className="h-10 w-10" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-[#1A1A1A]">{perfilLabel(usuario.perfil)}</p>
-                <p className="mt-0.5 truncate text-xs text-[#2563EB]">Fixado • {usuario.online ? "online" : "offline"}</p>
+                <p className="mt-0.5 truncate text-xs text-[var(--primary)]">Equipe fixa</p>
               </div>
             </button>
           ))}
@@ -469,96 +743,97 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
             </button>
           ))}
           {filteredConversas.map((conversa) => (
-            <button key={conversa.id} className={`flex w-full gap-3 border-b border-[#F3F4F6] px-4 py-3 text-left ${selected?.id === conversa.id ? "bg-[#EFF6FF]" : "hover:bg-[#F9FAFB]"}`} onClick={() => selectConversa(conversa)}>
-              <Avatar name={conversa.titulo} src={conversa.avatarUrl} className="h-10 w-10" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-sm font-semibold text-[#1A1A1A]">{conversa.titulo}</p>
-                  <span className="shrink-0 text-[10px] text-[#9CA3AF]">{chatTime(conversa.ultimaMensagem?.criadoAt)}</span>
-                </div>
-                <p className="mt-0.5 truncate text-xs text-[#6B7280]">{conversa.ultimaMensagem?.texto ?? conversa.subtitulo}</p>
-              </div>
-              {conversa.unreadCount > 0 && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-[#16A34A]" />}
-            </button>
+            <ConversationListItem key={conversa.id} conversa={conversa} selected={selected?.id === conversa.id} onClick={() => selectConversa(conversa)} />
           ))}
           {!pinnedUsuarios.length && !filteredConversas.length && !usuariosToShow.length && <p className="px-4 py-6 text-sm text-[#9CA3AF]">Nenhuma conversa encontrada.</p>}
         </div>
       </aside>
 
-      <section className="flex min-h-0 min-w-0 flex-col">
+      <section className={`min-h-0 min-w-0 flex-col ${selected ? "flex" : "hidden"} md:flex`}>
         <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3">
-          {selected ? (
-            <div className="flex min-w-0 items-center gap-3">
-              <Avatar name={selected.titulo} src={selected.avatarUrl} />
+          {selectedLive ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <button className="-ml-1 rounded-full p-1.5 text-[#6B7280] hover:bg-white hover:text-[#1A1A1A] md:hidden" onClick={() => setSelected(null)} aria-label="Voltar para a lista de conversas">
+                <ArrowLeft size={16} />
+              </button>
+              <Avatar name={selectedLive.titulo} src={selectedLive.avatarUrl} isTeam={!!selectedLive.targetPerfil} />
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-[#1A1A1A]">{selected.titulo}</p>
-                <p className={`text-xs ${selected.online ? "text-[#16A34A]" : "text-[#9CA3AF]"}`}>{selected.online ? "online" : "offline"}</p>
+                <p className="truncate text-sm font-bold text-[#1A1A1A]">{selectedLive.titulo}</p>
+                {selectedLive.targetPerfil ? (
+                  <p className="text-xs text-[var(--muted-foreground)]">{selectedLive.subtitulo}</p>
+                ) : (
+                  <UserPresence online={selectedLive.online} />
+                )}
               </div>
             </div>
           ) : <p className="text-sm font-bold text-[#1A1A1A]">Selecione uma conversa</p>}
           <button className="rounded-full p-1 text-[#6B7280] hover:bg-white hover:text-[#1A1A1A]" onClick={() => setOpen(false)} aria-label="Fechar chat"><X size={16} /></button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#F3F4F6] px-4 py-4">
-          {selected ? messages.map((message) => (
-            <div key={message.id} className={`flex items-end gap-2 ${message.meu ? "justify-end" : "justify-start"}`}>
-              {!message.meu && <Avatar name={message.autorNome} src={message.autorAvatarUrl} className="h-7 w-7 text-[10px]" />}
-              <div className={`max-w-[82%] rounded-xl px-3 py-2 text-sm shadow-sm ${message.meu ? "rounded-br-sm bg-[#DBEAFE] text-[#1E3A8A]" : "rounded-bl-sm bg-white text-[#1A1A1A]"}`}>
-                <p className={`mb-1 text-[11px] font-bold ${message.meu ? "text-[#1D4ED8]" : "text-[#2563EB]"}`}>
-                  {message.autorNome}
-                </p>
-                {message.arquivoUrl && message.tipoMensagem === "AUDIO" && (
-                  <audio controls preload="metadata" src={message.arquivoUrl} className="h-9 w-64 max-w-full" />
-                )}
-                {message.arquivoUrl && message.tipoMensagem === "IMAGEM" && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={message.arquivoUrl} alt={message.arquivoNome ?? "Imagem enviada"} className="max-h-56 max-w-full rounded-lg object-contain" />
-                )}
-                {message.arquivoUrl && message.tipoMensagem === "VIDEO" && (
-                  <video controls preload="metadata" src={message.arquivoUrl} className="max-h-64 max-w-full rounded-lg" />
-                )}
-                {message.arquivoUrl && message.tipoMensagem === "ARQUIVO" && (
-                  <a href={message.arquivoUrl} download className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${message.meu ? "border-[#93C5FD] bg-white/40 text-[#1E40AF]" : "border-[#E5E7EB] bg-[#F9FAFB] text-[#374151]"}`}>
-                    <FileText size={16} />
-                    <span className="min-w-0 flex-1 truncate">{message.arquivoNome ?? "Arquivo"}</span>
-                    <span className="shrink-0 text-[10px] opacity-70">{readableFileSize(message.arquivoTamanho)}</span>
-                  </a>
-                )}
-                {(!message.arquivoUrl || !isGenericAttachmentText(message)) && <p className="whitespace-pre-wrap leading-relaxed">{message.texto}</p>}
-                <div className={`mt-1.5 text-[10px] font-semibold opacity-70 ${message.meu ? "text-right" : "text-left"}`}>{chatTime(message.criadoAt)}</div>
+        <div ref={scrollAreaRef} onScroll={handleMessagesScroll} className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[var(--background)] px-4 py-4">
+          {selected ? (
+            messages.length ? (
+              messageItems.map((item) =>
+                item.kind === "date" ? (
+                  <div key={item.key} className="flex items-center justify-center py-1">
+                    <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">{item.label}</span>
+                  </div>
+                ) : (
+                  <ChatMessage key={item.message.id} message={item.message} isOwn={item.message.meu} showHeader={item.showHeader} onOpenImage={setViewerMessage} />
+                ),
+              )
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
+                <p className="text-sm font-semibold text-[#1A1A1A]">Nenhuma mensagem ainda.</p>
+                <p className="text-xs text-[#6B7280]">Inicie a conversa enviando uma mensagem.</p>
               </div>
+            )
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <p className="max-w-xs text-center text-sm text-[#6B7280]">Busque um usuário ou selecione uma conversa existente.</p>
             </div>
-          )) : <p className="rounded-lg border border-dashed border-[#D1D5DB] bg-white px-3 py-4 text-center text-sm text-[#6B7280]">Busque um usuário ou selecione uma conversa existente.</p>}
+          )}
           <div ref={endRef} />
         </div>
 
         <div className="border-t border-[#E5E7EB] bg-white p-3">
           <input ref={fileInputRef} type="file" className="hidden" accept={fileAccept} onChange={(event) => handleFileChange(event.target.files?.[0])} />
           <div className="flex items-end gap-2">
-            <textarea className="max-h-32 min-h-11 flex-1 resize-none rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20" placeholder="Digite uma nova mensagem..." value={draft} onChange={(e) => setDraft(e.target.value)} disabled={!selected} />
+            <textarea
+              ref={textareaRef}
+              className="max-h-32 min-h-[42px] flex-1 resize-none rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-[13px] leading-relaxed text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/15"
+              placeholder="Digite uma mensagem..."
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={handleComposerKeyDown}
+              disabled={!selected}
+              rows={1}
+            />
             <div className="relative shrink-0">
-              <button className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#E5E7EB] bg-white text-[#6B7280] shadow-sm transition hover:bg-[#F9FAFB] hover:text-[#2563EB] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setAttachmentMenuOpen((current) => !current)} disabled={!selected || sending} aria-label="Adicionar anexo" title="Adicionar anexo">
+              <button className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[#6B7280] shadow-sm transition hover:bg-[#F9FAFB] hover:text-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setAttachmentMenuOpen((current) => !current)} disabled={!selected || sending} aria-label="Adicionar anexo" title="Adicionar anexo">
                 <Paperclip size={16} />
               </button>
               {attachmentMenuOpen && selected && (
-                <div className="absolute bottom-12 right-0 z-10 w-44 overflow-hidden rounded-lg border border-[#E5E7EB] bg-white py-1 text-sm shadow-xl">
+                <div className="absolute bottom-12 right-0 z-10 w-44 overflow-hidden rounded-lg border border-[var(--border)] bg-white py-1 text-sm shadow-xl">
                   <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-[#374151] hover:bg-[#F9FAFB]" onClick={() => openAttachmentPicker(MEDIA_ACCEPT)}>
-                    <ImageIcon size={15} className="text-[#2563EB]" />
+                    <ImageIcon size={15} className="text-[var(--primary)]" />
                     Fotos e vídeos
                   </button>
                 </div>
               )}
             </div>
-            <button className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${recording ? "border-[#DC2626] bg-[#FEF2F2] text-[#DC2626]" : "border-[#E5E7EB] bg-white text-[#6B7280] hover:bg-[#F9FAFB] hover:text-[#2563EB]"}`} onClick={toggleRecording} disabled={!selected || sending} aria-label={recording ? "Parar gravação" : "Enviar áudio"} title={recording ? "Parar gravação" : "Enviar áudio"}>
+            <button className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${recording ? "border-[#DC2626] bg-[#FEF2F2] text-[#DC2626]" : "border-[var(--border)] bg-white text-[#6B7280] hover:bg-[#F9FAFB] hover:text-[var(--primary)]"}`} onClick={toggleRecording} disabled={!selected || sending} aria-label={recording ? "Parar gravação" : "Enviar áudio"} title={recording ? "Parar gravação" : "Enviar áudio"}>
               {recording ? <StopCircle size={16} /> : <Mic size={16} />}
             </button>
-            <Button className="h-11 shrink-0 px-4" onClick={() => sendMessage()} disabled={sending || !selected || !draft.trim()}>
+            <Button className="h-10 shrink-0 px-4" onClick={() => sendMessage()} disabled={sending || !selected || !draft.trim()}>
               <Send size={13} />
               {sending ? "..." : "Enviar"}
             </Button>
           </div>
         </div>
       </section>
+
+      {viewerMessage && <ChatImageViewer message={viewerMessage} onClose={() => setViewerMessage(null)} />}
     </div>
   );
 }

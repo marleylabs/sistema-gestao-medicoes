@@ -3,10 +3,11 @@ import { getCurrentUser } from "@/lib/auth";
 import { safeDownloadName } from "@/lib/file-security";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
+  const forceDownload = request.nextUrl.searchParams.get("download") === "1";
   const { id } = await params;
   const mensagem = await prisma.chatMensagem.findUnique({
     where: { id },
@@ -33,9 +34,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "Anexo não encontrado." }, { status: 404 });
   }
 
-  const disposition = mensagem.arquivoMime.startsWith("image/") || mensagem.arquivoMime.startsWith("audio/") || mensagem.arquivoMime.startsWith("video/")
-    ? "inline"
-    : "attachment";
+  const isInlineMime = mensagem.arquivoMime.startsWith("image/") || mensagem.arquivoMime.startsWith("audio/") || mensagem.arquivoMime.startsWith("video/");
+  const disposition = isInlineMime && !forceDownload ? "inline" : "attachment";
 
   return new NextResponse(mensagem.arquivo, {
     headers: {

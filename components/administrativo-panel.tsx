@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Copy, Download, Edit3, FileSpreadsheet, RefreshCw, Save, Upload, X } from "lucide-react";
-import { Button, Card, Input, PageContainer, PageHeader } from "@/components/ui";
+import { Button, Card, IconButton, Input, PageContainer, PageHeader } from "@/components/ui";
 
 type CadastroFornecedor = {
   id: string;
@@ -159,14 +159,60 @@ function cadastroFormFromItem(item: CadastroFornecedor) {
   };
 }
 
-function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: () => void }) {
-  const [editing, setEditing] = useState(false);
+const CADASTRO_FIELDS: [keyof ReturnType<typeof cadastroFormFromItem>, string][] = [
+  ["responsavel", "Responsável"],
+  ["razaoSocial", "Razão social"],
+  ["cnpj", "CNPJ"],
+  ["cpf", "CPF"],
+  ["email", "E-mail"],
+  ["telefone", "Telefone"],
+  ["cargo", "Cargo"],
+  ["statusContrato", "Status CT"],
+  ["statusCadastro", "Status"],
+  ["objetoContrato", "Objeto do contrato"],
+  ["tipoCt", "Tipo CT"],
+  ["tipoContrato", "Tipo contrato"],
+  ["valorHora", "Hora"],
+  ["valorA1Equivalente", "A1 equivalente"],
+  ["valorDocumento", "Documento"],
+  ["valorCondicaoFixa", "Condição fixa"],
+  ["primeiroAditivo", "1º Adi"],
+  ["segundoAditivo", "2º Ad"],
+];
+
+function FornecedorEditModal({
+  item,
+  onClose,
+  onSuccess,
+  onError,
+}: {
+  item: CadastroFornecedor;
+  onClose: () => void;
+  onSuccess: () => void;
+  onError: (message: string) => void;
+}) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(() => cadastroFormFromItem(item));
 
+  // Recarrega o formulário sempre que o fornecedor selecionado mudar (troca ou reabertura) —
+  // nunca deixa resíduo do fornecedor anterior.
   useEffect(() => {
     setForm(cadastroFormFromItem(item));
   }, [item]);
+
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
+  }, []);
+
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (e.key === "Escape" && !saving) onClose();
+    }
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [saving, onClose]);
 
   function update(field: keyof typeof form, value: string) {
     setForm((prev) => ({ ...prev, [field]: formatCadastroInput(field, value) }));
@@ -182,66 +228,41 @@ function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: ()
     const payload = await res.json().catch(() => ({}));
     setSaving(false);
     if (!res.ok) {
-      alert(payload.error ?? "Não foi possível salvar o cadastro.");
+      onError(payload.error ?? "Não foi possível salvar o cadastro.");
       return;
     }
-    setEditing(false);
-    onSaved();
+    onSuccess();
   }
 
   return (
-    <Card className={`flex h-full min-h-[168px] flex-col overflow-hidden ${item.pendencias.length ? "border-[#FCA5A5]" : ""}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-sm font-bold text-[#1A1A1A]">{displayText(item.responsavel)}</h3>
-            <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ${toneClass[item.validadeTone]}`}>
-              {item.validadeLabel}
-            </span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
+      <div className="ds-dialog flex max-h-[calc(100vh-16px)] w-full flex-col overflow-hidden sm:max-h-[85vh] sm:w-[820px] sm:max-w-[90vw]">
+        {/* Header — fixo */}
+        <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="truncate text-sm font-bold text-[#1A1A1A]">{displayText(item.responsavel)}</h2>
+              <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ${toneClass[item.validadeTone]}`}>
+                {item.validadeLabel}
+              </span>
+            </div>
+            <p className="mt-0.5 truncate text-xs text-[#6B7280]">{displayText(item.razaoSocial)}</p>
           </div>
-          <p className="mt-1 truncate text-xs text-[#6B7280]">{displayText(item.razaoSocial)}</p>
+          <IconButton onClick={onClose} title="Fechar" disabled={saving}><X size={16} /></IconButton>
         </div>
-        <button
-          type="button"
-          onClick={() => setEditing((value) => !value)}
-          className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2 text-xs font-semibold text-[#555555] transition hover:border-[#2563EB] hover:text-[#2563EB]"
-        >
-          {editing ? <X size={13} /> : <Edit3 size={13} />}
-          {editing ? "Fechar" : "Editar"}
-        </button>
-      </div>
 
-      {editing ? (
-        <div className="grid gap-3 p-4 sm:grid-cols-2">
-          {[
-            ["responsavel", "Responsável"],
-            ["razaoSocial", "Razão social"],
-            ["cnpj", "CNPJ"],
-            ["cpf", "CPF"],
-            ["email", "E-mail"],
-            ["telefone", "Telefone"],
-            ["cargo", "Cargo"],
-            ["statusContrato", "Status CT"],
-            ["statusCadastro", "Status"],
-            ["objetoContrato", "Objeto do contrato"],
-            ["tipoCt", "Tipo CT"],
-            ["tipoContrato", "Tipo contrato"],
-            ["valorHora", "Hora"],
-            ["valorA1Equivalente", "A1 equivalente"],
-            ["valorDocumento", "Documento"],
-            ["valorCondicaoFixa", "Condição fixa"],
-            ["primeiroAditivo", "1º Adi"],
-            ["segundoAditivo", "2º Ad"],
-          ].map(([field, label]) => (
+        {/* Body — scroll interno */}
+        <div className="grid flex-1 gap-3 overflow-y-auto p-5 sm:grid-cols-2">
+          {CADASTRO_FIELDS.map(([field, label]) => (
             <label key={field} className="text-label grid gap-1 text-[var(--muted-foreground)]">
               {label}
               <Input
                 type={field === "email" ? "email" : "text"}
                 inputMode={field === "email" ? "email" : ["cnpj", "cpf", "telefone"].includes(field) ? "numeric" : undefined}
-                value={form[field as keyof typeof form]}
-                onChange={(e) => update(field as keyof typeof form, e.target.value)}
+                value={form[field]}
+                onChange={(e) => update(field, e.target.value)}
                 onBlur={(e) => {
-                  if (field === "email") update(field as keyof typeof form, normalizeEmail(e.target.value));
+                  if (field === "email") update(field, normalizeEmail(e.target.value));
                 }}
                 placeholder={
                   field === "cnpj" ? "00.000.000/0000-00" :
@@ -261,60 +282,88 @@ function CadastroCard({ item, onSaved }: { item: CadastroFornecedor; onSaved: ()
             Final
             <Input type="date" value={form.final} onChange={(e) => update("final", e.target.value)} />
           </label>
-          <div className="flex justify-end gap-2 sm:col-span-2">
-            <Button variant="secondary" onClick={() => setEditing(false)} disabled={saving}>Cancelar</Button>
-            <Button onClick={save} disabled={saving}>
-              <Save size={14} />
-              {saving ? "Salvando..." : "Salvar"}
-            </Button>
+        </div>
+
+        {/* Footer — fixo */}
+        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
+          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button onClick={save} disabled={saving}>
+            <Save size={14} />
+            {saving ? "Salvando..." : "Salvar alterações"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CadastroCard({ item, onEdit }: { item: CadastroFornecedor; onEdit: (item: CadastroFornecedor) => void }) {
+  return (
+    <Card className={`flex h-full min-h-[168px] flex-col overflow-hidden ${item.pendencias.length ? "border-[#FCA5A5]" : ""}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="truncate text-sm font-bold text-[#1A1A1A]">{displayText(item.responsavel)}</h3>
+            <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ${toneClass[item.validadeTone]}`}>
+              {item.validadeLabel}
+            </span>
+          </div>
+          <p className="mt-1 truncate text-xs text-[#6B7280]">{displayText(item.razaoSocial)}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onEdit(item)}
+          className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2 text-xs font-semibold text-[#555555] transition hover:border-[#2563EB] hover:text-[#2563EB]"
+        >
+          <Edit3 size={13} />
+          Editar
+        </button>
+      </div>
+
+      <div className="grid flex-1 content-start gap-x-8 gap-y-3 px-5 py-4 text-xs sm:grid-cols-2">
+        <div className="min-w-0">
+          <span className="text-[#64748B]">CNPJ</span>
+          <p className="font-technical mt-0.5 truncate font-semibold text-[#1F2937]">{item.cnpj ?? "-"}</p>
+        </div>
+        <div className="min-w-0">
+          <span className="text-[#64748B]">ID</span>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+            <span className="truncate font-mono text-[11px] font-semibold text-[#1F2937]" title={item.id}>{compactId(item.id)}</span>
+            <button
+              type="button"
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#94A3B8] transition hover:bg-[#F1F5F9] hover:text-[#2563EB]"
+              onClick={() => navigator.clipboard?.writeText(item.id)}
+              aria-label="Copiar ID"
+              title="Copiar ID"
+            >
+              <Copy size={12} />
+            </button>
           </div>
         </div>
-      ) : (
-        <div className="grid flex-1 content-start gap-x-8 gap-y-3 px-5 py-4 text-xs sm:grid-cols-2">
-          <div className="min-w-0">
-            <span className="text-[#64748B]">CNPJ</span>
-            <p className="font-technical mt-0.5 truncate font-semibold text-[#1F2937]">{item.cnpj ?? "-"}</p>
-          </div>
-          <div className="min-w-0">
-            <span className="text-[#64748B]">ID</span>
-            <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
-              <span className="truncate font-mono text-[11px] font-semibold text-[#1F2937]" title={item.id}>{compactId(item.id)}</span>
-              <button
-                type="button"
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#94A3B8] transition hover:bg-[#F1F5F9] hover:text-[#2563EB]"
-                onClick={() => navigator.clipboard?.writeText(item.id)}
-                aria-label="Copiar ID"
-                title="Copiar ID"
-              >
-                <Copy size={12} />
-              </button>
-            </div>
-          </div>
-          <div className="min-w-0">
-            <span className="text-[#64748B]">E-mail</span>
-            <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{normalizeEmail(item.email) || "-"}</p>
-          </div>
-          <div className="min-w-0">
-            <span className="text-[#64748B]">Telefone</span>
-            <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{maskPhone(item.telefone) || "-"}</p>
-          </div>
-          <div className="min-w-0">
-            <span className="text-[#64748B]">Condição fixa</span>
-            <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{item.valorCondicaoFixa ? fmtCurrency(item.valorCondicaoFixa) : "-"}</p>
-          </div>
-          <div className="min-w-0 sm:col-span-2">
-            <span className="text-[#64748B]">Vigência</span>
-            <p className="mt-0.5 inline-flex rounded-full bg-[#F8FAFC] px-2.5 py-1 font-semibold text-[#334155] ring-1 ring-[#E2E8F0]">
-              {vigenciaLabel(item.inicio, item.final)}
-            </p>
-          </div>
-          {item.pendencias.length > 0 && (
-            <div className="rounded-lg bg-[#FEF2F2] px-3 py-2 text-[#B91C1C] sm:col-span-2">
-              Pendência: {item.pendencias.join(", ")}
-            </div>
-          )}
+        <div className="min-w-0">
+          <span className="text-[#64748B]">E-mail</span>
+          <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{normalizeEmail(item.email) || "-"}</p>
         </div>
-      )}
+        <div className="min-w-0">
+          <span className="text-[#64748B]">Telefone</span>
+          <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{maskPhone(item.telefone) || "-"}</p>
+        </div>
+        <div className="min-w-0">
+          <span className="text-[#64748B]">Condição fixa</span>
+          <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{item.valorCondicaoFixa ? fmtCurrency(item.valorCondicaoFixa) : "-"}</p>
+        </div>
+        <div className="min-w-0 sm:col-span-2">
+          <span className="text-[#64748B]">Vigência</span>
+          <p className="mt-0.5 inline-flex rounded-full bg-[#F8FAFC] px-2.5 py-1 font-semibold text-[#334155] ring-1 ring-[#E2E8F0]">
+            {vigenciaLabel(item.inicio, item.final)}
+          </p>
+        </div>
+        {item.pendencias.length > 0 && (
+          <div className="rounded-lg bg-[#FEF2F2] px-3 py-2 text-[#B91C1C] sm:col-span-2">
+            Pendência: {item.pendencias.join(", ")}
+          </div>
+        )}
+      </div>
     </Card>
   );
 }
@@ -329,6 +378,14 @@ export function AdministrativoPanel() {
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const [selectedFornecedor, setSelectedFornecedor] = useState<CadastroFornecedor | null>(null);
+  const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -505,10 +562,32 @@ export function AdministrativoPanel() {
         <Card className="p-6 text-sm text-[#6B7280]">Nenhum cadastro encontrado.</Card>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {filtered.map((item) => <CadastroCard key={item.id} item={item} onSaved={load} />)}
+          {filtered.map((item) => <CadastroCard key={item.id} item={item} onEdit={setSelectedFornecedor} />)}
         </div>
       )}
 
+      {selectedFornecedor && (
+        <FornecedorEditModal
+          item={selectedFornecedor}
+          onClose={() => setSelectedFornecedor(null)}
+          onSuccess={async () => {
+            setSelectedFornecedor(null);
+            setToast({ tone: "success", message: "Fornecedor atualizado com sucesso." });
+            await load();
+          }}
+          onError={(message) => setToast({ tone: "error", message })}
+        />
+      )}
+
+      {toast && (
+        <div
+          className={`fixed bottom-5 right-5 z-[60] rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg ${
+            toast.tone === "success" ? "bg-[#16A34A]" : "bg-[#DC2626]"
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
     </PageContainer>
   );
 }
