@@ -29,7 +29,7 @@ import { UsuariosPanel } from "@/components/usuarios-panel";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { AdministrativoPanel } from "@/components/administrativo-panel";
 import { Badge, Button, Card, IconButton, PageContainer, PageHeader, Select } from "@/components/ui";
-import type { DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
+import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
 import type { AuthUser } from "@/lib/session";
 
@@ -53,6 +53,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   const [dashboard, setDashboard]           = useState<DashboardData | null>(null);
   const [profissionais, setProfissionais]   = useState<Profissional[]>([]);
   const [mapaItens, setMapaItens]           = useState<MapaPagamentoItem[]>([]);
+  const [contratosCiclo, setContratosCiclo] = useState<ContratoResumo[]>([]);
   const [sgcAlertas, setSgcAlertas]         = useState<SgcAlerta[]>([]);
   const [sgcConversas, setSgcConversas]     = useState<SgcAlerta[]>([]);
   const [sgcStatus, setSgcStatus]           = useState<Record<string, { status: string; revisaoNumero: number; id: string }>>({});
@@ -133,7 +134,11 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       fetch(`/api/mapa-pagamento?ciclo=${activeCiclo}`),
     ]);
     if (p.ok) setProfissionais(await p.json());
-    if (m.ok) setMapaItens(await m.json());
+    if (m.ok) {
+      const payload = await m.json();
+      setMapaItens(payload.itens ?? []);
+      setContratosCiclo(payload.contratos ?? []);
+    }
   }, [activeCiclo, isAdmin]);
 
   const refresh    = useCallback(async () => { await loadDashboard(); }, [loadDashboard]);
@@ -667,6 +672,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
             <MapaPagamentoResumo data={dashboard} isAdmin={isAdmin} onChanged={refreshAll} ciclo={activeCiclo} />
             <MapaPagamentoTable
               itens={mapaItens}
+              contratos={contratosCiclo}
               profissionais={profissionais}
               selectedCodigo={selectedCodigo}
               selectedContrato={selectedContrato}

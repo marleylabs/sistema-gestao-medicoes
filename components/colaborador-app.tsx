@@ -33,6 +33,7 @@ import { AccountMenu } from "@/components/account-menu";
 import { GeneralChatWidget } from "@/components/general-chat-widget";
 import { Badge, Button, Card, IconButton, PageContainer, PageHeader, Textarea } from "@/components/ui";
 import type { AuthUser } from "@/lib/session";
+import { computarParticipacao } from "@/lib/contratos";
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const percent  = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 });
@@ -236,15 +237,14 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   const canValidate = data?.sgc.status === "PENDENTE" && data?.sgc.statusConferencia === "CONCLUIDA";
   const { label: statusLabel, badge: statusBadge } = data ? statusConfig(data.sgc.status) : { label: "", badge: "neutral" as const };
 
-  const contratos = useMemo(() => {
-    if (!data?.alocacao) return [];
-    return ([
-      ["Intr. Sossego", data.alocacao.intrSossego],
-      ["Salobo",        data.alocacao.salobo],
-      ["ACG",           data.alocacao.acg],
-      ["Escadas Alumar",data.alocacao.escadasAlumar],
-    ] as [string, number][]).filter(([, v]) => v > 0);
+  const resultadoParticipacao = useMemo(() => {
+    if (!data) return null;
+    const elegiveis = data.documentos.filter((d) => !isDiscountDocument(d));
+    return computarParticipacao(elegiveis.map((d) => ({ contrato: d.contrato, valorMedido: d.valorMedido })));
   }, [data]);
+  const contratos = useMemo((): [string, number][] => {
+    return resultadoParticipacao?.participacoes.map((p): [string, number] => [p.nome, p.percentual / 100]) ?? [];
+  }, [resultadoParticipacao]);
 
   const loadData = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -1026,6 +1026,15 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                   </span>
                 )) : (
                   <span className="text-sm text-[#92400E]">Nenhum contrato informado.</span>
+                )}
+                {resultadoParticipacao && resultadoParticipacao.documentosPendentes > 0 && (
+                  <span
+                    className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-[#B45309] ring-1 ring-[#FCD34D]"
+                    title={`${resultadoParticipacao.documentosPendentes} documento(s) sem contrato (CTO) válido`}
+                  >
+                    Não classificado
+                    <strong>{ratio(resultadoParticipacao.percentualNaoClassificado / 100)}</strong>
+                  </span>
                 )}
               </div>
               <div className="mt-4 rounded-lg bg-white px-3 py-2 ring-1 ring-[#FDE68A]">

@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { toNumber } from "@/lib/format";
+import { calcularValorMedido } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
 
 function serialize(d: {
@@ -10,9 +10,7 @@ function serialize(d: {
   equivalenteA1Horas: Prisma.Decimal | null; percentualEmissao: Prisma.Decimal | null; tipo2: string | null;
   condicao: string | null; projeto: { codigoProjeto: string; contrato: string | null };
 }) {
-  const a1eq  = toNumber(d.equivalenteA1Horas);
-  const pct   = toNumber(d.percentualEmissao ?? 0);
-  const preco = parseFloat(d.condicao ?? "0") || 0;
+  const { a1eq, pct, preco, valorMedido } = calcularValorMedido(d);
   return {
     id: d.id,
     se: d.projeto.codigoProjeto,
@@ -25,7 +23,7 @@ function serialize(d: {
     condicao: d.condicao,
     obs: d.obs,
     precoUnitario: preco,
-    valorMedido: a1eq * preco * pct,
+    valorMedido,
   };
 }
 

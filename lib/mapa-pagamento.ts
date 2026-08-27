@@ -2,6 +2,22 @@ import { createHash, randomUUID } from "node:crypto";
 import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
 import { parseDecimal, toNumber } from "@/lib/format";
 
+/**
+ * Fórmula única de "Valor Medido" de um Documento Medido — reaproveitada por
+ * GET/POST/PATCH de /api/mapa-pagamento/documentos e pelo cálculo de participação
+ * por contrato, para nunca existir uma segunda fórmula divergente.
+ */
+export function calcularValorMedido(doc: {
+  equivalenteA1Horas: unknown;
+  percentualEmissao: unknown;
+  condicao: string | null;
+}) {
+  const a1eq = toNumber(doc.equivalenteA1Horas as any);
+  const pct = toNumber((doc.percentualEmissao ?? 0) as any);
+  const preco = parseFloat(doc.condicao ?? "0") || 0;
+  return { a1eq, pct, preco, valorMedido: a1eq * preco * pct };
+}
+
 type PaymentPayload = {
   ciclo?: unknown;
   ordem?: unknown;
@@ -29,6 +45,7 @@ type CadastroOverride = {
   responsavel?: string | null;
   cpfCnpj?: string | null;
   razaoSocial?: string | null;
+  tipoCt?: string | null;
 };
 
 function text(value: unknown) {
@@ -56,12 +73,16 @@ export function serializeMapaPagamentoItem(item: any, cadastro?: CadastroOverrid
     responsavel: cadastro?.responsavel ?? item.responsavel,
     cpfCnpj: cadastro?.cpfCnpj ?? decryptSensitive(item.cpfCnpj),
     razaoSocial: cadastro?.razaoSocial ?? item.razaoSocial,
+    // Alocação: fonte oficial é o Tipo CT do cadastro administrativo do fornecedor, nunca o status
+    // derivado da medição/mapa. Sem cadastro correspondente ou com Tipo CT vazio, fica null (—).
+    alocacao: cadastro?.tipoCt ?? null,
     fornecedor: cadastro
       ? {
           id: cadastro.id ?? null,
           cpfCnpj: cadastro.cpfCnpj ?? null,
           razaoSocial: cadastro.razaoSocial ?? null,
           responsavel: cadastro.responsavel ?? null,
+          tipoCt: cadastro.tipoCt ?? null,
         }
       : null,
     intrSossego: toNumber(item.intrSossego),

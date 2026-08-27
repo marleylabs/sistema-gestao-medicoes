@@ -1,9 +1,9 @@
 "use client";
 
 import { type ReactNode, useCallback, useEffect, useRef, useMemo, useState } from "react";
-import { ArrowRight, Check, CheckCheck, Edit3, MessageCircle, Mic, Plus, RotateCcw, Search, Send, StopCircle, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, CheckCheck, Edit3, MessageCircle, Mic, Plus, RotateCcw, Search, Send, StopCircle, Trash2, X } from "lucide-react";
 import { Badge, BlurValue, Button, Card, Field, IconButton, Input, Select, Textarea } from "@/components/ui";
-import type { MapaPagamentoItem, Profissional } from "@/components/types";
+import type { ContratoResumo, MapaPagamentoItem, Profissional } from "@/components/types";
 
 type Revisao = {
   id: string;
@@ -186,6 +186,11 @@ function ratio(value: number) {
   return value ? percent.format(value) : "–";
 }
 
+/** Distingue "sem documento classificado nesse contrato" (undefined → "–") de "0% real" (documento existe, valor zero). */
+function formatParticipacao(value: number | undefined) {
+  return value === undefined ? "–" : percent.format(value / 100);
+}
+
 function contractParticipation(item: MapaPagamentoItem, contrato: string) {
   const total = item.intrSossego + item.salobo + item.acg + item.escadasAlumar;
   const allocation = normalizeText(item.ato);
@@ -213,6 +218,7 @@ function contractParticipation(item: MapaPagamentoItem, contrato: string) {
 
 export function MapaPagamentoTable({
   itens,
+  contratos = [],
   profissionais = [],
   selectedCodigo,
   selectedContrato,
@@ -225,6 +231,7 @@ export function MapaPagamentoTable({
   ciclo = "2605",
 }: {
   itens: MapaPagamentoItem[];
+  contratos?: ContratoResumo[];
   profissionais?: Profissional[];
   selectedCodigo: string;
   selectedContrato: string;
@@ -348,6 +355,7 @@ export function MapaPagamentoTable({
           ciclo={ciclo}
           saving={saving}
           profissionais={profissionais}
+          contratos={contratos}
           alocacoes={alocacoesUnicas}
           onCancel={() => { setIsCreating(false); setEditingItem(null); }}
           onSave={async (payload) => {
@@ -380,10 +388,7 @@ export function MapaPagamentoTable({
                 { label: "Projetista", align: "left" },
                 { label: "CPF / CNPJ", align: "left" },
                 { label: "Razão social", align: "left" },
-                { label: "Intr. Sossego", align: "right" },
-                { label: "Salobo", align: "right" },
-                { label: "ACG", align: "right" },
-                { label: "Escadas Alumar", align: "right" },
+                ...contratos.map((c) => ({ label: c.nome, align: "right" as const })),
                 { label: "Pagamento", align: "right" },
                 { label: "Revisão", align: "right" },
                 { label: "Atuação", align: "left" },
@@ -432,7 +437,7 @@ export function MapaPagamentoTable({
                       : `border-[#F3F4F6] hover:bg-[#F9FAFB] ${i % 2 !== 0 ? "bg-[#FAFAFA]" : "bg-white"}`
                   }`}
                 >
-                  <td className="px-4 py-3 font-medium text-[#1A1A1A]">{item.ato ?? "–"}</td>
+                  <td className="px-4 py-3 font-medium text-[#1A1A1A]">{item.alocacao ?? "–"}</td>
                   <td className="px-4 py-3 font-semibold text-[#1A1A1A]">
                     <div className="flex items-center gap-2">
                       {item.responsavel ?? item.projetistaCodigo ?? "–"}
@@ -447,14 +452,23 @@ export function MapaPagamentoTable({
                       {!isConcluido && !isPendente && hasRevisao && (
                         <Badge variant="warning" className="shrink-0">Revisão</Badge>
                       )}
+                      {item.documentosPendentesContrato > 0 && (
+                        <span
+                          className="shrink-0 text-[#D97706]"
+                          title={`${item.documentosPendentesContrato} documento(s) sem contrato (CTO) válido — ${money(item.valorNaoClassificadoContrato)} (${percent.format(item.percentualNaoClassificadoContrato / 100)}) do total ainda não classificado. Os contratos identificados abaixo continuam corretos.`}
+                        >
+                          <AlertTriangle size={13} />
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="font-technical px-4 py-3 text-[#555555]"><BlurValue>{item.fornecedor?.cpfCnpj ?? item.cpfCnpj ?? "–"}</BlurValue></td>
                   <td className="px-4 py-3 text-[#555555]">{item.fornecedor?.razaoSocial ?? item.razaoSocial ?? "–"}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{ratio(item.intrSossego)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{ratio(item.salobo)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{ratio(item.acg)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{ratio(item.escadasAlumar)}</td>
+                  {contratos.map((c) => (
+                    <td key={c.id} className="px-4 py-3 text-right tabular-nums text-[#555555]">
+                      {formatParticipacao(item.participacaoContratos[c.id])}
+                    </td>
+                  ))}
                   <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#1A1A1A]"><BlurValue>{money(item.valor)}</BlurValue></td>
                   <td className="px-4 py-3 text-right tabular-nums text-[#555555]">
                     {sgcEntry && sgcEntry.revisaoNumero > 0 ? `Rev. ${sgcEntry.revisaoNumero}` : "–"}
@@ -560,7 +574,7 @@ export function MapaPagamentoTable({
             })}
             {!filteredItems.length && (
               <tr>
-                <td colSpan={isAdmin ? 12 : 11} className="px-4 py-12 text-center text-sm text-[#9CA3AF]">
+                <td colSpan={(isAdmin ? 8 : 7) + contratos.length} className="px-4 py-12 text-center text-sm text-[#9CA3AF]">
                   Nenhuma linha encontrada com os filtros aplicados.
                 </td>
               </tr>
@@ -981,6 +995,7 @@ function PaymentModal({
   ciclo,
   saving,
   profissionais,
+  contratos,
   alocacoes: alocacoesCiclo,
   onCancel,
   onSave,
@@ -989,6 +1004,7 @@ function PaymentModal({
   ciclo: string;
   saving: boolean;
   profissionais: Profissional[];
+  contratos: ContratoResumo[];
   alocacoes: string[];
   onCancel: () => void;
   onSave: (payload: PaymentForm) => Promise<void>;
@@ -1394,28 +1410,31 @@ function PaymentModal({
             </MField>
           </div>
 
-          {/* Seção: Alocação por contrato */}
+          {/* Seção: Participação por contrato — calculada automaticamente a partir dos Documentos Medidos (CTO + Valor Medido), não é mais editável manualmente. */}
           <p className="mb-3 mt-6 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Participação por contrato</p>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {(["intrSossego", "salobo", "acg", "escadasAlumar"] as const).map((field, i) => (
-              <MField key={field} label={["Intr. Sossego", "Salobo", "ACG", "Escadas Alumar"][i]}>
-                <div className="relative">
-                  <Input
-                    value={form[field]}
-                    onChange={(e) => update(field, maskPercent(e.target.value))}
-                    onBlur={(e) => {
-                      const n = parseFloat(e.target.value);
-                      update(field, isNaN(n) ? "0" : String(n));
-                    }}
-                    placeholder="0"
-                    inputMode="decimal"
-                    className="pr-8"
-                  />
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-[#9CA3AF]">%</span>
-                </div>
-              </MField>
-            ))}
-          </div>
+          {item && contratos.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {contratos.map((c) => {
+                const percentual = item.participacaoContratos[c.id];
+                return (
+                  <div key={c.id} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2">
+                    <p className="text-xs font-semibold text-[#555555]">{c.nome}</p>
+                    <p className="mt-0.5 text-sm font-bold text-[#1A1A1A]">{formatParticipacao(percentual)}</p>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-[#9CA3AF]">
+              {item ? "Nenhum contrato identificado no ciclo." : "Calculado automaticamente após salvar e vincular documentos medidos."}
+            </p>
+          )}
+          {item && item.documentosPendentesContrato > 0 && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-[#B45309]">
+              <AlertTriangle size={13} />
+              {item.documentosPendentesContrato} documento(s) medido(s) sem contrato (CTO) válido — {money(item.valorNaoClassificadoContrato)} ({percent.format(item.percentualNaoClassificadoContrato / 100)} do total) ainda não classificado. Os percentuais acima já refletem essa pendência (não somam 100%).
+            </p>
+          )}
 
           {/* Seção: Pagamento */}
           <p className="mb-3 mt-6 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Pagamento</p>

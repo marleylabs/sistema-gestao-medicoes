@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { toNumber } from "@/lib/format";
+import { calcularValorMedido } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -50,9 +50,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     },
   });
 
-  const a1eq  = toNumber(updated.equivalenteA1Horas);
-  const pct   = toNumber(updated.percentualEmissao ?? 0);
-  const preco = parseFloat(updated.condicao ?? "0") || 0;
+  const { a1eq, pct, preco, valorMedido } = calcularValorMedido(updated);
 
   return NextResponse.json({
     id: updated.id,
@@ -66,7 +64,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     condicao: updated.condicao,
     obs: updated.obs,
     precoUnitario: preco,
-    valorMedido: a1eq * preco * pct,
+    valorMedido,
   });
 }
 

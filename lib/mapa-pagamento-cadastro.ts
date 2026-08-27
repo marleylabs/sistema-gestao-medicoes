@@ -9,6 +9,7 @@ export type CadastroFornecedorResumo = {
   responsavel: string;
   razaoSocial: string;
   cnpjNormalizado: string;
+  tipoCt: string | null;
 };
 
 export type CadastroFornecedorMatch = {
@@ -87,6 +88,10 @@ function cadastroOverride(result: CadastroFornecedorMatch | undefined) {
     responsavel: match === "cnpj" ? null : cadastro.responsavel,
     cpfCnpj,
     razaoSocial: cadastro.razaoSocial,
+    // Alocação usa sempre o Tipo CT do cadastro administrativo, mesmo quando o match veio por CNPJ,
+    // pois o cadastro resolvido já é o correto para este item (colaborador_codigo/responsável tem prioridade
+    // na função acima; CNPJ só decide quando é o único cadastro candidato com aquele CNPJ).
+    tipoCt: cadastro.tipoCt,
   };
 }
 

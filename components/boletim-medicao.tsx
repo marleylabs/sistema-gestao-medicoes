@@ -4,6 +4,7 @@ import { useRef } from "react";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui";
 import { cicloToDates } from "@/lib/ciclo";
+import { computarParticipacao } from "@/lib/contratos";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const num = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 });
@@ -89,7 +90,7 @@ function Th({ children, colSpan, rowSpan, className = "" }: {
   return (
     <th
       colSpan={colSpan} rowSpan={rowSpan}
-      className={`border border-[#555] bg-[#D9D9D9] px-1.5 py-1 text-center text-[10px] font-bold uppercase leading-tight ${className}`}
+      className={`border border-[#555] bg-[#D9D9D9] px-1.5 py-1 text-center align-middle text-[10px] font-bold uppercase leading-tight ${className}`}
     >
       {children}
     </th>
@@ -102,7 +103,7 @@ function Td({ children, colSpan, rowSpan, className = "", bold = false }: {
   return (
     <td
       colSpan={colSpan} rowSpan={rowSpan}
-      className={`border border-[#555] px-1.5 py-1 text-[10px] leading-tight ${bold ? "font-bold" : ""} ${className}`}
+      className={`border border-[#555] px-1.5 py-1 align-middle text-[10px] leading-tight ${bold ? "font-bold" : ""} ${className}`}
     >
       {children}
     </td>
@@ -171,17 +172,13 @@ export function BoletimMedicao({ data }: { data: BmData }) {
   const inicialDoc = sumHrsByTipo("DOC");
   const inicialHh  = sumHrsByTipo("HH");
 
-  // rateio por contrato
-  const totalPart = (pagamento?.intrSossego ?? 0) + (pagamento?.salobo ?? 0) + (pagamento?.acg ?? 0) + (pagamento?.escadasAlumar ?? 0);
-  const pctSossego = totalPart > 0 ? (pagamento?.intrSossego ?? 0) / totalPart : 0;
-  const pctSalobo  = totalPart > 0 ? (pagamento?.salobo  ?? 0) / totalPart : 0;
-  const pctAcg     = totalPart > 0 ? (pagamento?.acg     ?? 0) / totalPart : 0;
-  const pctEscadas = totalPart > 0 ? (pagamento?.escadasAlumar ?? 0) / totalPart : 0;
-
-  const valorSossego = totalMedicao * pctSossego;
-  const valorSalobo  = totalMedicao * pctSalobo;
-  const valorAcg     = totalMedicao * pctAcg;
-  const valorEscadas = totalMedicao * pctEscadas;
+  // Rateio por contrato: calculado automaticamente a partir dos Documentos Medidos (CTO + Valor Medido),
+  // não mais a partir dos 4 campos fixos de mapa_pagamento_itens. Contratos são descobertos dinamicamente.
+  const resultadoParticipacao = computarParticipacao(
+    documentosProdutivos.map((d) => ({ contrato: d.contrato, valorMedido: d.valorMedido })),
+  );
+  const participacaoContratos = resultadoParticipacao.participacoes.map((p) => ({ ...p, valorRateado: totalMedicao * (p.percentual / 100) }));
+  const naoClassificadoRateado = totalMedicao * (resultadoParticipacao.percentualNaoClassificado / 100);
 
   function handlePrint() {
     const content = printRef.current;
@@ -197,6 +194,7 @@ export function BoletimMedicao({ data }: { data: BmData }) {
         body { font-family: Arial, sans-serif; font-size: 10px; padding: 20px; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border: 1px solid #555; padding: 3px 5px; font-size: 10px; }
+        .bm-doc-cell, .bm-top-cell { text-align: center; vertical-align: middle; }
         th { background: #D9D9D9; font-weight: bold; text-transform: uppercase; }
         .total-box { background: #FFD966; font-size: 16px; font-weight: bold; }
         @media print { body { padding: 0; } }
@@ -233,26 +231,26 @@ export function BoletimMedicao({ data }: { data: BmData }) {
 
             {/* ── Linha 2: Nome / Função / CNPJ / Pagamento ── */}
             <tr>
-              <Th colSpan={1}>Nome</Th>
-              <Td colSpan={5} bold>{data.colaborador.nome}</Td>
-              <Th colSpan={1}>Função</Th>
-              <Td colSpan={1}>{funcao}</Td>
-              <Th colSpan={1}>CNPJ</Th>
-              <Td colSpan={1}>{cpfCnpj}</Td>
-              <Th colSpan={1}>Pagamento</Th>
-              <Td bold className="text-center">{mesLabel(ctx?.mesReferencia ?? null)}</Td>
+              <Th colSpan={1} className="bm-top-cell">Nome</Th>
+              <Td colSpan={5} bold className="bm-top-cell">{data.colaborador.nome}</Td>
+              <Th colSpan={1} className="bm-top-cell">Função</Th>
+              <Td colSpan={1} className="bm-top-cell">{funcao}</Td>
+              <Th colSpan={1} className="bm-top-cell">CNPJ</Th>
+              <Td colSpan={1} className="bm-top-cell">{cpfCnpj}</Td>
+              <Th colSpan={1} className="bm-top-cell">Pagamento</Th>
+              <Td bold className="bm-top-cell text-center">{mesLabel(ctx?.mesReferencia ?? null)}</Td>
             </tr>
 
             {/* ── Linha 3: Razão Social / Ciclo / Datas ── */}
             <tr>
-              <Th>Razão Social</Th>
-              <Td colSpan={5}>{razaoSocial}</Td>
-              <Th colSpan={1}>Início do Ciclo</Th>
-              <Td className="text-center">{dateLabel(atoInicio)}</Td>
-              <Th colSpan={1}>Fim do Ciclo</Th>
-              <Td className="text-center">{dateLabel(atoFim)}</Td>
-              <Th>Ciclo</Th>
-              <Td bold className="text-center">{data.ciclo}</Td>
+              <Th className="bm-top-cell">Razão Social</Th>
+              <Td colSpan={5} className="bm-top-cell">{razaoSocial}</Td>
+              <Th colSpan={1} className="bm-top-cell">Início do Ciclo</Th>
+              <Td className="bm-top-cell text-center">{dateLabel(atoInicio)}</Td>
+              <Th colSpan={1} className="bm-top-cell">Fim do Ciclo</Th>
+              <Td className="bm-top-cell text-center">{dateLabel(atoFim)}</Td>
+              <Th className="bm-top-cell">Ciclo</Th>
+              <Td bold className="bm-top-cell text-center">{data.ciclo}</Td>
             </tr>
 
             {/* ── Linha 4: separador ── */}
@@ -260,94 +258,100 @@ export function BoletimMedicao({ data }: { data: BmData }) {
 
             {/* ── Linhas 5-12: OBSERVAÇÕES + CONDIÇÕES COMERCIAIS ── */}
             <tr>
-              <Th rowSpan={4} colSpan={2} className="text-center align-middle">
+              <Th rowSpan={4} colSpan={2} className="bm-top-cell text-center align-middle">
                 <div>OBSERVAÇÕES</div>
               </Th>
-              <Th colSpan={7}>CONDIÇÕES COMERCIAIS</Th>
-              <Td rowSpan={4} colSpan={3} className="bg-[#FFD966] text-center align-middle">
+              <Th colSpan={7} className="bm-top-cell">CONDIÇÕES COMERCIAIS</Th>
+              <Td rowSpan={4} colSpan={3} className="bm-top-cell bg-[#FFD966] text-center align-middle">
                 <div className="text-[10px] font-bold uppercase">TOTAL DA MEDIÇÃO</div>
                 <div className="text-[18px] font-bold mt-1">{fmt(totalMedicao)}</div>
               </Td>
             </tr>
             <tr>
-              <Th>Cond. Fixa (CLT)</Th>
-              <Th>Cond. Fixa (PJ)</Th>
-              <Th>Garantia (CLT)</Th>
-              <Th>Garantia (PJ)</Th>
-              <Th>Desenhos ou MC</Th>
-              <Th>DOC</Th>
-              <Th>HH</Th>
+              <Th className="bm-top-cell">Cond. Fixa (CLT)</Th>
+              <Th className="bm-top-cell">Cond. Fixa (PJ)</Th>
+              <Th className="bm-top-cell">Garantia (CLT)</Th>
+              <Th className="bm-top-cell">Garantia (PJ)</Th>
+              <Th className="bm-top-cell">Desenhos ou MC</Th>
+              <Th className="bm-top-cell">DOC</Th>
+              <Th className="bm-top-cell">HH</Th>
             </tr>
             <tr>
-              <Td className="text-center">{fmt(ccFixoClt)}</Td>
-              <Td className="text-center">{fmt(ccFixoPj)}</Td>
-              <Td className="text-center">{fmt(ccGarClt)}</Td>
-              <Td className="text-center">{fmt(ccGarPj)}</Td>
-              <Td className="text-center">{fmt(ccDesenhosMc)}</Td>
-              <Td className="text-center">{fmt(ccDoc)}</Td>
-              <Td className="text-center font-bold">{fmt(ccHh)}</Td>
+              <Td className="bm-top-cell text-center">{fmt(ccFixoClt)}</Td>
+              <Td className="bm-top-cell text-center">{fmt(ccFixoPj)}</Td>
+              <Td className="bm-top-cell text-center">{fmt(ccGarClt)}</Td>
+              <Td className="bm-top-cell text-center">{fmt(ccGarPj)}</Td>
+              <Td className="bm-top-cell text-center">{fmt(ccDesenhosMc)}</Td>
+              <Td className="bm-top-cell text-center">{fmt(ccDoc)}</Td>
+              <Td className="bm-top-cell text-center font-bold">{fmt(ccHh)}</Td>
             </tr>
             <tr>
-              <Th colSpan={3}>INICIAL</Th>
-              <Th colSpan={2}>ARQ</Th>
-              <Th>HH</Th>
-              <Th>VERIFICAÇÃO</Th>
+              <Th colSpan={3} className="bm-top-cell">INICIAL</Th>
+              <Th colSpan={2} className="bm-top-cell">ARQ</Th>
+              <Th className="bm-top-cell">HH</Th>
+              <Th className="bm-top-cell">VERIFICAÇÃO</Th>
             </tr>
 
             <tr>
               <Td colSpan={2} className="bg-[#F3F3F3]" />
-              <Th>DG</Th>
-              <Th>DOC</Th>
-              <Th>DG</Th>
-              <Th>DOC</Th>
-              <Th>HH</Th>
-              <Th>A1</Th>
-              <Td colSpan={4} rowSpan={2} className="bg-[#FFD966]" />
+              <Th className="bm-top-cell">DG</Th>
+              <Th className="bm-top-cell">DOC</Th>
+              <Th className="bm-top-cell">DG</Th>
+              <Th className="bm-top-cell">DOC</Th>
+              <Th className="bm-top-cell">HH</Th>
+              <Th className="bm-top-cell">A1</Th>
+              <Td colSpan={4} className="bg-[#F3F3F3]" />
             </tr>
             <tr>
               <Td colSpan={2} className="bg-[#F3F3F3]" />
-              <Td className="text-center">{fmtN(inicialDg)}</Td>
-              <Td className="text-center">{fmtN(inicialDoc)}</Td>
-              <Td className="text-center">{fmtN(inicialDg)}</Td>
-              <Td className="text-center">{fmtN(inicialDoc)}</Td>
-              <Td className="text-center font-bold">{fmtN(inicialHh)}</Td>
-              <Td className="text-center font-bold">{fmtN(totalHorasDocs)}</Td>
-              <Td colSpan={4} />
+              <Td className="bm-top-cell text-center">{fmtN(inicialDg)}</Td>
+              <Td className="bm-top-cell text-center">{fmtN(inicialDoc)}</Td>
+              <Td className="bm-top-cell text-center">{fmtN(inicialDg)}</Td>
+              <Td className="bm-top-cell text-center">{fmtN(inicialDoc)}</Td>
+              <Td className="bm-top-cell text-center font-bold">{fmtN(inicialHh)}</Td>
+              <Td className="bm-top-cell text-center font-bold">{fmtN(totalHorasDocs)}</Td>
+              <Td colSpan={4} className="bg-[#F3F3F3]" />
             </tr>
 
             {/* ── Linha separador ── */}
             <tr><Td colSpan={12} className="bg-[#1F3864] py-0.5" /></tr>
 
-            {/* ── Medição por contrato + Rateio ── */}
+            {/* ── Medição por contrato + Rateio (descoberta dinâmica: 1 linha por contrato, sempre soma 12 colunas) ── */}
             <tr>
-              <Th colSpan={6}>MEDIÇÃO POR CONTRATO</Th>
-              <Th colSpan={6}>RATEIO DO CUSTO</Th>
+              <Th colSpan={12}>MEDIÇÃO POR CONTRATO — RATEIO DO CUSTO</Th>
             </tr>
             <tr>
-              <Th>Intr. Sossego</Th>
-              <Th>Salobo</Th>
-              <Th>ACG</Th>
-              <Th>Escadas</Th>
-              <Th>Outros</Th>
-              <Th>Total</Th>
-              <Th>Integridade SS</Th>
-              <Th>Salobo</Th>
-              <Th>ACG</Th>
-              <Th>Escadas Alumar</Th>
-              <Th colSpan={2}>Descontos</Th>
+              <Th colSpan={6}>Contrato</Th>
+              <Th colSpan={3}>Valor</Th>
+              <Th colSpan={3}>Rateio</Th>
+            </tr>
+            {participacaoContratos.length === 0 ? (
+              <tr>
+                <Td colSpan={12} className="text-center text-[#9CA3AF]">Nenhum contrato identificado neste ciclo.</Td>
+              </tr>
+            ) : (
+              participacaoContratos.map((p) => (
+                <tr key={p.key}>
+                  <Td colSpan={6}>{p.nome}</Td>
+                  <Td colSpan={3} className="text-center">{fmt(p.valorRateado)}</Td>
+                  <Td colSpan={3} className="text-center">{fmtP(p.percentual / 100)}</Td>
+                </tr>
+              ))
+            )}
+            {resultadoParticipacao.documentosPendentes > 0 && (
+              <tr>
+                <Td colSpan={6} className="text-[#B45309]">Não classificado (CTO pendente)</Td>
+                <Td colSpan={3} className="text-center text-[#B45309]">{fmt(naoClassificadoRateado)}</Td>
+                <Td colSpan={3} className="text-center text-[#B45309]">{fmtP(resultadoParticipacao.percentualNaoClassificado / 100)}</Td>
+              </tr>
+            )}
+            <tr>
+              <Td colSpan={6} bold>Total</Td>
+              <Td colSpan={6} bold className="text-center">{fmt(totalMedicao)}</Td>
             </tr>
             <tr>
-              <Td className="text-center">{fmt(valorSossego)}</Td>
-              <Td className="text-center">{fmt(valorSalobo)}</Td>
-              <Td className="text-center">{fmt(valorAcg)}</Td>
-              <Td className="text-center">{fmt(valorEscadas)}</Td>
-              <Td className="text-center">R$0,00</Td>
-              <Td className="text-center font-bold">{fmt(totalMedicao)}</Td>
-              <Td className="text-center">{fmtP(pctSossego)}</Td>
-              <Td className="text-center">{fmtP(pctSalobo)}</Td>
-              <Td className="text-center">{fmtP(pctAcg)}</Td>
-              <Td className="text-center">{fmtP(pctEscadas)}</Td>
-              <Td colSpan={2} className="text-center">{ccDescontos > 0 ? `- ${fmt(ccDescontos)}` : "–"}</Td>
+              <Td colSpan={6}>Descontos</Td>
+              <Td colSpan={6} className="text-center">{ccDescontos > 0 ? `- ${fmt(ccDescontos)}` : "–"}</Td>
             </tr>
 
             {/* ── Linha separador ── */}
@@ -360,36 +364,36 @@ export function BoletimMedicao({ data }: { data: BmData }) {
               return (
                 <>
                   <tr>
-                    <Th>SE</Th>
-                    <Th colSpan={2}>NR VALE / Projeto</Th>
-                    <Th>CTO</Th>
-                    <Th>Formato</Th>
-                    <Th>A1eq / HH</Th>
-                    <Th>% Emissão</Th>
-                    <Th colSpan={2}>TIPO DG/DOC/HH</Th>
-                    <Th>Preço Unit.</Th>
-                    <Th>Valor Medido</Th>
-                    <Th>Total</Th>
+                    <Th className="bm-doc-cell">SE</Th>
+                    <Th colSpan={2} className="bm-doc-cell">NR VALE / Projeto</Th>
+                    <Th className="bm-doc-cell">CTO</Th>
+                    <Th className="bm-doc-cell">Formato</Th>
+                    <Th className="bm-doc-cell">A1eq / HH</Th>
+                    <Th className="bm-doc-cell">% Emissão</Th>
+                    <Th colSpan={2} className="bm-doc-cell">TIPO DG/DOC/HH</Th>
+                    <Th className="bm-doc-cell">Preço Unit.</Th>
+                    <Th className="bm-doc-cell">Valor Medido</Th>
+                    <Th className="bm-doc-cell">Total</Th>
                   </tr>
 
                   {/* ── Linhas de documentos ── */}
                   {documentosProdutivos.length === 0 ? (
                     <tr>
-                      <Td colSpan={12} className="text-center text-[#9CA3AF] py-3">Nenhum documento vinculado a este ciclo.</Td>
+                      <Td colSpan={12} className="bm-doc-cell text-center text-[#9CA3AF] py-3">Nenhum documento vinculado a este ciclo.</Td>
                     </tr>
                   ) : (
                     documentosProdutivos.map((doc) => (
                       <tr key={doc.id}>
-                        <Td className="text-center">{doc.projetoReferente}</Td>
-                        <Td colSpan={2}>{doc.numeroDocumento ?? "–"}</Td>
-                        <Td>{doc.contrato ?? "–"}</Td>
-                        <Td className="text-center">{doc.formato ?? "–"}</Td>
-                        <Td className="text-center">{fmtN(doc.equivalenteA1Horas)}</Td>
-                        <Td className="text-center">{doc.percentualEmissao ? fmtP(doc.percentualEmissao) : "100%"}</Td>
-                        <Td colSpan={2} className="text-[9px]">{doc.tipo2 ?? "–"}</Td>
-                        <Td className="text-right">{doc.precoUnitario ? fmt(doc.precoUnitario) : (doc.condicao ?? "–")}</Td>
-                        <Td className="text-right">{fmt(doc.valorMedido)}</Td>
-                        <Td className="text-right font-bold">{fmt(doc.valorMedido)}</Td>
+                        <Td className="bm-doc-cell text-center">{doc.projetoReferente}</Td>
+                        <Td colSpan={2} className="bm-doc-cell text-center">{doc.numeroDocumento ?? "–"}</Td>
+                        <Td className="bm-doc-cell text-center">{doc.contrato ?? "–"}</Td>
+                        <Td className="bm-doc-cell text-center">{doc.formato ?? "–"}</Td>
+                        <Td className="bm-doc-cell text-center">{fmtN(doc.equivalenteA1Horas)}</Td>
+                        <Td className="bm-doc-cell text-center">{doc.percentualEmissao ? fmtP(doc.percentualEmissao) : "100%"}</Td>
+                        <Td colSpan={2} className="bm-doc-cell text-center text-[9px]">{doc.tipo2 ?? "–"}</Td>
+                        <Td className="bm-doc-cell text-center">{doc.precoUnitario ? fmt(doc.precoUnitario) : (doc.condicao ?? "–")}</Td>
+                        <Td className="bm-doc-cell text-center">{fmt(doc.valorMedido)}</Td>
+                        <Td className="bm-doc-cell text-center font-bold">{fmt(doc.valorMedido)}</Td>
                       </tr>
                     ))
                   )}

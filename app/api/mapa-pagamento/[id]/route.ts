@@ -27,6 +27,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       responsavel: true,
       razaoSocial: true,
       cnpjNormalizado: true,
+      tipoCt: true,
     },
     orderBy: { updatedAt: "desc" },
   });

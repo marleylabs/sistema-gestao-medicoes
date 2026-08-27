@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
       responsavel: true,
       razaoSocial: true,
       cnpjNormalizado: true,
+      tipoCt: true,
     },
     orderBy: { updatedAt: "desc" },
   });

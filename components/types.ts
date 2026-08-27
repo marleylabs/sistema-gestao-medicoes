@@ -19,6 +19,11 @@ export type Profissional = {
   funcao: string | null;
 };
 
+export type ContratoResumo = {
+  id: string;
+  nome: string;
+};
+
 export type MapaPagamentoItem = {
   id: string;
   ordem: number;
@@ -27,11 +32,18 @@ export type MapaPagamentoItem = {
   responsavel: string | null;
   cpfCnpj: string | null;
   razaoSocial: string | null;
+  alocacao: string | null;
+  participacaoContratos: Record<string, number>;
+  documentosPendentesContrato: number;
+  valorTotalDocumentosContrato: number;
+  valorNaoClassificadoContrato: number;
+  percentualNaoClassificadoContrato: number;
   fornecedor: {
     id: string | null;
     responsavel: string | null;
     cpfCnpj: string | null;
     razaoSocial: string | null;
+    tipoCt: string | null;
   } | null;
   intrSossego: number;
   salobo: number;

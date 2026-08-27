@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin";
 import { mapaPagamentoData, serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { cadastroFornecedorOverrideForMapaItem } from "@/lib/mapa-pagamento-cadastro";
+import { getParticipacaoPorFornecedorCiclo, normalizeAlias, type ContratoResumo } from "@/lib/participacao-contratos";
 
 export async function GET(request: NextRequest) {
   const admin = await requireAdmin();
@@ -16,11 +17,11 @@ export async function GET(request: NextRequest) {
   const ciclosPermitidos = ciclosCadastrados.map((item) => item.ciclo);
 
   if (isGeral && ciclosPermitidos.length === 0) {
-    return NextResponse.json([]);
+    return NextResponse.json({ contratos: [], itens: [] });
   }
 
   if (!isGeral && !ciclosPermitidos.includes(ciclo)) {
-    return NextResponse.json([]);
+    return NextResponse.json({ contratos: [], itens: [] });
   }
 
   const itens = await prisma.mapaPagamentoItem.findMany({
@@ -36,11 +37,41 @@ export async function GET(request: NextRequest) {
       responsavel: true,
       razaoSocial: true,
       cnpjNormalizado: true,
+      tipoCt: true,
     },
     orderBy: { updatedAt: "desc" },
   });
 
-  return NextResponse.json(itens.map((item) => serializeMapaPagamentoItem(item, cadastroFornecedorOverrideForMapaItem(item, cadastros))));
+  // Participação por contrato: nunca mistura ciclos — uma agregação por ciclo distinto presente na listagem.
+  const ciclosDistintos = Array.from(new Set(itens.map((item) => item.ciclo)));
+  const participacaoPorCiclo = new Map<string, Awaited<ReturnType<typeof getParticipacaoPorFornecedorCiclo>>>();
+  for (const cicloItem of ciclosDistintos) {
+    participacaoPorCiclo.set(cicloItem, await getParticipacaoPorFornecedorCiclo(cicloItem));
+  }
+  const contratosPorId = new Map<string, ContratoResumo>();
+  for (const participacao of participacaoPorCiclo.values()) {
+    for (const c of participacao.contratos) contratosPorId.set(c.id, c);
+  }
+  const contratos = isGeral
+    ? Array.from(contratosPorId.values())
+    : (participacaoPorCiclo.get(ciclo)?.contratos ?? []);
+
+  const itensSerializados = itens.map((item) => {
+    const serializado = serializeMapaPagamentoItem(item, cadastroFornecedorOverrideForMapaItem(item, cadastros));
+    const participacao = item.projetistaCodigo
+      ? participacaoPorCiclo.get(item.ciclo)?.porAlias[normalizeAlias(item.projetistaCodigo)]
+      : undefined;
+    return {
+      ...serializado,
+      participacaoContratos: participacao?.participacoes ?? {},
+      documentosPendentesContrato: participacao?.documentosPendentes ?? 0,
+      valorTotalDocumentosContrato: participacao?.valorTotal ?? 0,
+      valorNaoClassificadoContrato: participacao?.valorNaoClassificado ?? 0,
+      percentualNaoClassificadoContrato: participacao?.percentualNaoClassificado ?? 0,
+    };
+  });
+
+  return NextResponse.json({ contratos, itens: itensSerializados });
 }
 
 export async function POST(request: NextRequest) {
@@ -66,6 +97,7 @@ export async function POST(request: NextRequest) {
       responsavel: true,
       razaoSocial: true,
       cnpjNormalizado: true,
+      tipoCt: true,
     },
     orderBy: { updatedAt: "desc" },
   });
