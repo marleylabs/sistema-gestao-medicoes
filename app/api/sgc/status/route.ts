@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     where: { ciclo },
     select: {
       colaboradorCodigo: true,
+      colaboradorNome: true,
       status: true,
       revisaoNumero: true,
       id: true,
@@ -22,13 +23,14 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  const payload: Record<string, { status: string; revisaoNumero: number; id: string; statusConferencia: string }> = {};
+  const payload: Record<string, { status: string; revisaoNumero: number; id: string; statusConferencia: string; colaboradorNome: string | null }> = {};
   for (const r of registros) {
     payload[r.colaboradorCodigo] = {
       status: r.status,
       revisaoNumero: r.revisaoNumero,
       id: r.id,
       statusConferencia: r.statusConferencia,
+      colaboradorNome: r.colaboradorNome,
     };
   }
 

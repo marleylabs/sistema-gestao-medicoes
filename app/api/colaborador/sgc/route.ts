@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logBmAction } from "@/lib/bm-log";
+import { notifyBmApproved, notifyBmRevisionRequested } from "@/lib/email";
 import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
 import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
@@ -76,6 +77,22 @@ export async function POST(request: NextRequest) {
       data: { status: "AGUARDANDO_NF", aprovadoAt: now, updatedAt: now },
     });
     await logBmAction({ ...logBase, acao: "ENVIAR", statusAnterior: "PENDENTE", statusNovo: "AGUARDANDO_NF" });
+
+    // BM_APPROVED: o fornecedor concluiu Salvar → Enviar. Notifica a Equipe de Medição. Falha de
+    // e-mail aqui nunca desfaz a aprovação já persistida acima.
+    const mapaItem = await prisma.mapaPagamentoItem.findFirst({
+      where: { projetistaCodigo: { equals: existing.colaboradorCodigo, mode: "insensitive" }, ciclo: existing.ciclo },
+      select: { valor: true },
+    });
+    await notifyBmApproved({
+      sgcId: existing.id,
+      ciclo: existing.ciclo,
+      fornecedorNome: existing.colaboradorNome || user.nome,
+      valor: mapaItem ? Number(mapaItem.valor) : null,
+      aprovadoAt: now,
+      revisao: existing.revisaoNumero,
+    });
+
     return NextResponse.json({ ok: true, status: updated.status });
   }
 
@@ -114,6 +131,18 @@ export async function POST(request: NextRequest) {
       data: { status: "REVISAO_SOLICITADA", pontosDiscordancia, revisaoSolicitadaAt: now, updatedAt: now },
     });
     await logBmAction({ ...logBase, acao: "SOLICITAR_REVISAO", statusAnterior: "PENDENTE", statusNovo: "REVISAO_SOLICITADA", observacao: pontosDiscordancia });
+
+    // BM_REVISION_REQUESTED: só depois da revisão já persistida acima. Falha de e-mail nunca
+    // desfaz a solicitação de revisão.
+    await notifyBmRevisionRequested({
+      sgcId: existing.id,
+      ciclo: existing.ciclo,
+      fornecedorNome: existing.colaboradorNome || user.nome,
+      motivo: pontosDiscordancia || null,
+      revisaoSolicitadaAt: now,
+      revisao: updated.revisaoNumero,
+    });
+
     return NextResponse.json({ ok: true, status: updated.status, revisaoNumero: updated.revisaoNumero });
   }
 

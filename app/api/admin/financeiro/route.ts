@@ -5,6 +5,7 @@ import { toNumber } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { logBmAction } from "@/lib/bm-log";
 import { cadastroFornecedorOverrideForMapaItem, normalizeCadastroMatch } from "@/lib/mapa-pagamento-cadastro";
+import { notifyPaymentCompleted } from "@/lib/email";
 
 export async function GET(request: NextRequest) {
   const fin = await requireFinanceiro();
@@ -109,7 +110,7 @@ export async function PATCH(request: NextRequest) {
 
   const sgc = await prisma.sgcAprovacaoMedicao.findUnique({
     where: { id },
-    select: { status: true, colaboradorCodigo: true, ciclo: true },
+    select: { status: true, colaboradorCodigo: true, ciclo: true, colaboradorNome: true },
   });
   if (!sgc) return NextResponse.json({ error: "Registro não encontrado." }, { status: 404 });
   if (sgc.status !== "APROVADO") {
@@ -142,6 +143,22 @@ export async function PATCH(request: NextRequest) {
     statusNovo: "PAGO",
     observacao: file ? `Comprovante: ${file.name}` : "Pagamento registrado sem comprovante.",
     telaOrigem: "Financeiro",
+  });
+
+  // PAYMENT_COMPLETED: só depois do pagamento já registrado com sucesso acima. Destinatário
+  // lógico é o próprio fornecedor, resolvido por colaborador_codigo (nunca CNPJ). Falha de e-mail
+  // nunca desfaz o pagamento, que já está PAGO no banco.
+  const mapaItem = await prisma.mapaPagamentoItem.findFirst({
+    where: { projetistaCodigo: { equals: sgc.colaboradorCodigo, mode: "insensitive" }, ciclo: sgc.ciclo },
+    select: { valor: true },
+  });
+  await notifyPaymentCompleted({
+    sgcId: id,
+    colaboradorCodigo: sgc.colaboradorCodigo,
+    ciclo: sgc.ciclo,
+    fornecedorNome: sgc.colaboradorNome || sgc.colaboradorCodigo,
+    valor: mapaItem ? Number(mapaItem.valor) : null,
+    pagoAt: now,
   });
 
   return NextResponse.json({ ok: true });

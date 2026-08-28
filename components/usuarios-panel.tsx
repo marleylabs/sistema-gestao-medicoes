@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { EllipsisVertical, Eye, EyeOff, Info, KeyRound, Plus, RefreshCw, ShieldCheck, ShieldOff, Trash2, UserCog, X } from "lucide-react";
+import { EllipsisVertical, Eye, EyeOff, Info, KeyRound, Mail, MailWarning, Plus, RefreshCw, ShieldCheck, ShieldOff, Trash2, UserCog, X } from "lucide-react";
 import { Button, Card, Input, PageContainer, PageHeader } from "@/components/ui";
+import { EMAIL_REQUIRED_MESSAGE, isValidEmail, requiresEmail } from "@/lib/usuario-email-policy";
 
 type Usuario = {
   id: string;
@@ -12,6 +13,7 @@ type Usuario = {
   ativo: boolean;
   primeiroLogin: boolean;
   senhaTemporaria: string | null;
+  email: string | null;
   ultimoLoginAt: string | null;
   createdAt: string;
 };
@@ -22,6 +24,7 @@ type NovoUsuarioForm = {
   perfil: string;
   senha: string;
   confirmarSenha: string;
+  email: string;
 };
 
 const PERFIL_LABEL: Record<string, string> = {
@@ -88,12 +91,48 @@ function SetSenhaForm({ userId, onDone }: { userId: string; onDone: () => void }
   );
 }
 
+function SetEmailForm({ user, onDone }: { user: Usuario; onDone: () => void }) {
+  const [email, setEmail] = useState(user.email ?? "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function salvar() {
+    setError("");
+    const trimmed = email.trim();
+    if (trimmed && !isValidEmail(trimmed)) { setError("E-mail inválido."); return; }
+    if (!trimmed && requiresEmail(user.perfil, user.ativo)) { setError(EMAIL_REQUIRED_MESSAGE); return; }
+    setSaving(true);
+    const res = await fetch(`/api/admin/usuarios/${user.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set_email", email: trimmed }),
+    });
+    setSaving(false);
+    if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.error ?? "Erro."); return; }
+    onDone();
+  }
+
+  return (
+    <div className="mt-3 grid gap-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
+      <p className="text-label text-[var(--muted-foreground)]">E-mail corporativo</p>
+      <Input type="email" placeholder="nome@empresa.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+      {error && <p className="text-xs text-[#B91C1C]">{error}</p>}
+      <div className="flex gap-2">
+        <Button className="flex-1" onClick={salvar} disabled={saving}>{saving ? "Salvando…" : "Salvar e-mail"}</Button>
+        <Button variant="secondary" className="flex-1" onClick={onDone}>Cancelar</Button>
+      </div>
+    </div>
+  );
+}
+
 function UsuarioCard({ u, onRefresh, canDelete }: { u: Usuario; onRefresh: () => void; canDelete: boolean }) {
   const [showTemp, setShowTemp] = useState(false);
   const [showSetSenha, setShowSetSenha] = useState(false);
   const [showSetPerfil, setShowSetPerfil] = useState(false);
+  const [showSetEmail, setShowSetEmail] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [novoPerfil, setNovoPerfil] = useState(u.perfil);
+  const [perfilError, setPerfilError] = useState("");
   const [loading, setLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -106,25 +145,40 @@ function UsuarioCard({ u, onRefresh, canDelete }: { u: Usuario; onRefresh: () =>
   }, []);
 
   async function salvarPerfil() {
+    setPerfilError("");
+    if (requiresEmail(novoPerfil, u.ativo) && !u.email) {
+      setPerfilError(EMAIL_REQUIRED_MESSAGE);
+      return;
+    }
     setLoading(true);
-    await fetch(`/api/admin/usuarios/${u.id}`, {
+    const res = await fetch(`/api/admin/usuarios/${u.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "set_perfil", perfil: novoPerfil }),
     });
     setLoading(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setPerfilError(d.error ?? "Não foi possível alterar a função.");
+      return;
+    }
     setShowSetPerfil(false);
     onRefresh();
   }
 
   async function toggleAtivo() {
     setLoading(true);
-    await fetch(`/api/admin/usuarios/${u.id}`, {
+    const res = await fetch(`/api/admin/usuarios/${u.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "toggle_ativo" }),
     });
+    const payload = await res.json().catch(() => ({}));
     setLoading(false);
+    if (!res.ok) {
+      alert(payload.error ?? "Não foi possível alterar o status do usuário.");
+      return;
+    }
     onRefresh();
   }
 
@@ -136,8 +190,14 @@ function UsuarioCard({ u, onRefresh, canDelete }: { u: Usuario; onRefresh: () =>
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "reset_senha" }),
     });
+    const payload = await res.json().catch(() => ({}));
     setLoading(false);
-    if (res.ok) onRefresh();
+    if (!res.ok) {
+      alert(payload.error ?? "Não foi possível redefinir a senha.");
+      return;
+    }
+    if (payload.aviso) alert(payload.aviso);
+    onRefresh();
   }
 
   async function excluirUsuario() {
@@ -159,6 +219,7 @@ function UsuarioCard({ u, onRefresh, canDelete }: { u: Usuario; onRefresh: () =>
   }
 
   const perfilLabel = PERFIL_LABEL[u.perfil] ?? u.perfil;
+  const emailPendente = requiresEmail(u.perfil, u.ativo) && !u.email;
   const isInternal = ["MEDICAO", "ADMIN", "FINANCEIRO", "ADMINISTRATIVO"].includes(u.perfil);
   const accent = u.ativo ? "border-[#E5E7EB] bg-white" : "border-[#E5E7EB] bg-[#F9FAFB] opacity-75";
 
@@ -232,10 +293,18 @@ function UsuarioCard({ u, onRefresh, canDelete }: { u: Usuario; onRefresh: () =>
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#374151] transition hover:bg-[#F9FAFB] hover:text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20"
-                      onClick={() => runMenuAction(() => { setShowSetPerfil((value) => !value); setNovoPerfil(u.perfil); })}
+                      onClick={() => runMenuAction(() => { setShowSetPerfil((value) => !value); setNovoPerfil(u.perfil); setPerfilError(""); })}
                     >
                       <UserCog size={14} />
                       Alterar função
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#374151] transition hover:bg-[#F9FAFB] hover:text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20"
+                      onClick={() => runMenuAction(() => setShowSetEmail((value) => !value))}
+                    >
+                      <Mail size={14} />
+                      Editar e-mail
                     </button>
                     {canDelete && (
                       <div className="mt-1 border-t border-[#F3F4F6] pt-1">
@@ -261,6 +330,25 @@ function UsuarioCard({ u, onRefresh, canDelete }: { u: Usuario; onRefresh: () =>
               {perfilLabel}
             </span>
             <span className="text-xs font-medium text-[#6B7280]">Último acesso: <span className="font-semibold text-[#374151]">{fmtDate(u.ultimoLoginAt)}</span></span>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {u.email ? (
+              <span className="inline-flex min-w-0 items-center gap-1.5 truncate text-xs font-medium text-[#374151]" title={u.email}>
+                <Mail size={12} className="shrink-0 text-[#6B7280]" />
+                <span className="truncate">{u.email}</span>
+              </span>
+            ) : (
+              <span className="rounded-full bg-[#FFFBEB] px-2 py-0.5 text-[10px] font-bold uppercase text-[#D97706] ring-1 ring-[#FDE68A]">
+                Não cadastrado
+              </span>
+            )}
+            {emailPendente && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-bold uppercase text-[#B91C1C] ring-1 ring-[#FECACA]" title={EMAIL_REQUIRED_MESSAGE}>
+                <MailWarning size={11} />
+                E-mail pendente
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -292,26 +380,33 @@ function UsuarioCard({ u, onRefresh, canDelete }: { u: Usuario; onRefresh: () =>
       )}
 
       {showSetPerfil && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white p-3">
-          <p className="text-label text-[var(--muted-foreground)] shrink-0">Alterar função</p>
-          <select
-            value={novoPerfil}
-            onChange={(e) => setNovoPerfil(e.target.value)}
-            className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-xs text-[#1A1A1A]"
-          >
-            {PERFIL_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          <button onClick={salvarPerfil} disabled={loading || novoPerfil === u.perfil}
-            className="rounded-lg bg-[#7C3AED] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#6D28D9] disabled:opacity-40">
-            {loading ? "Salvando…" : "Salvar"}
-          </button>
-          <button onClick={() => setShowSetPerfil(false)}
-            className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-medium text-[#555555] transition-colors hover:bg-[#F3F4F6]">
-            Cancelar
-          </button>
+        <div className="mt-3 grid gap-2 rounded-lg border border-[#E5E7EB] bg-white p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-label text-[var(--muted-foreground)] shrink-0">Alterar função</p>
+            <select
+              value={novoPerfil}
+              onChange={(e) => { setNovoPerfil(e.target.value); setPerfilError(""); }}
+              className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-xs text-[#1A1A1A]"
+            >
+              {PERFIL_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <button onClick={salvarPerfil} disabled={loading || novoPerfil === u.perfil}
+              className="rounded-lg bg-[#7C3AED] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#6D28D9] disabled:opacity-40">
+              {loading ? "Salvando…" : "Salvar"}
+            </button>
+            <button onClick={() => { setShowSetPerfil(false); setPerfilError(""); }}
+              className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-medium text-[#555555] transition-colors hover:bg-[#F3F4F6]">
+              Cancelar
+            </button>
+          </div>
+          {perfilError && <p className="text-xs text-[#B91C1C]">{perfilError}</p>}
         </div>
+      )}
+
+      {showSetEmail && (
+        <SetEmailForm user={u} onDone={() => { setShowSetEmail(false); onRefresh(); }} />
       )}
     </div>
   );
@@ -332,6 +427,7 @@ function CriarUsuarioModal({
     perfil: "COLABORADOR",
     senha: "",
     confirmarSenha: "",
+    email: "",
   });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -342,7 +438,7 @@ function CriarUsuarioModal({
 
   function resetAndClose() {
     setError("");
-    setForm({ usuario: "", nome: "", perfil: "COLABORADOR", senha: "", confirmarSenha: "" });
+    setForm({ usuario: "", nome: "", perfil: "COLABORADOR", senha: "", confirmarSenha: "", email: "" });
     onClose();
   }
 
@@ -350,6 +446,16 @@ function CriarUsuarioModal({
     setError("");
     if (form.senha !== form.confirmarSenha) {
       setError("As senhas não coincidem.");
+      return;
+    }
+    const email = form.email.trim();
+    if (email && !isValidEmail(email)) {
+      setError("E-mail inválido.");
+      return;
+    }
+    // Novo usuário nasce sempre ativo — a regra vale desde a criação.
+    if (requiresEmail(form.perfil, true) && !email) {
+      setError(EMAIL_REQUIRED_MESSAGE);
       return;
     }
 
@@ -362,6 +468,7 @@ function CriarUsuarioModal({
         nome: form.nome,
         perfil: form.perfil,
         senha: form.senha,
+        email,
       }),
     });
     setSaving(false);
@@ -424,6 +531,15 @@ function CriarUsuarioModal({
               ))}
             </select>
           </label>
+          <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
+            E-mail corporativo
+            <Input
+              type="email"
+              placeholder="nome@empresa.com"
+              value={form.email}
+              onChange={(e) => updateField("email", e.target.value)}
+            />
+          </label>
           <div className="hidden sm:block" />
           <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
             Senha inicial
@@ -466,6 +582,7 @@ export function UsuariosPanel({ canCreateUsers = false }: { canCreateUsers?: boo
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtro, setFiltro] = useState<"todos" | "ativos" | "inativos">("todos");
+  const [filtroEmail, setFiltroEmail] = useState<"todos" | "cadastrado" | "nao_cadastrado">("todos");
   const [busca, setBusca] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -481,6 +598,8 @@ export function UsuariosPanel({ canCreateUsers = false }: { canCreateUsers?: boo
   const filtered = usuarios.filter((u) => {
     if (filtro === "ativos" && !u.ativo) return false;
     if (filtro === "inativos" && u.ativo) return false;
+    if (filtroEmail === "cadastrado" && !u.email) return false;
+    if (filtroEmail === "nao_cadastrado" && u.email) return false;
     if (busca) {
       const q = busca.toLowerCase();
       return u.nome?.toLowerCase().includes(q) || u.usuario.toLowerCase().includes(q);
@@ -555,6 +674,19 @@ export function UsuariosPanel({ canCreateUsers = false }: { canCreateUsers?: boo
               {f === "todos" ? "Todos" : f === "ativos" ? "Ativos" : "Inativos"}
             </button>
           ))}
+          <span className="h-6 w-px shrink-0 bg-[#E5E7EB]" aria-hidden />
+          <label className="flex items-center gap-2 text-xs font-semibold text-[#6B7280]">
+            E-mail:
+            <select
+              value={filtroEmail}
+              onChange={(e) => setFiltroEmail(e.target.value as typeof filtroEmail)}
+              className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-xs font-medium text-[#1A1A1A]"
+            >
+              <option value="todos">Todos</option>
+              <option value="cadastrado">Cadastrado</option>
+              <option value="nao_cadastrado">Não cadastrado</option>
+            </select>
+          </label>
         </div>
       </Card>
 

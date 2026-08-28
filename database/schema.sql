@@ -38,6 +38,7 @@ alter table usuarios add column if not exists avatar_mime text;
 alter table usuarios add column if not exists avatar_atualizado_at timestamptz;
 alter table usuarios add column if not exists online_at timestamptz;
 alter table usuarios add column if not exists excluido_at timestamptz;
+alter table usuarios add column if not exists email text;
 update usuarios set perfil = 'ADMINISTRATIVO' where perfil = 'DEPARTAMENTO_PESSOAL';
 alter table usuarios drop constraint if exists usuarios_perfil_check;
 alter table usuarios add constraint usuarios_perfil_check check (
@@ -492,3 +493,25 @@ group by
     p.contrato,
     m.ciclo,
     date_trunc('month', m.data_cadastro)::date;
+
+-- ─── e-mails transacionais (Resend) ─────────────────────────
+create table if not exists email_logs (
+    id                     uuid        primary key default gen_random_uuid(),
+    event                  text        not null,
+    entity_type            text,
+    entity_id              text,
+    intended_recipients    text[]      not null default '{}',
+    actual_recipients      text[]      not null default '{}',
+    test_mode              boolean     not null,
+    subject                text        not null,
+    provider               text        not null default 'resend',
+    provider_message_id    text,
+    status                 text        not null,
+    error_message          text,
+    idempotency_key        text        not null,
+    metadata               jsonb,
+    created_at             timestamptz not null default now()
+);
+create index if not exists email_logs_event_idx on email_logs(event);
+create index if not exists email_logs_created_at_idx on email_logs(created_at desc);
+create index if not exists email_logs_idempotency_key_idx on email_logs(idempotency_key);

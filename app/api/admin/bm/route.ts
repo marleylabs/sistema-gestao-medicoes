@@ -4,6 +4,7 @@ import { decryptSensitive } from "@/lib/encryption";
 import { toNumber } from "@/lib/format";
 import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
+import { getDocumentosMedidos } from "@/lib/documentos-medidos";
 
 function dateOnly(value: Date | null) {
   return value?.toISOString().slice(0, 10) ?? null;
@@ -55,17 +56,7 @@ export async function GET(request: NextRequest) {
       orderBy: { ordem: "asc" },
     }),
     prisma.mapaPagamentoContexto.findUnique({ where: { ciclo } }),
-    prisma.medicao.findMany({
-      where: { profissional: { codigo: { in: codigoAliases } }, ciclo },
-      select: {
-        id: true, dataCadastro: true, formato: true, quantidade: true, obs: true,
-        equivalenteA1Horas: true, valorMedicao: true, medidoHoras: true,
-        valorTotal: true, valorUnitario: true, percentualEmissao: true,
-        numeroDocumento: true, tipo2: true, condicao: true,
-        projeto: { select: { codigoProjeto: true, tituloPrimario: true, contrato: true } },
-      },
-      orderBy: [{ dataCadastro: "asc" }, { createdAt: "asc" }],
-    }),
+    getDocumentosMedidos({ aliases: codigoAliases, ciclo }),
   ]);
 
   const revisaoNumero = sgc?.revisaoNumero ?? 0;

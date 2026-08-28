@@ -8,6 +8,7 @@ import { logBmAction } from "@/lib/bm-log";
 import { toNumber } from "@/lib/format";
 import { parseSimpleXlsx } from "@/lib/xlsx";
 import { compararDocumentos, parseFornecedorPlanilha, type EquipeDoc } from "@/lib/conferencia-medicao";
+import { notifyBmDivergence } from "@/lib/email";
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_EXTENSIONS = [".xlsx", ".xlsm"];
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
   const sgc = await prisma.sgcAprovacaoMedicao.findFirst({
     where: { colaboradorCodigo: { in: codigoAliases }, ciclo: cicloAtivo },
     orderBy: { createdAt: "desc" },
-    select: { id: true, status: true, ciclo: true, colaboradorCodigo: true, statusConferencia: true },
+    select: { id: true, status: true, ciclo: true, colaboradorCodigo: true, colaboradorNome: true, statusConferencia: true },
   });
 
   if (!sgc || sgc.status !== "PENDENTE") {
@@ -180,6 +181,19 @@ export async function POST(request: NextRequest) {
       ? "Conferência concluída sem divergências."
       : `Conferência com ${divergencias.length} divergência(s) encontrada(s).`,
   });
+
+  // BM_DIVERGENCE: só dispara quando a comparação real encontrou pelo menos uma divergência
+  // (nunca por renderização de tela). Falha de e-mail nunca desfaz a conferência já registrada
+  // acima — as divergências continuam persistidas independente do envio.
+  if (divergencias.length > 0) {
+    await notifyBmDivergence({
+      sgcId: sgc.id,
+      ciclo: sgc.ciclo,
+      fornecedorNome: sgc.colaboradorNome || sgc.colaboradorCodigo,
+      quantidade: divergencias.length,
+      conferenciaCarregadoAt: now,
+    });
+  }
 
   return NextResponse.json({
     ok: true,

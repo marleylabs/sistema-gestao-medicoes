@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { calcularValorMedido } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
+import { getDocumentosMedidos } from "@/lib/documentos-medidos";
 
 function serialize(d: {
   id: string; numeroDocumento: string | null; formato: string | null; obs: string | null;
@@ -37,24 +38,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "codigo e ciclo são obrigatórios." }, { status: 400 });
   }
 
-  const docs = await prisma.medicao.findMany({
-    where: {
-      ciclo,
-      profissional: {
-        OR: [
-          { codigo: { equals: codigo, mode: "insensitive" } },
-          { nome: { equals: codigo, mode: "insensitive" } },
-          { nomeCompleto: { equals: codigo, mode: "insensitive" } },
-        ],
-      },
-    },
-    select: {
-      id: true, numeroDocumento: true, formato: true, obs: true,
-      equivalenteA1Horas: true, percentualEmissao: true, tipo2: true, condicao: true,
-      projeto: { select: { codigoProjeto: true, contrato: true } },
-    },
-    orderBy: [{ dataCadastro: "asc" }, { createdAt: "asc" }],
-  });
+  const docs = await getDocumentosMedidos({ aliases: [codigo], ciclo });
 
   return NextResponse.json(docs.map(serialize));
 }

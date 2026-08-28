@@ -9,6 +9,7 @@ import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
 import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
 import { onlyDigits } from "@/lib/cadastro-fornecedor";
+import { getDocumentosMedidos } from "@/lib/documentos-medidos";
 
 function dateOnly(value: Date | null) {
   return value?.toISOString().slice(0, 10) ?? null;
@@ -57,33 +58,7 @@ export async function GET() {
       },
       orderBy: { ordem: "asc" },
     }),
-    prisma.medicao.findMany({
-      where: {
-        ciclo: cicloAtivo,
-        profissional: { codigo: { in: codigoAliases } },
-      },
-      select: {
-        id: true,
-        dataCadastro: true,
-        formato: true,
-        quantidade: true,
-        valorMedicao: true,
-        equivalenteA1Horas: true,
-        percentualEmissao: true,
-        numeroDocumento: true,
-        tipo2: true,
-        condicao: true,
-        obs: true,
-        projeto: {
-          select: {
-            codigoProjeto: true,
-            tituloPrimario: true,
-            contrato: true,
-          },
-        },
-      },
-      orderBy: [{ dataCadastro: "asc" }, { createdAt: "asc" }],
-    }),
+    getDocumentosMedidos({ aliases: codigoAliases, ciclo: cicloAtivo }),
     prisma.sgcAprovacaoMedicao.findFirst({
       where: { colaboradorCodigo: { in: codigoAliases }, ciclo: cicloAtivo },
       orderBy: { createdAt: "desc" },

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
-import { sendEmail, bmDisponivel } from "@/lib/email";
+import { notifyBmAvailable } from "@/lib/email";
+import { resolveFornecedorEmail } from "@/lib/email/resolve-recipients";
 import { logBmAction } from "@/lib/bm-log";
-import { decryptSensitive } from "@/lib/encryption";
 
 export async function POST(request: NextRequest) {
   const admin = await requireAdmin();
@@ -82,37 +82,43 @@ export async function POST(request: NextRequest) {
     telaOrigem: "Medições / Admin",
   });
 
-  // Send email notification. During testing, BM_EMAIL_TEST_TO redirects all BM notices to a safe inbox.
-  const emailRaw = profissional?.email;
-  const email = decryptSensitive(emailRaw) ?? emailRaw;
-  const testEmail = process.env.BM_EMAIL_TEST_TO?.trim();
-  const emailDestino = testEmail || email;
-  const nome = profissional?.nomeCompleto || profissional?.nome || colaboradorCodigo;
+  // BM_AVAILABLE: momento real em que o fornecedor ganha uma ação disponível na plataforma —
+  // início da conferência documental (upload da máscara), não a aprovação final. A política de
+  // teste/produção e a auditoria vivem centralizadas em lib/email; falha aqui nunca desfaz o
+  // envio do BM já concluído acima.
+  //
+  // O e-mail é resolvido por colaborador_codigo via resolveFornecedorEmail (CadastroFornecedor
+  // primeiro, Profissional como fallback) — NUNCA mais a busca antiga por
+  // `profissional.findUnique({ where: { codigo } })`, que falhava silenciosamente sempre que
+  // Profissional.codigo estava vazio (caso comum nos registros importados pelo ETL) mesmo quando
+  // o Administrativo já tinha o e-mail cadastrado em CadastroFornecedor.
+  const recipient = await resolveFornecedorEmail(colaboradorCodigo, profissional?.nomeCompleto || profissional?.nome);
 
-  if (emailDestino) {
-    const result = await sendEmail({
-      to: emailDestino,
-      subject: "Nova medição disponível para análise",
-      html: bmDisponivel(nome, { ciclo, colaboradorCodigo }),
-    });
-    await logBmAction({
-      sgcId: sgc.id,
-      colaboradorCodigo,
-      ciclo,
-      usuarioId: admin.user?.id,
-      usuarioNome: admin.user?.nome,
-      acao: result.ok ? "EMAIL_ENVIADO" : "ERRO_EMAIL",
-      observacao: result.ok
-        ? `Para: ${emailDestino}${testEmail && email ? ` | Destinatário real: ${email}` : ""}`
-        : result.error,
-      telaOrigem: "Sistema",
-    });
-  }
+  const emailResult = await notifyBmAvailable({
+    sgcId: sgc.id,
+    colaboradorCodigo,
+    ciclo,
+    nome: recipient.nome,
+    email: recipient.email,
+    revisao: sgc.revisaoNumero,
+  });
+  await logBmAction({
+    sgcId: sgc.id,
+    colaboradorCodigo,
+    ciclo,
+    usuarioId: admin.user?.id,
+    usuarioNome: admin.user?.nome,
+    acao: emailResult.ok ? "EMAIL_ENVIADO" : "ERRO_EMAIL",
+    observacao: emailResult.ok
+      ? `Para: ${emailResult.actualRecipients.join(", ")}${emailResult.testMode ? " (modo de teste)" : ""}`
+      : emailResult.error,
+    telaOrigem: "Sistema",
+  });
 
   return NextResponse.json({
     status: sgc.status,
     colaboradorCodigo: sgc.colaboradorCodigo,
     revisaoNumero: sgc.revisaoNumero,
-    emailNotificacao: emailDestino ? { to: emailDestino, teste: !!testEmail } : null,
+    emailNotificacao: { ok: emailResult.ok, testMode: emailResult.testMode },
   });
 }

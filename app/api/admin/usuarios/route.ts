@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { generateUniqueInternalAccessCode, hashPassword, validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
+import { isValidEmail, requiresEmail, EMAIL_REQUIRED_MESSAGE } from "@/lib/usuario-email-policy";
 
 const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "ADMINISTRATIVO"];
 
@@ -22,6 +24,7 @@ export async function GET() {
       ativo: true,
       primeiroLogin: true,
       senhaTemporaria: true,
+      email: true,
       ultimoLoginAt: true,
       createdAt: true,
     },
@@ -37,6 +40,7 @@ export async function GET() {
       ativo: u.ativo,
       primeiroLogin: u.primeiroLogin,
       senhaTemporaria: u.primeiroLogin ? u.senhaTemporaria : null,
+      email: decryptSensitive(u.email),
       ultimoLoginAt: u.ultimoLoginAt?.toISOString() ?? null,
       createdAt: u.createdAt.toISOString(),
     }))
@@ -54,6 +58,7 @@ export async function POST(request: NextRequest) {
   const nome = typeof body?.nome === "string" ? body.nome.trim() : "";
   const perfil = typeof body?.perfil === "string" ? body.perfil : "";
   const senha = typeof body?.senha === "string" ? body.senha : "";
+  const email = typeof body?.email === "string" ? body.email.trim() : "";
   const usuario = await generateUniqueInternalAccessCode();
 
   if (nome.length < 3) {
@@ -65,6 +70,14 @@ export async function POST(request: NextRequest) {
   const passwordError = validatePasswordStrength(senha);
   if (passwordError) {
     return NextResponse.json({ error: passwordError }, { status: 400 });
+  }
+  if (email && !isValidEmail(email)) {
+    return NextResponse.json({ error: "E-mail inválido." }, { status: 400 });
+  }
+  // Novos usuários sempre nascem ativos (ver `ativo: true` abaixo) — para MEDICAO/FINANCEIRO,
+  // a regra de e-mail obrigatório já vale desde a criação.
+  if (requiresEmail(perfil, true) && !email) {
+    return NextResponse.json({ error: EMAIL_REQUIRED_MESSAGE }, { status: 400 });
   }
 
   const exists = await prisma.usuario.findUnique({ where: { usuario } });
@@ -79,6 +92,7 @@ export async function POST(request: NextRequest) {
           primeiroLogin: true,
           senhaTemporaria: senha,
           senhaHash: await hashPassword(senha),
+          email: email ? encryptSensitive(email) : null,
           excluidoAt: null,
           updatedAt: new Date(),
         },
@@ -90,6 +104,7 @@ export async function POST(request: NextRequest) {
           ativo: true,
           primeiroLogin: true,
           senhaTemporaria: true,
+          email: true,
           ultimoLoginAt: true,
           createdAt: true,
         },
@@ -102,6 +117,7 @@ export async function POST(request: NextRequest) {
         ativo: restored.ativo,
         primeiroLogin: restored.primeiroLogin,
         senhaTemporaria: senha,
+        email: decryptSensitive(restored.email),
         ultimoLoginAt: restored.ultimoLoginAt?.toISOString() ?? null,
         createdAt: restored.createdAt.toISOString(),
       }, { status: 201 });
@@ -118,6 +134,7 @@ export async function POST(request: NextRequest) {
       primeiroLogin: true,
       senhaTemporaria: senha,
       senhaHash: await hashPassword(senha),
+      email: email ? encryptSensitive(email) : null,
     },
     select: {
       id: true,
@@ -127,6 +144,7 @@ export async function POST(request: NextRequest) {
       ativo: true,
       primeiroLogin: true,
       senhaTemporaria: true,
+      email: true,
       ultimoLoginAt: true,
       createdAt: true,
     },
@@ -141,6 +159,7 @@ export async function POST(request: NextRequest) {
       ativo: created.ativo,
       primeiroLogin: created.primeiroLogin,
       senhaTemporaria: senha,
+      email: decryptSensitive(created.email),
       ultimoLoginAt: created.ultimoLoginAt?.toISOString() ?? null,
       createdAt: created.createdAt.toISOString(),
     },

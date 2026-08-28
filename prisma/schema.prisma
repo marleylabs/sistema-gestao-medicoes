@@ -24,6 +24,7 @@ model Usuario {
   ultimoLoginAt    DateTime? @map("ultimo_login_at") @db.Timestamptz
   onlineAt         DateTime? @map("online_at") @db.Timestamptz
   excluidoAt        DateTime? @map("excluido_at") @db.Timestamptz
+  email            String?
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
@@ -380,6 +381,29 @@ model SgcLog {
   @@index([colaboradorCodigo, ciclo])
   @@index([createdAt(sort: Desc)])
   @@map("sgc_logs")
+}
+
+model EmailLog {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  event              String
+  entityType         String?  @map("entity_type")
+  entityId           String?  @map("entity_id")
+  intendedRecipients String[] @map("intended_recipients")
+  actualRecipients   String[] @map("actual_recipients")
+  testMode           Boolean  @map("test_mode")
+  subject            String
+  provider           String   @default("resend")
+  providerMessageId  String?  @map("provider_message_id")
+  status             String
+  errorMessage       String?  @map("error_message")
+  idempotencyKey     String   @map("idempotency_key")
+  metadata           Json?
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([event])
+  @@index([createdAt(sort: Desc)])
+  @@index([idempotencyKey])
+  @@map("email_logs")
 }
 
 model EtlExecucao {

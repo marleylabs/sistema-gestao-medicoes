@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { generateTempPassword, generateUniqueInternalAccessCode, hashPassword, isInternalUserProfile, validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { notifyPasswordReset } from "@/lib/email";
+import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
+import { isValidEmail, requiresEmail, EMAIL_REQUIRED_MESSAGE } from "@/lib/usuario-email-policy";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
@@ -18,9 +21,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!user) return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
 
   if (action === "toggle_ativo") {
+    const willBeAtivo = !user.ativo;
+    if (requiresEmail(user.perfil, willBeAtivo) && !decryptSensitive(user.email)) {
+      return NextResponse.json({ error: EMAIL_REQUIRED_MESSAGE }, { status: 409 });
+    }
     const updated = await prisma.usuario.update({
       where: { id },
-      data: { ativo: !user.ativo, updatedAt: new Date() },
+      data: { ativo: willBeAtivo, updatedAt: new Date() },
     });
     return NextResponse.json({ ativo: updated.ativo });
   }
@@ -32,7 +39,36 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       where: { id },
       data: { senhaHash: tempHash, senhaTemporaria: tempPass, primeiroLogin: true, updatedAt: new Date() },
     });
-    return NextResponse.json({ senhaTemporaria: tempPass });
+    // A senha temporária NUNCA vai no e-mail (nem em texto, nem hash) — só um aviso de que a
+    // senha foi redefinida. O admin repassa a senha temporária ao usuário pelo canal já usado
+    // hoje. Falha de e-mail aqui não desfaz o reset, que já foi concluído acima. O reset em si
+    // nunca é bloqueado pela ausência de e-mail — só a notificação deixa de ser enviada.
+    const emailDestino = decryptSensitive(user.email);
+    let emailNotificado = false;
+    if (emailDestino) {
+      const result = await notifyPasswordReset({ usuarioId: user.id, nome: user.nome, email: emailDestino });
+      emailNotificado = result.ok;
+    }
+    return NextResponse.json({
+      senhaTemporaria: tempPass,
+      emailNotificado,
+      aviso: emailDestino ? null : "Senha redefinida. O usuário não possui e-mail cadastrado e não receberá a notificação.",
+    });
+  }
+
+  if (action === "set_email") {
+    const email = typeof body?.email === "string" ? body.email.trim() : "";
+    if (email && !isValidEmail(email)) {
+      return NextResponse.json({ error: "E-mail inválido." }, { status: 400 });
+    }
+    if (!email && requiresEmail(user.perfil, user.ativo)) {
+      return NextResponse.json({ error: EMAIL_REQUIRED_MESSAGE }, { status: 409 });
+    }
+    await prisma.usuario.update({
+      where: { id },
+      data: { email: email ? encryptSensitive(email) : null, updatedAt: new Date() },
+    });
+    return NextResponse.json({ ok: true });
   }
 
   const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "ADMINISTRATIVO"];
@@ -40,6 +76,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (action === "set_perfil") {
     const perfil = typeof body?.perfil === "string" ? body.perfil : "";
     if (!VALID_PERFIS.includes(perfil)) return NextResponse.json({ error: "Perfil inválido." }, { status: 400 });
+    if (requiresEmail(perfil, user.ativo) && !decryptSensitive(user.email)) {
+      return NextResponse.json({ error: EMAIL_REQUIRED_MESSAGE }, { status: 409 });
+    }
     const data: { perfil: string; usuario?: string; updatedAt: Date } = { perfil, updatedAt: new Date() };
     if (isInternalUserProfile(perfil) && !/^P0\d{6}$/.test(user.usuario)) {
       data.usuario = await generateUniqueInternalAccessCode();

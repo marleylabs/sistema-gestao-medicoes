@@ -743,7 +743,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
             title="Evidências de Medição"
             description="Visualize e imprima o Boletim de Medição de qualquer fornecedor por ciclo."
           />
-          <EvidenciasSection colaboradores={colaboradores} ciclos={ciclos} />
+          <EvidenciasSection ciclos={ciclos} />
         </PageContainer>
       )}
 
@@ -1361,15 +1361,20 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
 
 // ─── EvidenciasSection ────────────────────────────────────────────────────────
 
-function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissional[]; ciclos: CicloEntry[] }) {
+function EvidenciasSection({ ciclos }: { ciclos: CicloEntry[] }) {
   const TODOS = "__todos__";
   const [selectedCiclo,  setSelectedCiclo]  = useState(TODOS);
   const [selectedCodigo, setSelectedCodigo] = useState("");
   const [bm, setBm]       = useState<BmData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // codigo → ciclo mais recente aprovado
-  const [aprovadosMap, setAprovadosMap] = useState<Map<string, string>>(new Map());
+  // colaboradorCodigo (chave canônica do SGC) → { ciclo mais recente com BM, nome para exibição }.
+  // Evidências representa a EXISTÊNCIA do Boletim de Medição (qualquer status a partir do envio),
+  // não um recorte transitório de "aguardando aprovação" — por isso a fonte é o próprio SGC
+  // (mesma tabela/regra usada em app/api/colaborador/sgc/route.ts: status !== AGUARDANDO_ENVIO/CANCELADO),
+  // e não a lista de Profissional (cujo campo `codigo` fica vazio na maioria dos cadastros importados
+  // pelo ETL e não deve ser usado como chave de correspondência aqui).
+  const [aprovadosMap, setAprovadosMap] = useState<Map<string, { ciclo: string; nome: string }>>(new Map());
 
   useEffect(() => {
     setSelectedCodigo("");
@@ -1380,28 +1385,32 @@ function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissio
     Promise.all(
       ciclosParaBuscar.map((ciclo) =>
         fetch(`/api/sgc/status?ciclo=${encodeURIComponent(ciclo)}`)
-          .then((r) => r.json() as Promise<Record<string, { status: string }>>)
+          .then((r) => r.json() as Promise<Record<string, { status: string; colaboradorNome: string | null }>>)
           .then((data) => ({ ciclo, data }))
-          .catch(() => ({ ciclo, data: {} as Record<string, { status: string }> }))
+          .catch(() => ({ ciclo, data: {} as Record<string, { status: string; colaboradorNome: string | null }> }))
       )
     ).then((results) => {
       // ciclos já vêm ordenados desc; iterar do mais antigo ao mais recente
       // para que o mais recente sobreescreva no map
-      const map = new Map<string, string>();
+      const map = new Map<string, { ciclo: string; nome: string }>();
       for (const { ciclo, data } of [...results].reverse()) {
         for (const [codigo, entry] of Object.entries(data)) {
-          if (entry.status === "APROVADO" || entry.status === "AGUARDANDO_NF") map.set(codigo, ciclo);
+          if (entry.status !== "AGUARDANDO_ENVIO" && entry.status !== "CANCELADO") {
+            map.set(codigo, { ciclo, nome: entry.colaboradorNome || codigo });
+          }
         }
       }
       setAprovadosMap(map);
     });
   }, [selectedCiclo, ciclos]);
 
-  const colaboradoresAprovados = colaboradores.filter((c) => aprovadosMap.has(c.codigo ?? ""));
+  const colaboradoresAprovados = Array.from(aprovadosMap.entries())
+    .map(([codigo, info]) => ({ codigo, nome: info.nome }))
+    .sort((a, b) => a.nome.localeCompare(b.nome));
 
   async function buscar() {
     if (!selectedCodigo) return;
-    const ciclo = selectedCiclo === TODOS ? (aprovadosMap.get(selectedCodigo) ?? "") : selectedCiclo;
+    const ciclo = selectedCiclo === TODOS ? (aprovadosMap.get(selectedCodigo)?.ciclo ?? "") : selectedCiclo;
     if (!ciclo) return;
     setLoading(true);
     setError(null);
@@ -1443,10 +1452,10 @@ function EvidenciasSection({ colaboradores, ciclos }: { colaboradores: Profissio
             Fornecedor
             <Select value={selectedCodigo} onChange={(e) => setSelectedCodigo(e.target.value)} className="sm:min-w-[220px]" disabled={colaboradoresAprovados.length === 0}>
               <option value="">
-                {colaboradoresAprovados.length === 0 ? "Nenhuma aprovação encontrada" : "Selecione…"}
+                {colaboradoresAprovados.length === 0 ? "Nenhum Boletim de Medição encontrado neste ciclo" : "Selecione…"}
               </option>
               {colaboradoresAprovados.map((c) => (
-                <option key={c.id} value={c.codigo ?? ""}>{c.codigo}</option>
+                <option key={c.codigo} value={c.codigo}>{c.nome}</option>
               ))}
             </Select>
           </label>

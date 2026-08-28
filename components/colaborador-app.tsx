@@ -710,20 +710,26 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
           </Card>
         )}
 
+        {/*
+          Status técnico interno (statusConferencia === "DIVERGENCIA") é preservado sem alteração —
+          a Equipe de Medição continua vendo "Divergência" normalmente em Pagamentos por
+          Fornecedor/Editar Pagamento. Esta tela é só a apresentação para o fornecedor: ele nunca
+          precisa da terminologia técnica da conferência, só de saber que a análise está em curso.
+        */}
         {section === "portal" && precisaConferencia && data.sgc.statusConferencia === "DIVERGENCIA" && (
           <Card className="p-10 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--error-soft)] text-[var(--error)]">
-              <AlertTriangle size={30} />
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#F3F4F6] text-[#9CA3AF]">
+              <Clock size={30} />
             </div>
-            <h2 className="text-section-title text-[#1A1A1A]">Conferência em andamento</h2>
+            <h2 className="text-section-title text-[#1A1A1A]">Análise em andamento</h2>
             <p className="mt-2 text-sm text-[#555555]">
-              Foram encontradas divergências entre os documentos informados e a medição enviada.
+              As informações enviadas estão sendo analisadas pela Equipe de Medição.
               <br />
-              A Equipe de Medição está analisando as diferenças.
+              Aguarde a conclusão da análise.
             </p>
             <div className="mx-auto mt-4 inline-flex items-center gap-4 rounded-lg bg-[#F9FAFB] px-4 py-2">
               <span className="text-label text-[var(--muted-foreground)]">Ciclo <span className="font-technical text-[#1A1A1A]">{data.cicloAtivo}</span></span>
-              <span className="text-label text-[var(--muted-foreground)]">Status <Badge variant="danger" className="ml-1">Divergência</Badge></span>
+              <span className="text-label text-[var(--muted-foreground)]">Status <Badge variant="warning" className="ml-1">Em análise</Badge></span>
             </div>
           </Card>
         )}

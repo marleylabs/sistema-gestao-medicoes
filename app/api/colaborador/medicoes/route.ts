@@ -6,6 +6,7 @@ import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
 import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
+import { getDocumentosMedidos } from "@/lib/documentos-medidos";
 
 function dateOnly(value: Date | null) {
   return value?.toISOString().slice(0, 10) ?? null;
@@ -40,17 +41,7 @@ export async function GET() {
           orderBy: { ordem: "asc" },
         }),
         prisma.mapaPagamentoContexto.findUnique({ where: { ciclo: sgc.ciclo } }),
-        prisma.medicao.findMany({
-          where: { profissional: { codigo: { in: cicloAliases } }, ciclo: sgc.ciclo },
-          select: {
-            id: true, dataCadastro: true, formato: true, quantidade: true, obs: true,
-            equivalenteA1Horas: true, valorMedicao: true, medidoHoras: true,
-            valorTotal: true, valorUnitario: true, percentualEmissao: true,
-            numeroDocumento: true, tipo2: true, condicao: true,
-            projeto: { select: { codigoProjeto: true, tituloPrimario: true, contrato: true } },
-          },
-          orderBy: [{ dataCadastro: "asc" }, { createdAt: "asc" }],
-        }),
+        getDocumentosMedidos({ aliases: cicloAliases, ciclo: sgc.ciclo }),
       ]);
       const pagamentoSerializado = pagamento ? serializeMapaPagamentoItem(pagamento) : null;
 
