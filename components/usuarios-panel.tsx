@@ -540,7 +540,6 @@ function CriarUsuarioModal({
               onChange={(e) => updateField("email", e.target.value)}
             />
           </label>
-          <div className="hidden sm:block" />
           <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
             Senha inicial
             <Input

@@ -1,10 +1,11 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, CheckCircle2, ChevronRight, Clock3, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, Monitor, Settings, ShieldCheck, Smartphone, Trash2, X } from "lucide-react";
+import { Camera, CheckCircle2, ChevronRight, Clock3, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, Monitor, Pencil, Settings, ShieldCheck, Smartphone, Trash2, X } from "lucide-react";
 import { clsx } from "clsx";
 import { Button, Input } from "@/components/ui";
 import type { AuthUser } from "@/lib/session";
+import { validateUserDisplayName } from "@/lib/usuario-nome";
 
 type ProfileData = {
   id: string;
@@ -66,6 +67,77 @@ function ReadOnlyField({ label, value }: { label: string; value: string | null |
         <LockKeyhole size={13} className="shrink-0 text-[#9CA3AF]" aria-hidden="true" />
       </div>
       <p className="mt-1.5 break-words text-sm font-semibold text-[#111827]">{value || "-"}</p>
+    </div>
+  );
+}
+
+function NameField({
+  value,
+  editing,
+  draft,
+  saving,
+  error,
+  onEdit,
+  onDraftChange,
+  onCancel,
+  onSave,
+}: {
+  value: string;
+  editing: boolean;
+  draft: string;
+  saving: boolean;
+  error: string | null;
+  onEdit: () => void;
+  onDraftChange: (value: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  if (!editing) {
+    return (
+      <div className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-3 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">Nome</p>
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold text-[#2563EB] transition hover:bg-[#EFF6FF] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25"
+          >
+            <Pencil size={12} />
+            Editar
+          </button>
+        </div>
+        <p className="mt-1.5 break-words text-sm font-semibold text-[#111827]">{value || "-"}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-[#2563EB] bg-white px-3 py-3 shadow-sm">
+      <label htmlFor="account-nome" className="text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">
+        Nome
+      </label>
+      <Input
+        id="account-nome"
+        autoFocus
+        value={draft}
+        onChange={(event) => onDraftChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") { event.preventDefault(); onSave(); }
+          if (event.key === "Escape") { event.preventDefault(); onCancel(); }
+        }}
+        maxLength={120}
+        disabled={saving}
+        className="mt-1.5"
+      />
+      {error && <p className="mt-1.5 text-xs font-semibold text-[#B91C1C]">{error}</p>}
+      <div className="mt-2.5 flex justify-end gap-2">
+        <Button type="button" variant="ghost" className="h-8 px-3 text-xs" onClick={onCancel} disabled={saving}>
+          Cancelar
+        </Button>
+        <Button type="button" className="h-8 px-3 text-xs" onClick={onSave} disabled={saving}>
+          {saving ? "Salvando..." : "Salvar"}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -166,6 +238,10 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
   });
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [nameEditing, setNameEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -314,6 +390,43 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
     setNewPassword("");
     setConfirmPassword("");
     setFeedback({ type: "success", text: "Senha alterada com sucesso." });
+  }
+
+  function startNameEdit() {
+    setNameDraft(displayProfile.nome);
+    setNameError(null);
+    setNameEditing(true);
+  }
+
+  function cancelNameEdit() {
+    setNameEditing(false);
+    setNameDraft("");
+    setNameError(null);
+  }
+
+  async function saveName() {
+    const validationError = validateUserDisplayName(nameDraft);
+    if (validationError) {
+      setNameError(validationError);
+      return;
+    }
+    setNameSaving(true);
+    setNameError(null);
+    const res = await fetch("/api/usuario/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nome: nameDraft.trim() }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    setNameSaving(false);
+    if (!res.ok) {
+      setNameError(payload.error ?? "Não foi possível atualizar o nome.");
+      return;
+    }
+    setProfile((current) => current ? { ...current, nome: payload.user.nome } : current);
+    setNameEditing(false);
+    setNameDraft("");
+    setFeedback({ type: "success", text: "Nome atualizado com sucesso." });
   }
 
   return (
@@ -512,18 +625,22 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                   </section>
 
                   <section className="grid gap-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-base font-bold text-[#111827]">Dados pessoais</h3>
-                        <p className="mt-1 text-sm text-[#4B5563]">Informações bloqueadas para edição direta.</p>
-                      </div>
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-semibold text-[#4B5563]">
-                        <LockKeyhole size={13} />
-                        Somente leitura
-                      </span>
+                    <div>
+                      <h3 className="text-base font-bold text-[#111827]">Dados pessoais</h3>
+                      <p className="mt-1 text-sm text-[#4B5563]">Gerencie as informações da sua conta.</p>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <ReadOnlyField label="Nome" value={displayProfile.nome} />
+                      <NameField
+                        value={displayProfile.nome}
+                        editing={nameEditing}
+                        draft={nameDraft}
+                        saving={nameSaving}
+                        error={nameError}
+                        onEdit={startNameEdit}
+                        onDraftChange={setNameDraft}
+                        onCancel={cancelNameEdit}
+                        onSave={saveName}
+                      />
                       <ReadOnlyField label="Permissão" value={roleLabel} />
                     </div>
                   </section>
