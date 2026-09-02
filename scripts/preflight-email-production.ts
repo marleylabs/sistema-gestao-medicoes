@@ -48,13 +48,17 @@ async function main() {
   check("EMAIL_BM_CC configurado", bmCc.length > 0, bmCcRaw || "AUSENTE");
   check("EMAIL_FINANCE_CC configurado", financeCc.length > 0, financeCcRaw || "AUSENTE");
   check(
-    "EMAIL_BM_CC contém Gabriel + Anderson",
-    bmCc.some((e) => e.toLowerCase().includes("gabriel.sousa")) && bmCc.some((e) => e.toLowerCase().includes("anderson.marley")),
+    "EMAIL_BM_CC contém Gabriel + Anderson + Planejamento",
+    bmCc.some((e) => e.toLowerCase().includes("gabriel.sousa")) &&
+      bmCc.some((e) => e.toLowerCase().includes("anderson.marley")) &&
+      bmCc.some((e) => e.toLowerCase().includes("planejamentoprojetacs")),
     bmCc.join(", "),
   );
   check(
-    "EMAIL_FINANCE_CC contém financeiro + Ximenes",
-    financeCc.some((e) => e.toLowerCase().includes("financeiro@")) && financeCc.some((e) => e.toLowerCase().includes("ximenes.silva")),
+    "EMAIL_FINANCE_CC contém financeiro + Ximenes + Finan Projeta",
+    financeCc.some((e) => e.toLowerCase().includes("financeiro@")) &&
+      financeCc.some((e) => e.toLowerCase().includes("ximenes.silva")) &&
+      financeCc.some((e) => e.toLowerCase().includes("finanprojetacs")),
     financeCc.join(", "),
   );
   const ccIssues = validateCcConfig();

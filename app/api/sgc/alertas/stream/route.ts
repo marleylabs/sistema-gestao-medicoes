@@ -47,7 +47,17 @@ export async function GET(request: NextRequest) {
             orderBy: { revisaoSolicitadaAt: "desc" },
             take: 20,
           });
-          const signature = JSON.stringify(alertas);
+          // Além dos alertas de revisão em si, observa status/statusConferencia de TODO o ciclo —
+          // sem isso, resolver uma divergência (Incluir/Descartar) nunca muda a assinatura abaixo
+          // (statusConferencia não afeta a query acima) e "Pagamentos por Fornecedor" ficava preso
+          // em DIVERGÊNCIA até um F5 manual. Reaproveita o mesmo canal SSE já existente, sem criar
+          // um segundo mecanismo de push.
+          const resumoCiclo = await prisma.sgcAprovacaoMedicao.findMany({
+            where: { ciclo },
+            select: { id: true, status: true, statusConferencia: true, revisaoNumero: true, updatedAt: true },
+            orderBy: { id: "asc" },
+          });
+          const signature = JSON.stringify({ alertas, resumoCiclo });
           if (signature !== lastSignature) {
             lastSignature = signature;
             send("alertas", {

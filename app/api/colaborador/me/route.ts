@@ -74,6 +74,15 @@ export async function GET() {
   ]);
 
   const fornecedorAvatarUrl = currentUsuario ? avatarUrlByUserId(currentUsuario.id, currentUsuario.avatarAtualizadoAt) : null;
+  // Isolamento: escopado por sgc.id (já filtrado por colaboradorCodigo em codigoAliases + ciclo
+  // acima) — nunca por CNPJ, que pode ser compartilhado entre colaboradorCodigo distintos.
+  const divergenciasDescartadas = sgc
+    ? await prisma.divergenciaMedicao.findMany({
+        where: { sgcId: sgc.id, status: "DESCARTADA" },
+        select: { id: true, nrVale: true, fornecedorFormato: true, fornecedorTipo: true, observacao: true },
+        orderBy: { resolvidoEm: "asc" },
+      })
+    : [];
   const logs = sgc
     ? await prisma.sgcLog.findMany({
         where: { sgcId: sgc.id },
@@ -199,6 +208,13 @@ export async function GET() {
         valorMedido: a1eq * preco * pct,
       };
     }),
+    documentosDescartados: divergenciasDescartadas.map((d) => ({
+      id: d.id,
+      nrVale: d.nrVale,
+      formato: d.fornecedorFormato,
+      tipo: d.fornecedorTipo,
+      motivo: d.observacao ?? "",
+    })),
     sgc: sgc
       ? {
           id: sgc.id,

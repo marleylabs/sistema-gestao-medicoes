@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin";
-import { mapaPagamentoData, serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
+import { mapaPagamentoData, resolveProjetistaCodigo, serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { cadastroFornecedorOverrideForMapaItem } from "@/lib/mapa-pagamento-cadastro";
 import { getParticipacaoPorFornecedorCiclo, normalizeAlias, type ContratoResumo } from "@/lib/participacao-contratos";
 
@@ -81,6 +81,11 @@ export async function POST(request: NextRequest) {
   const payload = await request.json();
   const ciclo = typeof payload.ciclo === "string" ? payload.ciclo.trim() : "2605";
 
+  const projetista = await resolveProjetistaCodigo(payload.projetistaCodigo);
+  if (projetista.error) {
+    return NextResponse.json({ error: projetista.error }, { status: 400 });
+  }
+
   const maxOrdem = await prisma.mapaPagamentoItem.aggregate({
     where: { ciclo },
     _max: { ordem: true },
@@ -88,7 +93,7 @@ export async function POST(request: NextRequest) {
   const nextOrdem = (maxOrdem._max.ordem ?? 0) + 1;
 
   const created = await prisma.mapaPagamentoItem.create({
-    data: mapaPagamentoData({ ...payload, ciclo, ordem: nextOrdem }),
+    data: mapaPagamentoData({ ...payload, projetistaCodigo: projetista.codigo, ciclo, ordem: nextOrdem }),
   });
   const cadastros = await prisma.cadastroFornecedor.findMany({
     select: {

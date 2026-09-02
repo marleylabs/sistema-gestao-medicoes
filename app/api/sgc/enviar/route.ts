@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
   const existing = await prisma.sgcAprovacaoMedicao.findUnique({
     where: { colaboradorCodigo_ciclo: { colaboradorCodigo, ciclo } },
-    select: { id: true, status: true },
+    select: { id: true, status: true, voltadoAt: true },
   });
 
   if (existing && !["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA", "CANCELADO"].includes(existing.status)) {
@@ -101,6 +101,14 @@ export async function POST(request: NextRequest) {
     nome: recipient.nome,
     email: recipient.email,
     revisao: sgc.revisaoNumero,
+    // "Retornar BM" (VOLTAR_BM em app/api/admin/financeiro/route.ts) volta o status para
+    // AGUARDANDO_ENVIO sem passar por REVISAO_SOLICITADA — isRevisao fica false, revisaoNumero
+    // não incrementa, e sem isto a chave de idempotência (sgcId+revisao) ficaria IDÊNTICA à do
+    // envio original, fazendo o reenvio ser silenciosamente descartado como duplicata (bug real
+    // encontrado nesta sessão: "Retornar BM" seguido de "Enviar BM" nunca notificava de novo).
+    // voltadoAt muda a cada "Retornar BM" e é estável entre retries do mesmo ciclo de reenvio —
+    // não mexe em revisaoNumero (que continua só para revisão de verdade solicitada pelo fornecedor).
+    retornadoEm: existing?.voltadoAt ?? null,
   });
   await logBmAction({
     sgcId: sgc.id,

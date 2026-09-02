@@ -23,13 +23,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Informe usuário e senha." }, { status: 400 });
   }
 
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "local";
-  const limit = checkRateLimit(`login:${ip}:${usuario}`, 8, 15 * 60 * 1000);
-  if (!limit.ok) {
-    return NextResponse.json(
-      { message: "Muitas tentativas de acesso. Tente novamente em instantes." },
-      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } },
-    );
+  // Só desligado pelo webServer isolado do Playwright (playwright.config.ts) — a suíte E2E reusa
+  // as mesmas poucas contas de teste dezenas de vezes por execução, o que dispararia o limite real
+  // sem ser uma tentativa de força bruta. Nunca definido fora desse ambiente.
+  if (process.env.AUTH_RATE_LIMIT_DISABLED !== "true") {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "local";
+    const limit = checkRateLimit(`login:${ip}:${usuario}`, 8, 15 * 60 * 1000);
+    if (!limit.ok) {
+      return NextResponse.json(
+        { message: "Muitas tentativas de acesso. Tente novamente em instantes." },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } },
+      );
+    }
   }
 
   const user = await prisma.usuario.findUnique({ where: { usuario } });

@@ -334,11 +334,28 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       loadAlertas();
     });
 
-    const fallbackInterval = setInterval(loadAlertas, 30000);
+    // Rede de segurança caso o SSE caia (proxy que bufferiza, aba que perde a conexão) — o SSE em
+    // si já sonda o banco a cada 2s no servidor e empurra na hora que algo muda, então isto é só
+    // o pior caso; ~8s mantém o alvo de "até 10s" pedido para atualização de workflow.
+    const fallbackInterval = setInterval(() => {
+      if (!document.hidden) loadAlertas();
+    }, 8000);
+
+    // Voltar de outra aba, recuperar o foco da janela ou a conexão cair e voltar não deve esperar
+    // o próximo tick — refetch imediato nesses três casos.
+    const onVisibility = () => { if (!document.hidden) loadAlertas(); };
+    const onFocus = () => loadAlertas();
+    const onOnline = () => loadAlertas();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onOnline);
 
     return () => {
       source.close();
       clearInterval(fallbackInterval);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onOnline);
     };
   }, [isAdmin, activeCiclo, loadAlertas]);
 
@@ -683,6 +700,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
               sgcStatus={sgcStatus}
               onEnviarBm={enviarBm}
               onRetornarBm={retornarBm}
+              onDivergenciaResolvida={loadAlertas}
               ciclo={activeCiclo}
             />
           </div>

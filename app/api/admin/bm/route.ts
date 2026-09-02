@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin";
+import { requireFinanceiro } from "@/lib/admin";
 import { decryptSensitive } from "@/lib/encryption";
 import { toNumber } from "@/lib/format";
 import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
@@ -14,8 +14,17 @@ function unique(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => !!value)));
 }
 
+/**
+ * Bug real encontrado via E2E (Fase 4 desta auditoria): esta rota alimenta tanto Evidências de
+ * Medição (Administrativo/Medição) quanto o botão "Ver BM" do painel Financeiro
+ * (components/financeiro-panel.tsx:130) — mas usava `requireAdmin()`, que nunca inclui o perfil
+ * FINANCEIRO. O clique em "Ver BM" sempre recebia 403 e falhava OUTRIVELMENTE (a UI só faz
+ * `if (res.ok) setBmData(...)`, sem mensagem de erro — o usuário Financeiro real nunca via nada
+ * acontecer). `requireFinanceiro()` já é a guarda correta: permite MEDICAO/ADMIN (Evidências) e
+ * também FINANCEIRO/ADMINISTRATIVO, sem introduzir uma guarda nova.
+ */
 export async function GET(request: NextRequest) {
-  const admin = await requireAdmin();
+  const admin = await requireFinanceiro();
   if (admin.response) return admin.response;
 
   const codigo = request.nextUrl.searchParams.get("codigo")?.trim();

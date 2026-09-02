@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Copy, Download, Edit3, FileSpreadsheet, RefreshCw, Save, Upload, X } from "lucide-react";
+import { AlertTriangle, Copy, Download, Edit3, FileSpreadsheet, Plus, RefreshCw, Save, Upload, X } from "lucide-react";
 import { Button, Card, IconButton, Input, PageContainer, PageHeader } from "@/components/ui";
 
 type CadastroFornecedor = {
@@ -297,6 +297,181 @@ function FornecedorEditModal({
   );
 }
 
+const NOVO_FORNECEDOR_FORM_INICIAL = {
+  responsavel: "",
+  razaoSocial: "",
+  cnpj: "",
+  cpf: "",
+  email: "",
+  telefone: "",
+  cargo: "",
+  statusContrato: "",
+  statusCadastro: "",
+  inicio: "",
+  final: "",
+  objetoContrato: "",
+  tipoCt: "",
+  tipoContrato: "",
+  valorHora: "",
+  valorA1Equivalente: "",
+  valorDocumento: "",
+  valorCondicaoFixa: "",
+  primeiroAditivo: "",
+  segundoAditivo: "",
+};
+
+type NovoFornecedorForm = typeof NOVO_FORNECEDOR_FORM_INICIAL;
+
+function NovoFornecedorModal({
+  onClose,
+  onSuccess,
+  onError,
+}: {
+  onClose: () => void;
+  onSuccess: (usuarioCriado: { usuario: string; nome: string; senha: string } | null) => void;
+  onError: (message: string) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<NovoFornecedorForm>(NOVO_FORNECEDOR_FORM_INICIAL);
+
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
+  }, []);
+
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (e.key === "Escape" && !saving) onClose();
+    }
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [saving, onClose]);
+
+  function update(field: keyof NovoFornecedorForm, value: string) {
+    setForm((prev) => ({ ...prev, [field]: formatCadastroInput(field, value) }));
+  }
+
+  async function save() {
+    // Duplo clique/duplo submit não pode criar dois cadastros — ignora enquanto já está salvando.
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/administrativo/fornecedores/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        onError(payload.error ?? "Não foi possível cadastrar o fornecedor.");
+        return;
+      }
+      onSuccess(payload.usuarioCriado ?? null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const SECTIONS: { title: string; fields: [keyof NovoFornecedorForm, string, { type?: string; placeholder?: string; inputMode?: "numeric" | "email" }?][] }[] = [
+    {
+      title: "Identificação",
+      fields: [
+        ["responsavel", "Nome / Responsável"],
+        ["cnpj", "CNPJ", { placeholder: "00.000.000/0000-00", inputMode: "numeric" }],
+        ["razaoSocial", "Razão social"],
+        ["cpf", "CPF", { placeholder: "000.000.000-00", inputMode: "numeric" }],
+        ["cargo", "Cargo"],
+      ],
+    },
+    {
+      title: "Contato",
+      fields: [
+        ["email", "E-mail", { type: "email", placeholder: "nome@empresa.com.br", inputMode: "email" }],
+        ["telefone", "Telefone", { placeholder: "(00) 00000-0000", inputMode: "numeric" }],
+      ],
+    },
+    {
+      title: "Contrato",
+      fields: [
+        ["tipoCt", "Tipo CT"],
+        ["tipoContrato", "Tipo contrato"],
+        ["statusContrato", "Status CT"],
+        ["statusCadastro", "Status"],
+        ["inicio", "Início", { type: "date" }],
+        ["final", "Final", { type: "date" }],
+        ["objetoContrato", "Objeto do contrato"],
+        ["primeiroAditivo", "1º Aditivo"],
+        ["segundoAditivo", "2º Aditivo"],
+      ],
+    },
+    {
+      title: "Precificação",
+      fields: [
+        ["valorHora", "Hora", { inputMode: "numeric" }],
+        ["valorDocumento", "Documento", { inputMode: "numeric" }],
+        ["valorA1Equivalente", "A1 equivalente", { inputMode: "numeric" }],
+        ["valorCondicaoFixa", "Condição fixa", { inputMode: "numeric" }],
+      ],
+    },
+  ];
+
+  let firstFieldAssigned = false;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
+      <div className="ds-dialog flex max-h-[calc(100vh-16px)] w-full flex-col overflow-hidden sm:max-h-[85vh] sm:w-[820px] sm:max-w-[90vw]">
+        {/* Header — fixo */}
+        <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-[#1A1A1A]">Novo fornecedor</h2>
+            <p className="mt-0.5 text-xs text-[#6B7280]">Preencha os dados cadastrais e contratuais do fornecedor.</p>
+          </div>
+          <IconButton onClick={onClose} title="Fechar" disabled={saving}><X size={16} /></IconButton>
+        </div>
+
+        {/* Body — scroll interno */}
+        <div className="grid flex-1 gap-6 overflow-y-auto p-5">
+          {SECTIONS.map((section) => (
+            <div key={section.title}>
+              <p className="mb-3 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">{section.title}</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {section.fields.map(([field, label, opts]) => {
+                  const isFirst = !firstFieldAssigned;
+                  if (isFirst) firstFieldAssigned = true;
+                  return (
+                    <label key={field} className="text-label grid gap-1 text-[var(--muted-foreground)]">
+                      {label}
+                      <Input
+                        autoFocus={isFirst}
+                        type={opts?.type ?? "text"}
+                        inputMode={opts?.inputMode}
+                        value={form[field]}
+                        onChange={(e) => update(field, e.target.value)}
+                        onBlur={(e) => { if (field === "email") update(field, normalizeEmail(e.target.value)); }}
+                        placeholder={opts?.placeholder}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer — fixo */}
+        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
+          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button onClick={save} disabled={saving}>
+            <Save size={14} />
+            {saving ? "Cadastrando..." : "Cadastrar fornecedor"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CadastroCard({ item, onEdit }: { item: CadastroFornecedor; onEdit: (item: CadastroFornecedor) => void }) {
   return (
     <Card className={`flex h-full min-h-[168px] flex-col overflow-hidden ${item.pendencias.length ? "border-[#FCA5A5]" : ""}`}>
@@ -379,6 +554,7 @@ export function AdministrativoPanel() {
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [selectedFornecedor, setSelectedFornecedor] = useState<CadastroFornecedor | null>(null);
+  const [creatingFornecedor, setCreatingFornecedor] = useState(false);
   const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
@@ -458,6 +634,10 @@ export function AdministrativoPanel() {
             <Button variant="secondary" onClick={load} disabled={loading}>
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
               Atualizar
+            </Button>
+            <Button onClick={() => setCreatingFornecedor(true)}>
+              <Plus size={14} />
+              Novo fornecedor
             </Button>
           </div>
         }
@@ -573,6 +753,23 @@ export function AdministrativoPanel() {
           onSuccess={async () => {
             setSelectedFornecedor(null);
             setToast({ tone: "success", message: "Fornecedor atualizado com sucesso." });
+            await load();
+          }}
+          onError={(message) => setToast({ tone: "error", message })}
+        />
+      )}
+
+      {creatingFornecedor && (
+        <NovoFornecedorModal
+          onClose={() => setCreatingFornecedor(false)}
+          onSuccess={async (usuarioCriado) => {
+            setCreatingFornecedor(false);
+            setToast({
+              tone: "success",
+              message: usuarioCriado
+                ? `Fornecedor cadastrado com sucesso. Usuário ${usuarioCriado.usuario} criado para acesso ao Portal.`
+                : "Fornecedor cadastrado com sucesso.",
+            });
             await load();
           }}
           onError={(message) => setToast({ tone: "error", message })}

@@ -1,6 +1,70 @@
 import { createHash, randomUUID } from "node:crypto";
 import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
 import { parseDecimal, toNumber } from "@/lib/format";
+import { prisma } from "@/lib/prisma";
+
+/**
+ * Resolve `projetistaCodigo` para a grafia CANÔNICA de um Profissional real antes de gravar
+ * MapaPagamentoItem — nunca aceita texto livre como identidade.
+ *
+ * Bug real encontrado nesta auditoria (BM_AVAILABLE não chegava para fornecedor cadastrado
+ * manualmente): o campo "Nome (ID)" do modal "Novo pagamento" permitia submeter qualquer texto
+ * digitado (ex.: "Fornecedor Manual Email B") sem exigir clique numa sugestão real — esse texto
+ * virava `MapaPagamentoItem.projetistaCodigo` E, ao "Enviar BM", `SgcAprovacaoMedicao.colaboradorCodigo`
+ * literalmente. A EXIBIÇÃO (lib/mapa-pagamento-cadastro.ts) já tolera essa divergência (comparação
+ * normalizada, sem espaços/caixa), então a tabela mostrava tudo certo — mas
+ * `resolveFornecedorEmail`/`/api/sgc/enviar` fazem `findFirst({ where: { colaboradorCodigo } })`
+ * por igualdade EXATA, então "Fornecedor Manual Email B" nunca batia com o
+ * "FORNECEDOR MANUAL EMAIL B" real gravado por `upsertCadastroFornecedor` — resolução de
+ * destinatário sempre vazia, silenciosamente (o e-mail nunca era o problema; a identidade era).
+ *
+ * Corrigindo na origem (aqui) em vez de tornar toda consulta de colaboradorCodigo case-insensitive
+ * — evita a mesma classe de divergência silenciosa se propagar para Portal/NF/Comprovante/
+ * Financeiro/Evidências/Chat, que também confiam em `colaboradorCodigo` exato.
+ */
+export async function resolveProjetistaCodigo(rawValue: unknown): Promise<{ codigo: string | null; error?: string }> {
+  const raw = typeof rawValue === "string" ? rawValue.trim() : "";
+  if (!raw) return { codigo: null };
+
+  // Busca por codigo/nome/nomeCompleto — os MESMOS três campos que a lista de sugestões do modal
+  // já usa para filtrar (ver `suggestions` em components/mapa-pagamento-table.tsx), para que digitar
+  // livremente o nome de um fornecedor importado (não só o código canônico) continue funcionando.
+  // `codigo` e `nome` são @unique no schema; `nomeCompleto` NÃO é — dois Profissional distintos
+  // (ex.: duas pessoas reais homônimas vindas do XLSX) podem legitimamente compartilhar o mesmo
+  // nomeCompleto. Nunca escolher um dos dois arbitrariamente: só resolve quando existe EXATAMENTE
+  // um `codigo` distinto entre as correspondências.
+  const candidatos = await prisma.profissional.findMany({
+    where: {
+      OR: [
+        { codigo: { equals: raw, mode: "insensitive" } },
+        { nome: { equals: raw, mode: "insensitive" } },
+        { nomeCompleto: { equals: raw, mode: "insensitive" } },
+      ],
+    },
+    select: { codigo: true, nome: true },
+  });
+  // MUITOS Profissional legados de produção têm `codigo` NULL (import antigo nunca preencheu essa
+  // coluna) — `nome` já é a identidade de fato usada nesses casos em todo o resto da aplicação
+  // (é literalmente o que `upsertCadastroFornecedor`/`findProfissionalCodigoByName` gravam como
+  // colaboradorCodigo quando não existe um `codigo` real). Cair para `codigo` ausente aqui faria
+  // NOT_FOUND para fornecedores legítimos e conhecidos.
+  const codigosDistintos = Array.from(new Set(candidatos.map((c) => c.codigo ?? c.nome).filter((c): c is string => !!c)));
+
+  if (codigosDistintos.length === 0) {
+    return {
+      codigo: null,
+      error: `Fornecedor "${raw}" não encontrado. Selecione um fornecedor da lista de sugestões antes de salvar.`,
+    };
+  }
+  if (codigosDistintos.length > 1) {
+    return {
+      codigo: null,
+      error: `Mais de um fornecedor corresponde a "${raw}". Selecione o fornecedor correto na lista de sugestões.`,
+    };
+  }
+  // Sempre a grafia canônica armazenada no Profissional — nunca o texto exatamente como digitado.
+  return { codigo: codigosDistintos[0] };
+}
 
 /**
  * Fórmula única de "Valor Medido" de um Documento Medido — reaproveitada por

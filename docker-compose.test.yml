@@ -1,0 +1,30 @@
+name: projetocrud-medio-e2e
+
+# Postgres EXCLUSIVO para testes de integração/E2E — nunca o mesmo container, volume ou porta da
+# aplicação real (docker-compose.yml). Subir com:
+#   docker compose -f docker-compose.test.yml up -d
+# Nunca dar down -v aqui sem querer apagar o banco de teste (tudo bem — ele é descartável por
+# design; o que nunca pode acontecer é rodar isto contra o docker-compose.yml principal).
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: medicoes-postgres-test
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: medicoes_e2e
+      POSTGRES_USER: medicoes_app
+      POSTGRES_PASSWORD: medicoes_e2e_dev
+    ports:
+      # Bind só em 127.0.0.1 — nunca exposto na rede, porta diferente do Postgres principal (15432).
+      - "127.0.0.1:${POSTGRES_TEST_PORT:-15433}:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medicoes_app -d medicoes_e2e"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_test_data:

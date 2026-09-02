@@ -68,14 +68,20 @@ export async function notifyPasswordReset(input: { usuarioId: string; nome: stri
   });
 }
 
-export async function notifyBmAvailable(input: { sgcId: string; colaboradorCodigo: string; ciclo: string; nome: string; email: string | null; revisao: number }) {
+export async function notifyBmAvailable(input: {
+  sgcId: string; colaboradorCodigo: string; ciclo: string; nome: string; email: string | null; revisao: number;
+  /** Timestamp do último "Retornar BM" (voltadoAt), quando o reenvio veio desse caminho e não de
+   * uma revisão solicitada pelo fornecedor — muda a chave de idempotência sem tocar revisaoNumero. */
+  retornadoEm?: Date | null;
+}) {
   const content = bmAvailableTemplate({ nome: input.nome, ciclo: input.ciclo, appUrl: portalUrl() });
+  const chaveRetorno = input.retornadoEm ? `-retorno-${input.retornadoEm.getTime()}` : "";
   return sendTransactionalEmail({
     event: "BM_AVAILABLE",
     to: input.email ? [input.email] : [],
     cc: getEmailCcForEvent("BM_AVAILABLE"),
     content,
-    idempotencyKey: `bm-available/${input.sgcId}/${input.revisao}`,
+    idempotencyKey: `bm-available/${input.sgcId}/${input.revisao}${chaveRetorno}`,
     metadata: { sgcId: input.sgcId, colaboradorCodigo: input.colaboradorCodigo, ciclo: input.ciclo, recipientMissing: !input.email },
   });
 }

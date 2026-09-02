@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2, Download, FileText, RefreshCw, X } from "lucide-react";
 import { Badge, BlurValue, Button, Card, Input, Select, PageContainer, PageHeader } from "@/components/ui";
 import { useBlur } from "@/components/providers";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 type CicloEntry = { ciclo: string; mesReferencia: string | null; updatedAt: string };
 
 type FinanceiroItem = {
@@ -96,15 +97,21 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
     }
   }, [ciclos, selectedCiclo]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!selectedCiclo || exportOnly) return;
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     const res = await fetch(`/api/admin/financeiro?ciclo=${encodeURIComponent(selectedCiclo)}`);
     if (res.ok) setItems(await res.json());
-    setLoading(false);
+    if (!opts?.silent) setLoading(false);
   }, [exportOnly, selectedCiclo]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Antes só recarregava ao trocar de ciclo/montar — se o Fornecedor enviasse a NF com o
+  // Financeiro já aberto em outra aba, só aparecia depois de F5. `silent` evita o piscar da lista
+  // (item 31) a cada tick.
+  const loadSilent = useCallback(() => { load({ silent: true }); }, [load]);
+  useLiveRefresh(loadSilent, { intervalMs: 8000, enabled: !exportOnly && !!selectedCiclo });
 
   async function enviarComprovante(id: string) {
     setUploadingId(id);
@@ -126,12 +133,21 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
   const [uploadFormId, setUploadFormId]   = useState<string | null>(null);
   const [bmData, setBmData]               = useState<BmData | null>(null);
   const [bmLoading, setBmLoading]         = useState(false);
+  const [bmError, setBmError]             = useState<string | null>(null);
 
   async function openBm(item: FinanceiroItem) {
     setBmLoading(true);
     setBmData(null);
+    setBmError(null);
     const res = await fetch(`/api/admin/bm?codigo=${encodeURIComponent(item.colaboradorCodigo)}&ciclo=${encodeURIComponent(selectedCiclo)}`);
-    if (res.ok) setBmData(await res.json());
+    if (res.ok) {
+      setBmData(await res.json());
+    } else {
+      // Antes, uma resposta não-ok era descartada em silêncio (nenhum estado mudava, o modal nunca
+      // abria) — o usuário clicava em "Ver BM" e nada parecia acontecer, sem nenhuma pista do porquê.
+      const payload = await res.json().catch(() => ({}));
+      setBmError(payload.error ?? "Não foi possível carregar o boletim de medição.");
+    }
     setBmLoading(false);
   }
 
@@ -170,7 +186,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
               <Download size={14} />
               Exportar concluídos
             </Button>
-            <Button variant="secondary" onClick={load} disabled={loading}>
+            <Button variant="secondary" onClick={() => load()} disabled={loading}>
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
               Atualizar
             </Button>
@@ -242,13 +258,13 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
       </Card>
 
       {/* Modal BM */}
-      {(bmData || bmLoading) && (
+      {(bmData || bmLoading || bmError) && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:p-4 sm:pt-10">
           <div className="w-full max-w-5xl rounded-none bg-white shadow-2xl sm:rounded-xl min-h-screen sm:min-h-0">
             <div className="flex items-center justify-between border-b border-[#E5E7EB] px-6 py-4">
               <p className="text-sm font-semibold text-[#1A1A1A]">Boletim de Medição</p>
               <button
-                onClick={() => { setBmData(null); setBmLoading(false); }}
+                onClick={() => { setBmData(null); setBmLoading(false); setBmError(null); }}
                 className="rounded-lg p-1.5 text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-[#1A1A1A]"
               >
                 <X size={18} />
@@ -260,6 +276,8 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#2563EB]" />
                   Carregando boletim…
                 </div>
+              ) : bmError ? (
+                <div className="rounded-lg bg-[#FEF2F2] px-4 py-3 text-sm font-medium text-[#B91C1C]">{bmError}</div>
               ) : bmData ? (
                 <BoletimMedicao data={bmData} />
               ) : null}
@@ -298,8 +316,8 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
                     const total = item.valor + item.rev;
                     const showUploadForm = uploadFormId === item.id;
                     return (
-                      <>
-                        <tr key={item.id} className={`transition-colors ${showUploadForm ? "" : "border-b last:border-0"} ${rowBg(item.status)}`}>
+                      <Fragment key={item.id}>
+                        <tr className={`transition-colors ${showUploadForm ? "" : "border-b last:border-0"} ${rowBg(item.status)}`}>
                           <td className="px-3 py-2.5">
                             <p className="font-semibold text-[#1A1A1A]">{item.colaboradorNome}</p>
                             <p className="text-[10px] font-mono text-[#9CA3AF]">{item.colaboradorCodigo}</p>
@@ -413,7 +431,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                 </tbody>

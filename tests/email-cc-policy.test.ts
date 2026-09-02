@@ -29,9 +29,9 @@ test("parseEmailList: configuração vazia/ausente retorna lista vazia", () => {
 });
 
 test("getEmailCcForEvent: eventos de BM usam EMAIL_BM_CC", () => {
-  process.env.EMAIL_BM_CC = "gabriel.sousa@projetacs.com,anderson.marley@projetacs.com";
+  process.env.EMAIL_BM_CC = "gabriel.sousa@projetacs.com,anderson.marley@projetacs.com,planejamentoprojetacs@gmail.com";
   process.env.EMAIL_FINANCE_CC = "financeiro@projetacs.com,ximenes.silva@projetacs.com";
-  const expected = ["gabriel.sousa@projetacs.com", "anderson.marley@projetacs.com"];
+  const expected = ["gabriel.sousa@projetacs.com", "anderson.marley@projetacs.com", "planejamentoprojetacs@gmail.com"];
   assert.deepEqual(getEmailCcForEvent("BM_AVAILABLE"), expected);
   assert.deepEqual(getEmailCcForEvent("BM_DIVERGENCE"), expected);
   assert.deepEqual(getEmailCcForEvent("BM_APPROVED"), expected);
@@ -39,9 +39,9 @@ test("getEmailCcForEvent: eventos de BM usam EMAIL_BM_CC", () => {
 });
 
 test("getEmailCcForEvent: eventos financeiros usam EMAIL_FINANCE_CC", () => {
-  process.env.EMAIL_BM_CC = "gabriel.sousa@projetacs.com,anderson.marley@projetacs.com";
-  process.env.EMAIL_FINANCE_CC = "financeiro@projetacs.com,ximenes.silva@projetacs.com";
-  const expected = ["financeiro@projetacs.com", "ximenes.silva@projetacs.com"];
+  process.env.EMAIL_BM_CC = "gabriel.sousa@projetacs.com,anderson.marley@projetacs.com,planejamentoprojetacs@gmail.com";
+  process.env.EMAIL_FINANCE_CC = "financeiro@projetacs.com,ximenes.silva@projetacs.com,finanprojetacs@gmail.com";
+  const expected = ["financeiro@projetacs.com", "ximenes.silva@projetacs.com", "finanprojetacs@gmail.com"];
   assert.deepEqual(getEmailCcForEvent("PAYMENT_READY"), expected);
   assert.deepEqual(getEmailCcForEvent("PAYMENT_COMPLETED"), expected);
 });

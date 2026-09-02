@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { prisma } from "../lib/prisma";
+import test, { before } from "node:test";
+import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
+
+before(assertConnectedToE2eDatabase);
 
 /**
- * Testes de integração REAIS contra o banco configurado em DATABASE_URL.
+ * Testes de integração reais contra o banco de teste isolado (medicoes-postgres-test).
  *
  * Bug corrigido: "Evidências de Medição" (Administrativo) usava dois filtros que quebravam a
  * visibilidade de um BM já existente:
@@ -19,8 +21,11 @@ import { prisma } from "../lib/prisma";
  * status !== "AGUARDANDO_ENVIO" && status !== "CANCELADO" — e a chave de correspondência deve
  * ser sempre `colaboradorCodigo` (o próprio campo do SGC), nunca `Profissional.codigo`.
  *
- * `app/api/sgc/status/route.ts` e `lib/prisma.ts` não importam "server-only", então a consulta é
- * reimplementada aqui verbatim (mesma forma da rota), não uma reimplementação divergente.
+ * FASE 3: até aqui esta suíte dependia do caso real GYOVANNI COELHO/ciclo 2608 em produção —
+ * dois testes ficavam `t.skip()` sempre que o workflow real avançava e o registro deixava de
+ * existir naquele estado exato (drift). Agora o mesmo padrão de bug (Profissional.codigo vazio +
+ * SGC referenciando o fornecedor pelo nome) é reproduzido de forma 100% determinística com dados
+ * sintéticos no banco de teste isolado — nunca mais dependente de um snapshot de produção.
  */
 
 type SgcStatusRow = { colaboradorCodigo: string; status: string; colaboradorNome: string | null };
@@ -65,44 +70,49 @@ async function getDocumentosMedidos(params: { aliases: string[]; ciclo: string }
   });
 }
 
-// ─── Caso real: Gyovanni Coelho / ciclo 2608 ──────────────────────────────────────────────────
+// ─── Reprodução determinística do caso real (Profissional.codigo vazio + SGC por nome) ────────
 
-test("smoke real (before/after) — Gyovanni Coelho / ciclo 2608: regra antiga não encontrava, regra corrigida encontra", async (t) => {
-  // sgc_aprovacoes_medicao é operacional — o workflow deste fornecedor pode ter avançado (NF,
-  // pagamento) ou o ciclo pode ter sido reaberto desde que este caso foi auditado, então o SGC
-  // pode não existir mais neste exato estado. O que este teste precisa provar continua válido e
-  // é verificado de forma independente do snapshot: ver "ciclo real 2608" e os testes de
-  // getDocumentosMedidos logo abaixo, que não dependem de sgc_aprovacoes_medicao.
-  const status = await listSgcStatus("2608");
-  const entry = status["GYOVANNI COELHO"];
-  if (!entry) {
-    t.skip("registro SGC de GYOVANNI COELHO/2608 não existe mais neste momento (workflow avançou/dado real mudou) — ver testes de getDocumentosMedidos abaixo para a prova de causa-raiz que não depende de sgc_aprovacoes_medicao.");
-    return;
-  }
+test("smoke determinístico (before/after) — Profissional.codigo vazio: regra antiga não encontrava, regra corrigida encontra", async () => {
+  const suffix = `TESTE-EVID-BUG-${Date.now()}`;
+  const nomeFornecedor = `${suffix} FORNECEDOR SEM CODIGO`;
+  const ciclo = `TESTE-${suffix}`;
 
-  // "Antes" (bug): a chave usada para achar o fornecedor no dropdown era Profissional.codigo, que
-  // é vazio para este fornecedor — nenhuma correspondência é possível por ali, então o BM nunca
-  // aparecia mesmo com status incluído na lista antiga.
-  const profissional = await prisma.profissional.findFirst({ where: { nome: "GYOVANNI COELHO" }, select: { codigo: true } });
-  assert.ok(profissional, "esperava encontrar o Profissional real de GYOVANNI COELHO");
-  assert.ok(!profissional!.codigo, "confirma a causa-raiz: Profissional.codigo vazio/nulo para este fornecedor");
-
-  // "Depois" (correção): a chave de correspondência é o próprio colaboradorCodigo do SGC, e a
-  // regra de existência inclui o status atual (qualquer um exceto AGUARDANDO_ENVIO/CANCELADO).
-  assert.equal(bmExiste(entry.status), true, `regra corrigida deve considerar o BM existente em ${entry.status}`);
-});
-
-test("smoke real — Boletim de Gyovanni Coelho abre com documentos reais após a correção do endpoint /api/admin/bm", async () => {
-  const docs = await getDocumentosMedidos({ aliases: ["GYOVANNI COELHO", "GYOVANNI PINHEIRO SARAIVA COELHO"], ciclo: "2608" });
-  assert.ok(docs.length > 0, "endpoint corrigido (getDocumentosMedidos com alias por nome) deve encontrar os documentos reais do ciclo 2608");
-});
-
-test("smoke real — a mesma consulta ANTIGA (profissional.codigo estrito) do endpoint /api/admin/bm retornava 0 documentos para este fornecedor", async () => {
-  const docsRegraAntiga = await prisma.medicao.findMany({
-    where: { profissional: { codigo: { in: ["GYOVANNI COELHO", "GYOVANNI PINHEIRO SARAIVA COELHO"] } }, ciclo: "2608" },
-    select: { id: true },
+  const projeto = await prisma.projeto.create({ data: { codigoProjeto: `${suffix}-PROJ`, contrato: "TESTE" } });
+  // Reproduz exatamente a causa-raiz real: Profissional.codigo NULO (comum em cadastros importados
+  // pelo ETL), então o SGC referencia o fornecedor pelo NOME (fallback usado em produção).
+  const profissional = await prisma.profissional.create({ data: { nome: nomeFornecedor, codigo: null } });
+  const medicao = await prisma.medicao.create({
+    data: {
+      numeroMedicao: `${suffix}-MED`, idProjeto: projeto.id, idProfissional: profissional.id, ciclo,
+      equivalenteA1Horas: 10, percentualEmissao: 1, condicao: "100", sourceRowHash: `${suffix}-hash`,
+    },
   });
-  assert.equal(docsRegraAntiga.length, 0, "confirma que a consulta antiga (só profissional.codigo) não encontrava nada para este fornecedor real");
+  const sgc = await prisma.sgcAprovacaoMedicao.create({
+    data: { colaboradorCodigo: nomeFornecedor, ciclo, status: "AGUARDANDO_NF", colaboradorNome: nomeFornecedor },
+  });
+
+  try {
+    // "Antes" (bug): a chave usada para achar o fornecedor no dropdown era Profissional.codigo,
+    // vazio para este fornecedor — nenhuma correspondência é possível por ali.
+    assert.equal(profissional.codigo, null, "confirma a causa-raiz: Profissional.codigo vazio/nulo para este fornecedor");
+    const docsRegraAntiga = await prisma.medicao.findMany({ where: { profissional: { codigo: { in: [nomeFornecedor] } }, ciclo }, select: { id: true } });
+    assert.equal(docsRegraAntiga.length, 0, "a consulta antiga (só profissional.codigo) não encontrava nada para este fornecedor");
+
+    // "Depois" (correção): a chave de correspondência é o próprio colaboradorCodigo do SGC
+    // (aqui, o nome — exatamente como em produção), e a regra de existência inclui AGUARDANDO_NF.
+    const status = await listSgcStatus(ciclo);
+    assert.equal(bmExiste(status[nomeFornecedor].status), true, "regra corrigida deve considerar o BM existente em AGUARDANDO_NF");
+    assert.equal(bmExisteRegraAntiga(status[nomeFornecedor].status), true, "a regra antiga de status, isoladamente, teria aceitado — o bug era a chave de correspondência, não o status");
+
+    const docsRegraCorrigida = await getDocumentosMedidos({ aliases: [nomeFornecedor], ciclo });
+    assert.equal(docsRegraCorrigida.length, 1, "getDocumentosMedidos (alias por nome) deve encontrar o documento real");
+    assert.equal(docsRegraCorrigida[0].id, medicao.id);
+  } finally {
+    await prisma.sgcAprovacaoMedicao.delete({ where: { id: sgc.id } });
+    await prisma.medicao.delete({ where: { id: medicao.id } });
+    await prisma.profissional.delete({ where: { id: profissional.id } });
+    await prisma.projeto.delete({ where: { id: projeto.id } });
+  }
 });
 
 // ─── Matriz de status: existência do BM, não status transitório ──────────────────────────────
@@ -121,17 +131,39 @@ test("regra antiga (bug) excluía PENDENTE, REVISAO_SOLICITADA e PAGO — guarda
   assert.equal(bmExisteRegraAntiga("PAGO"), false);
 });
 
-// ─── Ciclo real 2608: nenhum fornecedor com BM existente fica de fora, e AGUARDANDO_ENVIO fica de fora ───
+// ─── Ciclo determinístico cobrindo TODOS os status reais + regra Financeiro ⊆ Evidências ──────
 
-test("ciclo real 2608: todo registro SGC com status != AGUARDANDO_ENVIO/CANCELADO aparece na função de listagem, e o inverso também é verdade", async () => {
-  const status = await listSgcStatus("2608");
-  const registrosReais = await prisma.sgcAprovacaoMedicao.findMany({ where: { ciclo: "2608" }, select: { colaboradorCodigo: true, status: true } });
-  assert.ok(registrosReais.length > 0, "esperava encontrar registros SGC reais no ciclo 2608");
+test("ciclo determinístico: todo registro SGC com status != AGUARDANDO_ENVIO/CANCELADO aparece na listagem, e Financeiro é sempre subconjunto de Evidências", async () => {
+  const suffix = `TESTE-EVID-MATRIZ-${Date.now()}`;
+  const ciclo = `TESTE-${suffix}`;
+  const statusReais = ["AGUARDANDO_ENVIO", "PENDENTE", "REVISAO_SOLICITADA", "AGUARDANDO_NF", "APROVADO", "PAGO", "CANCELADO"];
+  const financeiroStatuses = ["AGUARDANDO_NF", "APROVADO", "PAGO"];
 
-  for (const r of registrosReais) {
-    const deveAparecer = bmExiste(r.status);
-    const apareceNoMapa = status[r.colaboradorCodigo] !== undefined && bmExiste(status[r.colaboradorCodigo].status);
-    assert.equal(apareceNoMapa, deveAparecer, `fornecedor ${r.colaboradorCodigo} (status ${r.status}) divergiu da regra de existência`);
+  const criados = await Promise.all(
+    statusReais.map((status, i) =>
+      prisma.sgcAprovacaoMedicao.create({ data: { colaboradorCodigo: `${suffix}-F${i}`, ciclo, status } }),
+    ),
+  );
+
+  try {
+    const status = await listSgcStatus(ciclo);
+    const registrosReais = await prisma.sgcAprovacaoMedicao.findMany({ where: { ciclo }, select: { colaboradorCodigo: true, status: true } });
+    assert.equal(registrosReais.length, statusReais.length, "todos os status da matriz devem estar presentes no ciclo de teste");
+
+    for (const r of registrosReais) {
+      const deveAparecer = bmExiste(r.status);
+      const apareceNoMapa = status[r.colaboradorCodigo] !== undefined && bmExiste(status[r.colaboradorCodigo].status);
+      assert.equal(apareceNoMapa, deveAparecer, `fornecedor ${r.colaboradorCodigo} (status ${r.status}) divergiu da regra de existência`);
+    }
+
+    // Financeiro (AGUARDANDO_NF/APROVADO/PAGO) é sempre subconjunto de Evidências.
+    const noFinanceiro = registrosReais.filter((r) => financeiroStatuses.includes(r.status));
+    assert.equal(noFinanceiro.length, 3, "os 3 status de Financeiro devem estar cobertos por esta matriz");
+    for (const r of noFinanceiro) {
+      assert.equal(bmExiste(r.status), true, `${r.colaboradorCodigo} aparece no Financeiro mas a regra de Evidências o excluiria — as duas fontes devem concordar`);
+    }
+  } finally {
+    await prisma.sgcAprovacaoMedicao.deleteMany({ where: { id: { in: criados.map((c) => c.id) } } });
   }
 });
 
@@ -177,22 +209,5 @@ test("ciclo diferente para o mesmo colaboradorCodigo nunca mistura BMs entre cic
     assert.equal(bmExiste(statusB[codigo].status), false, "ciclo B (AGUARDANDO_ENVIO), mesmo colaboradorCodigo, não deveria ter BM existente");
   } finally {
     await prisma.sgcAprovacaoMedicao.deleteMany({ where: { ciclo: { in: [cicloA, cicloB] } } });
-  }
-});
-
-// ─── Consistência com Financeiro: mesma fonte (sgc_aprovacoes_medicao), nunca uma tabela paralela ───
-
-test("Financeiro (status in AGUARDANDO_NF/APROVADO/PAGO) é sempre um subconjunto de Evidências (status != AGUARDANDO_ENVIO/CANCELADO), em qualquer ciclo real que tenha dado nesse estado", async (t) => {
-  const financeiroStatuses = ["AGUARDANDO_NF", "APROVADO", "PAGO"];
-  // Não fixa um ciclo específico — o workflow operacional avança com o tempo (produção real), e o
-  // invariante testado (Financeiro ⊆ Evidências) precisa valer em qualquer ciclo, não só em 2608.
-  const registros = await prisma.sgcAprovacaoMedicao.findMany({ select: { colaboradorCodigo: true, ciclo: true, status: true } });
-  const noFinanceiro = registros.filter((r) => financeiroStatuses.includes(r.status));
-  if (noFinanceiro.length === 0) {
-    t.skip("nenhum registro real está em status de Financeiro (AGUARDANDO_NF/APROVADO/PAGO) neste momento — nada para comparar agora.");
-    return;
-  }
-  for (const r of noFinanceiro) {
-    assert.equal(bmExiste(r.status), true, `${r.colaboradorCodigo}/${r.ciclo} aparece no Financeiro mas a regra corrigida de Evidências o excluiria — as duas fontes devem concordar`);
   }
 });

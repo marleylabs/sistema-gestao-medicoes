@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import {
   AlertTriangle,
   AlertCircle,
@@ -79,6 +80,11 @@ type ColaboradorData = {
     equivalenteA1Horas: number; valorMedicao: number; percentualEmissao: number;
     numeroDocumento: string | null; contrato: string | null; tipo2: string | null;
     condicao: string | null; precoUnitario: number; valorMedido: number; obs: string | null;
+  }>;
+  /** Divergências que a Equipe descartou na conferência deste ciclo — fonte única de verdade é
+   * DivergenciaMedicao (mesma tabela usada em Pagamentos por Fornecedor), nunca uma cópia. */
+  documentosDescartados: Array<{
+    id: string; nrVale: string; formato: string; tipo: string; motivo: string;
   }>;
   sgc: {
     id: string | null;
@@ -249,9 +255,17 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
 
   const loadData = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
-    const res = await fetch("/api/colaborador/me");
-    setData(await res.json());
-    if (!opts?.silent) setLoading(false);
+    try {
+      const res = await fetch("/api/colaborador/me");
+      // Sem checar res.ok: uma resposta de erro (ex.: 401 numa janela curta de troca de sessão)
+      // tem o formato {error: "..."}, sem "sgc" — e todo o resto do componente lê data.sgc.status
+      // sem optional chaining, o que crashava com "Cannot read properties of undefined". Numa
+      // falha, mantém o último estado válido em tela (item já estabelecido nesta sessão: nunca
+      // apagar dados atuais por causa de uma consulta automática que falhou).
+      if (res.ok) setData(await res.json());
+    } finally {
+      if (!opts?.silent) setLoading(false);
+    }
   }, []);
 
   const loadMedicoes = useCallback(async () => {
@@ -547,13 +561,12 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     }, PRESENCE_HEARTBEAT_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
-  useEffect(() => {
-    if (data?.sgc.status !== "REVISAO_SOLICITADA") return;
-    const interval = setInterval(() => {
-      loadData({ silent: true });
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [data?.sgc.status, loadData]);
+  // Antes só reatualizava sozinho durante REVISAO_SOLICITADA — por isso o Portal ficava preso em
+  // "EM ANÁLISE" (statusConferencia=DIVERGENCIA) até a Equipe resolver e o fornecedor dar F5.
+  // Cobre qualquer estado não-terminal: PAGO/CANCELADO não têm mais nada para mudar sozinho.
+  const liveRefreshEnabled = !!data && !["PAGO", "CANCELADO"].includes(data.sgc.status);
+  const loadDataSilent = useCallback(() => { loadData({ silent: true }); }, [loadData]);
+  useLiveRefresh(loadDataSilent, { intervalMs: 5000, enabled: liveRefreshEnabled });
 
   useEffect(() => {
     if (data?.sgc.status !== "REVISAO_SOLICITADA") {
@@ -1068,6 +1081,32 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             </section>
           </div>
         </Card>
+
+        {/* ── Documentos não considerados (divergências descartadas pela Equipe) ──
+             Nunca usar a palavra "Divergência" aqui — regra de UX já estabelecida para o Portal.
+             Não renderiza nada se não houver nenhum documento descartado (sem card vazio). */}
+        {data.documentosDescartados.length > 0 && (
+          <Card className={`overflow-hidden ${isFinancialFollowUpStatus(data.sgc.status) ? "hidden" : ""}`}>
+            <div className="px-5 py-4">
+              <h2 className="text-sm font-bold text-[#1A1A1A]">Documentos não considerados</h2>
+              <p className="mt-0.5 text-sm text-[#555555]">
+                {data.documentosDescartados.length === 1
+                  ? "1 documento não foi considerado nesta medição."
+                  : `${data.documentosDescartados.length} documentos não foram considerados nesta medição.`}
+              </p>
+            </div>
+            <div className="grid gap-2 px-5 pb-5">
+              {data.documentosDescartados.map((d) => (
+                <div key={d.id} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Documento</p>
+                  <p className="font-technical text-sm font-semibold text-[#1A1A1A]">{d.nrVale}</p>
+                  <p className="mt-2 text-xs font-bold uppercase tracking-wide text-[#6B7280]">Motivo</p>
+                  <p className="text-sm text-[#555555]">{d.motivo}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {/* ── Documents (oculto no acompanhamento financeiro) ── */}
         <Card className={`overflow-hidden ${isFinancialFollowUpStatus(data.sgc.status) ? "hidden" : ""}`}>

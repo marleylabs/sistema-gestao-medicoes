@@ -4,6 +4,7 @@ import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, useCallbac
 import { ArrowLeft, Download, FileText, ImageIcon, MessageCircle, Mic, Paperclip, Search, Send, StopCircle, Users, X } from "lucide-react";
 import { Button } from "@/components/ui";
 import { shouldSendOnEnter } from "@/lib/chat-composer";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 
 type ChatConversa = {
   id: string;
@@ -439,15 +440,15 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!open) return;
+  // Antes só pollava com o widget ABERTO — contador/bolha ficavam parados enquanto o chat estava
+  // só fechado (bolha flutuante), exigindo F5 para saber que chegou mensagem nova. `loadConversas`
+  // (lista + unreadCount) agora atualiza sempre; `loadMessages` da conversa aberta continua restrito
+  // a quando o widget está aberto (não há histórico visível para atualizar quando fechado).
+  const tick = useCallback(() => {
     loadConversas();
-    const interval = setInterval(() => {
-      loadConversas();
-      if (selected?.id) loadMessages(selected.id);
-    }, 5000);
-    return () => clearInterval(interval);
+    if (open && selected?.id) loadMessages(selected.id);
   }, [loadConversas, loadMessages, open, selected?.id]);
+  useLiveRefresh(tick, { intervalMs: 5000, enabled: true });
 
   useEffect(() => {
     if (!open) return;

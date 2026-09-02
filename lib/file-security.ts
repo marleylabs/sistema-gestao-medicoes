@@ -1,3 +1,12 @@
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Valida o formato antes de usar um :id de rota numa query Prisma por UUID — sem isso, um id
+ * malformado (ex.: vindo de um link quebrado ou tentativa de scan) vira P2023 não tratado (500)
+ * em vez do 404 esperado. */
+export function isUuid(value: string) {
+  return UUID_PATTERN.test(value);
+}
+
 const IMAGE_MIME_BY_MAGIC = [
   { mime: "image/jpeg", matches: (buffer: Buffer) => buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff },
   { mime: "image/png", matches: (buffer: Buffer) => buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },

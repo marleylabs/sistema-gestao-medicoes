@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { safeDownloadName } from "@/lib/file-security";
+import { isUuid, safeDownloadName } from "@/lib/file-security";
 import { prisma } from "@/lib/prisma";
 import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
 
@@ -9,6 +9,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
   const { id } = await params;
+  if (!isUuid(id)) return NextResponse.json({ error: "Comprovante não encontrado." }, { status: 404 });
   const sgc = await (prisma.sgcAprovacaoMedicao as any).findUnique({
     where: { id },
     select: { colaboradorCodigo: true, comprovanteArquivo: true, comprovanteArquivoNome: true },

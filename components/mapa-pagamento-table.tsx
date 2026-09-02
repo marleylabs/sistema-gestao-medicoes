@@ -4,6 +4,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useMemo, useState } fro
 import { AlertTriangle, ArrowRight, Check, CheckCheck, Edit3, MessageCircle, Mic, Plus, RotateCcw, Search, Send, StopCircle, Trash2, X } from "lucide-react";
 import { Badge, BlurValue, Button, Card, Field, IconButton, Input, Select, Textarea } from "@/components/ui";
 import type { ContratoResumo, MapaPagamentoItem, Profissional } from "@/components/types";
+import { getMapaPagamentoDisplayStatus } from "@/lib/sgc-display-status";
 
 type Revisao = {
   id: string;
@@ -224,6 +225,7 @@ export function MapaPagamentoTable({
   sgcStatus = {},
   onEnviarBm,
   onRetornarBm,
+  onDivergenciaResolvida,
   ciclo = "2605",
 }: {
   itens: MapaPagamentoItem[];
@@ -237,6 +239,8 @@ export function MapaPagamentoTable({
   sgcStatus?: Record<string, SgcStatusEntry>;
   onEnviarBm?: (colaboradorCodigo: string) => Promise<void>;
   onRetornarBm?: (sgcId: string) => Promise<void>;
+  /** Refresh imediato de sgcStatus (fora deste componente) depois de Incluir/Descartar. */
+  onDivergenciaResolvida?: () => void;
   ciclo?: string;
 }) {
   const [search, setSearch]           = useState("");
@@ -244,9 +248,16 @@ export function MapaPagamentoTable({
   const [editingItem, setEditingItem] = useState<MapaPagamentoItem | null>(null);
   const [isCreating, setIsCreating]   = useState(false);
   const [saving, setSaving]           = useState(false);
+  const [paymentToast, setPaymentToast] = useState<string | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const [enviandoCodigo, setEnviandoCodigo] = useState<string | null>(null);
   const [retornandoId, setRetornandoId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!paymentToast) return;
+    const timer = setTimeout(() => setPaymentToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [paymentToast]);
 
   const alocacoesUnicas = useMemo(
     () => [...new Set(itens.map((i) => i.ato).filter(Boolean) as string[])].sort(),
@@ -275,7 +286,7 @@ export function MapaPagamentoTable({
       const cmp = an.localeCompare(bn, "pt-BR", { sensitivity: "base" });
       return sortOrder === "desc" ? -cmp : cmp;
     });
-  }, [itens, search, selectedCodigo, selectedContrato, sortOrder, status]);
+  }, [itens, search, selectedCodigo, selectedContrato, sortOrder]);
 
   const filterDescription = selectedContrato
     ? `${filteredItems.length} participantes alocados em ${selectedContrato}`
@@ -352,14 +363,20 @@ export function MapaPagamentoTable({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ...payload, ciclo }),
               });
-              if (!res.ok) throw new Error("Falha ao salvar pagamento.");
+              if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || "Não foi possível cadastrar o pagamento. Tente novamente.");
+              }
+              const wasCreating = !editingItem;
               setIsCreating(false);
               setEditingItem(null);
+              setPaymentToast(wasCreating ? "Pagamento cadastrado com sucesso." : "Pagamento atualizado com sucesso.");
               await onChanged?.();
             } finally {
               setSaving(false);
             }
           }}
+          onDivergenciaResolvida={onDivergenciaResolvida}
         />
       )}
 
@@ -402,7 +419,10 @@ export function MapaPagamentoTable({
               const enviando = enviandoCodigo === codigo;
               const isConcluido = ["APROVADO", "AGUARDANDO_NF", "PAGO"].includes(sgcStatusValue);
               const isPendente = sgcStatusValue === "PENDENTE";
-              const isDivergente = isPendente && sgcEntry?.statusConferencia === "DIVERGENCIA";
+              // Fonte única de verdade para "o que mostrar" (lib/sgc-display-status.ts) — nunca
+              // reconstruir esta regra localmente de novo (foi daí que veio o bug de status
+              // "DIVERGÊNCIA" preso mesmo depois de resolvida a última divergência pendente).
+              const isDivergente = getMapaPagamentoDisplayStatus(sgcStatusValue, sgcEntry?.statusConferencia) === "DIVERGENCIA";
               const podeEnviar = isAdmin && onEnviarBm && ["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA"].includes(sgcStatusValue) && temAlteracao && !isConcluido;
               const podeRetornar = isAdmin && onRetornarBm && sgcEntry?.id && ["PENDENTE", "REVISAO_SOLICITADA"].includes(sgcStatusValue);
 
@@ -561,6 +581,12 @@ export function MapaPagamentoTable({
           </tbody>
         </table>
       </div>
+
+      {paymentToast && (
+        <div className="fixed bottom-5 right-5 z-[60] rounded-lg bg-[#16A34A] px-4 py-3 text-sm font-semibold text-white shadow-lg">
+          {paymentToast}
+        </div>
+      )}
     </Card>
   );
 }
@@ -978,6 +1004,7 @@ function PaymentModal({
   alocacoes: alocacoesCiclo,
   onCancel,
   onSave,
+  onDivergenciaResolvida,
 }: {
   item: MapaPagamentoItem | null;
   ciclo: string;
@@ -987,6 +1014,9 @@ function PaymentModal({
   alocacoes: string[];
   onCancel: () => void;
   onSave: (payload: PaymentForm) => Promise<void>;
+  /** Chamado depois que Incluir/Descartar é confirmado com sucesso — deixa a linha de Pagamentos
+   * por Fornecedor (fora deste modal) atualizar o badge de status sem esperar o próximo polling. */
+  onDivergenciaResolvida?: () => void;
 }) {
   const [form, setForm] = useState<PaymentForm>(() => paymentForm(item));
   const [codigoQuery, setCodigoQuery] = useState(item?.projetistaCodigo ?? "");
@@ -1065,6 +1095,7 @@ function PaymentModal({
         return;
       }
       loadDivergencias();
+      onDivergenciaResolvida?.();
       // Documentos Medidos pode ter sido criado/atualizado — recarrega para refletir imediatamente.
       setDocsLoading(true);
       fetch(`/api/mapa-pagamento/documentos?codigo=${encodeURIComponent(codigo)}&ciclo=${encodeURIComponent(ciclo)}`)
@@ -1159,14 +1190,20 @@ function PaymentModal({
         const res = await fetch(`/api/mapa-pagamento/documentos/${doc.id}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error();
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || "Não foi possível salvar a linha de documento.");
+        }
         const updated = await res.json() as { id: string };
         setDocs((cur) => cur.map((d) => d._key === doc._key ? { ...d, id: updated.id, _dirty: false } : d));
       } else {
         const res = await fetch("/api/mapa-pagamento/documentos", {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error();
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || "Não foi possível salvar a linha de documento.");
+        }
         const created = await res.json() as { id: string };
         setDocs((cur) => cur.map((d) => d._key === doc._key ? { ...d, id: created.id, _dirty: false } : d));
       }
@@ -1186,14 +1223,30 @@ function PaymentModal({
     }
   }
 
+  const [savePaymentError, setSavePaymentError] = useState<string | null>(null);
+  const [savingPayment, setSavingPayment] = useState(false);
+
   async function handleSavePayment() {
-    const shouldUseLiquidTotal = valorPrevistoBase > 0 || totalDescontos > 0;
-    const finalForm = shouldUseLiquidTotal ? { ...form, valor: currencyInputValue(valorPrevistoLiquido) } : form;
-    const dirtyDocs = docs.filter((doc) => doc._dirty);
-    for (const doc of dirtyDocs) {
-      await saveDocLine(doc);
+    // Nunca deixar "Cadastrar"/"Salvar alterações" falhar em silêncio: antes, um erro ao salvar
+    // uma linha de Documento/Desconto (ex.: "Fornecedor não encontrado" quando o código digitado
+    // não bate com nenhum Profissional) virava uma promise rejeitada sem catch em nenhum lugar —
+    // o clique parecia simplesmente não fazer nada (bug real encontrado nesta sessão).
+    if (savingPayment) return; // duplo clique não dispara duas vezes
+    setSavingPayment(true);
+    setSavePaymentError(null);
+    try {
+      const shouldUseLiquidTotal = valorPrevistoBase > 0 || totalDescontos > 0;
+      const finalForm = shouldUseLiquidTotal ? { ...form, valor: currencyInputValue(valorPrevistoLiquido) } : form;
+      const dirtyDocs = docs.filter((doc) => doc._dirty);
+      for (const doc of dirtyDocs) {
+        await saveDocLine(doc);
+      }
+      await onSave(finalForm);
+    } catch (err) {
+      setSavePaymentError(err instanceof Error && err.message ? err.message : "Não foi possível cadastrar o pagamento. Tente novamente.");
+    } finally {
+      setSavingPayment(false);
     }
-    await onSave(finalForm);
   }
 
   useEffect(() => {
@@ -1341,7 +1394,16 @@ function PaymentModal({
                   className="h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] hover:border-[#D1D5DB] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
                   placeholder="Digite o ID ou nome…"
                   value={codigoQuery}
-                  onChange={(e) => { setCodigoQuery(e.target.value); setShowSuggestions(true); }}
+                  onChange={(e) => {
+                    // codigoQuery (texto visível) e form.projetistaCodigo (valor realmente
+                    // enviado) eram dois estados desacoplados — digitar sem clicar numa sugestão
+                    // deixava projetistaCodigo vazio, e Documentos/Descontos adicionados depois
+                    // falhavam (codigo ausente) sem nenhum aviso. Mantém os dois sincronizados
+                    // para digitação livre também valer.
+                    setCodigoQuery(e.target.value);
+                    update("projetistaCodigo", e.target.value);
+                    setShowSuggestions(true);
+                  }}
                   onFocus={() => setShowSuggestions(true)}
                   autoComplete="off"
                 />
@@ -1850,11 +1912,20 @@ function PaymentModal({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 border-t border-[#E5E7EB] px-6 py-4">
-          <Button variant="secondary" onClick={onCancel} disabled={saving}>Cancelar</Button>
-          <Button onClick={handleSavePayment} disabled={saving || docsSaving}>
-            {saving ? "Salvando…" : item ? "Salvar alterações" : "Cadastrar"}
-          </Button>
+        <div className="border-t border-[#E5E7EB] px-6 py-4">
+          {savePaymentError && (
+            <div className="mb-3 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] px-3 py-2 text-sm font-semibold text-[#AF1B1B]">
+              {savePaymentError}
+            </div>
+          )}
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={onCancel} disabled={saving || savingPayment}>Cancelar</Button>
+            <Button onClick={handleSavePayment} disabled={saving || savingPayment || docsSaving}>
+              {saving || savingPayment || docsSaving
+                ? (item ? "Salvando…" : "Cadastrando…")
+                : (item ? "Salvar alterações" : "Cadastrar")}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

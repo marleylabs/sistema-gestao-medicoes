@@ -8,7 +8,7 @@ import { selectCadastroForAuthenticatedUser } from "@/lib/cadastro-identity";
 
 export const CADASTRO_FORNECEDOR_SHEET = "CONTRATOS_ATIVOS";
 
-type CadastroRow = {
+export type CadastroRow = {
   statusContrato?: string | null;
   responsavel: string;
   cnpj: string;
@@ -252,6 +252,124 @@ async function findProfissionalCodigoByName(name: string) {
   })?.codigo ?? null;
 }
 
+/**
+ * Camada de serviço única para "gravar um CadastroFornecedor" — reusada pela importação XLSX
+ * (`importCadastrosFornecedores`, abaixo) E pelo cadastro manual do Painel Administrativo
+ * (`POST /api/admin/administrativo/fornecedores/manual`). As duas entradas (planilha e formulário)
+ * convergem para cá; a regra de identidade/duplicidade/criação de usuário nunca é reescrita duas
+ * vezes. CNPJ NUNCA é usado como identidade única (mais de um fornecedor pode compartilhar o mesmo
+ * CNPJ) — a chave real é `colaboradorCodigo` (resolvido a partir do nome do responsável, com
+ * fallback determinístico via `codigoFromName`), combinado com o próprio CNPJ só para achar um
+ * cadastro JÁ existente do MESMO colaborador (nunca para bloquear ou colapsar dois colaboradores
+ * diferentes entre si).
+ */
+export async function upsertCadastroFornecedor(row: CadastroRow) {
+  const codigoResponsavel = codigoFromName(row.responsavel);
+  let colaboradorCodigo = await findProfissionalCodigoByName(row.responsavel);
+  if (!colaboradorCodigo) colaboradorCodigo = codigoResponsavel;
+  const now = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.cadastroFornecedor.findFirst({
+      where: {
+        cnpjNormalizado: row.cnpjNormalizado,
+        OR: [
+          { colaboradorCodigo },
+          { colaboradorCodigo: codigoResponsavel },
+          { responsavel: { equals: row.responsavel, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, cnpjNormalizado: true },
+    });
+    const data = {
+      cnpjNormalizado: row.cnpjNormalizado,
+      colaboradorCodigo,
+      responsavel: row.responsavel,
+      razaoSocial: row.razaoSocial,
+      statusContrato: row.statusContrato,
+      objetoContrato: row.objetoContrato,
+      cargo: row.cargo,
+      cpf: encryptSensitive(row.cpf),
+      cnpj: encryptSensitive(formatCnpj(row.cnpjNormalizado)),
+      email: encryptSensitive(row.email),
+      telefone: encryptSensitive(row.telefone),
+      tipoCt: row.tipoCt,
+      tipoContrato: row.tipoContrato,
+      valorHora: row.valorHora,
+      valorA1Equivalente: row.valorA1Equivalente,
+      valorDocumento: row.valorDocumento,
+      valorCondicaoFixa: row.valorCondicaoFixa,
+      inicio: row.inicio,
+      final: row.final,
+      statusCadastro: row.statusCadastro,
+      primeiroAditivo: row.primeiroAditivo,
+      segundoAditivo: row.segundoAditivo,
+      rawPayload: row.rawPayload,
+    };
+
+    let cadastroId: string;
+    if (existing) {
+      await tx.cadastroFornecedor.update({ where: { id: existing.id }, data: { ...data, updatedAt: now } });
+      cadastroId = existing.id;
+    } else {
+      const created = await tx.cadastroFornecedor.create({ data });
+      cadastroId = created.id;
+    }
+
+    await tx.profissional.upsert({
+      where: { nome: colaboradorCodigo },
+      create: {
+        nome: colaboradorCodigo,
+        codigo: colaboradorCodigo,
+        nomeCompleto: row.responsavel,
+        cpf: encryptSensitive(row.cpf),
+        cnpj: encryptSensitive(formatCnpj(row.cnpjNormalizado)),
+        email: encryptSensitive(row.email),
+        razaoSocial: row.razaoSocial,
+        funcao: row.cargo,
+      },
+      update: {
+        codigo: colaboradorCodigo,
+        nomeCompleto: row.responsavel,
+        cpf: encryptSensitive(row.cpf),
+        cnpj: encryptSensitive(formatCnpj(row.cnpjNormalizado)),
+        email: encryptSensitive(row.email),
+        razaoSocial: row.razaoSocial,
+        funcao: row.cargo,
+        updatedAt: now,
+      },
+    });
+
+    let usuarioCriado: { usuario: string; nome: string; senha: string } | null = null;
+    const existingUser = await tx.usuario.findFirst({
+      where: { perfil: "COLABORADOR", nome: { equals: row.responsavel, mode: "insensitive" } },
+      select: { id: true, usuario: true, excluidoAt: true },
+    });
+    if (!existingUser) {
+      const senha = generateTempPassword();
+      const usuario = await generateUniqueInternalAccessCode(tx);
+      await tx.usuario.create({
+        data: {
+          usuario,
+          nome: row.responsavel,
+          senhaHash: await hashPassword(senha),
+          senhaTemporaria: senha,
+          primeiroLogin: true,
+          perfil: "COLABORADOR",
+        },
+      });
+      usuarioCriado = { usuario, nome: row.responsavel, senha };
+    } else if (existingUser.excluidoAt) {
+      await tx.usuario.update({
+        where: { id: existingUser.id },
+        data: { nome: row.responsavel, ativo: true, excluidoAt: null, perfil: "COLABORADOR", updatedAt: now },
+      });
+    }
+
+    return { cadastroId, colaboradorCodigo, created: !existing, usuarioCriado };
+  });
+}
+
 export async function importCadastrosFornecedores(buffer: Buffer) {
   const rows = parseCadastroFornecedorWorkbook(buffer);
   let atualizados = 0;
@@ -260,116 +378,13 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
   const senhasTemporarias: { usuario: string; nome: string; senha: string }[] = [];
 
   for (const row of rows) {
-    const codigoResponsavel = codigoFromName(row.responsavel);
-    let colaboradorCodigo = await findProfissionalCodigoByName(row.responsavel);
-    if (!colaboradorCodigo) colaboradorCodigo = codigoResponsavel;
-    const now = new Date();
-
-    await prisma.$transaction(async (tx) => {
-      const existingByResponsavel = await tx.cadastroFornecedor.findFirst({
-        where: {
-          cnpjNormalizado: row.cnpjNormalizado,
-          OR: [
-            { colaboradorCodigo },
-            { colaboradorCodigo: codigoResponsavel },
-            { responsavel: { equals: row.responsavel, mode: "insensitive" } },
-          ],
-        },
-        select: { id: true, cnpjNormalizado: true },
-      });
-      const existing = existingByResponsavel;
-      const data = {
-        cnpjNormalizado: row.cnpjNormalizado,
-        colaboradorCodigo,
-        responsavel: row.responsavel,
-        razaoSocial: row.razaoSocial,
-        statusContrato: row.statusContrato,
-        objetoContrato: row.objetoContrato,
-        cargo: row.cargo,
-        cpf: encryptSensitive(row.cpf),
-        cnpj: encryptSensitive(formatCnpj(row.cnpjNormalizado)),
-        email: encryptSensitive(row.email),
-        telefone: encryptSensitive(row.telefone),
-        tipoCt: row.tipoCt,
-        tipoContrato: row.tipoContrato,
-        valorHora: row.valorHora,
-        valorA1Equivalente: row.valorA1Equivalente,
-        valorDocumento: row.valorDocumento,
-        valorCondicaoFixa: row.valorCondicaoFixa,
-        inicio: row.inicio,
-        final: row.final,
-        statusCadastro: row.statusCadastro,
-        primeiroAditivo: row.primeiroAditivo,
-        segundoAditivo: row.segundoAditivo,
-        rawPayload: row.rawPayload,
-      };
-
-      if (existing) {
-        await tx.cadastroFornecedor.update({
-          where: { id: existing.id },
-          data: {
-            ...data,
-            updatedAt: now,
-          },
-        });
-      } else {
-        await tx.cadastroFornecedor.create({ data });
-      }
-      if (existing) atualizados += 1;
-      else criados += 1;
-
-      await tx.profissional.upsert({
-        where: { nome: colaboradorCodigo },
-        create: {
-          nome: colaboradorCodigo,
-          codigo: colaboradorCodigo,
-          nomeCompleto: row.responsavel,
-          cpf: encryptSensitive(row.cpf),
-          cnpj: encryptSensitive(formatCnpj(row.cnpjNormalizado)),
-          email: encryptSensitive(row.email),
-          razaoSocial: row.razaoSocial,
-          funcao: row.cargo,
-        },
-        update: {
-          codigo: colaboradorCodigo,
-          nomeCompleto: row.responsavel,
-          cpf: encryptSensitive(row.cpf),
-          cnpj: encryptSensitive(formatCnpj(row.cnpjNormalizado)),
-          email: encryptSensitive(row.email),
-          razaoSocial: row.razaoSocial,
-          funcao: row.cargo,
-          updatedAt: now,
-        },
-      });
-
-      {
-        const existingUser = await tx.usuario.findFirst({
-          where: { perfil: "COLABORADOR", nome: { equals: row.responsavel, mode: "insensitive" } },
-          select: { id: true, usuario: true, excluidoAt: true },
-        });
-        if (!existingUser) {
-          const senha = generateTempPassword();
-          const usuario = await generateUniqueInternalAccessCode(tx);
-          await tx.usuario.create({
-            data: {
-              usuario,
-              nome: row.responsavel,
-              senhaHash: await hashPassword(senha),
-              senhaTemporaria: senha,
-              primeiroLogin: true,
-              perfil: "COLABORADOR",
-            },
-          });
-          usuariosCriados += 1;
-          senhasTemporarias.push({ usuario, nome: row.responsavel, senha });
-        } else if (existingUser.excluidoAt) {
-          await tx.usuario.update({
-            where: { id: existingUser.id },
-            data: { nome: row.responsavel, ativo: true, excluidoAt: null, perfil: "COLABORADOR", updatedAt: now },
-          });
-        }
-      }
-    });
+    const resultado = await upsertCadastroFornecedor(row);
+    if (resultado.created) criados += 1;
+    else atualizados += 1;
+    if (resultado.usuarioCriado) {
+      usuariosCriados += 1;
+      senhasTemporarias.push(resultado.usuarioCriado);
+    }
   }
 
   return { total: rows.length, criados, atualizados, usuariosCriados, senhasTemporarias };

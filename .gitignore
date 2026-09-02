@@ -4,6 +4,12 @@ __pycache__/
 .env
 .env.local
 .env*.local
+.env.test
+
+# Artefatos do Playwright (screenshots/traces de falha, relatório HTML) — nunca versionar.
+test-results/
+playwright-report/
+blob-report/
 .auth-bootstrap.txt
 node_modules/
 .next/

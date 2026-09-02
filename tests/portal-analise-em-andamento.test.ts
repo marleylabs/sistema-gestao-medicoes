@@ -65,8 +65,14 @@ test("Portal do Fornecedor: não expõe quantidade de divergências nem detalhes
 });
 
 test("Equipe de Medição (Pagamentos por Fornecedor / mapa-pagamento-table.tsx) continua usando DIVERGENCIA sem alteração", () => {
-  const source = readSource("components/mapa-pagamento-table.tsx");
-  assert.match(source, /statusConferencia === "DIVERGENCIA"/);
+  // A comparação foi centralizada em lib/sgc-display-status.ts (BUG 1B desta auditoria — o
+  // status visual ficava preso em DIVERGÊNCIA porque a regra estava duplicada/local demais para
+  // ser reaproveitada de forma confiável) — mapa-pagamento-table.tsx agora consome o helper em vez
+  // de reescrever a comparação, e o próprio helper continua expondo DIVERGENCIA sem alteração.
+  const tableSource = readSource("components/mapa-pagamento-table.tsx");
+  assert.match(tableSource, /getMapaPagamentoDisplayStatus\(sgcStatusValue, sgcEntry\?\.statusConferencia\)/);
+  const helperSource = readSource("lib/sgc-display-status.ts");
+  assert.match(helperSource, /statusConferencia === "DIVERGENCIA"/);
 });
 
 test("BM_DIVERGENCE (e-mail para a Equipe de Medição) não foi alterado por esta tarefa", () => {

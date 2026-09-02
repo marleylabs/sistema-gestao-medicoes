@@ -1,7 +1,12 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { AuthUser } from "@/lib/session";
 import { normalizeAccessUsername, toColaboradorCodigo } from "@/lib/usuario-format";
 import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
+
+function isUniqueConstraintError(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+}
 
 export function avatarUrlByUserId(id: string, updatedAt: Date | null) {
   return updatedAt ? `/api/usuario/avatar?userId=${encodeURIComponent(id)}&v=${updatedAt.getTime()}` : null;
@@ -128,34 +133,47 @@ export async function importSgcChatsForUser(user: AuthUser) {
     if (user.perfil !== "COLABORADOR" && !isInternalPerfil(user.perfil)) continue;
 
     const chave = `DIRECT:${[fornecedorId, medicaoAutorId].sort().join(":")}`;
-    const conversa = await prisma.chatConversa.upsert({
-      where: { chave },
-      create: {
-        chave,
-        tipo: "DIRETA",
-        participantes: {
-          create: [
-            { usuarioId: fornecedorId },
-            { usuarioId: medicaoAutorId },
-          ],
+    let conversa: { id: string };
+    try {
+      conversa = await prisma.chatConversa.upsert({
+        where: { chave },
+        create: {
+          chave,
+          tipo: "DIRETA",
+          participantes: {
+            create: [
+              { usuarioId: fornecedorId },
+              { usuarioId: medicaoAutorId },
+            ],
+          },
+          updatedAt: log.createdAt,
+          createdAt: log.createdAt,
         },
-        updatedAt: log.createdAt,
-        createdAt: log.createdAt,
-      },
-      update: { updatedAt: log.createdAt },
-      select: { id: true },
-    });
+        update: { updatedAt: log.createdAt },
+        select: { id: true },
+      });
+    } catch (err) {
+      // Upsert não é atômico contra criação concorrente (ex.: GeneralChatWidget e esta mesma rota
+      // sendo pollados por múltiplas abas/painéis ao mesmo tempo) — se outra requisição já criou a
+      // conversa entre o SELECT e o INSERT deste upsert, a linha já existe: apenas a reutiliza.
+      if (!isUniqueConstraintError(err)) throw err;
+      conversa = await prisma.chatConversa.findUniqueOrThrow({ where: { chave }, select: { id: true } });
+    }
 
-    await prisma.chatMensagem.upsert({
-      where: { origem: `sgc:${log.id}` },
-      create: {
-        conversaId: conversa.id,
-        autorId,
-        texto: log.observacao?.trim() || "Mensagem",
-        origem: `sgc:${log.id}`,
-        createdAt: log.createdAt,
-      },
-      update: {},
-    });
+    try {
+      await prisma.chatMensagem.upsert({
+        where: { origem: `sgc:${log.id}` },
+        create: {
+          conversaId: conversa.id,
+          autorId,
+          texto: log.observacao?.trim() || "Mensagem",
+          origem: `sgc:${log.id}`,
+          createdAt: log.createdAt,
+        },
+        update: {},
+      });
+    } catch (err) {
+      if (!isUniqueConstraintError(err)) throw err;
+    }
   }
 }

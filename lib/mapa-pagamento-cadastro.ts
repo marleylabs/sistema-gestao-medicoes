@@ -79,6 +79,22 @@ function samePersonMatch(left: string | null | undefined, right: string | null |
   return false;
 }
 
+/**
+ * Comparação EXATA (sem tolerância a "erro de digitação") — usada só para `colaboradorCodigo`.
+ * Bug real encontrado via E2E: `samePersonMatch` (fuzzy, feito para nomes digitados por humanos)
+ * tratava dois códigos sequenciais como "a mesma pessoa" sempre que diferiam por 1-2 caracteres
+ * (ex.: P0900004 vs P0900005 — distância de edição 1, dentro da tolerância de 2 para strings
+ * ≥8 caracteres). Como colaborador_codigo é atribuído sequencialmente, códigos adjacentes são o
+ * caso comum, não a exceção — isso fazia dois fornecedores DIFERENTES colapsarem para o cadastro
+ * de um só em "Pagamentos por Fornecedor" (nome/CNPJ/Tipo CT errados exibidos), mesmo com os dados
+ * corretos no banco. Um identificador nunca pode ser comparado por tolerância a erro.
+ */
+function sameCodigoMatch(left: string | null | undefined, right: string | null | undefined) {
+  const a = normalizeCadastroMatch(left);
+  const b = normalizeCadastroMatch(right);
+  return !!a && !!b && a === b;
+}
+
 function cadastroOverride(result: CadastroFornecedorMatch | undefined) {
   if (!result) return null;
   const { cadastro, match } = result;
@@ -106,7 +122,7 @@ export function cadastroFornecedorByMapaItem(item: any, cadastros: CadastroForne
   const cpfCnpj = onlyDigits(decryptSensitive(item.cpfCnpj));
 
   const byCodigo = cadastros.find((cadastro) =>
-    codigoCandidates.some((codigo) => samePersonMatch(cadastro.colaboradorCodigo, codigo)),
+    codigoCandidates.some((codigo) => sameCodigoMatch(cadastro.colaboradorCodigo, codigo)),
   );
   if (byCodigo) return { cadastro: byCodigo, match: "codigo" };
 
