@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Copy, Download, Edit3, FileSpreadsheet, Plus, RefreshCw, Save, Upload, X } from "lucide-react";
+import { AlertTriangle, Copy, Download, Edit3, FileSpreadsheet, Plus, RefreshCw, Save, Trash2, Upload, X } from "lucide-react";
 import { Button, Card, IconButton, Input, PageContainer, PageHeader } from "@/components/ui";
 
 type CadastroFornecedor = {
@@ -44,6 +44,17 @@ type ImportResult = {
 };
 
 type StatusFilter = "todos" | "vencidos" | "vencendo" | "pendencias";
+
+type AdminDeletionResult = {
+  requested: number;
+  administrativeDeleted: number;
+  usersDeactivated: number;
+  usersDeleted: number;
+  professionalsDeleted: number;
+  professionalsPreservedForHistory: number;
+  measurementHistoryPreserved: number;
+  errors: { id: string; error: string }[];
+};
 
 function dateInputValue(value: string | null) {
   if (!value) return "";
@@ -472,27 +483,67 @@ function NovoFornecedorModal({
   );
 }
 
-function CadastroCard({ item, onEdit }: { item: CadastroFornecedor; onEdit: (item: CadastroFornecedor) => void }) {
+function CadastroCard({
+  item,
+  onEdit,
+  onDelete,
+  isAdmin,
+  selected,
+  onToggleSelected,
+}: {
+  item: CadastroFornecedor;
+  onEdit: (item: CadastroFornecedor) => void;
+  onDelete: (item: CadastroFornecedor) => void;
+  isAdmin: boolean;
+  selected: boolean;
+  onToggleSelected: (id: string) => void;
+}) {
   return (
-    <Card className={`flex h-full min-h-[168px] flex-col overflow-hidden ${item.pendencias.length ? "border-[#FCA5A5]" : ""}`}>
+    <Card className={`flex h-full min-h-[168px] flex-col overflow-hidden ${item.pendencias.length ? "border-[#FCA5A5]" : ""} ${selected ? "ring-2 ring-[#AF1B1B]/40" : ""}`}>
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-sm font-bold text-[#1A1A1A]">{displayText(item.responsavel)}</h3>
-            <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ${toneClass[item.validadeTone]}`}>
-              {item.validadeLabel}
-            </span>
+        <div className="flex min-w-0 items-start gap-3">
+          {/* Checkbox de seleção em massa só faz sentido para quem pode excluir (só ADMIN). */}
+          {isAdmin && (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => onToggleSelected(item.id)}
+              aria-label={`Selecionar ${item.responsavel}`}
+              className="mt-1 h-3.5 w-3.5 shrink-0 cursor-pointer accent-[#AF1B1B]"
+            />
+          )}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-sm font-bold text-[#1A1A1A]">{displayText(item.responsavel)}</h3>
+              <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ${toneClass[item.validadeTone]}`}>
+                {item.validadeLabel}
+              </span>
+            </div>
+            <p className="mt-1 truncate text-xs text-[#6B7280]">{displayText(item.razaoSocial)}</p>
           </div>
-          <p className="mt-1 truncate text-xs text-[#6B7280]">{displayText(item.razaoSocial)}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => onEdit(item)}
-          className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2 text-xs font-semibold text-[#555555] transition hover:border-[#2563EB] hover:text-[#2563EB]"
-        >
-          <Edit3 size={13} />
-          Editar
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onEdit(item)}
+            className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2 text-xs font-semibold text-[#555555] transition hover:border-[#2563EB] hover:text-[#2563EB]"
+          >
+            <Edit3 size={13} />
+            Editar
+          </button>
+          {/* Botão de exclusão só é visível para ADMIN — outros perfis do módulo Administrativo
+              (ex.: ADMINISTRATIVO) nem veem a opção, embora a API já rejeite com 403 de qualquer forma. */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => onDelete(item)}
+              title="Excluir fornecedor definitivamente"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#E5E7EB] bg-white text-[#94A3B8] transition hover:border-[#DC2626] hover:text-[#DC2626]"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid flex-1 content-start gap-x-8 gap-y-3 px-5 py-4 text-xs sm:grid-cols-2">
@@ -543,7 +594,112 @@ function CadastroCard({ item, onEdit }: { item: CadastroFornecedor; onEdit: (ite
   );
 }
 
-export function AdministrativoPanel() {
+// Confirmação forte por digitação — só exigida para exclusão em massa (2+ itens); exclusão
+// individual usa UX mais simples (nome/CNPJ/ID visíveis já é confirmação suficiente).
+const BULK_CONFIRM_THRESHOLD = 2;
+
+function DeleteConfirmModal({
+  items,
+  onClose,
+  onDone,
+}: {
+  items: CadastroFornecedor[];
+  onClose: () => void;
+  onDone: (result: AdminDeletionResult) => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const isBulk = items.length >= BULK_CONFIRM_THRESHOLD;
+  const confirmPhrase = `EXCLUIR ${items.length}`;
+  const [confirmText, setConfirmText] = useState("");
+  const canConfirm = !isBulk || confirmText.trim().toUpperCase() === confirmPhrase;
+
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
+  }, []);
+
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (e.key === "Escape" && !deleting) onClose();
+    }
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [deleting, onClose]);
+
+  async function confirmDelete() {
+    // Duplo clique/duplo submit não pode disparar duas exclusões em paralelo.
+    if (deleting || !canConfirm) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/admin/administrativo/fornecedores/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: items.map((item) => item.id) }),
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok || !payload) {
+        onDone({
+          requested: items.length, administrativeDeleted: 0, usersDeactivated: 0, usersDeleted: 0,
+          professionalsDeleted: 0, professionalsPreservedForHistory: 0, measurementHistoryPreserved: 0,
+          errors: [{ id: "-", error: payload?.error ?? "Não foi possível excluir os fornecedores selecionados." }],
+        });
+        return;
+      }
+      onDone(payload as AdminDeletionResult);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
+      <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[90vw]">
+        <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
+          <h2 className="text-sm font-bold text-[#1A1A1A]">
+            {isBulk ? `Excluir ${items.length} fornecedores definitivamente?` : "Excluir fornecedor definitivamente?"}
+          </h2>
+          <IconButton onClick={onClose} title="Fechar" disabled={deleting}><X size={16} /></IconButton>
+        </div>
+        <div className="grid gap-3 p-5 text-sm text-[#374151]">
+          <p className="text-xs text-[#6B7280]">
+            {isBulk
+              ? "Os cadastros administrativos e acessos selecionados serão removidos. Registros históricos da Equipe de Medição serão preservados."
+              : "O cadastro administrativo e o acesso deste fornecedor serão removidos. Informações históricas relacionadas a medições, BMs, pagamentos, notas fiscais e comprovantes serão preservadas."}
+          </p>
+          <div className="max-h-40 overflow-y-auto rounded-lg bg-[#F8FAFC] p-2 ring-1 ring-[#E2E8F0]">
+            {items.map((item) => (
+              <div key={item.id} className="grid gap-0.5 border-b border-[#E5E7EB] px-1.5 py-1.5 text-xs last:border-0">
+                <p className="font-semibold text-[#1F2937]">{displayText(item.responsavel)}</p>
+                <p className="font-technical text-[11px] text-[#64748B]">CNPJ {item.cnpj ?? "-"} · ID {compactId(item.id)}</p>
+              </div>
+            ))}
+          </div>
+          {isBulk && (
+            <label className="grid gap-1 text-xs font-semibold text-[#374151]">
+              Digite <span className="font-technical text-[#AF1B1B]">{confirmPhrase}</span> para habilitar a exclusão
+              <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder={confirmPhrase} autoFocus />
+            </label>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
+          <Button variant="secondary" onClick={onClose} disabled={deleting}>Cancelar</Button>
+          <button
+            type="button"
+            onClick={confirmDelete}
+            disabled={deleting || !canConfirm}
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#DC2626] px-4 text-xs font-bold text-white shadow-sm transition hover:bg-[#B91C1C] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Trash2 size={14} />
+            {deleting ? "Excluindo..." : "Excluir definitivamente"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) {
   const [items, setItems] = useState<CadastroFornecedor[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -556,6 +712,10 @@ export function AdministrativoPanel() {
   const [selectedFornecedor, setSelectedFornecedor] = useState<CadastroFornecedor | null>(null);
   const [creatingFornecedor, setCreatingFornecedor] = useState(false);
   const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Guarda tanto a exclusão individual (1 item, disparada pelo botão da lixeira no card) quanto a
+  // exclusão em massa (a seleção inteira) — o mesmo modal/endpoint atende os dois casos.
+  const [deleteTargets, setDeleteTargets] = useState<CadastroFornecedor[] | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -566,7 +726,14 @@ export function AdministrativoPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch("/api/admin/administrativo/fornecedores");
-    if (res.ok) setItems(await res.json());
+    if (res.ok) {
+      const data: CadastroFornecedor[] = await res.json();
+      setItems(data);
+      // Nunca mantém selecionado um ID que não existe mais na listagem (ex.: excluído por outra
+      // sessão, ou por uma exclusão em massa recém-concluída).
+      const validIds = new Set(data.map((item) => item.id));
+      setSelectedIds((prev) => new Set([...prev].filter((id) => validIds.has(id))));
+    }
     setLoading(false);
   }, []);
 
@@ -585,6 +752,59 @@ export function AdministrativoPanel() {
       return matchesSearch && matchesStatus;
     });
   }, [items, search, statusFilter]);
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((item) => selectedIds.has(item.id));
+  // Selecionar/desmarcar "todos" respeita o conjunto atualmente filtrado/pesquisado (item
+  // explícito do pedido) — mas a seleção em si sobrevive à troca de filtro/busca (trocar o filtro
+  // não perde seleção por engano); a barra de ações em massa e o modal operam sobre TODA a
+  // seleção real, mesmo itens que saíram do filtro atual.
+  const selectedItems = items.filter((item) => selectedIds.has(item.id));
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllFiltered() {
+    setSelectedIds((prev) => {
+      if (allFilteredSelected) {
+        const next = new Set(prev);
+        for (const item of filtered) next.delete(item.id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const item of filtered) next.add(item.id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  function handleDeletionDone(resultado: AdminDeletionResult) {
+    setDeleteTargets(null);
+    clearSelection();
+    // Identidade histórica preservada NUNCA é apresentada como erro — é o resultado esperado e
+    // correto da política (ver lib/cadastro-fornecedor.ts:deleteFornecedoresDefinitivamente).
+    const partes: string[] = [];
+    if (resultado.administrativeDeleted > 0) {
+      partes.push(`${resultado.administrativeDeleted} cadastro(s) administrativo(s) removido(s)`);
+    }
+    if (resultado.professionalsPreservedForHistory > 0) {
+      partes.push(
+        `${resultado.professionalsPreservedForHistory} identidade(s) histórica(s) preservada(s) por possuírem registros de medição`,
+      );
+    }
+    if (resultado.errors.length > 0) partes.push(`${resultado.errors.length} falharam por erro técnico`);
+    const mensagem = partes.length > 0 ? `${partes.join(". ")}.` : "Nenhum fornecedor foi excluído.";
+    setToast({ tone: resultado.errors.length === 0 ? "success" : "error", message: mensagem });
+    load();
+  }
 
   const vencidos = items.filter((item) => item.diasAteVencimento !== null && item.diasAteVencimento < 0).length;
   const vencendo = items.filter((item) => item.diasAteVencimento !== null && item.diasAteVencimento >= 0 && item.diasAteVencimento <= 30).length;
@@ -734,6 +954,17 @@ export function AdministrativoPanel() {
           ))}
         </div>
         <Input placeholder="Buscar por responsável, razão social, CNPJ ou e-mail..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        {isAdmin && filtered.length > 0 && (
+          <label className="flex w-fit items-center gap-2 text-xs font-semibold text-[#555555]">
+            <input
+              type="checkbox"
+              checked={allFilteredSelected}
+              onChange={toggleSelectAllFiltered}
+              className="h-3.5 w-3.5 cursor-pointer accent-[#AF1B1B]"
+            />
+            Selecionar todos {statusFilter !== "todos" || search.trim() ? "(filtrados)" : ""}
+          </label>
+        )}
       </Card>
 
       {loading ? (
@@ -742,7 +973,17 @@ export function AdministrativoPanel() {
         <Card className="p-6 text-sm text-[#6B7280]">Nenhum cadastro encontrado.</Card>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {filtered.map((item) => <CadastroCard key={item.id} item={item} onEdit={setSelectedFornecedor} />)}
+          {filtered.map((item) => (
+            <CadastroCard
+              key={item.id}
+              item={item}
+              onEdit={setSelectedFornecedor}
+              onDelete={(target) => setDeleteTargets([target])}
+              isAdmin={isAdmin}
+              selected={selectedIds.has(item.id)}
+              onToggleSelected={toggleSelected}
+            />
+          ))}
         </div>
       )}
 
@@ -773,6 +1014,37 @@ export function AdministrativoPanel() {
             await load();
           }}
           onError={(message) => setToast({ tone: "error", message })}
+        />
+      )}
+
+      {isAdmin && selectedItems.length > 0 && (
+        <div className="fixed bottom-5 left-1/2 z-[55] flex -translate-x-1/2 items-center gap-3 rounded-xl border border-[#E5E7EB] bg-white px-4 py-3 shadow-lg">
+          <span className="text-xs font-bold text-[#1A1A1A]">
+            {selectedItems.length} {selectedItems.length === 1 ? "fornecedor selecionado" : "fornecedores selecionados"}
+          </span>
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="inline-flex h-8 items-center rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#555555] transition hover:border-[#2563EB] hover:text-[#2563EB]"
+          >
+            Cancelar seleção
+          </button>
+          <button
+            type="button"
+            onClick={() => setDeleteTargets(selectedItems)}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#DC2626] px-3 text-xs font-bold text-white transition hover:bg-[#B91C1C]"
+          >
+            <Trash2 size={13} />
+            Excluir definitivamente
+          </button>
+        </div>
+      )}
+
+      {deleteTargets && (
+        <DeleteConfirmModal
+          items={deleteTargets}
+          onClose={() => setDeleteTargets(null)}
+          onDone={handleDeletionDone}
         />
       )}
 

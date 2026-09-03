@@ -774,7 +774,7 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       )}
 
       {section === "administrativo" && (isFullAdmin || isAdministrativo) && (
-        <AdministrativoPanel />
+        <AdministrativoPanel isAdmin={isFullAdmin} />
       )}
 
       {selectedAlerta && (

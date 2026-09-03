@@ -58,6 +58,10 @@ export const test = base.extend<{ forEachTest: void }>({
         // corresponde a nenhum Profissional real — comportamento intencional sob teste em
         // e2e/bm-available-fornecedor-manual.spec.ts.
         if (url.endsWith("/api/mapa-pagamento") && response.status() === 400) return;
+        // 403/400 de /api/admin/administrativo/fornecedores/bulk-delete são os retornos CORRETOS
+        // para perfil não autorizado (só ADMIN) e payload vazio/inválido — comportamento
+        // intencional sob teste em e2e/administrativo-fornecedor-dedupe.spec.ts.
+        if (url.endsWith("/api/admin/administrativo/fornecedores/bulk-delete") && (response.status() === 403 || response.status() === 400)) return;
         networkErrors.push(`${response.status()} ${response.request().method()} ${url}`);
       });
 

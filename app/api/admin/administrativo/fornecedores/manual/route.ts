@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdministrativo } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { isValidEmail } from "@/lib/usuario-email-policy";
-import { normalizeCnpjDigits, serializeCadastroFornecedor, upsertCadastroFornecedor, type CadastroRow } from "@/lib/cadastro-fornecedor";
+import { FornecedorIdentityConflictError, FornecedorIdentityDeletedError, normalizeCnpjDigits, serializeCadastroFornecedor, upsertCadastroFornecedor, type CadastroRow } from "@/lib/cadastro-fornecedor";
 
 function text(value: unknown): string | null {
   const cleaned = typeof value === "string" ? value.trim() : "";
@@ -77,7 +77,36 @@ export async function POST(request: NextRequest) {
     rawPayload: { origem: "manual" },
   };
 
-  const resultado = await upsertCadastroFornecedor(row);
+  let resultado: Awaited<ReturnType<typeof upsertCadastroFornecedor>>;
+  try {
+    resultado = await upsertCadastroFornecedor(row);
+  } catch (error) {
+    if (error instanceof FornecedorIdentityConflictError) {
+      // Mesma regra da importação em lote (lib/cadastro-fornecedor.ts) — nunca escolhe um
+      // candidato ambíguo sozinho, nem aqui nem lá. O Administrativo recebe os candidatos para
+      // decidir manualmente (ex.: editar o cadastro existente em vez de criar um novo).
+      return NextResponse.json(
+        {
+          error: error.message,
+          conflito: error.candidates.map((c) => ({
+            cadastroId: c.cadastroId,
+            colaboradorCodigo: c.colaboradorCodigo,
+            responsavel: c.responsavel,
+            email: c.email,
+            telefone: c.telefone,
+            razaoSocial: c.razaoSocial,
+          })),
+        },
+        { status: 409 },
+      );
+    }
+    if (error instanceof FornecedorIdentityDeletedError) {
+      // Identidade excluída definitivamente pelo ADMIN — nunca reativada automaticamente, nem
+      // pela importação em lote nem pelo cadastro manual avulso (mesma regra).
+      return NextResponse.json({ error: error.message, colaboradorCodigoExcluido: error.colaboradorCodigo }, { status: 409 });
+    }
+    throw error;
+  }
   const cadastro = await prisma.cadastroFornecedor.findUniqueOrThrow({ where: { id: resultado.cadastroId } });
 
   return NextResponse.json(

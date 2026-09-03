@@ -8,6 +8,10 @@ export async function GET() {
   if (admin.response) return admin.response;
 
   const profissionais = await prisma.profissional.findMany({
+    // Seletor operacional (Novo Pagamento/Editar Pagamento) — identidades excluídas
+    // definitivamente pelo ADMIN (Profissional.deletedAt) nunca podem ser oferecidas para um
+    // processo NOVO. Estado explícito e real, não uma heurística sobre campos vazios.
+    where: { deletedAt: null },
     orderBy: { nome: "asc" },
     select: {
       id: true,

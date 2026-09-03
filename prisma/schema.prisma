@@ -188,11 +188,21 @@ model Profissional {
   email                    String?
   statusColaborador        String?   @map("status_colaborador")
   funcao                   String?
+  /// Exclusão administrativa definitiva (Painel Administrativo). Estado explícito — nunca deduzido
+  /// a partir de campos vazios. `null` = ativo. Quando preenchido, o Profissional deixa de valer
+  /// para qualquer fluxo operacional (seletores, novos pagamentos, e-mails, importação), mas
+  /// permanece fisicamente no banco para não quebrar `Medicao.idProfissional`/`idCoordenador`
+  /// (onDelete: SetNull) e histórico de medição já registrado.
+  deletedAt                DateTime? @map("deleted_at") @db.Timestamptz
+  deletedById              String?   @map("deleted_by_id") @db.Uuid
+  deletedByNome            String?   @map("deleted_by_nome")
+  deletedReason            String?   @map("deleted_reason")
   medicoesComoCoordenador  Medicao[] @relation("MedicoesCoordenador")
   medicoesComoProfissional Medicao[] @relation("MedicoesProfissional")
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
+  @@index([deletedAt])
   @@map("profissionais")
 }
 
@@ -239,6 +249,12 @@ model Medicao {
   projeto            Projeto       @relation(fields: [idProjeto], references: [id], onDelete: Restrict, onUpdate: Cascade)
   coordenador        Profissional? @relation("MedicoesCoordenador", fields: [idCoordenador], references: [id], onDelete: SetNull, onUpdate: Cascade)
   profissional       Profissional? @relation("MedicoesProfissional", fields: [idProfissional], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  /// Snapshot do nome exibido no momento em que o Profissional referenciado foi excluído
+  /// administrativamente (ver Profissional.deletedAt) — preenchido só nesse momento, nunca na
+  /// criação normal da Medicao. Garante que "Histórico de Medições"/Boletim continuem mostrando
+  /// quem mediu mesmo depois do cadastro operacional ter sido anonimizado.
+  coordenadorNomeSnapshot  String?  @map("coordenador_nome_snapshot")
+  profissionalNomeSnapshot String?  @map("profissional_nome_snapshot")
   ciclo              String?
   mesclado           String?
   numeroDocumento    String?       @map("numero_documento")
@@ -381,6 +397,28 @@ model SgcLog {
   @@index([colaboradorCodigo, ciclo])
   @@index([createdAt(sort: Desc)])
   @@map("sgc_logs")
+}
+
+/// Trilha de auditoria persistente e consultável para operações administrativas destrutivas
+/// (hoje: exclusão definitiva de fornecedor/colaborador). Nunca grava senha/token/segredo, nem
+/// CPF/CNPJ/e-mail completos — só o suficiente para responder quem/quando/o quê.
+model AdminAuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  action         String
+  adminId        String   @map("admin_id") @db.Uuid
+  adminUsuario   String   @map("admin_usuario")
+  adminNome      String   @map("admin_nome")
+  targetType     String   @map("target_type")
+  targetId       String?  @map("target_id") @db.Uuid
+  targetCodigo   String?  @map("target_codigo")
+  reason         String?
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([action])
+  @@index([targetCodigo])
+  @@index([createdAt(sort: Desc)])
+  @@map("admin_audit_logs")
 }
 
 model EmailLog {

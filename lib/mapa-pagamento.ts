@@ -33,8 +33,12 @@ export async function resolveProjetistaCodigo(rawValue: unknown): Promise<{ codi
   // (ex.: duas pessoas reais homônimas vindas do XLSX) podem legitimamente compartilhar o mesmo
   // nomeCompleto. Nunca escolher um dos dois arbitrariamente: só resolve quando existe EXATAMENTE
   // um `codigo` distinto entre as correspondências.
+  // `deletedAt: null` — resolução usada para ASSOCIAR um projetista a um pagamento NOVO/editado
+  // (POST /api/mapa-pagamento, PATCH .../[id] quando o código muda); uma identidade excluída
+  // definitivamente pelo ADMIN nunca pode receber uma associação operacional nova.
   const candidatos = await prisma.profissional.findMany({
     where: {
+      deletedAt: null,
       OR: [
         { codigo: { equals: raw, mode: "insensitive" } },
         { nome: { equals: raw, mode: "insensitive" } },

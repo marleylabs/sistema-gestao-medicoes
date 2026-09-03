@@ -126,8 +126,19 @@ alter table profissionais add column if not exists email text;
 alter table profissionais add column if not exists status_colaborador text;
 alter table profissionais add column if not exists funcao text;
 
+-- Exclusão administrativa definitiva (Painel Administrativo) — estado explícito, nunca deduzido
+-- de campos vazios. NULL = ativo. Ver prisma/schema.prisma:Profissional para a justificativa
+-- completa (preserva a linha fisicamente para não quebrar medicoes.id_profissional/id_coordenador,
+-- que usam "on delete set null").
+alter table profissionais add column if not exists deleted_at timestamptz;
+alter table profissionais add column if not exists deleted_by_id uuid;
+alter table profissionais add column if not exists deleted_by_nome text;
+alter table profissionais add column if not exists deleted_reason text;
+
 create unique index if not exists idx_profissionais_codigo_unique
     on profissionais(codigo) where codigo is not null;
+
+create index if not exists idx_profissionais_deleted_at on profissionais(deleted_at);
 
 -- ─── cadastros administrativos de fornecedores ───────────────
 create table if not exists cadastros_fornecedores (
@@ -394,6 +405,35 @@ create table if not exists medicoes (
     constraint medicoes_valor_total_nn  check (valor_total >= 0),
     constraint medicoes_valor_medicao_nn check (valor_medicao >= 0)
 );
+
+-- Snapshot do nome exibido no momento em que o profissional/coordenador referenciado foi excluído
+-- administrativamente — preenchido só nesse momento (ver profissionais.deleted_at), nunca na
+-- criação normal da medição. Garante que o histórico continue mostrando quem mediu mesmo depois
+-- do cadastro operacional ter sido anonimizado.
+alter table medicoes add column if not exists coordenador_nome_snapshot text;
+alter table medicoes add column if not exists profissional_nome_snapshot text;
+
+-- ─── admin_audit_logs ────────────────────────────────────────
+-- Trilha de auditoria persistente para operações administrativas destrutivas (hoje: exclusão
+-- definitiva de fornecedor/colaborador). Nunca grava senha/token/segredo, nem CPF/CNPJ/e-mail
+-- completos — só o suficiente para responder quem/quando/o quê.
+create table if not exists admin_audit_logs (
+    id             uuid        primary key default gen_random_uuid(),
+    action         text        not null,
+    admin_id       uuid        not null,
+    admin_usuario  text        not null,
+    admin_nome     text        not null,
+    target_type    text        not null,
+    target_id      uuid,
+    target_codigo  text,
+    reason         text,
+    metadata       jsonb,
+    created_at     timestamptz not null default now()
+);
+
+create index if not exists idx_admin_audit_logs_action        on admin_audit_logs(action);
+create index if not exists idx_admin_audit_logs_target_codigo on admin_audit_logs(target_codigo);
+create index if not exists idx_admin_audit_logs_created_at    on admin_audit_logs(created_at desc);
 
 -- ─── bm_aux_medicoes ─────────────────────────────────────────
 create table if not exists bm_aux_medicoes (

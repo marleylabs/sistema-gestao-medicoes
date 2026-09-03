@@ -105,6 +105,26 @@ async function main() {
   await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: "Fornecedor Lock Recuperado", mode: "insensitive" } } });
   await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "Fornecedor Lock Recuperado" } } });
   await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "Fornecedor Lock Recuperado" } } });
+  // e2e/administrativo-fornecedor-dedupe.spec.ts — importação idempotente + exclusão em massa.
+  await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorCodigo: { startsWith: "E2E FORNECEDOR REDUNDANTE", mode: "insensitive" } } });
+  await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: "E2E FORNECEDOR REDUNDANTE", mode: "insensitive" } } });
+  await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { startsWith: "E2E FORNECEDOR REDUNDANTE", mode: "insensitive" } } });
+  await prisma.profissional.deleteMany({ where: { codigo: { startsWith: "E2E FORNECEDOR REDUNDANTE", mode: "insensitive" } } });
+  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "E2E Fornecedor Redundante" } } });
+  await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { startsWith: "HOMONIMO-PROF-CODIGO", mode: "insensitive" } } });
+  await prisma.profissional.deleteMany({ where: { codigo: { startsWith: "HOMONIMO-PROF-CODIGO", mode: "insensitive" } } });
+  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "HOMONIMO-PROF-CODIGO", mode: "insensitive" } } });
+  await prisma.profissional.deleteMany({ where: { codigo: { startsWith: "E2E FORNECEDOR SELETOR EXCLUIDO", mode: "insensitive" } } });
+  for (const prefixo of [
+    "Fornecedor Dedupe E2E", "Fornecedor Repeticao E2E", "Fornecedor CNPJ Compartilhado", "E2E BulkDelete",
+    "E2E Exclusao Reimportacao", "E2E Duplicado Legado", "E2E Sem Botao Exclusao", "E2E Cenario Completo L",
+  ]) {
+    await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorCodigo: { startsWith: prefixo, mode: "insensitive" } } });
+    await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: prefixo, mode: "insensitive" } } });
+    await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: prefixo } } });
+    await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: prefixo } } });
+    await prisma.usuario.deleteMany({ where: { nome: { startsWith: prefixo } } });
+  }
 
   console.log("[seed-e2e] Criando usuários...");
   for (const u of usuarios) {
