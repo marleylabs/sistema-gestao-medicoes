@@ -3,6 +3,7 @@ import { requireAdministrativo } from "@/lib/admin";
 import { deleteFornecedoresDefinitivamente } from "@/lib/cadastro-fornecedor";
 
 const MAX_IDS_PER_REQUEST = 100;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
  * Exclusão DEFINITIVA de fornecedor(es) — usada tanto pela ação individual ("Excluir fornecedor
@@ -13,8 +14,7 @@ const MAX_IDS_PER_REQUEST = 100;
  * Política completa (auditoria + implementação): ver `deleteFornecedoresDefinitivamente` em
  * lib/cadastro-fornecedor.ts. Resumo: `CadastroFornecedor` sempre é removido; `Usuario` sempre é
  * desativado (nunca apagado — preserva chat); `Profissional` só é reavaliado quando este é o
- * ÚLTIMO cadastro daquela identidade, e só é removido fisicamente quando NÃO tem histórico de
- * medição — com histórico, é preservado como identidade histórica mínima.
+ * ÚLTIMO cadastro daquela identidade; permanece como tombstone explícito, com ou sem histórico.
  */
 export async function POST(request: NextRequest) {
   const auth = await requireAdministrativo();
@@ -30,9 +30,9 @@ export async function POST(request: NextRequest) {
   }
   // Nunca confia nos IDs vindos do frontend além do formato básico — a existência real é
   // verificada dentro de deleteFornecedoresDefinitivamente contra o banco antes de qualquer exclusão.
-  const ids = [...new Set(rawIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0))];
+  const ids = [...new Set(rawIds.filter((id): id is string => typeof id === "string" && UUID_PATTERN.test(id.trim())).map((id) => id.trim()))];
   if (ids.length === 0) {
-    return NextResponse.json({ error: "Nenhum ID válido informado." }, { status: 400 });
+    return NextResponse.json({ error: "Nenhum UUID válido informado." }, { status: 400 });
   }
   if (ids.length > MAX_IDS_PER_REQUEST) {
     return NextResponse.json({ error: `No máximo ${MAX_IDS_PER_REQUEST} fornecedores por operação.` }, { status: 400 });

@@ -137,7 +137,8 @@ export async function DELETE(request: NextRequest) {
 
     const profissionaisOrfaos = await tx.$executeRaw`
       delete from profissionais p
-      where not exists (
+      where p.deleted_at is null
+      and not exists (
         select 1 from medicoes m
         where m.id_profissional = p.id or m.id_coordenador = p.id
       )

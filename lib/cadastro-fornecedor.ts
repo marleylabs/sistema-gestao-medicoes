@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 
 import { generateTempPassword, generateUniqueInternalAccessCode, hashPassword } from "@/lib/auth";
 import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
@@ -129,6 +130,17 @@ export function normalizePersonName(name: string | null | undefined) {
 
 export function codigoFromName(name: string) {
   return normalizePersonName(name);
+}
+
+function identityNameHash(value: string) {
+  return createHash("sha256").update(normalizePersonName(value)).digest("hex");
+}
+
+export async function isDeletedFornecedorIdentityName(nome: string) {
+  return !!await prisma.adminAuditLog.findFirst({
+    where: { action: "FORNECEDOR_EXCLUSAO_DEFINITIVA", metadata: { path: ["identityNameHashes"], array_contains: [identityNameHash(nome)] } },
+    select: { id: true },
+  });
 }
 
 export function diasAteVencimento(final: Date | string | null | undefined) {
@@ -304,13 +316,18 @@ type IdentityIndex = {
    * planilha que contenha o mesmo nome/código (ver `resolveFornecedorIdentity`, resolução
    * `BLOCKED_DELETED`). */
   deletedCodigos: Set<string>;
+  deletedNameHashes?: Map<string, string>;
 };
 
 async function buildIdentityIndex(): Promise<IdentityIndex> {
-  const [profissionais, cadastros] = await Promise.all([
+  const [profissionais, cadastros, exclusoes] = await Promise.all([
     prisma.profissional.findMany({ select: { codigo: true, nome: true, nomeCompleto: true, deletedAt: true } }),
     prisma.cadastroFornecedor.findMany({
       select: { id: true, colaboradorCodigo: true, responsavel: true, email: true, telefone: true, razaoSocial: true, cnpjNormalizado: true },
+    }),
+    prisma.adminAuditLog.findMany({
+      where: { action: "FORNECEDOR_EXCLUSAO_DEFINITIVA" },
+      select: { targetCodigo: true, metadata: true },
     }),
   ]);
 
@@ -354,7 +371,14 @@ async function buildIdentityIndex(): Promise<IdentityIndex> {
     }
   }
 
-  return { profissionalCodigosByName, cadastrosByName, cadastroIdByColaboradorCodigo, cadastroByColaboradorCodigo, deletedCodigos };
+  const deletedNameHashes = new Map<string, string>();
+  for (const exclusao of exclusoes) {
+    const hashes = (exclusao.metadata as { identityNameHashes?: unknown } | null)?.identityNameHashes;
+    if (Array.isArray(hashes)) for (const hash of hashes) {
+      if (typeof hash === "string") deletedNameHashes.set(hash, exclusao.targetCodigo || "IDENTIDADE_EXCLUIDA");
+    }
+  }
+  return { profissionalCodigosByName, cadastrosByName, cadastroIdByColaboradorCodigo, cadastroByColaboradorCodigo, deletedCodigos, deletedNameHashes };
 }
 
 /** Atualiza o índice em memória com o resultado de uma escrita — sem isso, duas linhas da MESMA
@@ -441,6 +465,8 @@ type FornecedorIdentityResolution =
 export function resolveFornecedorIdentity(row: CadastroRow, index: IdentityIndex): FornecedorIdentityResolution {
   const target = normalizePersonName(row.responsavel);
   const codigoFallback = target;
+  const deletedCodigo = index.deletedNameHashes?.get(identityNameHash(target));
+  if (deletedCodigo) return { kind: "BLOCKED_DELETED", colaboradorCodigo: deletedCodigo };
 
   const profissionalCodigos = index.profissionalCodigosByName.get(target);
   if (profissionalCodigos && profissionalCodigos.size === 1) {
@@ -732,7 +758,7 @@ export async function validateFornecedorForNfUpload(colaboradorCodigo: string, u
     return { ok: false, error: "Upload bloqueado: cadastro administrativo sem código de colaborador.", cadastro };
   }
   const profissional = await prisma.profissional.findUnique({
-    where: { codigo: codigoProfissional },
+    where: { codigo: codigoProfissional, deletedAt: null },
     select: { cnpj: true, nomeCompleto: true, nome: true },
   });
   if (!profissional) {
@@ -816,7 +842,7 @@ export async function findColaboradorCodigosWithDependencies(colaboradorCodigos:
   const orCodigo = codigos.map((c) => ({ colaboradorCodigo: { equals: c, mode: "insensitive" as const } }));
   const orProjetista = codigos.map((c) => ({ projetistaCodigo: { equals: c, mode: "insensitive" as const } }));
   const orResponsavelCodigo = codigos.map((c) => ({ responsavelCodigo: { equals: c, mode: "insensitive" as const } }));
-  const orCodigoProfissional = codigos.map((c) => ({ codigo: { equals: c, mode: "insensitive" as const } }));
+  const orCodigoProfissional = codigos.map((c) => ({ OR: [{ codigo: { equals: c, mode: "insensitive" as const } }, { codigo: null, nome: { equals: c, mode: "insensitive" as const } }] }));
 
   const [sgc, mapa, divergencias, logs, bmAux, profissionaisDoLote] = await Promise.all([
     prisma.sgcAprovacaoMedicao.findMany({ where: { OR: orCodigo }, select: { colaboradorCodigo: true }, distinct: ["colaboradorCodigo"] }),
@@ -831,7 +857,7 @@ export async function findColaboradorCodigosWithDependencies(colaboradorCodigos:
     // decidir corretamente, primeiro resolve quais Profissional.id correspondem a este lote de
     // colaboradorCodigo, depois verifica Medicao por esses ids — nunca por linha (2 queries no
     // total para todo o lote, não por fornecedor).
-    prisma.profissional.findMany({ where: { OR: orCodigoProfissional }, select: { id: true, codigo: true } }),
+    prisma.profissional.findMany({ where: { OR: orCodigoProfissional }, select: { id: true, codigo: true, nome: true } }),
   ]);
 
   const withDeps = new Set<string>();
@@ -848,7 +874,7 @@ export async function findColaboradorCodigosWithDependencies(colaboradorCodigos:
       select: { idProfissional: true, idCoordenador: true },
     });
     if (medicoes.length > 0) {
-      const idParaCodigo = new Map(profissionaisDoLote.filter((p) => p.codigo).map((p) => [p.id, normalizePersonName(p.codigo!)]));
+      const idParaCodigo = new Map(profissionaisDoLote.map((p) => [p.id, normalizePersonName(p.codigo || p.nome)]));
       for (const m of medicoes) {
         if (m.idProfissional && idParaCodigo.has(m.idProfissional)) withDeps.add(idParaCodigo.get(m.idProfissional)!);
         if (m.idCoordenador && idParaCodigo.has(m.idCoordenador)) withDeps.add(idParaCodigo.get(m.idCoordenador)!);
@@ -904,21 +930,18 @@ export type AdminDeletionSummary = {
  * `Profissional` (só reavaliado quando este é o ÚLTIMO CadastroFornecedor daquela identidade —
  * enquanto sobrar outro cadastro para o mesmo colaboradorCodigo, a pessoa continua uma fornecedora
  * ativa e nada aqui é tocado):
- *   - SEM histórico de medição -> removido fisicamente (nada a preservar).
- *   - COM histórico de medição -> PRESERVADO fisicamente, nunca apagado, mas marcado como excluído
+ *   - SEM histórico de medição -> preservado como tombstone técnico e marcado como excluído.
+ *   - COM histórico de medição -> preservado como tombstone técnico, nunca apagado, e marcado como excluído
  *     através de `deletedAt`/`deletedById`/`deletedByNome`/`deletedReason` (estado explícito e
  *     dedicado — NUNCA deduzido a partir de campos vazios). Dados operacionais/pessoais são
  *     removidos: `email`, `cnpj`, `cpf`, `razaoSocial`, `funcao`, `nomeCompleto` viram `null`.
- *     `codigo` e `nome` são preservados — são identificadores TÉCNICOS, não dados pessoais em si:
+ *     `codigo` é preservado por integridade referencial (em bases legadas pode conter um nome):
  *     `codigo` é a chave usada por `MapaPagamentoItem.projetistaCodigo`,
  *     `BmAuxMedicao.responsavelCodigo`, `SgcAprovacaoMedicao.colaboradorCodigo` e `SgcLog` para
- *     todo o histórico existente — apagá-lo quebraria esses joins; `nome` é `@unique`+`NOT NULL`
- *     no schema (não pode virar `null`) e, na convenção usada por `upsertCadastroFornecedor`
- *     (linha ~546 abaixo), já É o próprio `codigo` repetido, não o nome da pessoa — só em cadastros
- *     legados sem `codigo` é que `nome` carrega o nome real; nesse caso residual, o nome ainda
- *     precisa existir para a unicidade do registro, mas a EXIBIÇÃO histórica nunca lê mais esse
- *     campo diretamente (ver `Medicao.profissionalNomeSnapshot`/`coordenadorNomeSnapshot` abaixo) —
- *     então o pior caso é um valor obsoleto que nunca mais aparece em nenhuma tela.
+ *     todo o histórico existente — apagá-lo quebraria esses joins. `nome` é substituído por
+ *     `EXCLUIDO-<uuid>`, mantendo NOT NULL/unicidade sem preservar o nome pessoal nesse campo.
+ *     Hashes dos aliases no log impedem recriação pelo nome após a anonimização, sem copiar
+ *     CPF/CNPJ/e-mail nem o nome original para a auditoria. São pseudônimos, não anonimização forte.
  *
  *     ANTES de limpar `nomeCompleto`, esta função faz backfill de
  *     `Medicao.profissionalNomeSnapshot`/`coordenadorNomeSnapshot` (colunas dedicadas, adicionadas
@@ -1027,7 +1050,7 @@ export async function deleteFornecedoresDefinitivamente(
     findColaboradorCodigosWithDependencies(codigos),
     codigos.length > 0
       ? prisma.profissional.findMany({
-          where: { OR: codigos.map((c) => ({ codigo: { equals: c, mode: "insensitive" as const } })) },
+          where: { OR: codigos.map((c) => ({ OR: [{ codigo: { equals: c, mode: "insensitive" as const } }, { codigo: null, nome: { equals: c, mode: "insensitive" as const } }] })) },
           select: { id: true, codigo: true, nome: true, nomeCompleto: true },
         })
       : Promise.resolve([]),
@@ -1042,7 +1065,7 @@ export async function deleteFornecedoresDefinitivamente(
     totalPorCodigo.set(key, list);
     if (!codigoOriginalPorKey.has(key)) codigoOriginalPorKey.set(key, c.colaboradorCodigo);
   }
-  const profissionalPorCodigo = new Map(profissionaisDosCodigos.filter((p) => p.codigo).map((p) => [normalizePersonName(p.codigo!), p]));
+  const profissionalPorCodigo = new Map(profissionaisDosCodigos.map((p) => [normalizePersonName(p.codigo || p.nome), p]));
 
   const requestedIdSet = new Set(ids);
   const restamPorCodigo = new Map<string, number>();
@@ -1072,18 +1095,37 @@ export async function deleteFornecedoresDefinitivamente(
 
   try {
     await prisma.$transaction(async (tx) => {
+      if (profissionalPorCodigo.size !== profissionaisDosCodigos.length) {
+        throw new Error("Identidade profissional ambígua: exclusão cancelada sem alterações.");
+      }
+      for (const cadastro of cadastros.filter((c) => !c.colaboradorCodigo)) {
+        const [profissional, usuario] = await Promise.all([
+          tx.profissional.findFirst({ where: { deletedAt: null, OR: [{ nome: { equals: cadastro.responsavel, mode: "insensitive" } }, { nomeCompleto: { equals: cadastro.responsavel, mode: "insensitive" } }] }, select: { id: true } }),
+          tx.usuario.findFirst({ where: { perfil: "COLABORADOR", excluidoAt: null, nome: { equals: cadastro.responsavel, mode: "insensitive" } }, select: { id: true } }),
+        ]);
+        if (profissional || usuario) throw new Error("Cadastro legado sem código vinculado: regularize a identidade canônica antes de excluir. Nenhum dado foi alterado.");
+      }
       if (idsParaDeletar.length > 0) {
         const result = await tx.cadastroFornecedor.deleteMany({ where: { id: { in: idsParaDeletar } } });
         administrativeDeleted = result.count;
       }
+      for (const cadastro of cadastros.filter((c) => !c.colaboradorCodigo)) {
+        auditEntries.push({ action: "FORNECEDOR_EXCLUSAO_DEFINITIVA", targetType: "CadastroFornecedor", targetId: cadastro.id, targetCodigo: null,
+          metadata: { resultado: "SEM_CODIGO_VINCULADO", identityNameHashes: [identityNameHash(cadastro.responsavel)] } });
+      }
 
       for (const plan of plans) {
-        if (plan.action === "SKIP_STILL_ACTIVE") continue;
+        if (plan.action === "SKIP_STILL_ACTIVE") {
+          auditEntries.push({ action: "FORNECEDOR_EXCLUSAO_DEFINITIVA", targetType: "CadastroFornecedor", targetId: null, targetCodigo: plan.codigoKey,
+            metadata: { resultado: "CADASTRO_REDUNDANTE_REMOVIDO_IDENTIDADE_ATIVA" } });
+          continue;
+        }
 
         const profissionalCompleto = profissionalPorCodigo.get(plan.codigoKey);
         const profissionalNomeParaUsuario = profissionalCompleto?.nomeCompleto || profissionalCompleto?.nome || null;
         const codigoOriginal = codigoOriginalPorKey.get(plan.codigoKey) ?? plan.codigoKey;
         const cadastrosRemovidosDestaIdentidade = cadastros.filter((c) => c.colaboradorCodigo && normalizePersonName(c.colaboradorCodigo) === plan.codigoKey).length;
+        const auditCountBefore = auditEntries.length;
 
         if (plan.action === "PRESERVE_PROFISSIONAL_FOR_HISTORY") {
           measurementHistoryPreserved += 1;
@@ -1106,6 +1148,8 @@ export async function deleteFornecedoresDefinitivamente(
             await tx.profissional.update({
               where: { id: plan.profissionalId },
               data: {
+                nome: `EXCLUIDO-${plan.profissionalId}`,
+                codigo: profissionalCompleto?.codigo || codigoOriginal,
                 email: null,
                 cnpj: null,
                 cpf: null,
@@ -1132,14 +1176,31 @@ export async function deleteFornecedoresDefinitivamente(
             });
           }
         } else if (plan.action === "DELETE_PROFISSIONAL") {
-          await tx.profissional.delete({ where: { id: plan.profissionalId } });
+          await tx.profissional.update({
+            where: { id: plan.profissionalId },
+            data: {
+              nome: `EXCLUIDO-${plan.profissionalId}`,
+              codigo: profissionalCompleto?.codigo || codigoOriginal,
+              nomeCompleto: null,
+              email: null,
+              cnpj: null,
+              cpf: null,
+              razaoSocial: null,
+              funcao: null,
+              deletedAt: new Date(),
+              deletedById: admin.id,
+              deletedByNome: admin.nome,
+              deletedReason: reasonTrimmed,
+              updatedAt: new Date(),
+            },
+          });
           professionalsDeleted += 1;
           auditEntries.push({
             action: "FORNECEDOR_EXCLUSAO_DEFINITIVA",
             targetType: "Profissional",
             targetId: plan.profissionalId,
             targetCodigo: codigoOriginal,
-            metadata: { resultado: "REMOVIDO_FISICAMENTE_SEM_HISTORICO", cadastrosAdministrativosRemovidos: cadastrosRemovidosDestaIdentidade },
+            metadata: { resultado: "EXCLUIDO_OPERACIONALMENTE_SEM_HISTORICO", cadastrosAdministrativosRemovidos: cadastrosRemovidosDestaIdentidade },
           });
         } else {
           auditEntries.push({
@@ -1151,18 +1212,24 @@ export async function deleteFornecedoresDefinitivamente(
           });
         }
 
+        if (auditEntries.length === auditCountBefore) {
+          auditEntries.push({ action: "FORNECEDOR_EXCLUSAO_DEFINITIVA", targetType: "CadastroFornecedor", targetId: null, targetCodigo: codigoOriginal,
+            metadata: { resultado: "HISTORICO_SEM_PROFISSIONAL_VINCULADO" } });
+        }
         // Usuario nunca é apagado fisicamente (ver docstring) — sempre desativado.
         const nomeParaUsuario = profissionalNomeParaUsuario || responsavelPorCodigo.get(plan.codigoKey) || "";
         if (!nomeParaUsuario) continue;
-        const usuario = await tx.usuario.findFirst({
+        const usuarios = await tx.usuario.findMany({
           where: { perfil: "COLABORADOR", nome: { equals: nomeParaUsuario, mode: "insensitive" }, excluidoAt: null },
           select: { id: true },
         });
+        if (usuarios.length > 1) throw new Error("Identidade de acesso ambígua: exclusão cancelada para preservar outros usuários.");
+        const usuario = usuarios[0];
         if (usuario) {
-          await tx.usuario.update({ where: { id: usuario.id }, data: { ativo: false, excluidoAt: new Date() } });
+          await tx.usuario.update({ where: { id: usuario.id }, data: { ativo: false, excluidoAt: new Date(), email: null, senhaTemporaria: null, primeiroLogin: false, onlineAt: null, avatarArquivo: null, avatarMime: null, avatarAtualizadoAt: null } });
           usersDeactivated += 1;
           const last = auditEntries[auditEntries.length - 1];
-          if (last) last.metadata.usuarioDesativado = true;
+          if (last) { last.metadata.usuarioDesativado = true; last.metadata.usuarioId = usuario.id; }
         }
       }
 
@@ -1177,7 +1244,17 @@ export async function deleteFornecedoresDefinitivamente(
             targetId: entry.targetId,
             targetCodigo: entry.targetCodigo,
             reason: reasonTrimmed,
-            metadata: entry.metadata,
+            metadata: {
+              ...entry.metadata,
+              ...(entry.targetCodigo && entry.metadata.resultado !== "CADASTRO_REDUNDANTE_REMOVIDO_IDENTIDADE_ATIVA" ? {
+                identityNameHashes: [...new Set([
+                  profissionalPorCodigo.get(normalizePersonName(entry.targetCodigo))?.nome,
+                  profissionalPorCodigo.get(normalizePersonName(entry.targetCodigo))?.nomeCompleto,
+                  entry.targetCodigo,
+                  ...cadastros.filter((c) => normalizePersonName(c.colaboradorCodigo) === normalizePersonName(entry.targetCodigo)).map((c) => c.responsavel),
+                ].filter((value): value is string => !!value).map(identityNameHash))],
+              } : {}),
+            },
           })),
         });
       }

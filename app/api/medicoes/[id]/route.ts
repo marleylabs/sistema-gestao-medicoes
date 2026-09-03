@@ -20,6 +20,11 @@ export async function PUT(request: NextRequest, { params }: Params) {
     return NextResponse.json({ message: "Número da medição e projeto são obrigatórios." }, { status: 400 });
   }
 
+  const ids = [...new Set([data.idProfissional, data.idCoordenador].filter(Boolean))];
+  if (ids.length && await prisma.profissional.count({ where: { id: { in: ids }, deletedAt: null } }) !== ids.length) {
+    return NextResponse.json({ message: "Profissional inexistente ou excluído definitivamente." }, { status: 400 });
+  }
+
   const medicao = await prisma.medicao.update({
     where: { id },
     data,

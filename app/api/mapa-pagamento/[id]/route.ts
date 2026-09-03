@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin";
 import { mapaPagamentoData, resolveProjetistaCodigo, serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { cadastroFornecedorOverrideForMapaItem } from "@/lib/mapa-pagamento-cadastro";
+import { isDeletedFornecedorIdentityName } from "@/lib/cadastro-fornecedor";
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
@@ -11,6 +12,15 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   const { id } = await context.params;
   const current = await prisma.mapaPagamentoItem.findUnique({ where: { id } });
   if (!current) return NextResponse.json({ error: "Pagamento não encontrado." }, { status: 404 });
+
+  if (current.projetistaCodigo) {
+    const deleted = await prisma.profissional.findFirst({
+      where: { codigo: current.projetistaCodigo, deletedAt: { not: null } }, select: { id: true },
+    });
+    if (deleted || await isDeletedFornecedorIdentityName(current.projetistaCodigo)) {
+      return NextResponse.json({ error: "Fornecedor excluído definitivamente: pagamento disponível somente para consulta histórica." }, { status: 400 });
+    }
+  }
 
   const payload = await request.json();
 

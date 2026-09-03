@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { decryptSensitive } from "@/lib/encryption";
+import { isDeletedFornecedorIdentityName } from "@/lib/cadastro-fornecedor";
 
 export type ResolvedRecipient = {
   email: string | null;
@@ -16,6 +17,17 @@ export type ResolvedRecipient = {
  * `Profissional.email` (ETL) quando o Administrativo ainda não tem o cadastro.
  */
 export async function resolveFornecedorEmail(colaboradorCodigo: string, nomeFallback?: string | null): Promise<ResolvedRecipient> {
+  if (await isDeletedFornecedorIdentityName(colaboradorCodigo)) {
+    return { email: null, nome: nomeFallback || colaboradorCodigo, missing: true };
+  }
+  const profissional = await prisma.profissional.findUnique({
+    where: { codigo: colaboradorCodigo },
+    select: { email: true, nome: true, nomeCompleto: true, deletedAt: true },
+  });
+  // O estado explícito prevalece inclusive sobre um cadastro legado ainda existente.
+  if (profissional?.deletedAt) {
+    return { email: null, nome: nomeFallback || colaboradorCodigo, missing: true };
+  }
   const cadastro = await prisma.cadastroFornecedor.findFirst({
     where: { colaboradorCodigo },
     orderBy: { updatedAt: "desc" },
@@ -26,10 +38,6 @@ export async function resolveFornecedorEmail(colaboradorCodigo: string, nomeFall
     return { email: cadastroEmail, nome: cadastro?.responsavel || nomeFallback || colaboradorCodigo, missing: false };
   }
 
-  const profissional = await prisma.profissional.findUnique({
-    where: { codigo: colaboradorCodigo },
-    select: { email: true, nome: true, nomeCompleto: true },
-  });
   const profissionalEmail = decryptSensitive(profissional?.email) ?? profissional?.email ?? null;
   const nome = cadastro?.responsavel || profissional?.nomeCompleto || profissional?.nome || nomeFallback || colaboradorCodigo;
   return { email: profissionalEmail, nome, missing: !profissionalEmail };

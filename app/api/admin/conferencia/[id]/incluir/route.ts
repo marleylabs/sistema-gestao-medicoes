@@ -55,6 +55,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         // Documento não mapeado: cria seguindo exatamente a mesma regra de POST /api/mapa-pagamento/documentos.
         const profissional = await tx.profissional.findFirst({
           where: {
+            deletedAt: null,
             OR: [
               { codigo: { equals: divergencia.colaboradorCodigo, mode: "insensitive" } },
               { nome: { equals: divergencia.colaboradorCodigo, mode: "insensitive" } },

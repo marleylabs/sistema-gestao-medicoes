@@ -128,5 +128,5 @@ test("guarda de regressão: nenhum template lê EMAIL_CTA_ENABLED diretamente �
   assert.match(eventsSource, /function portalUrl\(\): string \| null \{\s*return isEmailCtaEnabled/);
   assert.match(eventsSource, /function evidenciasUrl\(\): string \| null \{\s*return isEmailCtaEnabled/);
   assert.match(eventsSource, /function financeiroUrl\(\): string \| null \{\s*return isEmailCtaEnabled/);
-  assert.doesNotMatch(eventsSource, /function loginUrl\(\)[^}]*isEmailCtaEnabled/s);
+  assert.doesNotMatch(eventsSource, /function loginUrl\(\)[^}]*isEmailCtaEnabled/);
 });

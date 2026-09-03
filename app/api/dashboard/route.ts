@@ -219,7 +219,7 @@ export async function GET(request: NextRequest) {
     }),
     prisma.$queryRaw<Array<{ nome: string; codigo: string; tipo2: string; condicao: string }>>`
       select distinct
-        coalesce(pr.nome_completo, pr.nome, pr.codigo, 'Fornecedor sem nome') as nome,
+        coalesce(m.profissional_nome_snapshot, pr.nome_completo, pr.nome, pr.codigo, 'Fornecedor sem nome') as nome,
         coalesce(pr.codigo, pr.nome_completo, pr.nome, m.id_profissional::text) as codigo,
         m.tipo2,
         m.condicao

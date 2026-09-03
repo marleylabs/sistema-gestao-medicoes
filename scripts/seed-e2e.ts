@@ -66,6 +66,7 @@ async function main() {
   await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: codigos } } });
   await prisma.profissional.deleteMany({ where: { codigo: { in: codigos } } });
   await prisma.projeto.deleteMany({ where: { codigoProjeto: { startsWith: "E2E-PROJ" } } });
+  await prisma.adminAuditLog.deleteMany({ where: { adminUsuario: { in: usuarios.map((u) => u.usuario) } } });
   await prisma.usuario.deleteMany({ where: { usuario: { in: usuarios.map((u) => u.usuario) } } });
   await prisma.mapaPagamentoContexto.deleteMany({ where: { OR: [{ ciclo }, { ciclo: { startsWith: "26" }, mesReferencia: "E2E" }] } });
 
@@ -122,7 +123,16 @@ async function main() {
     await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorCodigo: { startsWith: prefixo, mode: "insensitive" } } });
     await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: prefixo, mode: "insensitive" } } });
     await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: prefixo } } });
-    await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: prefixo } } });
+    // A exclusão definitiva anonimiza `nomeCompleto`, mas preserva o código técnico.
+    // Limpar também pelo código evita que tombstones de uma rodada bloqueiem a próxima.
+    await prisma.profissional.deleteMany({
+      where: {
+        OR: [
+          { codigo: { startsWith: prefixo, mode: "insensitive" } },
+          { nomeCompleto: { startsWith: prefixo } },
+        ],
+      },
+    });
     await prisma.usuario.deleteMany({ where: { nome: { startsWith: prefixo } } });
   }
 

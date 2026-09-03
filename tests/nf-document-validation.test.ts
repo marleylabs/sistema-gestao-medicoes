@@ -53,3 +53,14 @@ test("rejeita PDF falso e corrompido", async () => {
     assert.equal(result.ok, false);
   }
 });
+
+test("massa de teste — CNPJ 21.701.545/0001-03 é extraído e validado pelo parser real, sem exceção para arquivo de teste", async () => {
+  const result = await validateNfDocumentAgainstCadastro({
+    buffer: await readFile(path.join(fixtures, "nf-teste-cnpj-21701545000103.pdf")),
+    mimeType: "application/pdf",
+    expectedCnpj: "21701545000103",
+    expectedRazaoSocial: "Fornecedor Teste En Passant LTDA",
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.detected.prestador.cnpj, "21701545000103");
+});

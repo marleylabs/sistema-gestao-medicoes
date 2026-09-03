@@ -54,6 +54,9 @@ def run_etl(file_bytes: bytes, ciclo: str | None) -> None:
         )
         _last_result = result
         _last_error = None
+    except ValueError as error:
+        _last_error = str(error)
+        _last_result = None
     except Exception:
         _last_error = traceback.format_exc()
         _last_result = None

@@ -141,7 +141,7 @@ export async function ensureDefaultAccessUsers() {
   }
 
   const colaboradores = await prisma.profissional.findMany({
-    where: { codigo: { not: null } },
+    where: { codigo: { not: null }, deletedAt: null },
     select: { codigo: true, nomeCompleto: true, nome: true, cnpj: true },
   });
 

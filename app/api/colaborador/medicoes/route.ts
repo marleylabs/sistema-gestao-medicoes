@@ -28,7 +28,7 @@ export async function GET() {
   if (!aprovacoes.length) return NextResponse.json({ medicoes: [] });
 
   const profissional = await prisma.profissional.findFirst({
-    where: { codigo: { in: codigoAliases } },
+    where: { codigo: { in: codigoAliases }, deletedAt: null },
     select: { nomeCompleto: true, nome: true, cpf: true, cnpj: true, razaoSocial: true, funcao: true },
   });
 

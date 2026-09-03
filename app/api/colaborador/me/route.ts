@@ -37,7 +37,7 @@ export async function GET() {
   const codigoAliases = await getColaboradorCodigoAliases(user.usuario, cicloAtivo);
   const [profissional, pagamento, documentos, sgc, currentUsuario, usuariosMedicaoOnline] = await Promise.all([
     prisma.profissional.findFirst({
-      where: { codigo: { in: codigoAliases } },
+      where: { codigo: { in: codigoAliases }, deletedAt: null },
       select: {
         codigo: true,
         nome: true,

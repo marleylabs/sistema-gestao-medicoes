@@ -46,8 +46,8 @@ export function serializeMedicao(medicao: any) {
     valorReajuste: toNumber(medicao.valorReajuste),
     percentualEmissao: medicao.percentualEmissao === null ? null : toNumber(medicao.percentualEmissao),
     valorMedicao: toNumber(medicao.valorMedicao),
-    coordenador: medicao.coordenador ? serializeProfessional(medicao.coordenador) : null,
-    profissional: medicao.profissional ? serializeProfessional(medicao.profissional) : null,
+    coordenador: medicao.coordenador ? { ...serializeProfessional(medicao.coordenador), ...(medicao.coordenadorNomeSnapshot ? { nome: medicao.coordenadorNomeSnapshot, nomeCompleto: medicao.coordenadorNomeSnapshot } : {}) } : null,
+    profissional: medicao.profissional ? { ...serializeProfessional(medicao.profissional), ...(medicao.profissionalNomeSnapshot ? { nome: medicao.profissionalNomeSnapshot, nomeCompleto: medicao.profissionalNomeSnapshot } : {}) } : null,
   };
 }
 

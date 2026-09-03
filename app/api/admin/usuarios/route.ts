@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isDeletedFornecedorIdentityName } from "@/lib/cadastro-fornecedor";
 import { requireAdmin } from "@/lib/admin";
 import { generateUniqueInternalAccessCode, hashPassword, validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -81,6 +82,11 @@ export async function POST(request: NextRequest) {
   }
 
   const exists = await prisma.usuario.findUnique({ where: { usuario } });
+  if ((perfil === "COLABORADOR" && await isDeletedFornecedorIdentityName(nome)) || (exists?.excluidoAt && await prisma.adminAuditLog.findFirst({
+    where: { action: "FORNECEDOR_EXCLUSAO_DEFINITIVA", metadata: { path: ["usuarioId"], equals: exists.id } }, select: { id: true },
+  }))) {
+    return NextResponse.json({ error: "Fornecedor excluído definitivamente não pode ser reativado." }, { status: 409 });
+  }
   if (exists) {
     if (exists.excluidoAt) {
       const restored = await prisma.usuario.update({

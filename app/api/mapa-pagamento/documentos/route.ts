@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
 
   const profissional = await prisma.profissional.findFirst({
     where: {
+      deletedAt: null,
       OR: [
         { codigo: { equals: codigo, mode: "insensitive" } },
         { nome: { equals: codigo, mode: "insensitive" } },

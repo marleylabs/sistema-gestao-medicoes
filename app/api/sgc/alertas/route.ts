@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
         revisaoSolicitadaAt: alerta.revisaoSolicitadaAt?.toISOString() ?? null,
         colaborador: {
           codigo: profissional?.codigo ?? alerta.colaboradorCodigo,
-          nome: profissional?.nomeCompleto || profissional?.nome || alerta.colaboradorNome,
+          nome: alerta.colaboradorNome || profissional?.nomeCompleto || profissional?.nome,
           cpf: decryptSensitive(profissional?.cpf),
           cnpj: decryptSensitive(profissional?.cnpj),
           razaoSocial: profissional?.razaoSocial ?? null,

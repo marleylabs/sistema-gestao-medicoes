@@ -17,10 +17,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "ID do fornecedor é obrigatório." }, { status: 400 });
   }
 
-  const profissional = await prisma.profissional.findUnique({
-    where: { codigo: colaboradorCodigo },
+  const profissionais = await prisma.profissional.findMany({
+    where: { deletedAt: null, OR: [{ codigo: colaboradorCodigo }, { codigo: null, nome: colaboradorCodigo }] },
     select: { nome: true, nomeCompleto: true, email: true },
   });
+  const profissional = profissionais.length === 1 ? profissionais[0] : null;
+  if (!profissional) {
+    return NextResponse.json({ error: "Fornecedor inexistente ou excluído definitivamente." }, { status: 400 });
+  }
 
   const existing = await prisma.sgcAprovacaoMedicao.findUnique({
     where: { colaboradorCodigo_ciclo: { colaboradorCodigo, ciclo } },

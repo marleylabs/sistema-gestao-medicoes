@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
           { nomeCompleto: { in: codigoAliases } },
         ],
       },
-      select: { nomeCompleto: true, nome: true, cpf: true, cnpj: true, razaoSocial: true, funcao: true },
+      select: { nomeCompleto: true, nome: true, cpf: true, cnpj: true, razaoSocial: true, funcao: true, deletedAt: true },
     }),
     prisma.sgcAprovacaoMedicao.findFirst({
       where: { colaboradorCodigo: { in: codigoAliases }, ciclo },
@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
     sgcId: sgc?.id ?? null,
     nfArquivoNome: (sgc as any)?.nfArquivoNome ?? null,
     colaborador: {
-      nome: profissional?.nomeCompleto || profissional?.nome || codigo,
+      nome: profissional?.deletedAt ? (sgc?.colaboradorNome || pagamento?.responsavel || codigo) : (profissional?.nomeCompleto || profissional?.nome || codigo),
       cpf: decryptSensitive(profissional?.cpf),
       cnpj: decryptSensitive(profissional?.cnpj),
       razaoSocial: profissional?.razaoSocial ?? null,

@@ -106,7 +106,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   if (updated.colaboradorCodigo) {
     await prisma.profissional.updateMany({
-      where: { codigo: updated.colaboradorCodigo },
+      where: { codigo: updated.colaboradorCodigo, deletedAt: null },
       data: {
         nomeCompleto: responsavel,
         razaoSocial,

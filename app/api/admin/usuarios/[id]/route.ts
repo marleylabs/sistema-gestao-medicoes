@@ -18,7 +18,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const action = body?.action;
 
   const user = await prisma.usuario.findUnique({ where: { id } });
-  if (!user) return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+  if (!user || user.excluidoAt) return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
 
   if (action === "toggle_ativo") {
     const willBeAtivo = !user.ativo;

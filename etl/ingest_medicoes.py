@@ -266,6 +266,35 @@ def normalize_for_compare(value: str | None) -> str:
     return " ".join(normalized.casefold().strip().split())
 
 
+def deleted_identity_hash(value: str | None) -> str:
+    """Mesmo SHA-256/normalização de normalizePersonName no serviço administrativo."""
+    value = unicodedata.normalize("NFD", str(value or ""))
+    value = "".join(c for c in value if not ("\u0300" <= c <= "\u036f"))
+    value = "".join(c if c.isalnum() or c.isspace() else " " for c in value)
+    return hashlib.sha256(" ".join(value.strip().split()).upper().encode("utf-8")).hexdigest()
+
+
+def assert_import_identities_active(conn, identities: set[str]) -> None:
+    """Fail closed ANTES de full_refresh: nunca apaga histórico nem recria um excluído."""
+    hashes = {deleted_identity_hash(value) for value in identities if clean_text(value)}
+    deleted = conn.execute(text(
+        "select codigo, nome, nome_completo from profissionais where deleted_at is not null"
+    )).mappings().all()
+    blocked_hashes = {
+        deleted_identity_hash(value)
+        for row in deleted for value in (row.get("codigo"), row.get("nome"), row.get("nome_completo"))
+        if value
+    }
+    audit = conn.execute(text(
+        "select metadata from admin_audit_logs where action = 'FORNECEDOR_EXCLUSAO_DEFINITIVA'"
+    )).mappings().all()
+    for row in audit:
+        metadata = row.get("metadata") or {}
+        blocked_hashes.update(metadata.get("identityNameHashes", []))
+    if hashes & blocked_hashes:
+        raise ValueError("IMPORTACAO_BLOQUEADA: a planilha contém identidade excluída definitivamente. Nenhum dado foi alterado.")
+
+
 def should_keep_vba(excel_path: Path) -> bool:
     return excel_path.suffix.casefold() == ".xlsm"
 
@@ -2029,6 +2058,20 @@ def ingest(
     skipped = 0
 
     with engine.begin() as conn:
+        identities = set(affected_collaborator_codes)
+        for _, row in base_df.iterrows():
+            candidate = build_base_professional(row)
+            if candidate:
+                identities.update(str(candidate.get(key) or "") for key in ("codigo", "nome", "nome_completo"))
+        for _, row in df.iterrows():
+            for columns in (PROFESSIONAL_COLUMNS, COORDINATOR_COLUMNS):
+                candidate = extract(row, columns)
+                identities.update(str(candidate.get(key) or "") for key in ("codigo", "nome", "nome_completo"))
+        for index, row in payment_map_items_df.iterrows():
+            candidate = build_payment_map_item(row, index + 1, canonical_codes, ciclo=ciclo_efetivo)
+            if candidate:
+                identities.update(str(candidate.get(key) or "") for key in ("projetista_codigo", "responsavel"))
+        assert_import_identities_active(conn, identities)
         if full_refresh:
             clear_imported_collaborators(conn, ciclo_efetivo, affected_collaborator_codes)
 

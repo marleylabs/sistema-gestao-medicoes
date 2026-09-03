@@ -322,13 +322,30 @@ test.describe.serial("Administrativo — exclusão em massa", () => {
 
     const resSemIds = await page.request.post("/api/admin/administrativo/fornecedores/bulk-delete", { data: {} });
     expect(resSemIds.status()).toBe(400);
+    const malicioso = await page.request.post("/api/admin/administrativo/fornecedores/bulk-delete", { data: { ids: ["' OR 1=1 --", { id: "qualquer" }], perfil: "ADMIN" } });
+    expect(malicioso.status()).toBe(400);
 
     await page.request.post("/api/auth/logout");
   });
 });
 
+test("Exclusão: sem sessão e perfis MEDICAO/COLABORADOR não podem forjar ADMIN", async ({ page }) => {
+  const target = await prisma.cadastroFornecedor.findFirstOrThrow({ where: { responsavel: "E2E Fornecedor A" } });
+  const endpoint = "/api/admin/administrativo/fornecedores/bulk-delete";
+  const data = { ids: [target.id], perfil: "ADMIN", role: "ADMIN" };
+  const anonymous = await page.request.post(endpoint, { data });
+  expect([401, 403]).toContain(anonymous.status());
+  for (const credentials of [e2eUsers.medicao, e2eUsers.fornecedorA]) {
+    const login = await page.request.post("/api/auth/login", { data: credentials });
+    expect(login.status()).toBe(200);
+    expect((await page.request.post(endpoint, { data })).status()).toBe(403);
+    await page.request.post("/api/auth/logout");
+  }
+  expect(await prisma.cadastroFornecedor.count({ where: { id: target.id } })).toBe(1);
+});
+
 test.describe.serial("Administrativo — exclusão + reimportação (estado coerente, sem ressurreição/duplicidade)", () => {
-  test("CENÁRIO G — excluir fornecedor SEM histórico (Profissional também removido, Usuario desativado), reimportar recria a MESMA identidade canônica (mesmo código) sem duplicar", async ({ page }) => {
+  test("CENÁRIO G — excluir fornecedor SEM histórico mantém tombstone explícito, desativa usuário e bloqueia reimportação", async ({ page }) => {
     await loginAdmin(page);
     const responsavel = "E2E Exclusao Reimportacao";
     const email = "exclusao.reimportacao@example.test";
@@ -350,42 +367,43 @@ test.describe.serial("Administrativo — exclusão + reimportação (estado coer
     await page.getByRole("checkbox", { name: `Selecionar ${responsavel}` }).check();
     const deleteResultado = await deleteViaModal(page, 1);
     expect(deleteResultado.administrativeDeleted).toBe(1);
-    expect(deleteResultado.professionalsDeleted, "sem histórico -> Profissional é removido, não preservado").toBe(1);
+    expect(deleteResultado.professionalsDeleted, "sem histórico -> Profissional é excluído operacionalmente").toBe(1);
     expect(deleteResultado.professionalsPreservedForHistory).toBe(0);
     await expect(fornecedorHeading(page, responsavel)).toHaveCount(0);
 
-    // 2) Estado coerente pós-exclusão: CadastroFornecedor E Profissional removidos (sem
-    // histórico, nada a preservar); Usuario sempre DESATIVADO (nunca apagado fisicamente — ver
-    // política em lib/cadastro-fornecedor.ts, preserva chat).
+    // 2) Cadastro administrativo some, mas Profissional permanece como tombstone explícito,
+    // sem dados pessoais. Isso impede reativação silenciosa por importação.
     const cadastroApagado = await prisma.cadastroFornecedor.findUnique({ where: { id: cadastroOriginal.id } });
     expect(cadastroApagado, "CadastroFornecedor precisa ter sido realmente excluído").toBeNull();
-    const profissionalApagado = await prisma.profissional.findUnique({ where: { id: profissionalOriginal.id } });
-    expect(profissionalApagado, "sem histórico, Profissional é removido fisicamente (nada a preservar)").toBeNull();
+    const profissionalApagado = await prisma.profissional.findUniqueOrThrow({ where: { id: profissionalOriginal.id } });
+    expect(profissionalApagado.deletedAt).toBeTruthy();
+    expect(profissionalApagado.nome).toBe(`EXCLUIDO-${profissionalOriginal.id}`);
+    expect(profissionalApagado.nomeCompleto).toBeNull();
+    expect(profissionalApagado.email).toBeNull();
+    expect(profissionalApagado.cnpj).toBeNull();
+    expect(profissionalApagado.cpf).toBeNull();
     const usuarioDesativado = await prisma.usuario.findUnique({ where: { id: usuarioOriginal.id } });
     expect(usuarioDesativado, "Usuario nunca é apagado fisicamente — sempre desativado").toBeTruthy();
     expect(usuarioDesativado!.ativo).toBe(false);
     expect(usuarioDesativado!.excluidoAt).toBeTruthy();
 
-    // 3) Reimporta a MESMA pessoa — como não havia histórico, Profissional também foi removido;
-    // a reimportação cria um Profissional/CadastroFornecedor NOVOS, mas com o MESMO colaboradorCodigo
-    // (derivado deterministicamente do nome) — a identidade lógica nunca muda, nunca duplica.
+    // 3) Reimportar a mesma identidade deve gerar conflito controlado, nunca restaurar/criar.
     const wb2 = buildConsultaPjWorkbook([
       { responsavel, cnpj: "70.111.222/0001-11", razaoSocial, email, telefone, inicio: "02/01/2026", final: "02/01/2027", status: "VALIDO" },
     ]);
     const res2 = await importWorkbook(page, wb2, "exclusao-2.xlsx");
     const payload2 = await res2.json();
-    expect(payload2.criados, "reimportação após exclusão precisa CRIAR um cadastro novo (o antigo foi de fato apagado)").toBe(1);
+    expect(payload2.criados ?? 0).toBe(0);
+    expect(payload2.bloqueados ?? 0).toBeGreaterThanOrEqual(1);
     expect(payload2.conflitos ?? 0).toBe(0);
 
     const cadastrosFinais = await prisma.cadastroFornecedor.findMany({ where: { responsavel } });
-    expect(cadastrosFinais.length, "nunca pode haver duplicidade após exclusão + reimportação").toBe(1);
-    expect(cadastrosFinais[0].colaboradorCodigo).toBe(colaboradorCodigo);
-    expect(cadastrosFinais[0].id).not.toBe(cadastroOriginal.id);
+    expect(cadastrosFinais.length, "identidade excluída não pode voltar à operação").toBe(0);
 
     const profissionaisFinais = await prisma.profissional.count({ where: { codigo: colaboradorCodigo } });
-    expect(profissionaisFinais, "Profissional recriado, mas continua único — nunca duplicado").toBe(1);
+    expect(profissionaisFinais, "tombstone técnico continua único").toBe(1);
 
-    await expect(fornecedorHeading(page, responsavel)).toHaveCount(1);
+    await expect(fornecedorHeading(page, responsavel)).toHaveCount(0);
 
     await page.request.post("/api/auth/logout");
   });
@@ -661,23 +679,25 @@ test.describe.serial("Validação direcionada — restrição de perfil e efeito
     await prisma.profissional.deleteMany({ where: { nomeCompleto: "E2E Sem Botao Exclusao" } });
   });
 
-  test("LIMITAÇÃO CONHECIDA E DOCUMENTADA: identidade preservada por histórico ainda aparece em GET /api/profissionais (sem coluna ativo/excluidoAt em Profissional, não há como filtrar sem risco de esconder fornecedores legítimos — ver relatório final)", async ({ page }) => {
-    // Tentativa descartada: usar "Profissional sem nenhum CadastroFornecedor" como proxy de
-    // "excluído" — medido direto em produção: 44 dos 49 Profissional com `codigo` HOJE não têm
-    // NENHUM CadastroFornecedor (nunca foram cadastrados administrativamente, não foram excluídos).
-    // Um filtro assim esconderia ~90% dos fornecedores legítimos do seletor de "Novo pagamento".
-    // Corrigir isso de verdade exige uma coluna nova (ex.: `Profissional.ativo`/`excluidoAt`,
-    // espelhando o padrão já usado em `Usuario`) — decisão de schema pendente de aprovação.
+  test("identidade excluída não aparece em GET /api/profissionais", async ({ page }) => {
     const codigo = "E2E FORNECEDOR SELETOR EXCLUIDO";
     await prisma.profissional.deleteMany({ where: { codigo } });
-    await prisma.profissional.create({ data: { nome: codigo, codigo, nomeCompleto: "E2E Fornecedor Seletor Excluido" } });
+    const profissional = await prisma.profissional.create({ data: { nome: codigo, codigo, nomeCompleto: null, deletedAt: new Date() } });
 
     const login = new LoginPage(page);
     await login.goto();
     await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
     const res = await page.request.get("/api/profissionais");
     const lista: { codigo: string | null }[] = await res.json();
-    expect(lista.some((p) => p.codigo === codigo), "comportamento atual documentado: sem alteração de schema, a identidade preservada continua listada").toBe(true);
+    expect(lista.some((p) => p.codigo === codigo), "excluído nunca pode aparecer no seletor operacional").toBe(false);
+    const before = await prisma.mapaPagamentoItem.count({ where: { projetistaCodigo: codigo } });
+    expect((await page.request.post("/api/mapa-pagamento", { data: { projetistaCodigo: codigo, ciclo: "2612", valor: 100 } })).status()).toBe(400);
+    expect(await prisma.mapaPagamentoItem.count({ where: { projetistaCodigo: codigo } })).toBe(before);
+    expect((await page.request.post("/api/mapa-pagamento/documentos", { data: { codigo, ciclo: "2612", numeroDocumento: "NAO-CRIAR" } })).status()).toBe(404);
+    expect((await page.request.post("/api/sgc/enviar", { data: { colaboradorCodigo: codigo, ciclo: "2612" } })).status()).toBe(400);
+    const projeto = await prisma.projeto.findFirstOrThrow();
+    expect((await page.request.post("/api/medicoes", { data: { numeroMedicao: "NAO-CRIAR", idProjeto: projeto.id, idProfissional: profissional.id } })).status()).toBe(400);
+    expect(await prisma.medicao.count({ where: { idProfissional: profissional.id } })).toBe(0);
 
     await page.request.post("/api/auth/logout");
     await prisma.profissional.deleteMany({ where: { codigo } });
@@ -753,6 +773,9 @@ test.describe.serial("Validação direcionada — restrição de perfil e efeito
     expect(resultado.professionalsPreservedForHistory, "SGC com histórico -> Profissional precisa ser preservado").toBe(1);
     expect(resultado.usersDeactivated).toBe(1);
 
+    const editarExcluido = await page.request.patch(`/api/mapa-pagamento/${mapaItem.id}`, { data: { projetistaCodigo: colaboradorCodigo, valor: 9999 } });
+    expect(editarExcluido.status()).toBe(400);
+
     // 5) Administrativo: fornecedor desaparece.
     await expect(fornecedorHeading(page, responsavel)).toHaveCount(0);
     await page.reload();
@@ -783,14 +806,18 @@ test.describe.serial("Validação direcionada — restrição de perfil e efeito
     const fornecedorSelect = page.locator("select").filter({ has: page.locator("option", { hasText: /Selecione…|Nenhum Boletim/ }) });
     await expect(fornecedorSelect.locator("option", { hasText: responsavel })).toHaveCount(1);
 
-    // 10) Profissional preservado como identidade histórica mínima — codigo/nome/nomeCompleto
-    // intactos, campos operacionais (email/cnpj/cpf/razaoSocial/funcao) limpos.
+    // 10) Profissional preservado como tombstone técnico; nome pessoal e campos operacionais limpos.
     const profissionalDepois = await prisma.profissional.findUniqueOrThrow({ where: { id: profissional.id } });
     expect(profissionalDepois.codigo).toBe(profissional.codigo);
-    expect(profissionalDepois.nomeCompleto).toBe(profissional.nomeCompleto);
+    expect(profissionalDepois.nome).toBe(`EXCLUIDO-${profissional.id}`);
+    expect(profissionalDepois.nomeCompleto).toBeNull();
+    expect(profissionalDepois.deletedAt).toBeTruthy();
     expect(profissionalDepois.email).toBeNull();
     expect(profissionalDepois.cnpj).toBeNull();
     expect(profissionalDepois.razaoSocial).toBeNull();
+    const audit = await prisma.adminAuditLog.findFirstOrThrow({ where: { targetId: profissional.id, action: "FORNECEDOR_EXCLUSAO_DEFINITIVA" } });
+    expect(audit.adminUsuario).toBe(e2eUsers.admin.usuario);
+    expect(audit.createdAt).toBeTruthy();
     const usuarioDepois = await prisma.usuario.findUniqueOrThrow({ where: { id: usuario.id } });
     expect(usuarioDepois.ativo).toBe(false);
     expect(usuarioDepois.excluidoAt).toBeTruthy();

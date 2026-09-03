@@ -51,7 +51,7 @@ export async function getColaboradorCodigoAliases(usuario: string | null | undef
 
   const profissional = codigo
     ? await prisma.profissional.findUnique({
-        where: { codigo },
+        where: { codigo, deletedAt: null },
         select: { codigo: true, nome: true, nomeCompleto: true, cnpj: true },
       })
     : null;

@@ -137,8 +137,8 @@ test("HAPPY PATH: cadeia completa de status, com auditoria de banco em cada etap
   try {
     // 1) Estado inicial: nenhum workflow ainda — equivalente a AGUARDANDO_ENVIO.
     let existing = await prisma.sgcAprovacaoMedicao.findUnique({ where: { colaboradorCodigo_ciclo: { colaboradorCodigo: fx.codigoA, ciclo: fx.ciclo } } });
-    assert.equal(existing, null);
     assert.equal(podeEnviarBm(existing?.status), true);
+    assert.equal(existing, null);
 
     // 2) MEDICAO envia o BM → PENDENTE, statusConferencia AGUARDANDO_UPLOAD (BM_AVAILABLE lógico).
     const sgc = await prisma.sgcAprovacaoMedicao.create({
