@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowRight, Check, CheckCheck, Edit3, MessageCircle, Mic
 import { Badge, BlurValue, Button, Card, Field, IconButton, Input, Select, Textarea } from "@/components/ui";
 import type { ContratoResumo, MapaPagamentoItem, Profissional } from "@/components/types";
 import { getMapaPagamentoDisplayStatus } from "@/lib/sgc-display-status";
+import { resolveCondicaoFixa, toCondicaoFixaConfig } from "@/lib/condicao-fixa";
 
 type Revisao = {
   id: string;
@@ -143,42 +144,6 @@ function parseCurrencyNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-type CondicaoFixaReferencia = {
-  tipoContratacao: string;
-  valorFixo: number;
-};
-
-const CONDICOES_FIXAS_REFERENCIA: Record<string, CondicaoFixaReferencia> = {
-  MAURICIO_SPINDOLA: { tipoContratacao: "FIXO (PJ)", valorFixo: 8640 },
-  RONALD_LEAL: { tipoContratacao: "FIXO (PJ)", valorFixo: 21300 },
-};
-
-function condicaoLookupText(value: string | null | undefined) {
-  return normalizeText(value ?? null)
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
-
-function fixedConditionSearchText(values: Array<string | null | undefined>) {
-  return values.map(condicaoLookupText).filter(Boolean).join("_");
-}
-
-function isCristianoJeferson(...values: Array<string | null | undefined>) {
-  return fixedConditionSearchText(values).includes("CRISTIANO_JEFERSON");
-}
-
-function fixedConditionFor(...values: Array<string | null | undefined>) {
-  const searchable = values.map(condicaoLookupText).filter(Boolean).join("_");
-  if (searchable.includes("CRISTIANO_JEFERSON")) {
-    return { tipoContratacao: "FIXO (PJ)", valorFixo: 12000 };
-  }
-  return Object.entries(CONDICOES_FIXAS_REFERENCIA).find(([key]) => searchable.includes(key))?.[1] ?? null;
-}
-
-function cristianoConditionalFixedCondition(hasMeasuredDocuments: boolean): CondicaoFixaReferencia {
-  return { tipoContratacao: "FIXO (PJ)", valorFixo: hasMeasuredDocuments ? 8640 : 12000 };
-}
-
 function ratio(value: number) {
   return value ? percent.format(value) : "–";
 }
@@ -188,29 +153,17 @@ function formatParticipacao(value: number | undefined) {
   return value === undefined ? "–" : percent.format(value / 100);
 }
 
-function contractParticipation(item: MapaPagamentoItem, contrato: string) {
-  const total = item.intrSossego + item.salobo + item.acg + item.escadasAlumar;
-  const allocation = normalizeText(item.ato);
-  const normalizedContrato = normalizeText(contrato);
-  const isDirectAllocation = allocation === normalizedContrato;
-
-  if (["INTR. SOSSEGO", "INTR SOSSEGO"].includes(normalizedContrato)) {
-    return item.intrSossego > 0 ? item.intrSossego : isDirectAllocation ? 1 : 0;
-  }
-  if (normalizedContrato === "SALOBO") {
-    return item.salobo > 0 ? item.salobo : isDirectAllocation ? 1 : 0;
-  }
-  if (normalizedContrato === "ACG") {
-    return item.acg > 0 ? item.acg : isDirectAllocation ? 1 : 0;
-  }
-  if (["ESCADAS ALUMAR", "ESCADA ALUMAR"].includes(normalizedContrato)) {
-    return item.escadasAlumar > 0 ? item.escadasAlumar : isDirectAllocation ? 1 : 0;
-  }
-  if (["NAO ALOCADO", "NÃO ALOCADO"].includes(normalizedContrato)) {
-    const named = ["INTR. SOSSEGO", "SALOBO", "ACG", "ESCADAS ALUMAR"];
-    return total === 0 && !named.includes(allocation) ? 1 : 0;
-  }
-  return 0;
+/**
+ * Elegibilidade de um item para o filtro "Contrato" (toolbar) — usa a MESMA participação dinâmica
+ * já calculada no backend (`item.participacaoContratos`, vindo de
+ * lib/participacao-contratos.ts::getParticipacaoPorFornecedorCiclo) e já usada para exibir o
+ * percentual por contrato nesta mesma tabela. Nunca mais os 4 contratos fixos hardcoded
+ * (Intr. Sossego/Salobo/ACG/Escadas Alumar) — funciona com qualquer contrato descoberto no ciclo.
+ */
+function contractParticipation(item: MapaPagamentoItem, contrato: string, contratos: ContratoResumo[]) {
+  const contratoId = contratos.find((c) => c.nome === contrato)?.id;
+  if (!contratoId) return 0;
+  return item.participacaoContratos?.[contratoId] ?? 0;
 }
 
 export function MapaPagamentoTable({
@@ -268,7 +221,7 @@ export function MapaPagamentoTable({
     const q = search.trim().toLocaleLowerCase("pt-BR");
     const result = itens.filter((item) => {
       const matchColab       = selectedCodigo ? item.projetistaCodigo === selectedCodigo : true;
-      const matchContract    = selectedContrato ? contractParticipation(item, selectedContrato) > 0 : true;
+      const matchContract    = selectedContrato ? contractParticipation(item, selectedContrato, contratos) > 0 : true;
       const searchable       = [item.ato, item.projetistaCodigo, item.responsavel, item.cpfCnpj, item.razaoSocial, item.fornecedor?.cpfCnpj, item.fornecedor?.razaoSocial]
         .filter(Boolean).join(" ").toLocaleLowerCase("pt-BR");
       return matchColab && matchContract && (!q || searchable.includes(q));
@@ -301,7 +254,7 @@ export function MapaPagamentoTable({
       if (!bValid) return -1;
       return sortOrder === "valor-desc" ? bv - av : av - bv;
     });
-  }, [itens, search, selectedCodigo, selectedContrato, sortOrder]);
+  }, [itens, search, selectedCodigo, selectedContrato, sortOrder, contratos]);
 
   const filterDescription = selectedContrato
     ? `${filteredItems.length} participantes alocados em ${selectedContrato}`
@@ -1000,7 +953,6 @@ function paymentForm(item: MapaPagamentoItem | null): PaymentForm {
   const condicoesFixas = item?.condicoesFixas;
   const razaoSocial = item?.fornecedor?.razaoSocial ?? item?.razaoSocial ?? "";
   const cpfCnpj = item?.fornecedor?.cpfCnpj ?? item?.cpfCnpj ?? "";
-  const mappedCondition = fixedConditionFor(item?.projetistaCodigo, item?.responsavel, razaoSocial);
   return {
     ato: item?.ato ?? "",
     projetistaCodigo: item?.projetistaCodigo ?? "",
@@ -1015,8 +967,8 @@ function paymentForm(item: MapaPagamentoItem | null): PaymentForm {
     valor: currencyInputValue(item?.valor ?? 0),
     rev: String(item?.rev ?? 0),
     status: item?.status ?? "",
-    valorFixo: condicoesFixas?.valorFixo ?? (mappedCondition ? currencyInputValue(mappedCondition.valorFixo) : ""),
-    tipoContratacao: condicoesFixas?.tipoContratacao ?? mappedCondition?.tipoContratacao ?? "",
+    valorFixo: condicoesFixas?.valorFixo ?? "",
+    tipoContratacao: condicoesFixas?.tipoContratacao ?? "",
     adicionaisFixos: condicoesFixas?.adicionaisFixos ?? "",
     observacoesContrato: condicoesFixas?.observacoesContrato ?? "",
   };
@@ -1170,19 +1122,27 @@ function PaymentModal({
   const valorPrevistoBase = totalCondicoesFixas + totalDocsValorBruto;
   const valorPrevistoLiquido = valorPrevistoBase - totalDescontos;
 
+  // Fornecedor CONDICIONAL_PRODUCAO (ver lib/condicao-fixa.ts) — o valor fixo depende de "existem
+  // documentos medidos" NESTE pagamento (linhas de Documentos Medidos já carregadas/adicionadas no
+  // formulário, `totalDocsValorBruto`, a mesma definição usada pelo ETL em
+  // generate_payment_map_from_measurements). Sempre recalculado ao vivo enquanto esse tipo de
+  // condição está ativo — nunca um valor hardcoded por nome (era a exceção do Cristiano Jeferson,
+  // hoje dado cadastral configurável por qualquer fornecedor via CadastroFornecedor).
   useEffect(() => {
-    if (!isCristianoJeferson(form.projetistaCodigo, form.responsavel, codigoQuery, form.razaoSocial)) return;
-    const mappedCondition = cristianoConditionalFixedCondition(totalDocsValorBruto > 0);
-    const nextValorFixo = currencyInputValue(mappedCondition.valorFixo);
+    const target = normalizeText(form.projetistaCodigo || form.responsavel || codigoQuery);
+    const matched = target
+      ? profissionaisFrescos.find((p) => normalizeText(p.codigo) === target || normalizeText(p.nome) === target || normalizeText(p.nomeCompleto) === target)
+      : undefined;
+    if (!matched || matched.tipoCondicaoFixa !== "CONDICIONAL_PRODUCAO") return;
+    const valorResolvido = resolveCondicaoFixa(toCondicaoFixaConfig(matched), totalDocsValorBruto > 0);
+    if (valorResolvido == null) return;
+    const nextValorFixo = currencyInputValue(valorResolvido);
+    const nextTipoContratacao = matched.tipoContrato || "FIXO (PJ)";
     setForm((cur) => {
-      if (cur.valorFixo === nextValorFixo && cur.tipoContratacao === mappedCondition.tipoContratacao) return cur;
-      return {
-        ...cur,
-        valorFixo: nextValorFixo,
-        tipoContratacao: mappedCondition.tipoContratacao,
-      };
+      if (cur.valorFixo === nextValorFixo && cur.tipoContratacao === nextTipoContratacao) return cur;
+      return { ...cur, valorFixo: nextValorFixo, tipoContratacao: nextTipoContratacao };
     });
-  }, [codigoQuery, form.projetistaCodigo, form.razaoSocial, form.responsavel, totalDocsValorBruto]);
+  }, [codigoQuery, form.projetistaCodigo, form.razaoSocial, form.responsavel, profissionaisFrescos, totalDocsValorBruto]);
 
   useEffect(() => {
     if (valorPrevistoBase <= 0 && totalDescontos <= 0) return;
@@ -1309,7 +1269,12 @@ function PaymentModal({
     // identidade canônica de fallback nesses casos (ver lib/mapa-pagamento.ts:resolveProjetistaCodigo)
     // — espelha exatamente a mesma regra aqui, nunca grava uma identidade vazia.
     const identidade = p.codigo || p.nome || "";
-    const mappedCondition = fixedConditionFor(p.codigo, p.nomeCompleto, p.nome, p.razaoSocial);
+    // Fonte PRIMÁRIA e ÚNICA: CadastroFornecedor real (join por colaboradorCodigo, vindo de
+    // /api/profissionais) via `resolveCondicaoFixa` — nunca tabela hardcoded por nome. Para
+    // CONDICIONAL_PRODUCAO o valor depende de `totalDocsValorBruto` (Documentos Medidos já
+    // presentes no formulário nesse instante); o efeito dedicado acima mantém isso em sincronia
+    // conforme documentos são carregados/adicionados/removidos.
+    const valorResolvido = resolveCondicaoFixa(toCondicaoFixaConfig(p), totalDocsValorBruto > 0);
     setCodigoQuery(identidade);
     setForm((cur) => ({
       ...cur,
@@ -1319,8 +1284,12 @@ function PaymentModal({
       // p.cpf, mesmo que preenchido.
       cpfCnpj: maskCpfCnpj(p.cnpj || cur.cpfCnpj),
       razaoSocial: p.razaoSocial || cur.razaoSocial,
-      valorFixo: mappedCondition ? currencyInputValue(mappedCondition.valorFixo) : cur.valorFixo,
-      tipoContratacao: mappedCondition?.tipoContratacao ?? cur.tipoContratacao,
+      // Selecionar um fornecedor é uma troca EXPLÍCITA de identidade — nunca herda o valor do
+      // fornecedor anterior (bug real: selecionar Mauricio, 8.640, depois trocar para alguém sem
+      // condição fixa mantinha 8.640 na tela). Sempre reflete o fornecedor recém-selecionado:
+      // valor real quando existe, "" quando não existe (nunca um resquício de state antigo).
+      valorFixo: valorResolvido != null ? currencyInputValue(valorResolvido) : "",
+      tipoContratacao: p.tipoContrato || "",
     }));
     setShowSuggestions(false);
   }
@@ -1330,17 +1299,32 @@ function PaymentModal({
   }
 
   useEffect(() => {
-    const mappedCondition = fixedConditionFor(form.projetistaCodigo, form.responsavel, codigoQuery, form.razaoSocial);
-    if (!mappedCondition) return;
+    // Mesma fonte primária de `selectProfissional` (CadastroFornecedor real, join por
+    // colaboradorCodigo) — cobre o caso de o usuário digitar o código diretamente sem clicar numa
+    // sugestão (fornecedores legados). CONDICIONAL_PRODUCAO já é tratado (sempre em sincronia) pelo
+    // efeito dedicado acima — este aqui só preenche o caso FIXA, e só quando o campo está vazio
+    // (nunca sobrescreve edição manual em andamento).
+    const target = normalizeText(form.projetistaCodigo || form.responsavel || codigoQuery);
+    const matched = target
+      ? profissionaisFrescos.find((p) => normalizeText(p.codigo) === target || normalizeText(p.nome) === target || normalizeText(p.nomeCompleto) === target)
+      : undefined;
+    if (!matched || matched.tipoCondicaoFixa === "CONDICIONAL_PRODUCAO") return;
+    const valorFixoReal = matched.valorCondicaoFixa;
+    const tipoContratoReal = matched.tipoContrato;
+    if (valorFixoReal == null && !tipoContratoReal) return;
     setForm((cur) => {
       if (parseCurrencyNumber(cur.valorFixo) > 0 && cur.tipoContratacao) return cur;
       return {
         ...cur,
-        valorFixo: parseCurrencyNumber(cur.valorFixo) > 0 ? cur.valorFixo : currencyInputValue(mappedCondition.valorFixo),
-        tipoContratacao: cur.tipoContratacao || mappedCondition.tipoContratacao,
+        valorFixo: parseCurrencyNumber(cur.valorFixo) > 0
+          ? cur.valorFixo
+          : valorFixoReal != null
+            ? currencyInputValue(valorFixoReal)
+            : cur.valorFixo,
+        tipoContratacao: cur.tipoContratacao || tipoContratoReal || "",
       };
     });
-  }, [codigoQuery, form.projetistaCodigo, form.razaoSocial, form.responsavel]);
+  }, [codigoQuery, form.projetistaCodigo, form.razaoSocial, form.responsavel, profissionaisFrescos]);
 
   function maskCpfCnpj(v: string) {
     const d = v.replace(/\D/g, "");

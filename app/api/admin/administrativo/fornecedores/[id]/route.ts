@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdministrativo } from "@/lib/admin";
 import { formatCnpj, normalizeCnpjDigits, onlyDigits, serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
+import { validateTipoCondicaoFixaForWrite } from "@/lib/condicao-fixa";
+import { validateFonteMedicaoForWrite } from "@/lib/fonte-medicao";
 import { encryptSensitive } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 
@@ -30,8 +32,10 @@ function normalizeEmail(value: unknown) {
 }
 
 function numberValue(value: unknown) {
-  if (value === null || value === undefined || value === "") return null;
-  const numeric = Number(String(value).replace(/\./g, "").replace(",", "."));
+  if (value === null || value === undefined) return null;
+  const text = String(value).replace(/\./g, "").replace(",", ".").trim();
+  if (!text) return null;
+  const numeric = Number(text);
   return Number.isFinite(numeric) ? numeric : null;
 }
 
@@ -76,6 +80,31 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: "Responsável e razão social são obrigatórios." }, { status: 400 });
   }
 
+  // Escrita administrativa: valor desconhecido/mal digitado nunca vira "FIXA"/"DOCUMENTOS" em
+  // silêncio — só NULL/undefined/"" (ausência explícita) é um default legítimo aqui. Validado
+  // ANTES de qualquer prisma.update — payload inválido nunca persiste alteração parcial.
+  const tipoCondicaoFixaResult = validateTipoCondicaoFixaForWrite(body.tipoCondicaoFixa);
+  if (!tipoCondicaoFixaResult.ok) {
+    return NextResponse.json({ error: tipoCondicaoFixaResult.error }, { status: 400 });
+  }
+  const tipoCondicaoFixa = tipoCondicaoFixaResult.value;
+  const valorCondicaoFixaComProducao = numberValue(body.valorCondicaoFixaComProducao);
+  const valorCondicaoFixaSemProducao = numberValue(body.valorCondicaoFixaSemProducao);
+  if (
+    tipoCondicaoFixa === "CONDICIONAL_PRODUCAO" &&
+    (valorCondicaoFixaComProducao === null || valorCondicaoFixaSemProducao === null)
+  ) {
+    return NextResponse.json(
+      { error: "Condição fixa condicional por produção exige os dois valores (com produção e sem produção)." },
+      { status: 400 },
+    );
+  }
+
+  const fonteMedicaoResult = validateFonteMedicaoForWrite(body.fonteMedicao);
+  if (!fonteMedicaoResult.ok) {
+    return NextResponse.json({ error: fonteMedicaoResult.error }, { status: 400 });
+  }
+
   const updated = await prisma.cadastroFornecedor.update({
     where: { id },
     data: {
@@ -95,6 +124,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       valorA1Equivalente: numberValue(body.valorA1Equivalente),
       valorDocumento: numberValue(body.valorDocumento),
       valorCondicaoFixa: numberValue(body.valorCondicaoFixa),
+      tipoCondicaoFixa,
+      valorCondicaoFixaComProducao,
+      valorCondicaoFixaSemProducao,
+      fonteMedicao: fonteMedicaoResult.value,
       inicio: dateValue(body.inicio),
       final: dateValue(body.final),
       statusCadastro: text(body.statusCadastro),

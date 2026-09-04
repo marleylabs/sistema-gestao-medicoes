@@ -30,10 +30,6 @@ SHEET_ALIASES = {
     "MAPA PAGTO": ["MAPA PAGTO"],
     "Documentos Auxiliares": ["Documentos Auxiliares", "BM AUX", "BM - AUX"],
 }
-BM_AUX_ALLOWED_COLLABORATORS = {
-    "mauricio spindola",
-    "cristiano jeferson",
-}
 ENCRYPTED_PREFIX = "enc:v1"
 SENSITIVE_RAW_COLUMNS = {
     "cpf",
@@ -502,6 +498,7 @@ def collect_import_collaborator_codes(
     df: pd.DataFrame,
     bm_aux_df: pd.DataFrame,
     canonical_codes: dict[str, str],
+    fonte_medicao_map: dict[str, str],
     ciclo: str,
 ) -> set[str]:
     codes: set[str] = set()
@@ -524,7 +521,7 @@ def collect_import_collaborator_codes(
             continue
 
         professional_raw = extract(row, PROFESSIONAL_COLUMNS)
-        if is_bm_aux_only_collaborator(professional_raw["nome"], canonical_codes) and not discount_only:
+        if uses_documentos_auxiliares(professional_raw["nome"], canonical_codes, fonte_medicao_map) and not discount_only:
             continue
         add_code(professional_raw["nome"])
 
@@ -533,7 +530,7 @@ def collect_import_collaborator_codes(
         row_cycle = normalize_cycle(raw["ciclo"])
         if row_cycle and row_cycle != ciclo:
             continue
-        for _, codigo in bm_aux_people(raw, canonical_codes):
+        for _, codigo in bm_aux_people(raw, canonical_codes, fonte_medicao_map):
             add_code(codigo)
 
     return codes
@@ -1431,14 +1428,6 @@ CONTRACT_PAYMENT_COLUMNS = {
     "escadas alumar": "escadas_alumar",
 }
 
-CRISTIANO_FIXED_WITH_DOCUMENTS = Decimal("8640")
-CRISTIANO_FIXED_WITHOUT_DOCUMENTS = Decimal("12000")
-
-FIXED_CONDITION_REFERENCE = {
-    "mauricio spindola": Decimal("8640"),
-    "ronald leal": Decimal("21300"),
-}
-
 NAME_STOP_WORDS = {"da", "de", "do", "das", "dos", "e", "ltda", "me", "eireli"}
 
 
@@ -1491,22 +1480,81 @@ def same_person_name(left: Any, right: Any) -> bool:
     return matches >= required and matches / min(len(left_tokens), len(right_tokens)) >= 0.5
 
 
-def fixed_condition_reference_for(value: Any) -> Decimal:
-    normalized = normalize_for_compare(clean_text(value))
-    for key, amount in FIXED_CONDITION_REFERENCE.items():
-        if same_person_name(normalized, key):
-            return amount
-    return Decimal("0")
+def normalize_tipo_condicao_fixa(value: Any) -> str:
+    """Espelha lib/condicao-fixa.ts::normalizeTipoCondicaoFixa — NULL/vazio/qualquer outro valor
+    sempre vira 'FIXA' (comportamento pré-existente, nenhum fornecedor cadastrado antes desta
+    correção precisa de migração manual)."""
+    normalized = str(value or "").strip().upper()
+    return "CONDICIONAL_PRODUCAO" if normalized == "CONDICIONAL_PRODUCAO" else "FIXA"
 
 
-def is_cristiano_jeferson(value: Any) -> bool:
-    return same_person_name(value, "cristiano jeferson")
+def resolve_condicao_fixa(cadastro: dict[str, Any] | None, has_production: bool) -> Decimal | None:
+    """Definição CANÔNICA e ÚNICA de "Valor fixo mensal/contratual" — espelha exatamente
+    lib/condicao-fixa.ts::resolveCondicaoFixa (TypeScript e Python NUNCA podem divergir para o
+    mesmo fornecedor/ciclo). Modo FIXA (padrão) usa `valor_condicao_fixa`. CONDICIONAL_PRODUCAO
+    exige AMBOS `valor_condicao_fixa_com_producao`/`valor_condicao_fixa_sem_producao` — se faltar
+    um dos dois, retorna None ("não informado"), nunca inventa um valor. Substitui a antiga exceção
+    hardcoded do Cristiano Jeferson: hoje é dado cadastral real, configurável para qualquer
+    fornecedor via CadastroFornecedor (Painel Administrativo)."""
+    if cadastro is None:
+        return None
+    tipo = normalize_tipo_condicao_fixa(cadastro.get("tipo_condicao_fixa"))
+    if tipo == "CONDICIONAL_PRODUCAO":
+        com = cadastro.get("valor_condicao_fixa_com_producao")
+        sem = cadastro.get("valor_condicao_fixa_sem_producao")
+        if com is None or sem is None:
+            return None
+        return clean_decimal(com) if has_production else clean_decimal(sem)
+    valor = cadastro.get("valor_condicao_fixa")
+    return clean_decimal(valor) if valor is not None else None
 
 
-def fixed_condition_reference_for_payment(item: dict[str, Any]) -> Decimal:
-    if is_cristiano_jeferson(item.get("codigo")) or is_cristiano_jeferson(item.get("nome_completo")):
-        return CRISTIANO_FIXED_WITH_DOCUMENTS if clean_decimal(item.get("documentos")) > 0 else CRISTIANO_FIXED_WITHOUT_DOCUMENTS
-    return fixed_condition_reference_for(item.get("codigo")) or fixed_condition_reference_for(item.get("nome_completo"))
+def normalize_fonte_medicao(value: Any) -> str:
+    """Espelha lib/fonte-medicao.ts::normalizeFonteMedicao — NULL/vazio/qualquer outro valor sempre
+    vira 'DOCUMENTOS' (comportamento legado padrão; nenhum dos 48 cadastros existentes antes desta
+    correção precisa de migração manual)."""
+    normalized = str(value or "").strip().upper()
+    return "DOCUMENTOS_AUXILIARES" if normalized == "DOCUMENTOS_AUXILIARES" else "DOCUMENTOS"
+
+
+def latest_fonte_medicao_by_collaborator(conn) -> dict[str, str]:
+    """Substitui BM_AUX_ALLOWED_COLLABORATORS (whitelist hardcoded por nome, removida): mapa
+    codigo/nome normalizado -> 'DOCUMENTOS'|'DOCUMENTOS_AUXILIARES', lido de
+    CadastroFornecedor.fonte_medicao (dado cadastral real, configurável para qualquer fornecedor).
+    Mesmo padrão de dedup de `latest_cadastros_by_collaborator` (mais recente por updated_at vence
+    quando há mais de um CadastroFornecedor para a mesma identidade)."""
+    rows = conn.execute(
+        text(
+            """
+            select distinct on (coalesce(colaborador_codigo, responsavel))
+                   colaborador_codigo, responsavel, fonte_medicao
+              from cadastros_fornecedores
+             order by coalesce(colaborador_codigo, responsavel), updated_at desc
+            """
+        )
+    ).mappings().all()
+
+    result: dict[str, str] = {}
+    for row in rows:
+        fonte = normalize_fonte_medicao(row.get("fonte_medicao"))
+        for key in (normalize_for_compare(row.get("colaborador_codigo")), normalize_for_compare(row.get("responsavel"))):
+            if key and key not in result:
+                result[key] = fonte
+    return result
+
+
+def uses_documentos_auxiliares(value: Any, canonical_codes: dict[str, str], fonte_medicao_map: dict[str, str]) -> bool:
+    """Substitui `is_bm_aux_only_collaborator` (checagem por nome hardcoded, removida) — resolve a
+    IDENTIDADE CANÔNICA real (mesmo `canonical_codes` já usado em todo o pipeline, nunca CNPJ) e
+    consulta `fonte_medicao_map`. Nunca decide por nome diretamente: `value` só existe para chegar
+    ao código canônico via `canonical_codes`."""
+    name = clean_text(value)
+    if not name:
+        return False
+    normalized = normalize_for_compare(name)
+    canonical = canonical_codes.get(normalized, name)
+    fonte = fonte_medicao_map.get(normalize_for_compare(canonical)) or fonte_medicao_map.get(normalized)
+    return fonte == "DOCUMENTOS_AUXILIARES"
 
 
 def payment_contract_column(value: Any) -> str | None:
@@ -1540,7 +1588,10 @@ def latest_cadastros_by_collaborator(conn) -> dict[str, dict[str, Any]]:
                    razao_social,
                    cnpj_normalizado,
                    tipo_contrato,
-                   valor_condicao_fixa
+                   valor_condicao_fixa,
+                   tipo_condicao_fixa,
+                   valor_condicao_fixa_com_producao,
+                   valor_condicao_fixa_sem_producao
               from cadastros_fornecedores
              order by coalesce(colaborador_codigo, responsavel), updated_at desc
             """
@@ -1641,10 +1692,19 @@ def generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo: st
     loaded = 0
     for ordem, item in enumerate(grouped.values(), start=1):
         cadastro = find_cadastro_for_generated_payment(cadastros, item)
-        cadastro_valor_fixo = clean_decimal(cadastro.get("valor_condicao_fixa") if cadastro else None)
-        referencia_valor_fixo = fixed_condition_reference_for_payment(item)
-        is_cristiano = is_cristiano_jeferson(item["codigo"]) or is_cristiano_jeferson(item["nome_completo"])
-        valor_fixo = referencia_valor_fixo if is_cristiano else max(cadastro_valor_fixo, referencia_valor_fixo)
+        # CORREÇÃO ESTRUTURAL: existia uma tabela hardcoded por nome (FIXED_CONDITION_REFERENCE,
+        # removida) usada via `max(cadastro_valor_fixo, referencia_valor_fixo)` — sempre que o valor
+        # hardcoded fosse MAIOR que o cadastro real (ex.: depois de uma renegociação contratual que
+        # REDUZ o valor), o valor antigo/errado vencia silenciosamente. A exceção documentada do
+        # Cristiano Jeferson (valor fixo condicional por atividade no ciclo) também foi removida
+        # como hardcode por nome: hoje é modelada como dado cadastral real
+        # (`tipo_condicao_fixa`/`valor_condicao_fixa_com_producao`/`valor_condicao_fixa_sem_producao`
+        # em CadastroFornecedor), configurável para QUALQUER fornecedor via Painel Administrativo —
+        # ver `resolve_condicao_fixa` acima, espelhado 1:1 em lib/condicao-fixa.ts (TypeScript).
+        # "existem documentos medidos no ciclo" é `item["documentos"] > 0` — a mesma soma de
+        # `Medicao.valor_medicao` (excluindo desconto/negativo) calculada logo acima, usada pelo
+        # TypeScript via `getDocumentosMedidosTotal`/`totalDocsValorBruto` (nunca duas fórmulas).
+        valor_fixo = resolve_condicao_fixa(cadastro, item["documentos"] > 0) or Decimal("0")
         total_documentos = item["documentos"] - item["descontos"]
         valor_total = valor_fixo + total_documentos
         if valor_fixo == 0 and item["documentos"] == 0 and item["descontos"] == 0:
@@ -1700,7 +1760,7 @@ def generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo: st
     return loaded
 
 
-def bm_aux_people(raw: dict[str, Any], canonical_codes: dict[str, str]) -> list[tuple[str, str]]:
+def bm_aux_people(raw: dict[str, Any], canonical_codes: dict[str, str], fonte_medicao_map: dict[str, str]) -> list[tuple[str, str]]:
     people: list[tuple[str, str]] = []
     seen: set[str] = set()
     for role, key in [("RESPONSAVEL", "responsavel"), ("AUXILIAR", "auxiliar")]:
@@ -1711,19 +1771,10 @@ def bm_aux_people(raw: dict[str, Any], canonical_codes: dict[str, str]) -> list[
         if normalized in seen:
             continue
         seen.add(normalized)
-        if BM_AUX_ALLOWED_COLLABORATORS and normalized not in BM_AUX_ALLOWED_COLLABORATORS:
+        if not uses_documentos_auxiliares(name, canonical_codes, fonte_medicao_map):
             continue
         people.append((role, canonical_codes.get(normalized, name)))
     return people
-
-
-def is_bm_aux_only_collaborator(value: Any, canonical_codes: dict[str, str]) -> bool:
-    name = clean_text(value)
-    if not name:
-        return False
-    normalized = normalize_for_compare(name)
-    canonical = canonical_codes.get(normalized)
-    return normalized in BM_AUX_ALLOWED_COLLABORATORS or normalize_for_compare(canonical) in BM_AUX_ALLOWED_COLLABORATORS
 
 
 def build_bm_aux_measurement(
@@ -2038,6 +2089,11 @@ def ingest(
     canonical_codes = build_canonical_professional_codes(base_df)
     if not payment_map_items_df.empty:
         canonical_codes.update(build_payment_map_canonical_codes(payment_map_items_df))
+    # Substitui BM_AUX_ALLOWED_COLLABORATORS (whitelist hardcoded por nome, removida) — de qual aba
+    # ("Documentos" ou "Documentos Auxiliares") vem a produção de cada fornecedor é agora dado
+    # cadastral real (CadastroFornecedor.fonte_medicao), lido antes da transação principal.
+    with engine.connect() as fonte_medicao_conn:
+        fonte_medicao_map = latest_fonte_medicao_by_collaborator(fonte_medicao_conn)
 
     projetos, profissionais, medicoes, mapa_pagamento_contexto, mapa_pagamento_itens, bm_aux_medicoes = reflect_tables(engine)
     payment_context = (
@@ -2046,7 +2102,7 @@ def ingest(
         else build_generated_payment_context(df, bm_aux_df, ciclo=ciclo)
     )
     ciclo_efetivo = payment_context["ciclo"]
-    affected_collaborator_codes = collect_import_collaborator_codes(df, bm_aux_df, canonical_codes, ciclo_efetivo)
+    affected_collaborator_codes = collect_import_collaborator_codes(df, bm_aux_df, canonical_codes, fonte_medicao_map, ciclo_efetivo)
     base_loaded = 0
     payment_status_loaded = 0
     payment_items_loaded = 0
@@ -2108,7 +2164,7 @@ def ingest(
             if row_cycle and row_cycle != ciclo_efetivo:
                 continue
 
-            people = bm_aux_people(raw, canonical_codes)
+            people = bm_aux_people(raw, canonical_codes, fonte_medicao_map)
             if not people:
                 continue
             bm_aux_rows_loaded += 1
@@ -2164,7 +2220,7 @@ def ingest(
                 skipped += 1
                 continue
             professional_raw = extract(row, PROFESSIONAL_COLUMNS)
-            if is_bm_aux_only_collaborator(professional_raw["nome"], canonical_codes) and not discount_only:
+            if uses_documentos_auxiliares(professional_raw["nome"], canonical_codes, fonte_medicao_map) and not discount_only:
                 skipped += 1
                 continue
 

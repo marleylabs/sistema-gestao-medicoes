@@ -26,6 +26,19 @@ export type CadastroRow = {
   valorA1Equivalente?: number | null;
   valorDocumento?: number | null;
   valorCondicaoFixa?: number | null;
+  /** `undefined` (padrão, nunca preenchido pela importação em planilha — não existe essa coluna)
+   * significa "não alterar o valor já gravado"; só rotas que EXPÕEM esse campo explicitamente (o
+   * cadastro manual/edição no Painel Administrativo) devem passar um valor real aqui — nunca
+   * `undefined` nesses fluxos, para não perder silenciosamente uma configuração condicional já
+   * feita quando o mesmo fornecedor for reimportado pela planilha. */
+  tipoCondicaoFixa?: string | null;
+  valorCondicaoFixaComProducao?: number | null;
+  valorCondicaoFixaSemProducao?: number | null;
+  /** Mesmo contrato de `tipoCondicaoFixa` acima: `undefined` (padrão da importação em planilha —
+   * não existe essa coluna na Consulta PJ) = não alterar; só o cadastro manual/edição administrativa
+   * deve passar um valor real, para uma reimportação da planilha nunca sobrescrever silenciosamente
+   * uma configuração de "Fonte da medição" já feita (item 17 do pedido). */
+  fonteMedicao?: string | null;
   inicio?: Date | null;
   final?: Date | null;
   statusCadastro?: string | null;
@@ -94,9 +107,20 @@ function asText(value: unknown) {
   return text || null;
 }
 
+/**
+ * CAUSA RAIZ encontrada nesta auditoria: célula vazia (`value` null/undefined) ou só espaços virava
+ * `String(value ?? "")` = `""` — e `Number("")`/`Number("   ")` é `0` em JavaScript (não `NaN`), então
+ * o guard `Number.isFinite(numeric)` deixava passar como um zero "válido". Resultado real: 42
+ * CadastroFornecedor no banco dev com `valorCondicaoFixa = 0` para fornecedores cuja célula
+ * "CONDICAO FIXA" na planilha estava simplesmente vazia — violando a regra "ausência ≠ zero"
+ * estabelecida para a condição fixa condicional. Corrigido tratando string vazia (após trim) como
+ * ausência ANTES de chamar `Number(...)` — célula com "0"/"R$ 0,00" explícito continua virando 0
+ * normalmente (só isso passa pelo `Number(...)`).
+ */
 function asNumber(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   const text = String(value ?? "").replace(/\./g, "").replace(",", ".").trim();
+  if (!text) return null;
   const numeric = Number(text);
   return Number.isFinite(numeric) ? numeric : null;
 }
@@ -136,11 +160,28 @@ function identityNameHash(value: string) {
   return createHash("sha256").update(normalizePersonName(value)).digest("hex");
 }
 
-export async function isDeletedFornecedorIdentityName(nome: string) {
-  return !!await prisma.adminAuditLog.findFirst({
-    where: { action: "FORNECEDOR_EXCLUSAO_DEFINITIVA", metadata: { path: ["identityNameHashes"], array_contains: [identityNameHash(nome)] } },
-    select: { id: true },
+/**
+ * "Essa identidade ESTÁ excluída AGORA?" — nunca "já foi excluída alguma vez". O registro de
+ * auditoria (`identityNameHashes`) é permanente por natureza (histórico nunca se apaga), então
+ * checar só a presença dele bloquearia PARA SEMPRE qualquer identidade que um dia foi excluída e
+ * depois reativada por uma reimportação administrativa válida (ver
+ * `resolveFornecedorIdentity`/`upsertCadastroFornecedor`, `reactivatingDeletedIdentity`) — bug real
+ * encontrado ao corrigir a reimportação: e-mail, edição de pagamento e provisionamento de acesso
+ * continuavam bloqueados mesmo depois do fornecedor voltar a existir normalmente. A checagem real é
+ * sempre o estado ATUAL de `Profissional.deletedAt`.
+ */
+export async function isDeletedFornecedorIdentityName(nomeOuCodigo: string) {
+  const exclusao = await prisma.adminAuditLog.findFirst({
+    where: { action: "FORNECEDOR_EXCLUSAO_DEFINITIVA", metadata: { path: ["identityNameHashes"], array_contains: [identityNameHash(nomeOuCodigo)] } },
+    select: { targetCodigo: true },
+    orderBy: { createdAt: "desc" },
   });
+  if (!exclusao) return false;
+  // SEM_CODIGO_VINCULADO — nenhum Profissional foi vinculado no momento da exclusão, não há nada
+  // para reativar; permanece bloqueado indefinidamente (mesma política de sempre para esse caso).
+  if (!exclusao.targetCodigo) return true;
+  const profissional = await prisma.profissional.findUnique({ where: { codigo: exclusao.targetCodigo }, select: { deletedAt: true } });
+  return !!profissional?.deletedAt;
 }
 
 export function diasAteVencimento(final: Date | string | null | undefined) {
@@ -277,23 +318,52 @@ export type IdentityCandidate = {
  * devolve 409 ao Administrativo). */
 export class FornecedorIdentityConflictError extends Error {
   candidates: IdentityCandidate[];
-  constructor(message: string, candidates: IdentityCandidate[]) {
+  /** Códigos históricos candidatos quando o conflito vem de colisão de hash de nome (ver
+   * `resolveFornecedorIdentity`, Prioridade 1B) — usado pelo fluxo de resolução manual
+   * (`GET .../candidatos-identidade`) para saber quais códigos buscar detalhes. */
+  candidateCodigos?: string[];
+  constructor(message: string, candidates: IdentityCandidate[], candidateCodigos?: string[]) {
     super(message);
     this.name = "FornecedorIdentityConflictError";
     this.candidates = candidates;
+    this.candidateCodigos = candidateCodigos;
   }
 }
 
 /** Lançada quando a linha importada/cadastrada resolve para um `colaboradorCodigo` cujo
- * `Profissional` foi excluído definitivamente pelo ADMIN (`deletedAt` preenchido) — a importação
- * NUNCA reativa automaticamente uma identidade excluída (ver `resolveFornecedorIdentity`,
- * resolução `BLOCKED_DELETED`). Requer ação administrativa explícita fora deste fluxo. */
+ * `Profissional` foi excluído definitivamente pelo ADMIN (`deletedAt` preenchido) — reservada para
+ * um bloqueio genuíno de regra de negócio (ver `FornecedorIdentityResolution["BLOCKED_DELETED"]` —
+ * não usada atualmente por `resolveFornecedorIdentity`, mantida para não remover a infraestrutura
+ * de tratamento já existente). */
 export class FornecedorIdentityDeletedError extends Error {
   colaboradorCodigo: string;
   constructor(message: string, colaboradorCodigo: string) {
     super(message);
     this.name = "FornecedorIdentityDeletedError";
     this.colaboradorCodigo = colaboradorCodigo;
+  }
+}
+
+/** Lançada quando o nome da linha corresponde ao histórico de uma exclusão administrativa sem
+ * NENHUM `colaboradorCodigo` vinculado no momento (`SEM_CODIGO_VINCULADO`) — não há identidade
+ * histórica (nem sequer um código) para reaproveitar com segurança; nunca é um CREATE silencioso,
+ * exige decisão humana explícita (ver `resolveFornecedorIdentity`, resolução `REQUIRES_REVIEW`). */
+export class FornecedorIdentityReviewError extends Error {
+  motivo: string;
+  constructor(motivo: string) {
+    super(motivo);
+    this.name = "FornecedorIdentityReviewError";
+    this.motivo = motivo;
+  }
+}
+
+/** Lançada quando mais de um `Usuario` COLABORADOR com o mesmo nome normalizado é encontrado ao
+ * tentar reativar/vincular acesso durante um upsert — condição 7/8 do RECREATE_FROM_HISTORY
+ * (relacionar o Usuario de forma inequívoca); nunca escolhe o primeiro encontrado. */
+export class FornecedorUsuarioAmbiguoError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FornecedorUsuarioAmbiguoError";
   }
 }
 
@@ -312,11 +382,32 @@ type IdentityIndex = {
    * caso de homônimo real colidindo num Profissional/colaboradorCodigo já existente. */
   cadastroByColaboradorCodigo: Map<string, IdentityCandidate>;
   /** colaboradorCodigo (normalizado) de todo Profissional com `deletedAt` preenchido — usado para
-   * NUNCA reativar automaticamente uma identidade excluída administrativamente ao reimportar uma
-   * planilha que contenha o mesmo nome/código (ver `resolveFornecedorIdentity`, resolução
-   * `BLOCKED_DELETED`). */
+   * marcar a resolução como reativação explícita (`reactivatingDeletedIdentity`) quando uma
+   * reimportação válida da planilha administrativa encontra a mesma identidade excluída (ver
+   * `resolveFornecedorIdentity`/`upsertCadastroFornecedor` — reutiliza `codigo`/Profissional/
+   * Usuario e recria só o `CadastroFornecedor` ausente, nunca gera identidade nova). */
   deletedCodigos: Set<string>;
-  deletedNameHashes?: Map<string, string>;
+  /** hash sha256 do nome normalizado -> conjunto de `colaboradorCodigo` históricos associados a
+   * ele na auditoria de exclusões. NUNCA um valor único — dois códigos históricos DISTINTOS podem
+   * compartilhar o mesmo nome gravado (caso real encontrado: duas identidades, uma delas com um
+   * `responsavel` histórico igual ao nome completo da outra) — se isso acontecer, a resolução tem
+   * que virar CONFLICT, nunca escolher um dos dois (nem o primeiro, nem o último). Usado para
+   * `RECREATE_FROM_HISTORY` (hash único, sem Profissional atual/tombstoned e sem nenhum outro
+   * candidato ativo — ver `resolveFornecedorIdentity`). */
+  deletedNameHashes?: Map<string, Set<string>>;
+  /** hash sha256 do nome normalizado de identidades excluídas SEM NENHUM `colaboradorCodigo`
+   * vinculado no momento da exclusão (`SEM_CODIGO_VINCULADO`) — não existe nenhum código histórico
+   * para reaproveitar numa recriação seguindo o mesmo padrão de `Profissional.codigo`, então nunca
+   * vira `RECREATE_FROM_HISTORY` nem `BLOCKED_DELETED` genérico: sinaliza `REQUIRES_REVIEW`,
+   * explícito de que precisa de decisão humana (não é bloqueio de regra de negócio, é ausência de
+   * dado suficiente para reconstruir a identidade com segurança). */
+  noCodeExclusionHashes?: Set<string>;
+  /** colaboradorCodigo (normalizado) -> configurações administrativas (fonteMedicao/
+   * tipoCondicaoFixa/valorCondicaoFixaComProducao/valorCondicaoFixaSemProducao) preservadas no
+   * momento da exclusão definitiva mais recente dessa identidade — restauradas quando o upsert
+   * recria o CadastroFornecedor (RECREATE_FROM_HISTORY ou reativação de Profissional excluído) e a
+   * linha reimportada não traz esses campos explicitamente (ver `upsertCadastroFornecedor`). */
+  administrativeConfigSnapshots?: Map<string, AdministrativeConfigSnapshot>;
 };
 
 async function buildIdentityIndex(): Promise<IdentityIndex> {
@@ -327,7 +418,8 @@ async function buildIdentityIndex(): Promise<IdentityIndex> {
     }),
     prisma.adminAuditLog.findMany({
       where: { action: "FORNECEDOR_EXCLUSAO_DEFINITIVA" },
-      select: { targetCodigo: true, metadata: true },
+      select: { targetCodigo: true, metadata: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
     }),
   ]);
 
@@ -371,14 +463,33 @@ async function buildIdentityIndex(): Promise<IdentityIndex> {
     }
   }
 
-  const deletedNameHashes = new Map<string, string>();
+  const deletedNameHashes = new Map<string, Set<string>>();
+  const noCodeExclusionHashes = new Set<string>();
+  // Última exclusão (a query já vem ordenada por createdAt asc) com snapshot vence — se a mesma
+  // identidade foi excluída/recriada/excluída de novo mais de uma vez, só a config mais recente
+  // importa.
+  const administrativeConfigSnapshots = new Map<string, AdministrativeConfigSnapshot>();
   for (const exclusao of exclusoes) {
-    const hashes = (exclusao.metadata as { identityNameHashes?: unknown } | null)?.identityNameHashes;
-    if (Array.isArray(hashes)) for (const hash of hashes) {
-      if (typeof hash === "string") deletedNameHashes.set(hash, exclusao.targetCodigo || "IDENTIDADE_EXCLUIDA");
+    const metadata = exclusao.metadata as { identityNameHashes?: unknown; administrativeConfigSnapshot?: unknown } | null;
+    if (exclusao.targetCodigo && metadata?.administrativeConfigSnapshot && typeof metadata.administrativeConfigSnapshot === "object") {
+      administrativeConfigSnapshots.set(normalizePersonName(exclusao.targetCodigo), metadata.administrativeConfigSnapshot as AdministrativeConfigSnapshot);
+    }
+
+    const hashes = metadata?.identityNameHashes;
+    if (!Array.isArray(hashes)) continue;
+    if (!exclusao.targetCodigo) {
+      // SEM_CODIGO_VINCULADO — sem código histórico nenhum para reaproveitar.
+      for (const hash of hashes) if (typeof hash === "string") noCodeExclusionHashes.add(hash);
+      continue;
+    }
+    for (const hash of hashes) {
+      if (typeof hash !== "string") continue;
+      const set = deletedNameHashes.get(hash) ?? new Set<string>();
+      set.add(exclusao.targetCodigo);
+      deletedNameHashes.set(hash, set);
     }
   }
-  return { profissionalCodigosByName, cadastrosByName, cadastroIdByColaboradorCodigo, cadastroByColaboradorCodigo, deletedCodigos, deletedNameHashes };
+  return { profissionalCodigosByName, cadastrosByName, cadastroIdByColaboradorCodigo, cadastroByColaboradorCodigo, deletedCodigos, deletedNameHashes, noCodeExclusionHashes, administrativeConfigSnapshots };
 }
 
 /** Atualiza o índice em memória com o resultado de uma escrita — sem isso, duas linhas da MESMA
@@ -441,10 +552,17 @@ function signalsContradict(candidate: Pick<IdentityCandidate, "email" | "telefon
 }
 
 type FornecedorIdentityResolution =
-  | { kind: "PROFISSIONAL_MATCH"; colaboradorCodigo: string }
+  | { kind: "PROFISSIONAL_MATCH"; colaboradorCodigo: string; reactivatingDeletedIdentity?: boolean }
   | { kind: "CADASTRO_MATCH"; colaboradorCodigo: string; cadastroId: string }
   | { kind: "CREATE"; colaboradorCodigo: string }
-  | { kind: "CONFLICT"; candidates: IdentityCandidate[] }
+  | { kind: "RECREATE_FROM_HISTORY"; colaboradorCodigo: string }
+  | { kind: "CONFLICT"; candidates: IdentityCandidate[]; reason?: string; candidateCodigos?: string[] }
+  | { kind: "REQUIRES_REVIEW"; motivo: string }
+  /** Reservado para um bloqueio genuíno de regra de negócio (não usado atualmente por
+   * `resolveFornecedorIdentity` — toda ambiguidade vira `CONFLICT`, toda identidade sem código
+   * histórico suficiente vira `REQUIRES_REVIEW`). Mantido no tipo para não remover a
+   * infraestrutura de tratamento já existente (`FornecedorIdentityDeletedError`,
+   * `bloqueadosDetalhe`) caso uma regra de negócio real precise dele no futuro. */
   | { kind: "BLOCKED_DELETED"; colaboradorCodigo: string };
 
 /**
@@ -453,26 +571,63 @@ type FornecedorIdentityResolution =
  * PRIORIDADE 1 — colaboradorCodigo canônico já existente (Profissional.codigo/nome/nomeCompleto,
  * comparação exata normalizada). Mais de um código distinto compatível = ambíguo -> CONFLICT.
  * Se o único código compatível pertence a um Profissional com `deletedAt` preenchido (excluído
- * definitivamente pelo ADMIN) -> BLOCKED_DELETED — a importação NUNCA reativa uma identidade
- * excluída automaticamente; exige ação administrativa explícita fora deste fluxo.
+ * definitivamente pelo ADMIN), a linha resolve para PROFISSIONAL_MATCH com
+ * `reactivatingDeletedIdentity: true` — uma reimportação válida da planilha administrativa
+ * (Consulta PJ) É uma ação administrativa explícita, e reutiliza `codigo`/`Profissional`/`Usuario`
+ * já existentes, recriando apenas o `CadastroFornecedor` que estava ausente (nunca gera novo
+ * código, nunca duplica Profissional/Usuario). Ver `upsertCadastroFornecedor` para a reativação em
+ * si.
+ *
+ * PRIORIDADE 1B — REATIVAÇÃO POR HASH DE NOME. A exclusão administrativa anonimiza
+ * `Profissional.nome`/`nomeCompleto` (viram `EXCLUIDO-<uuid>`/`null`) — isso quebra a Prioridade 1
+ * quando `codigo` é um código técnico DISTINTO do nome (ex.: `P0123456` atribuído pelo ETL do lado
+ * de medição, nunca derivado do nome) e a planilha, como sempre, identifica a linha pelo NOME, não
+ * pelo código. `deletedNameHashes` guarda hash(nome-original) -> conjunto de `colaboradorCodigo`
+ * históricos associados a ele:
+ *   - conjunto com 2+ códigos DISTINTOS -> CONFLICT imediato (nunca escolhe um dos dois — caso real
+ *     encontrado: duas identidades diferentes, uma com um `responsavel` histórico igual ao nome
+ *     completo da outra, produzindo o mesmo hash apontando pra ambas).
+ *   - conjunto com exatamente 1 código, e esse código AINDA tem um Profissional tombstoned real
+ *     (`deletedCodigos`) -> reativa (mesma lógica da Prioridade 1).
+ *   - conjunto com exatamente 1 código, mas SEM nenhum Profissional (nem ativo nem tombstoned) para
+ *     esse código -> candidato a `RECREATE_FROM_HISTORY` (ver Prioridade 2, abaixo — só resolve
+ *     depois de confirmar que também não há candidato por CadastroFornecedor residual).
  *
  * PRIORIDADE 2 — quando não há Profissional ainda, procura CadastroFornecedor existente com o
  * MESMO nome normalizado e sinais cadastrais não-contraditórios (e-mail/telefone/razão social).
  * Exatamente 1 candidato plausível -> atualiza aquele. 2+ candidatos plausíveis -> CONFLICT
- * (ambiguidade real, nunca escolhida sozinha). 0 candidatos (nenhum nome igual, ou só homônimos
- * com sinais contraditórios) -> CREATE.
+ * (ambiguidade real, nunca escolhida sozinha). 0 candidatos:
+ *   - se a Prioridade 1B identificou um único código histórico reaproveitável sem Profissional
+ *     nenhum -> `RECREATE_FROM_HISTORY` (recria Profissional com esse MESMO código, nunca gera um
+ *     novo — ver `upsertCadastroFornecedor`).
+ *   - se o hash aponta para uma exclusão SEM NENHUM colaboradorCodigo vinculado no momento
+ *     (`SEM_CODIGO_VINCULADO` — não existe nenhum código histórico para reaproveitar) ->
+ *     `REQUIRES_REVIEW`: não é bloqueio de regra de negócio (por isso nunca mais retorna
+ *     `BLOCKED_DELETED` genérico aqui), é ausência de dado suficiente para reconstruir a
+ *     identidade com segurança — decisão humana explícita.
+ *   - caso contrário (nenhum nome igual, ou só homônimos com sinais contraditórios) -> CREATE.
  */
 export function resolveFornecedorIdentity(row: CadastroRow, index: IdentityIndex): FornecedorIdentityResolution {
   const target = normalizePersonName(row.responsavel);
   const codigoFallback = target;
-  const deletedCodigo = index.deletedNameHashes?.get(identityNameHash(target));
-  if (deletedCodigo) return { kind: "BLOCKED_DELETED", colaboradorCodigo: deletedCodigo };
+  const hash = identityNameHash(target);
+  const hashedCodigos = index.deletedNameHashes?.get(hash);
+  if (hashedCodigos && hashedCodigos.size > 1) {
+    const candidateCodigos = [...hashedCodigos].sort();
+    return {
+      kind: "CONFLICT",
+      candidates: [],
+      candidateCodigos,
+      reason: `O nome "${row.responsavel}" corresponde ao histórico de exclusão de mais de uma identidade distinta (${candidateCodigos.join(", ")}) — nunca escolhido automaticamente.`,
+    };
+  }
+  const hashedCodigo = hashedCodigos ? [...hashedCodigos][0] : undefined;
 
   const profissionalCodigos = index.profissionalCodigosByName.get(target);
   if (profissionalCodigos && profissionalCodigos.size === 1) {
     const codigo = [...profissionalCodigos][0];
     if (index.deletedCodigos.has(normalizePersonName(codigo))) {
-      return { kind: "BLOCKED_DELETED", colaboradorCodigo: codigo };
+      return { kind: "PROFISSIONAL_MATCH", colaboradorCodigo: codigo, reactivatingDeletedIdentity: true };
     }
     // AUDITORIA — HOMÔNIMO NA CAMADA PROFISSIONAL: `Profissional.nome` é @unique e o
     // colaboradorCodigo de um fornecedor novo é derivado deterministicamente do NOME
@@ -505,6 +660,13 @@ export function resolveFornecedorIdentity(row: CadastroRow, index: IdentityIndex
     return { kind: "CONFLICT", candidates: candidatos };
   }
 
+  // PRIORIDADE 1B — ver docstring acima. Só chega aqui quando o nome não bate mais com nenhum
+  // Profissional ATIVO (a Prioridade 1 já teria resolvido) — cobre o caso do `codigo` ser um valor
+  // técnico distinto do nome (ex.: P0123456), onde a anonimização do nome quebrou a Prioridade 1.
+  if (hashedCodigo && index.deletedCodigos.has(normalizePersonName(hashedCodigo))) {
+    return { kind: "PROFISSIONAL_MATCH", colaboradorCodigo: hashedCodigo, reactivatingDeletedIdentity: true };
+  }
+
   const candidatosNome = index.cadastrosByName.get(target) ?? [];
   const plausiveis = candidatosNome.filter((c) => !signalsContradict(c, row));
 
@@ -514,6 +676,25 @@ export function resolveFornecedorIdentity(row: CadastroRow, index: IdentityIndex
   }
   if (plausiveis.length >= 2) {
     return { kind: "CONFLICT", candidates: plausiveis };
+  }
+
+  // Chegou até aqui sem NENHUM Profissional (ativo ou tombstoned) e sem NENHUM CadastroFornecedor
+  // compatível — condições 1, 3, 4 e 6 do RECREATE_FROM_HISTORY já satisfeitas por construção
+  // (existe evidência histórica única — `hashedCodigo` computado acima já garantiu 2 do multimap
+  // -> CONFLICT antes de chegar aqui; sem Profissional atual/tombstoned; sem homônimo ativo, já que
+  // nem Prioridade 1 nem 2 encontraram absolutamente nada para este nome). Condições 2/5 (hash
+  // aponta para exatamente 1 código) e 7/8 (Usuario inequívoco, sem violar homônimo) são
+  // confirmadas em `upsertCadastroFornecedor` no momento da escrita (única camada com acesso real
+  // ao banco — esta função é pura).
+  if (hashedCodigo) return { kind: "RECREATE_FROM_HISTORY", colaboradorCodigo: hashedCodigo };
+
+  // Hash aponta para uma exclusão SEM NENHUM colaboradorCodigo vinculado no momento
+  // (`SEM_CODIGO_VINCULADO`) — não existe nenhum código histórico para reaproveitar numa recriação
+  // (nem sequer um `codigo` pra atribuir ao Profissional novo). Não é bloqueio de regra de negócio:
+  // é ausência de dado suficiente para reconstruir a identidade com segurança — exige decisão
+  // humana explícita, nunca um CREATE silencioso que perderia esse histórico de exclusão.
+  if (index.noCodeExclusionHashes?.has(hash)) {
+    return { kind: "REQUIRES_REVIEW", motivo: `"${row.responsavel}" corresponde ao histórico de uma exclusão administrativa sem nenhum código vinculado — não há identidade histórica para reaproveitar automaticamente.` };
   }
 
   // Nenhum candidato plausível: ou não existe ninguém com esse nome ainda, ou existe mas os
@@ -566,15 +747,29 @@ export async function findColaboradorUsuarios(nomes: string[]) {
  * atualizada incrementalmente a cada linha — evita N+1). Chamadas avulsas (cadastro manual)
  * constroem e descartam um índice próprio.
  */
-export async function upsertCadastroFornecedor(row: CadastroRow, sharedIndex?: IdentityIndex) {
+export async function upsertCadastroFornecedor(
+  row: CadastroRow,
+  sharedIndex?: IdentityIndex,
+  /** Usado exclusivamente pelo fluxo de resolução manual de identidade
+   * (`resolverIdentidadeManualmente`, abaixo) — quando o ADMIN já escolheu explicitamente qual
+   * identidade histórica esta linha representa, a decisão dele tem prioridade sobre a inferência
+   * automática: `resolveFornecedorIdentity` nem chega a ser chamada. NUNCA aceitar um valor aqui
+   * vindo direto do cliente sem validação prévia (ver `resolverIdentidadeManualmente`, que só
+   * constrói este objeto depois de confirmar que o código pertence a um candidato real). */
+  overrideResolution?: FornecedorIdentityResolution,
+) {
   const index = sharedIndex ?? (await buildIdentityIndex());
-  const resolution = resolveFornecedorIdentity(row, index);
+  const resolution = overrideResolution ?? resolveFornecedorIdentity(row, index);
 
   if (resolution.kind === "CONFLICT") {
     throw new FornecedorIdentityConflictError(
-      `Identidade ambígua para "${row.responsavel}" — mais de um cadastro/colaborador compatível encontrado. Resolva manualmente antes de importar esta linha.`,
+      resolution.reason ?? `Identidade ambígua para "${row.responsavel}" — mais de um cadastro/colaborador compatível encontrado. Resolva manualmente antes de importar esta linha.`,
       resolution.candidates,
+      resolution.candidateCodigos,
     );
+  }
+  if (resolution.kind === "REQUIRES_REVIEW") {
+    throw new FornecedorIdentityReviewError(resolution.motivo);
   }
   if (resolution.kind === "BLOCKED_DELETED") {
     throw new FornecedorIdentityDeletedError(
@@ -605,6 +800,14 @@ export async function upsertCadastroFornecedor(row: CadastroRow, sharedIndex?: I
       valorA1Equivalente: row.valorA1Equivalente,
       valorDocumento: row.valorDocumento,
       valorCondicaoFixa: row.valorCondicaoFixa,
+      // undefined (padrão da importação em planilha) = Prisma ignora o campo, nunca sobrescreve
+      // uma configuração condicional já feita manualmente para este fornecedor (ver comentário em
+      // CadastroRow.tipoCondicaoFixa acima).
+      tipoCondicaoFixa: row.tipoCondicaoFixa,
+      valorCondicaoFixaComProducao: row.valorCondicaoFixaComProducao,
+      valorCondicaoFixaSemProducao: row.valorCondicaoFixaSemProducao,
+      // Mesma proteção: undefined nunca sobrescreve "Fonte da medição" já configurada.
+      fonteMedicao: row.fonteMedicao,
       inicio: row.inicio,
       final: row.final,
       statusCadastro: row.statusCadastro,
@@ -615,6 +818,8 @@ export async function upsertCadastroFornecedor(row: CadastroRow, sharedIndex?: I
 
     let cadastroId: string;
     let created: boolean;
+    let administrativeConfigRestored = false;
+    let administrativeConfigSnapshotMalformed = false;
     if (resolution.kind === "CADASTRO_MATCH") {
       await tx.cadastroFornecedor.update({ where: { id: resolution.cadastroId }, data: { ...data, updatedAt: now } });
       cadastroId = resolution.cadastroId;
@@ -622,20 +827,71 @@ export async function upsertCadastroFornecedor(row: CadastroRow, sharedIndex?: I
     } else {
       // PROFISSIONAL_MATCH: pode já existir um CadastroFornecedor vinculado a este colaboradorCodigo
       // (ex.: cadastro criado antes de qualquer nome bater na busca por nome — edição manual prévia).
+      // Quando `reactivatingDeletedIdentity` é true, o CadastroFornecedor NUNCA está vinculado (foi
+      // removido pela exclusão administrativa) — a linha abaixo sempre CRIA um novo, recriando
+      // apenas o cadastro administrativo (nunca duplica Profissional/Usuario, ver upsert abaixo).
       const linkedId = resolution.kind === "PROFISSIONAL_MATCH" ? index.cadastroIdByColaboradorCodigo.get(normalizePersonName(colaboradorCodigo)) : undefined;
       if (linkedId) {
         await tx.cadastroFornecedor.update({ where: { id: linkedId }, data: { ...data, updatedAt: now } });
         cadastroId = linkedId;
         created = false;
       } else {
-        const createdRow = await tx.cadastroFornecedor.create({ data });
+        // Recriando uma identidade que já foi excluída definitivamente (RECREATE_FROM_HISTORY, ou
+        // reativação de um Profissional excluído) — a linha reimportada NUNCA traz
+        // fonteMedicao/tipoCondicaoFixa/valorCondicaoFixaCom(Sem)Producao (não existem na Consulta
+        // PJ), então `row.*` chega `undefined` aqui. Restaura do snapshot preservado na exclusão
+        // (ver `buildAdministrativeConfigSnapshot`) SOMENTE os campos que a linha atual não trouxe —
+        // dado cadastral novo da planilha (CNPJ, razão social, e-mail, valorCondicaoFixa comum etc.)
+        // sempre prevalece, nunca é sobrescrito por aqui. Sem snapshot -> permanece no default
+        // (`administrativeConfigRestored` abaixo sinaliza quando não havia nada para restaurar).
+        const snapshot = index.administrativeConfigSnapshots?.get(normalizePersonName(colaboradorCodigo));
+        administrativeConfigRestored = !!snapshot;
+        // Defesa em profundidade: o snapshot vem de um campo JSON livre (AdminAuditLog.metadata) —
+        // nunca confiar cegamente nele. `tipoCondicaoFixa`/`fonteMedicao` passam pela mesma
+        // normalização defensiva de LEITURA usada para qualquer dado legado (nunca a validação
+        // estrita de escrita — não é isso que o ADMIN está digitando agora); um snapshot com tipo
+        // inválido cai no comportamento legado seguro (FIXA/DOCUMENTOS) em vez de gravar lixo, e
+        // isso é sinalizado, nunca vira erro de importação da Consulta PJ.
+        const snapshotTipoCondicaoFixaValido = snapshot ? snapshot.tipoCondicaoFixa === null || snapshot.tipoCondicaoFixa === "FIXA" || snapshot.tipoCondicaoFixa === "CONDICIONAL_PRODUCAO" : true;
+        const snapshotFonteMedicaoValido = snapshot ? snapshot.fonteMedicao === null || snapshot.fonteMedicao === "DOCUMENTOS" || snapshot.fonteMedicao === "DOCUMENTOS_AUXILIARES" : true;
+        administrativeConfigSnapshotMalformed = !!snapshot && (!snapshotTipoCondicaoFixaValido || !snapshotFonteMedicaoValido);
+        const dataForCreate = snapshot
+          ? {
+              ...data,
+              // NULL é um valor LEGÍTIMO do snapshot (fornecedor nunca teve tipoCondicaoFixa
+              // configurado) — preservado como NULL, nunca promovido para o literal "FIXA"
+              // (equivalentes em leitura via normalizeTipoCondicaoFixa, mas não é o mesmo dado).
+              // Só um valor GENUINAMENTE desconhecido (nem null, nem "FIXA", nem
+              // "CONDICIONAL_PRODUCAO" — snapshot corrompido/adulterado) cai no fallback seguro.
+              tipoCondicaoFixa: data.tipoCondicaoFixa === undefined
+                ? (snapshotTipoCondicaoFixaValido ? snapshot.tipoCondicaoFixa : null)
+                : data.tipoCondicaoFixa,
+              valorCondicaoFixaComProducao: data.valorCondicaoFixaComProducao === undefined
+                ? (typeof snapshot.valorCondicaoFixaComProducao === "number" && Number.isFinite(snapshot.valorCondicaoFixaComProducao) ? snapshot.valorCondicaoFixaComProducao : null)
+                : data.valorCondicaoFixaComProducao,
+              valorCondicaoFixaSemProducao: data.valorCondicaoFixaSemProducao === undefined
+                ? (typeof snapshot.valorCondicaoFixaSemProducao === "number" && Number.isFinite(snapshot.valorCondicaoFixaSemProducao) ? snapshot.valorCondicaoFixaSemProducao : null)
+                : data.valorCondicaoFixaSemProducao,
+              fonteMedicao: data.fonteMedicao === undefined
+                ? (snapshotFonteMedicaoValido ? snapshot.fonteMedicao : null)
+                : data.fonteMedicao,
+            }
+          : data;
+        const createdRow = await tx.cadastroFornecedor.create({ data: dataForCreate });
         cadastroId = createdRow.id;
         created = true;
       }
     }
 
+    const reactivating = resolution.kind === "PROFISSIONAL_MATCH" && resolution.reactivatingDeletedIdentity === true;
+    // Chave de busca é `codigo`, NUNCA `nome` — depois de uma exclusão administrativa definitiva
+    // (lib/cadastro-fornecedor.ts:deleteFornecedoresDefinitivamente), `Profissional.nome` vira
+    // `EXCLUIDO-<uuid>` (anonimizado) enquanto `codigo` permanece estável como identidade técnica
+    // real. Buscar por `nome: colaboradorCodigo` nunca encontraria a linha tombstoned e faria o
+    // upsert tentar CRIAR uma segunda linha, que colidiria na constraint única de `codigo` — bug
+    // real que impedia a reimportação de recriar o cadastro depois de uma exclusão.
     await tx.profissional.upsert({
-      where: { nome: colaboradorCodigo },
+      where: { codigo: colaboradorCodigo },
       create: {
         nome: colaboradorCodigo,
         codigo: colaboradorCodigo,
@@ -648,6 +904,10 @@ export async function upsertCadastroFornecedor(row: CadastroRow, sharedIndex?: I
       },
       update: {
         codigo: colaboradorCodigo,
+        // Reativação: restaura o `nome` para a convenção padrão (nome === codigo) e limpa o estado
+        // de exclusão — uma reimportação válida da planilha administrativa é ação explícita do
+        // ADMIN, não reativação silenciosa por coincidência de nome.
+        ...(reactivating ? { nome: colaboradorCodigo, deletedAt: null, deletedById: null, deletedByNome: null, deletedReason: null } : {}),
         nomeCompleto: row.responsavel,
         cpf: encryptSensitive(row.cpf),
         cnpj: encryptSensitive(formatCnpj(row.cnpjNormalizado)),
@@ -659,10 +919,19 @@ export async function upsertCadastroFornecedor(row: CadastroRow, sharedIndex?: I
     });
 
     let usuarioCriado: { usuario: string; nome: string; senha: string; email: string | null } | null = null;
-    const existingUser = await tx.usuario.findFirst({
+    let usuarioReativado: { usuario: string; nome: string; senha: string | null; email: string | null } | null = null;
+    // `findMany` (nunca `findFirst`) — condição 7/8 do RECREATE_FROM_HISTORY (Usuario precisa ser
+    // relacionado de forma INEQUÍVOCA): mais de um Usuario COLABORADOR não-excluído com o MESMO
+    // nome normalizado é uma identidade de acesso ambígua real, nunca resolvida escolhendo o
+    // primeiro encontrado.
+    const existingUsers = await tx.usuario.findMany({
       where: { perfil: "COLABORADOR", nome: { equals: row.responsavel, mode: "insensitive" } },
-      select: { id: true, usuario: true, excluidoAt: true },
+      select: { id: true, usuario: true, excluidoAt: true, senhaTemporaria: true },
     });
+    if (existingUsers.length > 1) {
+      throw new FornecedorUsuarioAmbiguoError(`Identidade de acesso ambígua para "${row.responsavel}" — mais de um Usuario compatível encontrado. Resolva manualmente antes de importar esta linha.`);
+    }
+    const existingUser = existingUsers[0];
     if (!existingUser) {
       const senha = generateTempPassword();
       const usuario = await generateUniqueInternalAccessCode(tx);
@@ -678,17 +947,159 @@ export async function upsertCadastroFornecedor(row: CadastroRow, sharedIndex?: I
       });
       usuarioCriado = { usuario, nome: row.responsavel, senha, email: row.email ?? null };
     } else if (existingUser.excluidoAt) {
+      // A exclusão administrativa limpa `senhaTemporaria`/`primeiroLogin` (ver
+      // deleteFornecedoresDefinitivamente) — se a pessoa nunca tinha completado o primeiro login
+      // antes de ser excluída, reativar só `ativo`/`excluidoAt` deixaria a conta sem nenhuma senha
+      // recuperável. Gera uma nova senha temporária SOMENTE nesse caso (nunca sobrescreve uma senha
+      // real já definida pela pessoa). De qualquer forma, isso continua sendo REATIVAÇÃO, nunca
+      // criação — o registro já existia (ver `usuariosReativados`, nunca `usuariosCriados`).
+      let senhaReativacao: string | null = null;
+      if (!existingUser.senhaTemporaria) {
+        senhaReativacao = generateTempPassword();
+      }
       await tx.usuario.update({
         where: { id: existingUser.id },
-        data: { nome: row.responsavel, ativo: true, excluidoAt: null, perfil: "COLABORADOR", updatedAt: now },
+        data: {
+          nome: row.responsavel,
+          ativo: true,
+          excluidoAt: null,
+          perfil: "COLABORADOR",
+          updatedAt: now,
+          ...(senhaReativacao ? { senhaHash: await hashPassword(senhaReativacao), senhaTemporaria: senhaReativacao, primeiroLogin: true } : {}),
+        },
       });
+      usuarioReativado = { usuario: existingUser.usuario, nome: row.responsavel, senha: senhaReativacao, email: row.email ?? null };
     }
 
-    return { cadastroId, colaboradorCodigo, created, usuarioCriado };
+    const recreated = created && (reactivating || resolution.kind === "RECREATE_FROM_HISTORY");
+    return {
+      cadastroId,
+      colaboradorCodigo,
+      created,
+      recreated,
+      // true = havia snapshot administrativo preservado e foi restaurado nesta recriação.
+      administrativeConfigRestored,
+      // true = é uma recriação, mas não havia snapshot (exclusão antiga sem essa preservação, ou
+      // identidade nunca teve configuração administrativa nenhuma) — configuração administrativa
+      // anterior, se existiu, não pôde ser recuperada; sempre false quando `recreated` é false.
+      administrativeConfigUnrecoverable: recreated && !administrativeConfigRestored,
+      // true = havia snapshot, mas tipoCondicaoFixa/fonteMedicao dentro dele não eram um valor
+      // reconhecido (JSON livre corrompido/adulterado) — caiu no default legado seguro (FIXA/
+      // DOCUMENTOS) em vez de gravar o valor bruto do snapshot.
+      administrativeConfigSnapshotMalformed,
+      usuarioCriado,
+      usuarioReativado,
+    };
   });
 
   updateIdentityIndex(index, row, result);
   return result;
+}
+
+/** Lançada quando a resolução manual não pode prosseguir — código escolhido não é um dos
+ * candidatos reais da linha, linha não está mais em conflito, ou criar uma identidade nova
+ * colidiria com um código já existente. O chamador (rota HTTP) devolve 400/409 conforme o caso. */
+export class FornecedorResolucaoInvalidaError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FornecedorResolucaoInvalidaError";
+  }
+}
+
+export type IdentityManualChoice = { tipo: "USAR_CANDIDATO"; codigo: string } | { tipo: "NENHUMA_IDENTIDADE" };
+
+/**
+ * Recalcula, DIRETO no servidor (nunca confia em nada vindo do cliente além do nome), quais
+ * códigos históricos são candidatos legítimos para um nome — usado pelo modal "Resolver
+ * identidade" para saber quais candidatos buscar detalhes antes de o ADMIN decidir.
+ */
+export async function getCandidateCodigosForRow(responsavel: string): Promise<{ kind: FornecedorIdentityResolution["kind"]; candidateCodigos: string[]; motivo?: string }> {
+  const index = await buildIdentityIndex();
+  const minimalRow: CadastroRow = { responsavel, cnpj: "", cnpjNormalizado: "", razaoSocial: "", rawPayload: {} };
+  const resolution = resolveFornecedorIdentity(minimalRow, index);
+  if (resolution.kind === "CONFLICT") return { kind: "CONFLICT", candidateCodigos: resolution.candidateCodigos ?? [] };
+  if (resolution.kind === "REQUIRES_REVIEW") return { kind: "REQUIRES_REVIEW", candidateCodigos: [], motivo: resolution.motivo };
+  return { kind: resolution.kind, candidateCodigos: [] };
+}
+
+/**
+ * Resolve manualmente UMA linha que ficou em CONFLICT (colisão de hash — 2+ identidades históricas
+ * compatíveis) ou REQUIRES_REVIEW (identidade excluída sem nenhum código vinculado) — fluxo do
+ * Painel Administrativo (modal "Resolver identidade"). Reaproveita `upsertCadastroFornecedor`
+ * (nunca duplica a lógica de escrita), passando um `overrideResolution` construído aqui DEPOIS de
+ * validar a escolha do ADMIN contra os candidatos REAIS recalculados no servidor — nunca confia em
+ * candidatos/códigos enviados pelo cliente sem essa revalidação.
+ */
+export async function resolverIdentidadeManualmente(
+  row: CadastroRow,
+  escolha: IdentityManualChoice,
+  admin: { id: string; usuario: string; nome: string },
+) {
+  const index = await buildIdentityIndex();
+  const resolution = resolveFornecedorIdentity(row, index);
+
+  if (resolution.kind !== "CONFLICT" && resolution.kind !== "REQUIRES_REVIEW") {
+    throw new FornecedorResolucaoInvalidaError(
+      `"${row.responsavel}" não está mais em conflito/revisão — reimporte esta linha normalmente em vez de resolver manualmente.`,
+    );
+  }
+
+  if (escolha.tipo === "USAR_CANDIDATO") {
+    if (resolution.kind !== "CONFLICT" || !resolution.candidateCodigos?.length) {
+      throw new FornecedorResolucaoInvalidaError(`"${row.responsavel}" não tem nenhum código histórico candidato para usar — só a opção "Nenhuma dessas identidades" é válida aqui.`);
+    }
+    const alvoNormalizado = normalizePersonName(escolha.codigo);
+    const codigoReal = resolution.candidateCodigos.find((c) => normalizePersonName(c) === alvoNormalizado);
+    if (!codigoReal) {
+      throw new FornecedorResolucaoInvalidaError(`O código "${escolha.codigo}" não está entre os candidatos apresentados para "${row.responsavel}" (${resolution.candidateCodigos.join(", ")}).`);
+    }
+    const overrideResolution: FornecedorIdentityResolution = index.deletedCodigos.has(alvoNormalizado)
+      ? { kind: "PROFISSIONAL_MATCH", colaboradorCodigo: codigoReal, reactivatingDeletedIdentity: true }
+      : { kind: "RECREATE_FROM_HISTORY", colaboradorCodigo: codigoReal };
+    const resultado = await upsertCadastroFornecedor(row, index, overrideResolution);
+    await prisma.adminAuditLog.create({
+      data: {
+        action: "IDENTITY_MANUAL_RESOLUTION",
+        adminId: admin.id,
+        adminUsuario: admin.usuario,
+        adminNome: admin.nome,
+        targetType: "CadastroFornecedor",
+        targetCodigo: codigoReal,
+        metadata: { responsavelImportado: row.responsavel, candidatos: resolution.candidateCodigos, codigoEscolhido: codigoReal },
+      },
+    });
+    return resultado;
+  }
+
+  // NENHUMA_IDENTIDADE — só é segura quando o código que SERIA gerado para esta linha não colide
+  // com nenhuma identidade já existente (ativa ou tombstoned), incluindo os próprios candidatos
+  // rejeitados — nunca inventa um código que já pertence a outra pessoa real.
+  const codigoNovo = codigoFromName(row.responsavel);
+  const codigoNovoKey = normalizePersonName(codigoNovo);
+  const candidatosRejeitados = new Set((resolution.kind === "CONFLICT" ? resolution.candidateCodigos ?? [] : []).map((c) => normalizePersonName(c)));
+  if (candidatosRejeitados.has(codigoNovoKey) || index.profissionalCodigosByName.has(codigoNovoKey) || index.deletedCodigos.has(codigoNovoKey)) {
+    throw new FornecedorResolucaoInvalidaError(
+      `Não é possível criar uma identidade nova para "${row.responsavel}" — o código que seria gerado (${codigoNovo}) já corresponde a uma identidade histórica existente. Escolha um dos candidatos apresentados.`,
+    );
+  }
+  const overrideResolution: FornecedorIdentityResolution = { kind: "CREATE", colaboradorCodigo: codigoNovo };
+  const resultado = await upsertCadastroFornecedor(row, index, overrideResolution);
+  await prisma.adminAuditLog.create({
+    data: {
+      action: "IDENTITY_MANUAL_RESOLUTION",
+      adminId: admin.id,
+      adminUsuario: admin.usuario,
+      adminNome: admin.nome,
+      targetType: "CadastroFornecedor",
+      targetCodigo: codigoNovo,
+      metadata: {
+        responsavelImportado: row.responsavel,
+        candidatos: resolution.kind === "CONFLICT" ? resolution.candidateCodigos ?? [] : [],
+        codigoEscolhido: "NENHUMA_IDENTIDADE_NOVA",
+      },
+    },
+  });
+  return resultado;
 }
 
 export type ImportConflitoDetalhe = {
@@ -696,6 +1107,12 @@ export type ImportConflitoDetalhe = {
   cnpj: string;
   motivo: string;
   candidatos: { cadastroId: string; colaboradorCodigo: string | null; email: string | null; telefone: string | null; razaoSocial: string }[];
+  /** Códigos históricos candidatos quando o conflito vem de colisão de hash de nome — usado pelo
+   * fluxo de resolução manual de identidade para buscar os detalhes de cada um. */
+  candidateCodigos?: string[];
+  /** Linha original da planilha — permite ao ADMIN resolver SÓ esta linha depois (via
+   * `resolverIdentidadeManualmente`), sem precisar reimportar a planilha inteira. */
+  linha: CadastroRow;
 };
 
 export type ImportBloqueadoDetalhe = {
@@ -705,14 +1122,26 @@ export type ImportBloqueadoDetalhe = {
   colaboradorCodigo: string;
 };
 
+export type ImportRevisaoDetalhe = {
+  responsavel: string;
+  cnpj: string;
+  motivo: string;
+  linha: CadastroRow;
+};
+
 export async function importCadastrosFornecedores(buffer: Buffer) {
   const rows = parseCadastroFornecedorWorkbook(buffer);
   let atualizados = 0;
   let criados = 0;
+  let recriados = 0;
+  let recriadosComConfigRestaurada = 0;
+  let recriadosSemConfigRecuperavel = 0;
   let usuariosCriados = 0;
+  let usuariosReativados = 0;
   const senhasTemporarias: { usuario: string; nome: string; senha: string; email: string | null }[] = [];
   const conflitosDetalhe: ImportConflitoDetalhe[] = [];
   const bloqueadosDetalhe: ImportBloqueadoDetalhe[] = [];
+  const revisaoDetalhe: ImportRevisaoDetalhe[] = [];
 
   // Índice construído UMA vez para a planilha inteira (não por linha) — evita N+1 real em
   // importações com dezenas/centenas de fornecedores; atualizado em memória a cada linha
@@ -722,27 +1151,55 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
   for (const row of rows) {
     try {
       const resultado = await upsertCadastroFornecedor(row, index);
-      if (resultado.created) criados += 1;
+      if (resultado.recreated) {
+        recriados += 1;
+        if (resultado.administrativeConfigRestored) recriadosComConfigRestaurada += 1;
+        if (resultado.administrativeConfigUnrecoverable) recriadosSemConfigRecuperavel += 1;
+      }
+      else if (resultado.created) criados += 1;
       else atualizados += 1;
+      // `usuarioCriado` (tx.usuario.create real) e `usuarioReativado` (Usuario já existia,
+      // excluidoAt limpo) NUNCA se confundem no contador — reativação nunca conta como criação,
+      // mesmo quando gera uma nova senha temporária (ver upsertCadastroFornecedor).
       if (resultado.usuarioCriado) {
         usuariosCriados += 1;
         senhasTemporarias.push(resultado.usuarioCriado);
       }
+      if (resultado.usuarioReativado) {
+        usuariosReativados += 1;
+        if (resultado.usuarioReativado.senha) {
+          senhasTemporarias.push({ ...resultado.usuarioReativado, senha: resultado.usuarioReativado.senha });
+        }
+      }
     } catch (error) {
       if (error instanceof FornecedorIdentityConflictError) {
-        // Ambiguidade real (2+ candidatos plausíveis, ou 2+ Profissional distintos compatíveis)
-        // — a linha é PULADA (nunca escolhida arbitrariamente) e reportada para análise humana.
+        // Ambiguidade real (2+ candidatos plausíveis, 2+ Profissional distintos compatíveis, hash
+        // de nome apontando pra 2+ identidades históricas distintas, ou Usuario ambíguo) — a linha
+        // é PULADA (nunca escolhida arbitrariamente) e reportada para análise humana.
         conflitosDetalhe.push({
           responsavel: row.responsavel,
           cnpj: row.cnpj,
           motivo: error.message,
           candidatos: error.candidates.map((c) => ({ cadastroId: c.cadastroId, colaboradorCodigo: c.colaboradorCodigo, email: c.email, telefone: c.telefone, razaoSocial: c.razaoSocial })),
+          candidateCodigos: error.candidateCodigos,
+          linha: row,
         });
         continue;
       }
+      if (error instanceof FornecedorUsuarioAmbiguoError) {
+        conflitosDetalhe.push({ responsavel: row.responsavel, cnpj: row.cnpj, motivo: error.message, candidatos: [], linha: row });
+        continue;
+      }
+      if (error instanceof FornecedorIdentityReviewError) {
+        // Nome corresponde ao histórico de uma exclusão SEM nenhum colaboradorCodigo vinculado —
+        // não há identidade histórica suficiente para reconstruir com segurança (não é bloqueio de
+        // regra de negócio, é falta de dado). Exige decisão humana explícita.
+        revisaoDetalhe.push({ responsavel: row.responsavel, cnpj: row.cnpj, motivo: error.motivo, linha: row });
+        continue;
+      }
       if (error instanceof FornecedorIdentityDeletedError) {
-        // Identidade excluída definitivamente pelo ADMIN — a linha é PULADA (nunca reativa
-        // automaticamente) e reportada separadamente dos conflitos comuns.
+        // Reservado para um bloqueio genuíno de regra de negócio — não usado atualmente por
+        // resolveFornecedorIdentity, mantido por compatibilidade.
         bloqueadosDetalhe.push({
           responsavel: row.responsavel,
           cnpj: row.cnpj,
@@ -758,12 +1215,18 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
   return {
     total: rows.length,
     criados,
+    recriados,
+    recriadosComConfigRestaurada,
+    recriadosSemConfigRecuperavel,
     atualizados,
     usuariosCriados,
+    usuariosReativados,
     conflitos: conflitosDetalhe.length,
     conflitosDetalhe,
     bloqueados: bloqueadosDetalhe.length,
     bloqueadosDetalhe,
+    revisao: revisaoDetalhe.length,
+    revisaoDetalhe,
     senhasTemporarias,
   };
 }
@@ -845,6 +1308,10 @@ export function serializeCadastroFornecedor(item: any) {
     valorA1Equivalente: item.valorA1Equivalente === null ? null : Number(item.valorA1Equivalente),
     valorDocumento: item.valorDocumento === null ? null : Number(item.valorDocumento),
     valorCondicaoFixa: item.valorCondicaoFixa === null ? null : Number(item.valorCondicaoFixa),
+    tipoCondicaoFixa: item.tipoCondicaoFixa ?? null,
+    valorCondicaoFixaComProducao: item.valorCondicaoFixaComProducao === null || item.valorCondicaoFixaComProducao === undefined ? null : Number(item.valorCondicaoFixaComProducao),
+    valorCondicaoFixaSemProducao: item.valorCondicaoFixaSemProducao === null || item.valorCondicaoFixaSemProducao === undefined ? null : Number(item.valorCondicaoFixaSemProducao),
+    fonteMedicao: item.fonteMedicao ?? null,
     inicio: item.inicio?.toISOString() ?? null,
     final: item.final?.toISOString() ?? null,
     statusCadastro: item.statusCadastro,
@@ -918,6 +1385,122 @@ export async function findColaboradorCodigosWithDependencies(colaboradorCodigos:
   return withDeps;
 }
 
+export type IdentityCandidateSummary = {
+  codigo: string;
+  profissionalId: string | null;
+  nomeAtual: string | null;
+  nomeCompleto: string | null;
+  email: string | null;
+  cnpj: string | null;
+  razaoSocial: string | null;
+  profissionalStatus: "ATIVO" | "EXCLUIDO" | "INEXISTENTE";
+  excluidoEm: Date | null;
+  usuarioId: string | null;
+  usuarioLogin: string | null;
+  usuarioStatus: "ATIVO" | "EXCLUIDO" | "INEXISTENTE";
+  historico: { sgc: number; mapaPagamento: number; medicao: number; divergencias: number };
+};
+
+/**
+ * Detalhes suficientes para o ADMIN decidir, com segurança, qual identidade histórica uma linha
+ * ambígua representa (fluxo de resolução manual — ver `resolverIdentidadeManualmente`). Uma query
+ * agregada por tabela (nunca 1 por candidato/linha — o conjunto de códigos é sempre pequeno, mas o
+ * padrão de N+1 é evitado de qualquer forma).
+ */
+export async function getIdentityCandidateSummaries(codigos: string[]): Promise<IdentityCandidateSummary[]> {
+  const uniq = [...new Set(codigos.filter(Boolean))];
+  if (uniq.length === 0) return [];
+
+  const [profissionais, exclusoes, sgcCounts, mapaCounts, divergenciaCounts] = await Promise.all([
+    prisma.profissional.findMany({ where: { codigo: { in: uniq } } }),
+    prisma.adminAuditLog.findMany({
+      where: { action: "FORNECEDOR_EXCLUSAO_DEFINITIVA", targetCodigo: { in: uniq } },
+      orderBy: { createdAt: "desc" },
+      select: { targetCodigo: true, metadata: true },
+    }),
+    prisma.sgcAprovacaoMedicao.groupBy({ by: ["colaboradorCodigo"], where: { colaboradorCodigo: { in: uniq } }, _count: { _all: true } }),
+    prisma.mapaPagamentoItem.groupBy({ by: ["projetistaCodigo"], where: { projetistaCodigo: { in: uniq } }, _count: { _all: true } }),
+    prisma.divergenciaMedicao.groupBy({ by: ["colaboradorCodigo"], where: { colaboradorCodigo: { in: uniq } }, _count: { _all: true } }),
+  ]);
+
+  const profPorCodigo = new Map(profissionais.filter((p) => p.codigo).map((p) => [normalizePersonName(p.codigo!), p]));
+  // Última exclusão registrada por código — inclui o `usuarioId` desativado naquele momento
+  // (gravado em `deleteFornecedoresDefinitivamente`), a forma mais confiável de relacionar Usuario
+  // a um código já anonimizado (nome não serve mais de chave depois da exclusão).
+  const usuarioIdPorCodigo = new Map<string, string>();
+  for (const ex of exclusoes) {
+    if (!ex.targetCodigo) continue;
+    const key = normalizePersonName(ex.targetCodigo);
+    if (usuarioIdPorCodigo.has(key)) continue; // já pegou a mais recente (orderBy desc)
+    const usuarioId = (ex.metadata as { usuarioId?: unknown } | null)?.usuarioId;
+    if (typeof usuarioId === "string") usuarioIdPorCodigo.set(key, usuarioId);
+  }
+
+  const idsParaBuscar = [...new Set(usuarioIdPorCodigo.values())];
+  const usuariosPorId = idsParaBuscar.length > 0
+    ? new Map((await prisma.usuario.findMany({ where: { id: { in: idsParaBuscar } }, select: { id: true, usuario: true, ativo: true, excluidoAt: true } })).map((u) => [u.id, u]))
+    : new Map<string, { id: string; usuario: string; ativo: boolean; excluidoAt: Date | null }>();
+
+  // Para identidades ainda ATIVAS (Profissional sem deletedAt), o usuarioId da auditoria pode não
+  // existir (nunca foram excluídas) — resolve pelo nome, mesmo padrão usado no resto do módulo.
+  const nomesParaBuscar = uniq
+    .map((codigo) => profPorCodigo.get(normalizePersonName(codigo)))
+    .filter((p): p is NonNullable<typeof p> => !!p && !p.deletedAt)
+    .map((p) => p.nomeCompleto || p.nome);
+  const usuariosPorNome = nomesParaBuscar.length > 0
+    ? new Map((await prisma.usuario.findMany({
+        where: { perfil: "COLABORADOR", nome: { in: nomesParaBuscar, mode: "insensitive" } },
+        select: { id: true, usuario: true, nome: true, ativo: true, excluidoAt: true },
+      })).map((u) => [normalizePersonName(u.nome), u]))
+    : new Map<string, { id: string; usuario: string; nome: string; ativo: boolean; excluidoAt: Date | null }>();
+
+  const sgcPorCodigo = new Map(sgcCounts.map((r) => [normalizePersonName(r.colaboradorCodigo), r._count._all]));
+  const mapaPorCodigo = new Map(mapaCounts.filter((r) => r.projetistaCodigo).map((r) => [normalizePersonName(r.projetistaCodigo!), r._count._all]));
+  const divergenciaPorCodigo = new Map(divergenciaCounts.map((r) => [normalizePersonName(r.colaboradorCodigo), r._count._all]));
+
+  // Medicao é ligado por FK real (idProfissional/idCoordenador), não por código string — só
+  // consulta quando existe um Profissional de fato (senão não há id pra procurar).
+  const profissionalIds = profissionais.map((p) => p.id);
+  const medicoesPorProfissional = profissionalIds.length > 0
+    ? await prisma.medicao.groupBy({ by: ["idProfissional"], where: { idProfissional: { in: profissionalIds } }, _count: { _all: true } })
+    : [];
+  const medicoesPorCoordenador = profissionalIds.length > 0
+    ? await prisma.medicao.groupBy({ by: ["idCoordenador"], where: { idCoordenador: { in: profissionalIds } }, _count: { _all: true } })
+    : [];
+  const medicaoCountPorProfissionalId = new Map<string, number>();
+  for (const r of medicoesPorProfissional) if (r.idProfissional) medicaoCountPorProfissionalId.set(r.idProfissional, (medicaoCountPorProfissionalId.get(r.idProfissional) ?? 0) + r._count._all);
+  for (const r of medicoesPorCoordenador) if (r.idCoordenador) medicaoCountPorProfissionalId.set(r.idCoordenador, (medicaoCountPorProfissionalId.get(r.idCoordenador) ?? 0) + r._count._all);
+
+  return uniq.map((codigo): IdentityCandidateSummary => {
+    const key = normalizePersonName(codigo);
+    const profissional = profPorCodigo.get(key);
+    const usuarioViaAuditoria = usuarioIdPorCodigo.has(key) ? usuariosPorId.get(usuarioIdPorCodigo.get(key)!) : undefined;
+    const usuarioViaNome = profissional && !profissional.deletedAt ? usuariosPorNome.get(normalizePersonName(profissional.nomeCompleto || profissional.nome)) : undefined;
+    const usuario = usuarioViaAuditoria ?? usuarioViaNome;
+
+    return {
+      codigo,
+      profissionalId: profissional?.id ?? null,
+      nomeAtual: profissional?.nome ?? null,
+      nomeCompleto: profissional?.nomeCompleto ?? null,
+      email: profissional?.email ? decryptSensitive(profissional.email) : null,
+      cnpj: profissional?.cnpj ? decryptSensitive(profissional.cnpj) : null,
+      razaoSocial: profissional?.razaoSocial ?? null,
+      profissionalStatus: !profissional ? "INEXISTENTE" : profissional.deletedAt ? "EXCLUIDO" : "ATIVO",
+      excluidoEm: profissional?.deletedAt ?? null,
+      usuarioId: usuario?.id ?? null,
+      usuarioLogin: usuario?.usuario ?? null,
+      usuarioStatus: !usuario ? "INEXISTENTE" : usuario.excluidoAt || !usuario.ativo ? "EXCLUIDO" : "ATIVO",
+      historico: {
+        sgc: sgcPorCodigo.get(key) ?? 0,
+        mapaPagamento: mapaPorCodigo.get(key) ?? 0,
+        medicao: profissional ? (medicaoCountPorProfissionalId.get(profissional.id) ?? 0) : 0,
+        divergencias: divergenciaPorCodigo.get(key) ?? 0,
+      },
+    };
+  });
+}
+
 /**
  * NOTA HISTÓRICA (correção encontrada só ao testar contra o banco real, antes de qualquer deploy):
  * uma versão anterior desta função tentava marcar `Profissional.statusColaborador = "EXCLUIDO"`.
@@ -932,6 +1515,43 @@ export async function findColaboradorCodigosWithDependencies(colaboradorCodigos:
  * seletor de Novo Pagamento sem heurística arriscada). A versão atual usa `Profissional.deletedAt`
  * — estado explícito e dedicado, nunca deduzido de campos vazios — ver doc abaixo.
  */
+/**
+ * "Configurações administrativas" de um fornecedor: campos que representam uma decisão feita
+ * DENTRO da aplicação (Painel Administrativo), nunca vindos da Consulta PJ — por isso uma
+ * reimportação da planilha NUNCA os sobrescreve (ver `CadastroRow.tipoCondicaoFixa`/`fonteMedicao`,
+ * "undefined = não alterar"). Exatamente por não virem da planilha, uma exclusão física de
+ * `CadastroFornecedor` os perde por completo, a menos que sejam preservados aqui — snapshot mínimo
+ * e seguro (nenhum dado sensível: sem CPF/CNPJ/e-mail/telefone/senha), gravado no MESMO
+ * `AdminAuditLog` que já registra a exclusão (`FORNECEDOR_EXCLUSAO_DEFINITIVA`), para restaurar
+ * numa eventual `RECREATE_FROM_HISTORY` (reimportação que recria a identidade). Dados cadastrais
+ * "normais" (CNPJ, razão social, e-mail, telefone, função, vigência, valorCondicaoFixa comum) NÃO
+ * entram aqui de propósito — esses sempre vêm da Consulta PJ atual, nunca de um snapshot antigo.
+ */
+export type AdministrativeConfigSnapshot = {
+  fonteMedicao: string | null;
+  tipoCondicaoFixa: string | null;
+  valorCondicaoFixaComProducao: number | null;
+  valorCondicaoFixaSemProducao: number | null;
+};
+
+function buildAdministrativeConfigSnapshot(cadastro: {
+  fonteMedicao: string | null;
+  tipoCondicaoFixa: string | null;
+  valorCondicaoFixaComProducao: unknown;
+  valorCondicaoFixaSemProducao: unknown;
+}): AdministrativeConfigSnapshot | null {
+  const snapshot: AdministrativeConfigSnapshot = {
+    fonteMedicao: cadastro.fonteMedicao,
+    tipoCondicaoFixa: cadastro.tipoCondicaoFixa,
+    valorCondicaoFixaComProducao: cadastro.valorCondicaoFixaComProducao === null || cadastro.valorCondicaoFixaComProducao === undefined ? null : Number(cadastro.valorCondicaoFixaComProducao),
+    valorCondicaoFixaSemProducao: cadastro.valorCondicaoFixaSemProducao === null || cadastro.valorCondicaoFixaSemProducao === undefined ? null : Number(cadastro.valorCondicaoFixaSemProducao),
+  };
+  // Nada para preservar (fornecedor "comum", sem nenhuma configuração administrativa) — não grava
+  // snapshot vazio no audit log só para poluir o metadata.
+  const hasSomething = Object.values(snapshot).some((v) => v !== null);
+  return hasSomething ? snapshot : null;
+}
+
 export type AdminDeletionSummary = {
   requested: number;
   administrativeDeleted: number;
@@ -1059,7 +1679,15 @@ export async function deleteFornecedoresDefinitivamente(
 ): Promise<AdminDeletionSummary> {
   const cadastros = await prisma.cadastroFornecedor.findMany({
     where: { id: { in: ids } },
-    select: { id: true, colaboradorCodigo: true, responsavel: true },
+    select: {
+      id: true,
+      colaboradorCodigo: true,
+      responsavel: true,
+      fonteMedicao: true,
+      tipoCondicaoFixa: true,
+      valorCondicaoFixaComProducao: true,
+      valorCondicaoFixaSemProducao: true,
+    },
   });
   const foundIds = new Set(cadastros.map((c) => c.id));
   const errors: { id: string; error: string }[] = [];
@@ -1069,8 +1697,15 @@ export async function deleteFornecedoresDefinitivamente(
 
   const codigos = [...new Set(cadastros.map((c) => c.colaboradorCodigo).filter((c): c is string => !!c))];
   const codigoOriginalPorKey = new Map<string, string>();
+  // Snapshot das configurações administrativas ANTES da exclusão física — se mais de um
+  // CadastroFornecedor for removido para a mesma identidade nesta chamada, o último com alguma
+  // configuração real vence (caso raríssimo de duplicata ainda não consolidada).
+  const adminConfigByCodigoKey = new Map<string, AdministrativeConfigSnapshot>();
   for (const c of cadastros) {
-    if (c.colaboradorCodigo) codigoOriginalPorKey.set(normalizePersonName(c.colaboradorCodigo), c.colaboradorCodigo);
+    if (!c.colaboradorCodigo) continue;
+    codigoOriginalPorKey.set(normalizePersonName(c.colaboradorCodigo), c.colaboradorCodigo);
+    const snapshot = buildAdministrativeConfigSnapshot(c);
+    if (snapshot) adminConfigByCodigoKey.set(normalizePersonName(c.colaboradorCodigo), snapshot);
   }
 
   const [todosCadastrosDosCodigos, codigosComHistorico, profissionaisDosCodigos] = await Promise.all([
@@ -1159,6 +1794,10 @@ export async function deleteFornecedoresDefinitivamente(
         const codigoOriginal = codigoOriginalPorKey.get(plan.codigoKey) ?? plan.codigoKey;
         const cadastrosRemovidosDestaIdentidade = cadastros.filter((c) => c.colaboradorCodigo && normalizePersonName(c.colaboradorCodigo) === plan.codigoKey).length;
         const auditCountBefore = auditEntries.length;
+        // Anexado a todo audit entry desta identidade (targetCodigo = codigoOriginal) — uma futura
+        // RECREATE_FROM_HISTORY procura pelo snapshot mais recente entre TODAS as entradas com esse
+        // código, então redundância aqui é inofensiva e só aumenta a chance de achar.
+        const adminConfigSnapshot = adminConfigByCodigoKey.get(plan.codigoKey);
 
         if (plan.action === "PRESERVE_PROFISSIONAL_FOR_HISTORY") {
           measurementHistoryPreserved += 1;
@@ -1205,6 +1844,7 @@ export async function deleteFornecedoresDefinitivamente(
               metadata: {
                 resultado: "PRESERVADO_PARA_HISTORICO",
                 cadastrosAdministrativosRemovidos: cadastrosRemovidosDestaIdentidade,
+                ...(adminConfigSnapshot ? { administrativeConfigSnapshot: adminConfigSnapshot } : {}),
               },
             });
           }
@@ -1233,7 +1873,11 @@ export async function deleteFornecedoresDefinitivamente(
             targetType: "Profissional",
             targetId: plan.profissionalId,
             targetCodigo: codigoOriginal,
-            metadata: { resultado: "EXCLUIDO_OPERACIONALMENTE_SEM_HISTORICO", cadastrosAdministrativosRemovidos: cadastrosRemovidosDestaIdentidade },
+            metadata: {
+              resultado: "EXCLUIDO_OPERACIONALMENTE_SEM_HISTORICO",
+              cadastrosAdministrativosRemovidos: cadastrosRemovidosDestaIdentidade,
+              ...(adminConfigSnapshot ? { administrativeConfigSnapshot: adminConfigSnapshot } : {}),
+            },
           });
         } else {
           auditEntries.push({
@@ -1241,13 +1885,20 @@ export async function deleteFornecedoresDefinitivamente(
             targetType: "CadastroFornecedor",
             targetId: null,
             targetCodigo: codigoOriginal,
-            metadata: { resultado: "SEM_PROFISSIONAL_VINCULADO", cadastrosAdministrativosRemovidos: cadastrosRemovidosDestaIdentidade },
+            metadata: {
+              resultado: "SEM_PROFISSIONAL_VINCULADO",
+              cadastrosAdministrativosRemovidos: cadastrosRemovidosDestaIdentidade,
+              ...(adminConfigSnapshot ? { administrativeConfigSnapshot: adminConfigSnapshot } : {}),
+            },
           });
         }
 
         if (auditEntries.length === auditCountBefore) {
           auditEntries.push({ action: "FORNECEDOR_EXCLUSAO_DEFINITIVA", targetType: "CadastroFornecedor", targetId: null, targetCodigo: codigoOriginal,
-            metadata: { resultado: "HISTORICO_SEM_PROFISSIONAL_VINCULADO" } });
+            metadata: {
+              resultado: "HISTORICO_SEM_PROFISSIONAL_VINCULADO",
+              ...(adminConfigSnapshot ? { administrativeConfigSnapshot: adminConfigSnapshot } : {}),
+            } });
         }
         // Usuario nunca é apagado fisicamente (ver docstring) — sempre desativado.
         const nomeParaUsuario = profissionalNomeParaUsuario || responsavelPorCodigo.get(plan.codigoKey) || "";

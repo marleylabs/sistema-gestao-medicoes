@@ -17,6 +17,15 @@ export type Profissional = {
   email: string | null;
   statusColaborador: string | null;
   funcao: string | null;
+  /** CadastroFornecedor.valorCondicaoFixa/tipoContrato do cadastro administrativo real (join por
+   * colaboradorCodigo == Profissional.codigo, nunca por CNPJ) — fonte real de "Condição Fixa" em
+   * Novo Pagamento/Editar Pagamento. `null` quando não há CadastroFornecedor com esse código. */
+  valorCondicaoFixa: number | null;
+  tipoContrato: string | null;
+  /** "FIXA" (ou null) | "CONDICIONAL_PRODUCAO" — ver lib/condicao-fixa.ts::resolveCondicaoFixa. */
+  tipoCondicaoFixa: string | null;
+  valorCondicaoFixaComProducao: number | null;
+  valorCondicaoFixaSemProducao: number | null;
 };
 
 export type ContratoResumo = {

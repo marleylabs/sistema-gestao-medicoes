@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Copy, Download, Edit3, EllipsisVertical, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, RefreshCw, Save, ShieldCheck, ShieldOff, Trash2, Upload, UserCog, X } from "lucide-react";
-import { Button, Card, FilterButton, FilterChip, IconButton, Input, PageContainer, PageHeader } from "@/components/ui";
+import { Button, Card, FilterButton, FilterChip, IconButton, Input, PageContainer, PageHeader, Select } from "@/components/ui";
+import { normalizeTipoCondicaoFixa } from "@/lib/condicao-fixa";
+import { normalizeFonteMedicao } from "@/lib/fonte-medicao";
 import { INTERNAL_PERFIL_OPTIONS, PERFIL_LABEL_LOOSE as PERFIL_LABEL, PERFIL_OPTIONS } from "@/lib/perfis";
 
 type AcessoInfo = {
@@ -45,6 +47,10 @@ type CadastroFornecedor = {
   valorA1Equivalente: number | null;
   valorDocumento: number | null;
   valorCondicaoFixa: number | null;
+  tipoCondicaoFixa: string | null;
+  valorCondicaoFixaComProducao: number | null;
+  valorCondicaoFixaSemProducao: number | null;
+  fonteMedicao: string | null;
   inicio: string | null;
   final: string | null;
   statusCadastro: string | null;
@@ -70,11 +76,61 @@ const TIPO_FILTER_LABELS: Record<TipoFilter, string> = {
   funcionarios: "Funcionários",
 };
 
+type ImportLinha = {
+  responsavel: string;
+  cnpj: string;
+  cnpjNormalizado: string;
+  razaoSocial: string;
+  statusContrato: string | null;
+  objetoContrato: string | null;
+  cargo: string | null;
+  cpf: string | null;
+  email: string | null;
+  telefone: string | null;
+  tipoCt: string | null;
+  tipoContrato: string | null;
+  valorHora: number | null;
+  valorA1Equivalente: number | null;
+  valorDocumento: number | null;
+  valorCondicaoFixa: number | null;
+  inicio: string | null;
+  final: string | null;
+  statusCadastro: string | null;
+  primeiroAditivo: string | null;
+  segundoAditivo: string | null;
+};
+
+type ImportAtencaoDetalhe = { responsavel: string; cnpj: string; motivo: string; candidateCodigos?: string[]; linha?: ImportLinha };
+
+type IdentityCandidateSummary = {
+  codigo: string;
+  profissionalId: string | null;
+  nomeAtual: string | null;
+  nomeCompleto: string | null;
+  email: string | null;
+  cnpj: string | null;
+  razaoSocial: string | null;
+  profissionalStatus: "ATIVO" | "EXCLUIDO" | "INEXISTENTE";
+  excluidoEm: string | null;
+  usuarioId: string | null;
+  usuarioLogin: string | null;
+  usuarioStatus: "ATIVO" | "EXCLUIDO" | "INEXISTENTE";
+  historico: { sgc: number; mapaPagamento: number; medicao: number; divergencias: number };
+};
+
 type ImportResult = {
   total: number;
   criados: number;
+  recriados: number;
   atualizados: number;
   usuariosCriados: number;
+  usuariosReativados: number;
+  conflitos: number;
+  conflitosDetalhe: ImportAtencaoDetalhe[];
+  bloqueados: number;
+  bloqueadosDetalhe: ImportAtencaoDetalhe[];
+  revisao: number;
+  revisaoDetalhe: ImportAtencaoDetalhe[];
   senhasTemporarias: { usuario: string; nome: string; senha: string; email: string | null }[];
 };
 
@@ -201,6 +257,10 @@ function cadastroFormFromItem(item: CadastroFornecedor) {
     valorA1Equivalente: item.valorA1Equivalente?.toString() ?? "",
     valorDocumento: item.valorDocumento?.toString() ?? "",
     valorCondicaoFixa: item.valorCondicaoFixa?.toString() ?? "",
+    tipoCondicaoFixa: normalizeTipoCondicaoFixa(item.tipoCondicaoFixa),
+    valorCondicaoFixaComProducao: item.valorCondicaoFixaComProducao?.toString() ?? "",
+    valorCondicaoFixaSemProducao: item.valorCondicaoFixaSemProducao?.toString() ?? "",
+    fonteMedicao: normalizeFonteMedicao(item.fonteMedicao),
     primeiroAditivo: item.primeiroAditivo ?? "",
     segundoAditivo: item.segundoAditivo ?? "",
   };
@@ -221,7 +281,6 @@ const CADASTRO_FIELDS: [keyof ReturnType<typeof cadastroFormFromItem>, string][]
   ["valorHora", "Hora"],
   ["valorA1Equivalente", "A1 equivalente"],
   ["valorDocumento", "Documento"],
-  ["valorCondicaoFixa", "Condição fixa"],
   ["primeiroAditivo", "1º Adi"],
   ["segundoAditivo", "2º Ad"],
 ];
@@ -328,6 +387,18 @@ function FornecedorEditModal({
             Fim
             <Input type="date" value={form.final} onChange={(e) => update("final", e.target.value)} />
           </label>
+          <div className="sm:col-span-2">
+            <CondicaoFixaFields
+              tipo={form.tipoCondicaoFixa}
+              valorFixo={form.valorCondicaoFixa}
+              valorComProducao={form.valorCondicaoFixaComProducao}
+              valorSemProducao={form.valorCondicaoFixaSemProducao}
+              onChange={update}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <FonteMedicaoField value={form.fonteMedicao} onChange={update} />
+          </div>
         </div>
 
         {/* Footer — fixo */}
@@ -357,6 +428,10 @@ const NOVO_FORNECEDOR_FORM_INICIAL = {
   valorA1Equivalente: "",
   valorDocumento: "",
   valorCondicaoFixa: "",
+  tipoCondicaoFixa: "FIXA",
+  valorCondicaoFixaComProducao: "",
+  valorCondicaoFixaSemProducao: "",
+  fonteMedicao: "DOCUMENTOS",
 };
 
 type NovoFornecedorForm = typeof NOVO_FORNECEDOR_FORM_INICIAL;
@@ -397,10 +472,88 @@ const FORNECEDOR_SECTIONS: { title: string; columns?: 2 | 3; fields: [keyof Novo
       ["valorHora", "Hora", { inputMode: "numeric" }],
       ["valorDocumento", "Documento", { inputMode: "numeric" }],
       ["valorA1Equivalente", "A1 equivalente", { inputMode: "numeric" }],
-      ["valorCondicaoFixa", "Condição fixa", { inputMode: "numeric" }],
     ],
   },
 ];
+
+/**
+ * "Condição Fixa" — seção discreta reaproveitada pelo cadastro (`FornecedorForm`) e pela edição
+ * (`FornecedorEditModal`). Tipo FIXA (padrão) mostra só "Valor fixo mensal/contratual"
+ * (`valorCondicaoFixa`, mesmo campo de sempre — Mauricio/Ronald continuam funcionando sem
+ * alteração). CONDICIONAL_PRODUCAO substitui a antiga exceção hardcoded do Cristiano Jeferson por
+ * dado cadastral real: mostra "Valor com produção"/"Valor sem produção", resolvidos
+ * automaticamente em Novo Pagamento/ETL conforme existem documentos medidos no ciclo
+ * (`lib/condicao-fixa.ts::resolveCondicaoFixa`).
+ */
+function CondicaoFixaFields({
+  tipo, valorFixo, valorComProducao, valorSemProducao, onChange,
+}: {
+  tipo: string;
+  valorFixo: string;
+  valorComProducao: string;
+  valorSemProducao: string;
+  onChange: (field: "tipoCondicaoFixa" | "valorCondicaoFixa" | "valorCondicaoFixaComProducao" | "valorCondicaoFixaSemProducao", value: string) => void;
+}) {
+  const condicional = tipo === "CONDICIONAL_PRODUCAO";
+  return (
+    <div>
+      <p className="mb-3 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Condição Fixa</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
+          Tipo
+          <Select value={tipo} onChange={(e) => onChange("tipoCondicaoFixa", e.target.value)}>
+            <option value="FIXA">Fixa</option>
+            <option value="CONDICIONAL_PRODUCAO">Condicional por produção</option>
+          </Select>
+        </label>
+        {!condicional && (
+          <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
+            Valor fixo mensal/contratual
+            <Input inputMode="numeric" value={valorFixo} onChange={(e) => onChange("valorCondicaoFixa", e.target.value)} />
+          </label>
+        )}
+        {condicional && (
+          <>
+            <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
+              Valor com produção
+              <Input inputMode="numeric" value={valorComProducao} onChange={(e) => onChange("valorCondicaoFixaComProducao", e.target.value)} />
+            </label>
+            <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
+              Valor sem produção
+              <Input inputMode="numeric" value={valorSemProducao} onChange={(e) => onChange("valorCondicaoFixaSemProducao", e.target.value)} />
+            </label>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "Fonte da medição" — seção discreta, mesmo padrão de `CondicaoFixaFields` (reaproveitada por
+ * cadastro e edição). Substitui a antiga whitelist hardcoded por nome do ETL
+ * (BM_AUX_ALLOWED_COLLABORATORS) por dado cadastral real: define qual aba da planilha
+ * ("Documentos" ou "Documentos Auxiliares") o ETL considera como produção deste fornecedor. Regra
+ * independente de Condição Fixa — nenhuma inferência a partir dela.
+ */
+function FonteMedicaoField({ value, onChange }: { value: string; onChange: (field: "fonteMedicao", value: string) => void }) {
+  const auxiliares = value === "DOCUMENTOS_AUXILIARES";
+  return (
+    <div>
+      <p className="mb-3 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Fonte da medição</p>
+      <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
+        <Select value={value} onChange={(e) => onChange("fonteMedicao", e.target.value)}>
+          <option value="DOCUMENTOS">Documentos</option>
+          <option value="DOCUMENTOS_AUXILIARES">Documentos Auxiliares (BM AUX)</option>
+        </Select>
+        <span className="text-[11px] font-normal normal-case text-[#9CA3AF]">
+          Define qual aba da planilha será considerada para a produção deste fornecedor.
+          {auxiliares && " As medições de produção serão consideradas pela aba Documentos Auxiliares."}
+        </span>
+      </label>
+    </div>
+  );
+}
 
 /**
  * Formulário de fornecedor — fonte única, reaproveitada dentro da aba "Fornecedor" do modal
@@ -436,6 +589,14 @@ function FornecedorForm({ form, onChange }: { form: NovoFornecedorForm; onChange
           </div>
         </div>
       ))}
+      <CondicaoFixaFields
+        tipo={normalizeTipoCondicaoFixa(form.tipoCondicaoFixa)}
+        valorFixo={form.valorCondicaoFixa}
+        valorComProducao={form.valorCondicaoFixaComProducao}
+        valorSemProducao={form.valorCondicaoFixaSemProducao}
+        onChange={onChange}
+      />
+      <FonteMedicaoField value={normalizeFonteMedicao(form.fonteMedicao)} onChange={onChange} />
     </div>
   );
 }
@@ -1211,6 +1372,203 @@ function DeleteConfirmModal({
   );
 }
 
+const STATUS_LABELS: Record<IdentityCandidateSummary["profissionalStatus"], string> = {
+  ATIVO: "Ativo",
+  EXCLUIDO: "Excluído",
+  INEXISTENTE: "Inexistente",
+};
+const STATUS_TONE: Record<IdentityCandidateSummary["profissionalStatus"], string> = {
+  ATIVO: "bg-[#EAF7ED] text-[#28A745]",
+  EXCLUIDO: "bg-[#FFF1F1] text-[#DC3545]",
+  INEXISTENTE: "bg-[#F3F4F6] text-[#6B7280]",
+};
+
+/**
+ * Modal "Resolver identidade" — fluxo de resolução manual para linhas de importação que ficaram em
+ * CONFLICT (colisão de hash — 2+ identidades históricas compatíveis) ou REQUIRES_REVIEW (excluída
+ * sem nenhum código vinculado). Nunca escolhe um candidato sozinho: o ADMIN decide, com dados
+ * reais (código, status de Profissional/Usuario, histórico) carregados do servidor.
+ */
+function ResolverIdentidadeModal({
+  item,
+  onClose,
+  onResolved,
+}: {
+  item: ImportAtencaoDetalhe & { categoria: string };
+  onClose: () => void;
+  onResolved: (resultado: { created: boolean; recreated: boolean; colaboradorCodigo: string; usuarioCriado: unknown; usuarioReativado: { senha: string | null } | null }) => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [candidatos, setCandidatos] = useState<IdentityCandidateSummary[]>([]);
+  const [selecionado, setSelecionado] = useState<{ tipo: "USAR_CANDIDATO"; codigo: string } | { tipo: "NENHUMA_IDENTIDADE" } | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState("");
+
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setLoadError("");
+      try {
+        const res = await fetch("/api/admin/administrativo/fornecedores/candidatos-identidade", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ responsavel: item.responsavel }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) { setLoadError(payload.error ?? "Não foi possível carregar os candidatos."); return; }
+        setCandidatos(payload.candidatos ?? []);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [item.responsavel]);
+
+  async function confirmar() {
+    if (!selecionado || !item.linha || resolving) return;
+    setResolving(true);
+    setResolveError("");
+    try {
+      const res = await fetch("/api/admin/administrativo/fornecedores/resolver-identidade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ linha: item.linha, escolha: selecionado }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) { setResolveError(payload.error ?? "Não foi possível resolver esta identidade."); setConfirmando(false); return; }
+      onResolved(payload);
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  const candidatoEscolhido = selecionado?.tipo === "USAR_CANDIDATO" ? candidatos.find((c) => c.codigo === selecionado.codigo) : null;
+  const confirmPhraseNenhuma = "NENHUMA IDENTIDADE";
+  const podeConfirmarNenhuma = selecionado?.tipo !== "NENHUMA_IDENTIDADE" || confirmText.trim().toUpperCase() === confirmPhraseNenhuma;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
+      <div className="ds-dialog flex max-h-[90vh] w-full flex-col overflow-hidden sm:w-[640px] sm:max-w-[92vw]">
+        <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
+          <div>
+            <h2 className="text-sm font-bold text-[#1A1A1A]">{confirmando ? "Usar esta identidade?" : "Resolver identidade"}</h2>
+            {!confirmando && <p className="mt-0.5 text-xs text-[#6B7280]">Encontramos mais de uma identidade histórica compatível com este registro. Selecione qual pessoa corresponde ao fornecedor importado.</p>}
+          </div>
+          <IconButton onClick={onClose} title="Fechar" disabled={resolving}><X size={16} /></IconButton>
+        </div>
+
+        <div className="grid gap-4 overflow-y-auto p-5 text-sm text-[#374151]">
+          {!confirmando && (
+            <div className="grid gap-1 rounded-lg bg-[#F8FAFC] p-3 ring-1 ring-[#E2E8F0]">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">Dados importados</p>
+              <p><strong>Nome:</strong> {item.responsavel}</p>
+              {item.linha?.cnpj && <p><strong>CNPJ:</strong> {item.linha.cnpj}</p>}
+              {item.linha?.email && <p><strong>E-mail:</strong> {item.linha.email}</p>}
+              {item.linha?.telefone && <p><strong>Telefone:</strong> {item.linha.telefone}</p>}
+              {item.linha?.razaoSocial && <p><strong>Razão social:</strong> {item.linha.razaoSocial}</p>}
+              {item.linha?.cargo && <p><strong>Função:</strong> {item.linha.cargo}</p>}
+            </div>
+          )}
+
+          {!confirmando && loading && <p className="text-xs text-[#6B7280]">Carregando candidatos…</p>}
+          {!confirmando && loadError && <p className="rounded-lg bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#B91C1C]">{loadError}</p>}
+
+          {!confirmando && !loading && !loadError && (
+            <div className="grid gap-3">
+              {candidatos.map((c, idx) => (
+                <div key={c.codigo} className="grid gap-1.5 rounded-lg border border-[#E5E7EB] p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Candidato {String.fromCharCode(65 + idx)}</p>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${STATUS_TONE[c.profissionalStatus]}`}>Profissional {STATUS_LABELS[c.profissionalStatus]}</span>
+                  </div>
+                  <p><strong>Nome:</strong> {c.nomeCompleto || c.nomeAtual || "-"}</p>
+                  <p><strong>Código canônico:</strong> <span className="font-technical">{c.codigo}</span></p>
+                  {c.email && <p><strong>E-mail:</strong> {c.email}</p>}
+                  {c.cnpj && <p><strong>CNPJ:</strong> {c.cnpj}</p>}
+                  <p>
+                    <strong>Usuario:</strong>{" "}
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${STATUS_TONE[c.usuarioStatus]}`}>{STATUS_LABELS[c.usuarioStatus]}</span>
+                    {c.usuarioLogin ? ` (${c.usuarioLogin})` : ""}
+                  </p>
+                  <p className="text-xs text-[#6B7280]">
+                    <strong>Histórico:</strong> {c.historico.sgc} SGC · {c.historico.mapaPagamento} pagamento(s) · {c.historico.medicao} medição(ões) · {c.historico.divergencias} divergência(s)
+                  </p>
+                  <div className="mt-1 flex justify-end">
+                    <Button variant="secondary" onClick={() => { setSelecionado({ tipo: "USAR_CANDIDATO", codigo: c.codigo }); setConfirmando(true); }}>
+                      Usar esta identidade
+                    </Button>
+                  </div>
+                </div>
+              ))}
+
+              <div className="grid gap-1.5 rounded-lg border border-dashed border-[#D1D5DB] p-3">
+                <p className="text-xs font-semibold text-[#374151]">Nenhuma dessas identidades</p>
+                <p className="text-xs text-[#6B7280]">Esta é uma pessoa diferente dos candidatos históricos acima — cria uma identidade nova, só quando for tecnicamente seguro.</p>
+                <div className="mt-1 flex justify-end">
+                  <Button variant="secondary" onClick={() => { setSelecionado({ tipo: "NENHUMA_IDENTIDADE" }); setConfirmando(true); }}>
+                    Nenhuma dessas identidades
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {confirmando && (
+            <div className="grid gap-3">
+              {resolveError && <p className="rounded-lg bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#B91C1C]">{resolveError}</p>}
+              <p><strong>Registro importado:</strong> {item.responsavel}</p>
+              {selecionado?.tipo === "USAR_CANDIDATO" ? (
+                <p>
+                  <strong>Será associado a:</strong> {candidatoEscolhido?.nomeCompleto || candidatoEscolhido?.nomeAtual || selecionado.codigo}
+                  <br />
+                  <strong>Código:</strong> <span className="font-technical">{selecionado.codigo}</span>
+                </p>
+              ) : (
+                <div className="grid gap-2">
+                  <p className="rounded-lg bg-[#FFFBEB] px-3 py-2 text-xs font-semibold text-[#92400E]">
+                    Uma identidade NOVA será criada para "{item.responsavel}". Esta ação só é permitida quando não colide com nenhum código histórico existente — o servidor valida isso antes de confirmar.
+                  </p>
+                  <label className="grid gap-1 text-xs font-semibold text-[#374151]">
+                    Digite <span className="font-technical text-[#AF1B1B]">{confirmPhraseNenhuma}</span> para confirmar
+                    <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder={confirmPhraseNenhuma} autoFocus />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
+          <Button variant="secondary" onClick={confirmando ? () => { setConfirmando(false); setResolveError(""); } : onClose} disabled={resolving}>
+            {confirmando ? "Voltar" : "Cancelar"}
+          </Button>
+          {confirmando && (
+            <button
+              type="button"
+              onClick={confirmar}
+              disabled={resolving || !podeConfirmarNenhuma}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2563EB] px-4 text-xs font-bold text-white shadow-sm transition hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {resolving ? "Confirmando..." : "Confirmar identidade"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Dropdown compacto "Filtros" — substitui as antigas linhas de botões (Tipo + Situação cadastral)
  * por um único controle, seguindo o mesmo padrão de painel flutuante já usado no projeto (ref +
@@ -1372,6 +1730,8 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
   const [acessoFiltro, setAcessoFiltro] = useState<Set<AcessoOpcao>>(new Set());
   const [situacaoFiltro, setSituacaoFiltro] = useState<Set<SituacaoOpcao>>(new Set());
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [mostrarAtencao, setMostrarAtencao] = useState(false);
+  const [resolverItem, setResolverItem] = useState<(ImportAtencaoDetalhe & { categoria: string }) | null>(null);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [selectedFornecedor, setSelectedFornecedor] = useState<CadastroFornecedor | null>(null);
@@ -1609,6 +1969,32 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
     load();
   }
 
+  function handleIdentidadeResolvida(resultado: { created: boolean; recreated: boolean; colaboradorCodigo: string; usuarioCriado: unknown; usuarioReativado: { senha: string | null } | null }) {
+    const resolvido = resolverItem;
+    setResolverItem(null);
+    setResult((prev) => {
+      if (!prev || !resolvido) return prev;
+      const removerPorResponsavel = (lista: ImportAtencaoDetalhe[]) => lista.filter((d) => d.responsavel !== resolvido.responsavel);
+      return {
+        ...prev,
+        conflitos: resolvido.categoria === "Identidade ambígua" ? Math.max(0, prev.conflitos - 1) : prev.conflitos,
+        conflitosDetalhe: resolvido.categoria === "Identidade ambígua" ? removerPorResponsavel(prev.conflitosDetalhe) : prev.conflitosDetalhe,
+        revisao: resolvido.categoria === "Requer revisão" ? Math.max(0, prev.revisao - 1) : prev.revisao,
+        revisaoDetalhe: resolvido.categoria === "Requer revisão" ? removerPorResponsavel(prev.revisaoDetalhe) : prev.revisaoDetalhe,
+        recriados: resultado.recreated ? prev.recriados + 1 : prev.recriados,
+        criados: resultado.created && !resultado.recreated ? prev.criados + 1 : prev.criados,
+        atualizados: !resultado.created ? prev.atualizados + 1 : prev.atualizados,
+        usuariosCriados: resultado.usuarioCriado ? prev.usuariosCriados + 1 : prev.usuariosCriados,
+        usuariosReativados: resultado.usuarioReativado ? prev.usuariosReativados + 1 : prev.usuariosReativados,
+        senhasTemporarias: resultado.usuarioReativado?.senha
+          ? [...prev.senhasTemporarias, { usuario: "", nome: resolvido.responsavel, senha: resultado.usuarioReativado.senha, email: null }]
+          : prev.senhasTemporarias,
+      };
+    });
+    setToast({ tone: "success", message: `Identidade de "${resolvido?.responsavel}" resolvida — código ${resultado.colaboradorCodigo}.` });
+    load();
+  }
+
   // Usada só pelo banner "Fornecedores com pendências" abaixo do upload — independe dos filtros.
   const pendencias = items.filter((item) => item.pendencias.length > 0);
 
@@ -1617,6 +2003,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
     setUploading(true);
     setError("");
     setResult(null);
+    setMostrarAtencao(false);
     const form = new FormData();
     form.append("file", file);
     const res = await fetch("/api/admin/administrativo/fornecedores", { method: "POST", body: form });
@@ -1681,15 +2068,57 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
             <span className="text-xs text-[#6B7280]">.xlsx ou .xlsm</span>
           </button>
           {error && <div className="rounded-lg bg-[#FEF2F2] px-4 py-3 text-sm font-semibold text-[#B91C1C]">{error}</div>}
-          {result && (
-            <div className="rounded-lg bg-[#F0FDF4] px-4 py-3 text-sm text-[#15803D]">
-              Importação concluída: {result.total} registro(s), {result.criados} novo(s), {result.atualizados} atualizado(s), {result.usuariosCriados} usuário(s) criado(s).
-            </div>
-          )}
+          {result && (() => {
+            const atencaoTotal = result.conflitos + result.bloqueados + result.revisao;
+            const itensAtencao: (ImportAtencaoDetalhe & { categoria: string })[] = [
+              ...result.conflitosDetalhe.map((d) => ({ ...d, categoria: "Identidade ambígua" })),
+              ...result.bloqueadosDetalhe.map((d) => ({ ...d, categoria: "Bloqueado" })),
+              ...result.revisaoDetalhe.map((d) => ({ ...d, categoria: "Requer revisão" })),
+            ];
+            return (
+              <div className="grid gap-2">
+                <div className="rounded-lg bg-[#F0FDF4] px-4 py-3 text-sm text-[#15803D]">
+                  Importação concluída: {result.total} registro(s), {result.criados} novo(s)
+                  {result.recriados > 0 ? `, ${result.recriados} recriado(s)` : ""}, {result.atualizados} atualizado(s), {result.usuariosCriados} usuário(s) criado(s)
+                  {result.usuariosReativados > 0 ? `, ${result.usuariosReativados} usuário(s) reativado(s)` : ""}.
+                </div>
+                {atencaoTotal > 0 && (
+                  <div className="rounded-lg bg-[#FFFBEB] px-4 py-3 text-sm text-[#92400E]">
+                    <button
+                      type="button"
+                      onClick={() => setMostrarAtencao((v) => !v)}
+                      className="flex w-full items-center justify-between gap-2 text-left font-semibold"
+                    >
+                      <span>{atencaoTotal} registro(s) precisam de atenção</span>
+                      <span className="text-xs underline">{mostrarAtencao ? "Ocultar detalhes" : "Ver detalhes"}</span>
+                    </button>
+                    {mostrarAtencao && (
+                      <div className="mt-2 grid gap-1.5">
+                        {itensAtencao.map((item, idx) => (
+                          <div key={`${item.responsavel}-${idx}`} className="rounded-md border border-[#FDE68A] bg-white px-2.5 py-1.5 text-xs">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <strong>{item.responsavel}</strong>
+                              <span className="rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[10px] font-bold uppercase text-[#92400E]">{item.categoria}</span>
+                            </div>
+                            <p className="mt-0.5 text-[#78350F]">Motivo: {item.motivo}</p>
+                            {isAdmin && item.categoria !== "Bloqueado" && item.linha && (
+                              <div className="mt-1.5 flex justify-end">
+                                <Button variant="secondary" onClick={() => setResolverItem(item)}>Resolver</Button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {result?.senhasTemporarias?.length ? (
             <div className="grid gap-2 rounded-lg bg-[#FFFBEB] p-3">
               <p className="text-xs font-bold uppercase text-[#92400E]">
-                {result.senhasTemporarias.length} usuário(s) criado(s) — senhas temporárias
+                {result.senhasTemporarias.length} senha(s) temporária(s) — usuário(s) novo(s) ou reativado(s) sem senha anterior recuperável
               </p>
               <div className="grid gap-1.5">
                 {result.senhasTemporarias.map((entry) => (
@@ -1937,6 +2366,14 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
           items={deleteTargets}
           onClose={() => setDeleteTargets(null)}
           onDone={handleDeletionDone}
+        />
+      )}
+
+      {resolverItem && (
+        <ResolverIdentidadeModal
+          item={resolverItem}
+          onClose={() => setResolverItem(null)}
+          onResolved={handleIdentidadeResolvida}
         />
       )}
 

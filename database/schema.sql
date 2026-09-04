@@ -176,6 +176,16 @@ create index if not exists idx_cadastros_fornecedores_colaborador_codigo on cada
 create index if not exists idx_cadastros_fornecedores_cnpj_normalizado on cadastros_fornecedores(cnpj_normalizado);
 create index if not exists idx_cadastros_fornecedores_final on cadastros_fornecedores(final);
 alter table cadastros_fornecedores add column if not exists valor_condicao_fixa numeric(16,4);
+-- Condição fixa condicional (modelagem genérica, substitui exceção hardcoded por fornecedor):
+-- tipo_condicao_fixa NULL/'FIXA' => usa valor_condicao_fixa (comportamento pré-existente, inalterado).
+-- 'CONDICIONAL_PRODUCAO' => exige AMBOS valor_condicao_fixa_com_producao e valor_condicao_fixa_sem_producao.
+alter table cadastros_fornecedores add column if not exists tipo_condicao_fixa text;
+alter table cadastros_fornecedores add column if not exists valor_condicao_fixa_com_producao numeric(16,4);
+alter table cadastros_fornecedores add column if not exists valor_condicao_fixa_sem_producao numeric(16,4);
+-- Fonte da medição (substitui a whitelist hardcoded por nome BM_AUX_ALLOWED_COLLABORATORS do ETL):
+-- NULL/'DOCUMENTOS' (padrão) => produção da aba "Documentos"; 'DOCUMENTOS_AUXILIARES' => produção
+-- da aba "Documentos Auxiliares" (BM AUX). Regra independente de tipo_condicao_fixa.
+alter table cadastros_fornecedores add column if not exists fonte_medicao text;
 
 -- ─── sgc_aprovacoes_medicao ──────────────────────────────────
 create table if not exists sgc_aprovacoes_medicao (

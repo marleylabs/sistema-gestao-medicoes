@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdministrativo } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
+import { validateTipoCondicaoFixaForWrite } from "@/lib/condicao-fixa";
+import { validateFonteMedicaoForWrite } from "@/lib/fonte-medicao";
 import { isValidEmail } from "@/lib/usuario-email-policy";
 import { FornecedorIdentityConflictError, FornecedorIdentityDeletedError, normalizeCnpjDigits, serializeCadastroFornecedor, upsertCadastroFornecedor, type CadastroRow } from "@/lib/cadastro-fornecedor";
 
@@ -10,8 +12,9 @@ function text(value: unknown): string | null {
 }
 
 function numberOrNull(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
+  const text = typeof value === "string" ? value.trim() : value;
+  if (text === null || text === undefined || text === "") return null;
+  const n = Number(text);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -50,6 +53,29 @@ export async function POST(request: NextRequest) {
   }
 
   const b = body as Record<string, unknown>;
+  // Escrita administrativa: valor desconhecido/mal digitado nunca vira "FIXA" em silêncio — só
+  // NULL/undefined/"" (ausência explícita) é um default legítimo. Validado ANTES de
+  // upsertCadastroFornecedor — payload inválido nunca chega a persistir nada.
+  const tipoCondicaoFixaResult = validateTipoCondicaoFixaForWrite(b.tipoCondicaoFixa);
+  if (!tipoCondicaoFixaResult.ok) {
+    return NextResponse.json({ error: tipoCondicaoFixaResult.error }, { status: 400 });
+  }
+  const tipoCondicaoFixa = tipoCondicaoFixaResult.value;
+  const valorCondicaoFixaComProducao = numberOrNull(b.valorCondicaoFixaComProducao);
+  const valorCondicaoFixaSemProducao = numberOrNull(b.valorCondicaoFixaSemProducao);
+  if (
+    tipoCondicaoFixa === "CONDICIONAL_PRODUCAO" &&
+    (valorCondicaoFixaComProducao === null || valorCondicaoFixaSemProducao === null)
+  ) {
+    return NextResponse.json(
+      { error: "Condição fixa condicional por produção exige os dois valores (com produção e sem produção)." },
+      { status: 400 },
+    );
+  }
+  const fonteMedicaoResult = validateFonteMedicaoForWrite(b.fonteMedicao);
+  if (!fonteMedicaoResult.ok) {
+    return NextResponse.json({ error: fonteMedicaoResult.error }, { status: 400 });
+  }
   const row: CadastroRow = {
     responsavel,
     cnpj: text(b.cnpj) ?? cnpjNormalizado,
@@ -67,6 +93,10 @@ export async function POST(request: NextRequest) {
     valorA1Equivalente: numberOrNull(b.valorA1Equivalente),
     valorDocumento: numberOrNull(b.valorDocumento),
     valorCondicaoFixa: numberOrNull(b.valorCondicaoFixa),
+    tipoCondicaoFixa,
+    valorCondicaoFixaComProducao,
+    valorCondicaoFixaSemProducao,
+    fonteMedicao: fonteMedicaoResult.value,
     inicio: dateOrNull(b.inicio),
     final: dateOrNull(b.final),
     // Sem status por padrão — a importação também não força um valor quando a planilha não traz
@@ -114,6 +144,13 @@ export async function POST(request: NextRequest) {
       cadastro: serializeCadastroFornecedor(cadastro),
       criado: resultado.created,
       usuarioCriado: resultado.usuarioCriado,
+      // Recriação de identidade anteriormente excluída: sinaliza se a configuração administrativa
+      // (fonteMedicao/tipoCondicaoFixa) foi restaurada de um snapshot preservado na exclusão, ou se
+      // não havia snapshot (config anterior, se existiu, não pôde ser recuperada).
+      recreated: resultado.recreated,
+      administrativeConfigRestored: resultado.administrativeConfigRestored,
+      administrativeConfigUnrecoverable: resultado.administrativeConfigUnrecoverable,
+      administrativeConfigSnapshotMalformed: resultado.administrativeConfigSnapshotMalformed,
     },
     { status: resultado.created ? 201 : 200 },
   );

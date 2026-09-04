@@ -225,6 +225,15 @@ model CadastroFornecedor {
   valorA1Equivalente Decimal?  @map("valor_a1_equivalente") @db.Decimal(16, 4)
   valorDocumento     Decimal?  @map("valor_documento") @db.Decimal(16, 4)
   valorCondicaoFixa  Decimal?  @map("valor_condicao_fixa") @db.Decimal(16, 4)
+  /** "FIXA" (padrão, inclusive para cadastros antigos sem valor gravado) ou "CONDICIONAL_PRODUCAO".
+   * Nunca inferir a partir do nome do fornecedor — é dado cadastral explícito. */
+  tipoCondicaoFixa            String?   @map("tipo_condicao_fixa")
+  valorCondicaoFixaComProducao Decimal? @map("valor_condicao_fixa_com_producao") @db.Decimal(16, 4)
+  valorCondicaoFixaSemProducao Decimal? @map("valor_condicao_fixa_sem_producao") @db.Decimal(16, 4)
+  /** "DOCUMENTOS" (padrão, inclusive NULL) ou "DOCUMENTOS_AUXILIARES" — qual aba da planilha o ETL
+   * considera como produção deste fornecedor. Dado cadastral explícito, nunca inferido por nome,
+   * código ou condição fixa (regras independentes). Ver lib/fonte-medicao.ts. */
+  fonteMedicao       String?   @map("fonte_medicao")
   inicio             DateTime? @db.Date
   final              DateTime? @db.Date
   statusCadastro     String?   @map("status_cadastro")

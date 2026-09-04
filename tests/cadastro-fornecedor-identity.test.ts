@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolveCondicaoFixa, normalizeTipoCondicaoFixa, toCondicaoFixaConfig, validateTipoCondicaoFixaForWrite } from "../lib/condicao-fixa";
+import { normalizeFonteMedicao, validateFonteMedicaoForWrite } from "../lib/fonte-medicao";
 
 /**
  * AUDITORIA — importação de "Consulta PJ" criava fornecedores duplicados. Causa raiz real
@@ -583,4 +585,209 @@ test("Identidade com histórico mas SEM nenhum Profissional vinculado -> nada pa
   });
   assert.equal(plans[0].action, "PRESERVE_PROFISSIONAL_FOR_HISTORY");
   if (plans[0].action === "PRESERVE_PROFISSIONAL_FOR_HISTORY") assert.equal(plans[0].profissionalId, null);
+});
+
+// ─── Condição Fixa condicional (lib/condicao-fixa.ts) ────────────────────────────────────────────
+// Correção estrutural: a antiga exceção hardcoded do Cristiano Jeferson (isCristianoJeferson /
+// CRISTIANO_FIXED_WITH_DOCUMENTS / CRISTIANO_FIXED_WITHOUT_DOCUMENTS) virou dado cadastral real
+// (CadastroFornecedor.tipoCondicaoFixa/valorCondicaoFixaComProducao/valorCondicaoFixaSemProducao),
+// resolvida por `resolveCondicaoFixa` — a MESMA lógica espelhada em Python
+// (etl/ingest_medicoes.py::resolve_condicao_fixa, ver etl/test_fixed_condition_reference.py).
+
+test("resolveCondicaoFixa: FIXA (tipoCondicaoFixa NULL, cadastro antigo) usa valorCondicaoFixa direto — Mauricio/Ronald continuam funcionando sem migração manual", () => {
+  const mauricio = { tipoCondicaoFixa: null, valorCondicaoFixa: 8640, valorCondicaoFixaComProducao: null, valorCondicaoFixaSemProducao: null };
+  assert.equal(resolveCondicaoFixa(mauricio, true), 8640);
+  assert.equal(resolveCondicaoFixa(mauricio, false), 8640);
+
+  const ronald = { tipoCondicaoFixa: "FIXA", valorCondicaoFixa: 21300, valorCondicaoFixaComProducao: null, valorCondicaoFixaSemProducao: null };
+  assert.equal(resolveCondicaoFixa(ronald, false), 21300);
+});
+
+test("resolveCondicaoFixa: fornecedor sem condição fixa (valorCondicaoFixa NULL) nunca vira zero nem herda outro valor", () => {
+  const semCondicao = { tipoCondicaoFixa: null, valorCondicaoFixa: null, valorCondicaoFixaComProducao: null, valorCondicaoFixaSemProducao: null };
+  assert.equal(resolveCondicaoFixa(semCondicao, true), null);
+  assert.equal(resolveCondicaoFixa(semCondicao, false), null);
+});
+
+test("resolveCondicaoFixa: CONDICIONAL_PRODUCAO resolve com/sem produção — qualquer fornecedor, nunca um nome hardcoded", () => {
+  const condicional = { tipoCondicaoFixa: "CONDICIONAL_PRODUCAO", valorCondicaoFixa: null, valorCondicaoFixaComProducao: 8640, valorCondicaoFixaSemProducao: 12000 };
+  assert.equal(resolveCondicaoFixa(condicional, true), 8640);
+  assert.equal(resolveCondicaoFixa(condicional, false), 12000);
+});
+
+test("resolveCondicaoFixa: CONDICIONAL_PRODUCAO configurado pela metade (falta um dos dois valores) é inválido — retorna null, nunca inventa um valor", () => {
+  const semComProducao = { tipoCondicaoFixa: "CONDICIONAL_PRODUCAO", valorCondicaoFixa: null, valorCondicaoFixaComProducao: null, valorCondicaoFixaSemProducao: 12000 };
+  assert.equal(resolveCondicaoFixa(semComProducao, true), null);
+  assert.equal(resolveCondicaoFixa(semComProducao, false), null);
+
+  const semSemProducao = { tipoCondicaoFixa: "CONDICIONAL_PRODUCAO", valorCondicaoFixa: null, valorCondicaoFixaComProducao: 8640, valorCondicaoFixaSemProducao: null };
+  assert.equal(resolveCondicaoFixa(semSemProducao, true), null);
+});
+
+test("normalizeTipoCondicaoFixa: NULL/vazio/desconhecido sempre vira FIXA — só 'CONDICIONAL_PRODUCAO' (case-insensitive) ativa o modo condicional", () => {
+  assert.equal(normalizeTipoCondicaoFixa(null), "FIXA");
+  assert.equal(normalizeTipoCondicaoFixa(""), "FIXA");
+  assert.equal(normalizeTipoCondicaoFixa("qualquer coisa"), "FIXA");
+  assert.equal(normalizeTipoCondicaoFixa("condicional_producao"), "CONDICIONAL_PRODUCAO");
+  assert.equal(normalizeTipoCondicaoFixa("CONDICIONAL_PRODUCAO"), "CONDICIONAL_PRODUCAO");
+});
+
+test("toCondicaoFixaConfig: converte valores Decimal/number/null do Prisma para o shape esperado por resolveCondicaoFixa", () => {
+  const config = toCondicaoFixaConfig({
+    tipoCondicaoFixa: "CONDICIONAL_PRODUCAO",
+    valorCondicaoFixa: null,
+    valorCondicaoFixaComProducao: "8640" as unknown as number,
+    valorCondicaoFixaSemProducao: "12000" as unknown as number,
+  });
+  assert.deepEqual(config, {
+    tipoCondicaoFixa: "CONDICIONAL_PRODUCAO",
+    valorCondicaoFixa: null,
+    valorCondicaoFixaComProducao: 8640,
+    valorCondicaoFixaSemProducao: 12000,
+  });
+});
+
+// ─── asNumber (lib/cadastro-fornecedor.ts, importação de "Consulta PJ") ──────────────────────────
+// BUG REAL ENCONTRADO NESTA AUDITORIA: célula vazia virava `String(null ?? "")` = `""`, e
+// `Number("")`/`Number("   ")` é `0` em JavaScript (não NaN) — então o guard `Number.isFinite`
+// deixava passar como zero "válido". Resultado real: 42 CadastroFornecedor no banco dev com
+// `valorCondicaoFixa = 0`. Reimplementado aqui verbatim (mesma função privada de
+// lib/cadastro-fornecedor.ts, que tem "server-only") para provar a correção sem o bloqueio de
+// import fora do runtime do Next.js — mesmo padrão já usado neste arquivo.
+function asNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const text = String(value ?? "").replace(/\./g, "").replace(",", ".").trim();
+  if (!text) return null;
+  const numeric = Number(text);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+test("asNumber: célula vazia (null/undefined) vira NULL, nunca 0 — corrige o bug real dos 42 CadastroFornecedor", () => {
+  assert.equal(asNumber(null), null);
+  assert.equal(asNumber(undefined), null);
+});
+
+test("asNumber: célula só com espaços vira NULL, nunca 0 (Number('   ') é 0 em JS — mesma causa raiz)", () => {
+  assert.equal(asNumber("   "), null);
+  assert.equal(asNumber(""), null);
+});
+
+test("asNumber: zero EXPLÍCITO na planilha (célula com '0' ou 0 numérico) continua virando 0 normalmente — não é a mesma coisa que célula vazia", () => {
+  assert.equal(asNumber(0), 0);
+  assert.equal(asNumber("0"), 0);
+  assert.equal(asNumber("0,00"), 0);
+});
+
+test("asNumber: valores monetários reais (formato brasileiro) continuam corretos após a correção", () => {
+  assert.equal(asNumber("8.640,00"), 8640);
+  assert.equal(asNumber("21.300,00"), 21300);
+  assert.equal(asNumber(8640), 8640);
+});
+
+// ─── fonteMedicao: leitura defensiva vs. validação de escrita (lib/fonte-medicao.ts) ─────────────
+// Correção: normalizeFonteMedicao (leitura) mascarava erro de digitação como "DOCUMENTOS" em
+// silêncio. As rotas administrativas (POST manual, PATCH fornecedor) agora usam
+// validateFonteMedicaoForWrite, que rejeita qualquer valor que não seja NULL/undefined/""
+// (ausência = default legado válido) nem "DOCUMENTOS"/"DOCUMENTOS_AUXILIARES".
+
+test("normalizeFonteMedicao (LEITURA): NULL/vazio/valor desconhecido sempre vira DOCUMENTOS — comportamento defensivo mantido para registros já gravados", () => {
+  assert.equal(normalizeFonteMedicao(null), "DOCUMENTOS");
+  assert.equal(normalizeFonteMedicao(undefined), "DOCUMENTOS");
+  assert.equal(normalizeFonteMedicao(""), "DOCUMENTOS");
+  assert.equal(normalizeFonteMedicao("valor_corrompido_no_banco"), "DOCUMENTOS");
+  assert.equal(normalizeFonteMedicao("documentos_auxiliares"), "DOCUMENTOS_AUXILIARES");
+});
+
+test("validateFonteMedicaoForWrite (ESCRITA): NULL/undefined/'' são o default legado válido — nunca rejeitados", () => {
+  assert.deepEqual(validateFonteMedicaoForWrite(null), { ok: true, value: "DOCUMENTOS" });
+  assert.deepEqual(validateFonteMedicaoForWrite(undefined), { ok: true, value: "DOCUMENTOS" });
+  assert.deepEqual(validateFonteMedicaoForWrite(""), { ok: true, value: "DOCUMENTOS" });
+});
+
+test("validateFonteMedicaoForWrite (ESCRITA): DOCUMENTOS/DOCUMENTOS_AUXILIARES válidos (case-insensitive, trim)", () => {
+  assert.deepEqual(validateFonteMedicaoForWrite("DOCUMENTOS"), { ok: true, value: "DOCUMENTOS" });
+  assert.deepEqual(validateFonteMedicaoForWrite("documentos_auxiliares"), { ok: true, value: "DOCUMENTOS_AUXILIARES" });
+  assert.deepEqual(validateFonteMedicaoForWrite("  Documentos_Auxiliares  "), { ok: true, value: "DOCUMENTOS_AUXILIARES" });
+});
+
+test("validateFonteMedicaoForWrite (ESCRITA): valor inválido é REJEITADO (erro controlado), nunca vira DOCUMENTOS silenciosamente — correção do risco crítico reportado", () => {
+  const resultado = validateFonteMedicaoForWrite("DOCUMENTO_AUXILIAR"); // erro de digitação plausível
+  assert.equal(resultado.ok, false);
+  if (!resultado.ok) assert.match(resultado.error, /Fonte da medição inválida/);
+
+  assert.equal(validateFonteMedicaoForWrite("bm aux").ok, false);
+  assert.equal(validateFonteMedicaoForWrite(123).ok, false);
+  assert.equal(validateFonteMedicaoForWrite({}).ok, false);
+});
+
+// ─── tipoCondicaoFixa: leitura defensiva vs. validação de escrita (lib/condicao-fixa.ts) ──────────
+// Mesmo risco crítico do fonteMedicao, agora em tipoCondicaoFixa: normalizeTipoCondicaoFixa
+// (leitura) mascarava erro de digitação como "FIXA" em silêncio — perigoso porque interfere
+// diretamente no cálculo financeiro (resolveCondicaoFixa). Rotas administrativas agora usam
+// validateTipoCondicaoFixaForWrite.
+
+test("CENÁRIO 1 — validateTipoCondicaoFixaForWrite: tipo = FIXA é válido", () => {
+  assert.deepEqual(validateTipoCondicaoFixaForWrite("FIXA"), { ok: true, value: "FIXA" });
+  assert.deepEqual(validateTipoCondicaoFixaForWrite("fixa"), { ok: true, value: "FIXA" });
+});
+
+test("CENÁRIO 2 — CONDICIONAL_PRODUCAO com os dois valores é válido (checagem de combinação feita nas rotas, com === null explícito)", () => {
+  assert.deepEqual(validateTipoCondicaoFixaForWrite("CONDICIONAL_PRODUCAO"), { ok: true, value: "CONDICIONAL_PRODUCAO" });
+  // A combinação em si (exigir os dois valores) é responsabilidade das rotas — replicada aqui
+  // exatamente como está em app/api/admin/administrativo/fornecedores/[id]/route.ts e manual/route.ts.
+  function exigeAmbosValores(tipo: "FIXA" | "CONDICIONAL_PRODUCAO", com: number | null, sem: number | null) {
+    return tipo === "CONDICIONAL_PRODUCAO" && (com === null || sem === null);
+  }
+  assert.equal(exigeAmbosValores("CONDICIONAL_PRODUCAO", 8640, 12000), false, "com os dois valores presentes, não deve rejeitar");
+});
+
+test("CENÁRIO 3 — CONDICIONAL_PRODUCAO sem valorComProducao (null) é inválido pela regra de combinação", () => {
+  function exigeAmbosValores(tipo: string, com: number | null, sem: number | null) {
+    return tipo === "CONDICIONAL_PRODUCAO" && (com === null || sem === null);
+  }
+  assert.equal(exigeAmbosValores("CONDICIONAL_PRODUCAO", null, 12000), true);
+});
+
+test("CENÁRIO 4 — CONDICIONAL_PRODUCAO sem valorSemProducao (null) é inválido pela regra de combinação", () => {
+  function exigeAmbosValores(tipo: string, com: number | null, sem: number | null) {
+    return tipo === "CONDICIONAL_PRODUCAO" && (com === null || sem === null);
+  }
+  assert.equal(exigeAmbosValores("CONDICIONAL_PRODUCAO", 8640, null), true);
+});
+
+test("CENÁRIO 5 — validateTipoCondicaoFixaForWrite: tipo = 'TESTE' é rejeitado (HTTP 400 nas rotas)", () => {
+  const resultado = validateTipoCondicaoFixaForWrite("TESTE");
+  assert.equal(resultado.ok, false);
+  if (!resultado.ok) assert.match(resultado.error, /Tipo de condição fixa inválido/);
+});
+
+test("CENÁRIO 6 — validateTipoCondicaoFixaForWrite: erro de digitação plausível ('CONDICIONAL_PRODUCA', sem o O final) é rejeitado, nunca corrigido automaticamente", () => {
+  assert.equal(validateTipoCondicaoFixaForWrite("CONDICIONAL_PRODUCA").ok, false);
+  assert.equal(validateTipoCondicaoFixaForWrite("CONDICIONAL").ok, false);
+  assert.equal(validateTipoCondicaoFixaForWrite("FIXO").ok, false);
+  assert.equal(validateTipoCondicaoFixaForWrite("ABC").ok, false);
+  assert.equal(validateTipoCondicaoFixaForWrite("0").ok, false);
+  assert.equal(validateTipoCondicaoFixaForWrite("1").ok, false);
+});
+
+test("CENÁRIO 7 — validateTipoCondicaoFixaForWrite: NULL/undefined/'' são o default legado FIXA válido — nunca rejeitados", () => {
+  assert.deepEqual(validateTipoCondicaoFixaForWrite(null), { ok: true, value: "FIXA" });
+  assert.deepEqual(validateTipoCondicaoFixaForWrite(undefined), { ok: true, value: "FIXA" });
+  assert.deepEqual(validateTipoCondicaoFixaForWrite(""), { ok: true, value: "FIXA" });
+});
+
+test("CENÁRIO 8 — valorComProducao = 0 nunca é rejeitado só por ser falsy (0 ≠ null) — mesma regra já usada em resolveCondicaoFixa", () => {
+  const config = { tipoCondicaoFixa: "CONDICIONAL_PRODUCAO", valorCondicaoFixa: null, valorCondicaoFixaComProducao: 0, valorCondicaoFixaSemProducao: 12000 };
+  assert.equal(resolveCondicaoFixa(config, true), 0, "0 é o valor resolvido quando há produção, não 'ausente'");
+  assert.equal(resolveCondicaoFixa(config, false), 12000);
+  // A checagem de combinação das rotas usa === null explicitamente, nunca truthiness.
+  function exigeAmbosValores(tipo: string, com: number | null, sem: number | null) {
+    return tipo === "CONDICIONAL_PRODUCAO" && (com === null || sem === null);
+  }
+  assert.equal(exigeAmbosValores("CONDICIONAL_PRODUCAO", 0, 12000), false, "0 não pode ser tratado como ausência de valor");
+});
+
+test("normalizeTipoCondicaoFixa (LEITURA): continua tolerante para dado legado — só NÃO deve ser usado para validar escrita (é o que validateTipoCondicaoFixaForWrite substitui nas rotas)", () => {
+  assert.equal(normalizeTipoCondicaoFixa("valor_corrompido_no_banco"), "FIXA");
+  assert.equal(normalizeTipoCondicaoFixa(null), "FIXA");
 });

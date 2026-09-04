@@ -4,7 +4,44 @@ import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { toNumber } from "@/lib/format";
 import { cadastroFornecedorOverrideForMapaItem } from "@/lib/mapa-pagamento-cadastro";
-import { getDistribuicaoContratosCiclos } from "@/lib/participacao-contratos";
+import { getDistribuicaoContratosCiclos, getParticipacaoPorFornecedorCiclo, normalizeAlias } from "@/lib/participacao-contratos";
+
+/**
+ * "Atos ativos"/"Produção ativos" (cards do Dashboard) — contagem de fornecedores distintos com
+ * pagamento no ciclo, filtrada opcionalmente por contrato. Substitui o antigo filtro hardcoded nos
+ * 4 contratos fixos (`mapaContratoFilter`, comparava `mpi.intr_sossego/salobo/acg/escadas_alumar`):
+ * a elegibilidade por contrato agora usa a MESMA participação dinâmica (Documentos Medidos →
+ * `getParticipacaoPorFornecedorCiclo`) que já alimenta "Distribuição por contrato" e Pagamentos por
+ * Fornecedor — nunca duas regras divergentes. Funciona com 0, 1, 4, 10 ou qualquer novo contrato
+ * sem alteração de código.
+ */
+async function computeAtivosCards(ciclos: string[], codigo: string | null, contrato: string | null) {
+  let atosAtivos = new Set<string>();
+  let producaoAtivos = new Set<string>();
+  for (const cicloAtual of ciclos) {
+    const participacao = contrato ? await getParticipacaoPorFornecedorCiclo(cicloAtual) : null;
+    const contratoId = participacao ? participacao.contratos.find((c) => c.nome === contrato)?.id : undefined;
+    if (contrato && !contratoId) continue; // contrato não existe/não teve produção nesse ciclo — nada elegível
+    const itens = await prisma.mapaPagamentoItem.findMany({
+      where: {
+        ciclo: cicloAtual,
+        valor: { gt: 0 },
+        ...(codigo ? { projetistaCodigo: codigo } : {}),
+      },
+      select: { projetistaCodigo: true, ato: true },
+    });
+    for (const item of itens) {
+      if (!item.projetistaCodigo) continue;
+      if (contrato && contratoId) {
+        const p = participacao!.porAlias[normalizeAlias(item.projetistaCodigo)];
+        if (!((p?.participacoes[contratoId] ?? 0) > 0)) continue;
+      }
+      const isProducao = ["produção", "producao"].includes((item.ato ?? "").trim().toLowerCase());
+      (isProducao ? producaoAtivos : atosAtivos).add(item.projetistaCodigo);
+    }
+  }
+  return { atosAtivos: atosAtivos.size, producaoAtivos: producaoAtivos.size };
+}
 
 const emptyDashboard = {
   cards: {
@@ -38,9 +75,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(emptyDashboard);
   }
 
-  const mapaCicloFilter = isGeral
-    ? Prisma.sql`and mpi.ciclo = ANY(${ciclosPermitidos}::text[])`
-    : Prisma.sql`and mpi.ciclo = ${ciclo}`;
   const medicaoCicloFilter = isGeral
     ? Prisma.sql`and m.ciclo = ANY(${ciclosPermitidos}::text[])`
     : Prisma.sql`and m.ciclo = ${ciclo}`;
@@ -48,64 +82,6 @@ export async function GET(request: NextRequest) {
   const contratoFilter = contrato
     ? Prisma.sql`and lower(coalesce(m.raw_payload->>'CONTRATO', '')) = lower(${contrato})`
     : Prisma.empty;
-  const mapaCodigoFilter = codigo ? Prisma.sql`and mpi.projetista_codigo = ${codigo}` : Prisma.empty;
-  const mapaContratoFilter =
-    contrato === "Intr. Sossego"
-      ? Prisma.sql`
-          and (
-            lower(coalesce(mpi.ato, '')) = lower('Intr. Sossego')
-            or (
-              lower(coalesce(mpi.ato, '')) in ('produção', 'producao')
-              and mpi.intr_sossego > 0
-            )
-          )
-        `
-      : contrato === "Salobo"
-        ? Prisma.sql`
-            and (
-              lower(coalesce(mpi.ato, '')) = lower('Salobo')
-              or (
-                lower(coalesce(mpi.ato, '')) in ('produção', 'producao')
-                and mpi.salobo > 0
-              )
-            )
-          `
-        : contrato === "ACG"
-          ? Prisma.sql`
-              and (
-                lower(coalesce(mpi.ato, '')) = lower('ACG')
-                or (
-                  lower(coalesce(mpi.ato, '')) in ('produção', 'producao')
-                  and mpi.acg > 0
-                )
-              )
-            `
-          : contrato === "Escadas Alumar"
-            ? Prisma.sql`
-                and (
-                  lower(coalesce(mpi.ato, '')) = lower('Escadas Alumar')
-                  or (
-                    lower(coalesce(mpi.ato, '')) in ('produção', 'producao')
-                    and mpi.escadas_alumar > 0
-                  )
-                )
-              `
-            : contrato === "Não alocado"
-              ? Prisma.sql`
-                  and (
-                    mpi.intr_sossego
-                    + mpi.salobo
-                    + mpi.acg
-                    + mpi.escadas_alumar
-                  ) = 0
-                  and lower(coalesce(mpi.ato, '')) not in (
-                    lower('Intr. Sossego'),
-                    lower('Salobo'),
-                    lower('ACG'),
-                    lower('Escadas Alumar')
-                  )
-                `
-            : Prisma.empty;
 
   const [
     totals,
@@ -148,22 +124,7 @@ export async function GET(request: NextRequest) {
         count(*) as total_registros
       from base
     `,
-    prisma.$queryRaw<Array<{ atos_ativos: bigint; producao_ativos: bigint }>>`
-      select
-        count(distinct mpi.projetista_codigo) filter (
-          where mpi.valor > 0
-            and lower(coalesce(mpi.ato, '')) not in ('produção', 'producao')
-        ) as atos_ativos,
-        count(distinct mpi.projetista_codigo) filter (
-          where mpi.valor > 0
-            and lower(coalesce(mpi.ato, '')) in ('produção', 'producao')
-        ) as producao_ativos
-      from mapa_pagamento_itens mpi
-      where 1 = 1
-      ${mapaCicloFilter}
-      ${mapaCodigoFilter}
-      ${mapaContratoFilter}
-    `,
+    computeAtivosCards(isGeral ? ciclosPermitidos : [ciclo], codigo ?? null, contrato ?? null),
     prisma.$queryRaw<
       Array<{
         ciclo: string;
@@ -314,8 +275,8 @@ export async function GET(request: NextRequest) {
     cards: {
       totalMedido,
       totalHoras: toNumber(totals[0]?.total_horas as any),
-      atosAtivos: Number(colaboradoresAtivos[0]?.atos_ativos ?? 0),
-      producaoAtivos: Number(colaboradoresAtivos[0]?.producao_ativos ?? 0),
+      atosAtivos: colaboradoresAtivos.atosAtivos,
+      producaoAtivos: colaboradoresAtivos.producaoAtivos,
       totalRegistros: Number(totals[0]?.total_registros ?? 0),
     },
     contextoMapa: contexto
