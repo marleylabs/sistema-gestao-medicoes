@@ -26,8 +26,10 @@ type ValidateNfDocumentResult =
   | { ok: false; error: string; detected?: Partial<NfDetectedParties> };
 
 const PDF_MIME = "application/pdf";
-const EXPECTED_TOMADOR_CNPJ = "04892580000120";
-const EXPECTED_TOMADOR_RAZAO_SOCIAL = "PROJETA CONSULTORIA E SERVICOS LTDA";
+// Exportadas somente para o script de diagnóstico read-only (scripts/inspect-nf-validation.ts)
+// inspecionar/reproduzir a regra real sem duplicá-la — nenhuma mudança de comportamento aqui.
+export const EXPECTED_TOMADOR_CNPJ = "04892580000120";
+export const EXPECTED_TOMADOR_RAZAO_SOCIAL = "PROJETA CONSULTORIA E SERVICOS LTDA";
 
 function normalizeText(value: string | null | undefined) {
   return String(value ?? "")
@@ -39,7 +41,7 @@ function normalizeText(value: string | null | undefined) {
     .toUpperCase();
 }
 
-function normalizeCompany(value: string | null | undefined) {
+export function normalizeCompany(value: string | null | undefined) {
   return normalizeText(value)
     .replace(/\b(LTDA|LIMITADA|ME|EPP|EIRELI|S A|SA|S\/A)\b/g, "")
     .replace(/\s+/g, " ")
@@ -50,7 +52,7 @@ function compactCompany(value: string | null | undefined) {
   return normalizeCompany(value).replace(/[^A-Z0-9]/g, "");
 }
 
-function companyMatches(detectedValue: string | null | undefined, expectedValue: string) {
+export function companyMatches(detectedValue: string | null | undefined, expectedValue: string) {
   const expectedCompany = normalizeCompany(expectedValue);
   const detectedCompany = normalizeCompany(detectedValue);
   const expectedCompanyCompact = compactCompany(expectedValue);
@@ -107,7 +109,7 @@ function sectionBetween(text: string, startPatterns: RegExp[], endPatterns: RegE
   return rest.slice(0, end);
 }
 
-function extractCnpj(text: string) {
+export function extractCnpj(text: string) {
   const match = text.match(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/) ?? text.match(/\b\d{14}\b/);
   return match ? onlyDigits(match[0]) : null;
 }
@@ -136,7 +138,7 @@ function extractRazaoSocial(lines: string[]) {
   return null;
 }
 
-function extractPrestador(text: string): NfParty {
+export function extractPrestador(text: string): NfParty {
   const prestadorSection = sectionBetween(
     text,
     [/EMITENTE\s*DA\s*NFS?-?E/i, /PRESTADOR\s*DO\s*SERVI[CÇ]O/i],
@@ -149,7 +151,7 @@ function extractPrestador(text: string): NfParty {
   };
 }
 
-function extractTomador(text: string): NfParty {
+export function extractTomador(text: string): NfParty {
   const tomadorSection = sectionBetween(
     text,
     [/TOMADOR\s*DO\s*SERVI[CÇ]O/i, /DADOS\s*DO\s*TOMADOR/i],
@@ -162,7 +164,7 @@ function extractTomador(text: string): NfParty {
   };
 }
 
-async function extractPdfText(buffer: Buffer) {
+export async function extractPdfText(buffer: Buffer) {
   const parser = new PDFParse({ data: new Uint8Array(buffer) });
   try {
     const result = await parser.getText();

@@ -12,7 +12,6 @@ import {
   LayoutDashboard,
   MessageCircle,
   Plus,
-  ShieldCheck,
   SlidersHorizontal,
   Trash2,
   Upload,
@@ -25,23 +24,21 @@ import { GeneralChatWidget } from "@/components/general-chat-widget";
 import { Dashboard, MapaPagamentoResumo } from "@/components/dashboard";
 import { ComentarioDropdown, MapaPagamentoTable } from "@/components/mapa-pagamento-table";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
-import { UsuariosPanel } from "@/components/usuarios-panel";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { AdministrativoPanel } from "@/components/administrativo-panel";
-import { Badge, Button, Card, IconButton, PageContainer, PageHeader, Select } from "@/components/ui";
+import { Badge, Button, Card, FilterButton, FilterChip, IconButton, PageContainer, PageHeader, Select } from "@/components/ui";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "@/lib/presence";
 import type { AuthUser } from "@/lib/session";
 
-type Section = "visao" | "historico" | "importar" | "evidencias" | "usuarios" | "financeiro" | "administrativo";
+type Section = "visao" | "historico" | "importar" | "evidencias" | "financeiro" | "administrativo";
 
 const TITLES: Record<Section, string> = {
   visao: "Dashboard",
   historico: "Histórico de Medições",
   importar: "Importar Planilha",
   evidencias: "Evidências de Medição",
-  usuarios: "Gestão de Usuários",
   financeiro: "Painel Financeiro",
   administrativo: "Painel Administrativo",
 };
@@ -72,6 +69,8 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   const [novoCicloOpen, setNovoCicloOpen]   = useState(false);
   const [ativandoMedicaoCiclo, setAtivandoMedicaoCiclo] = useState<string | null>(null);
   const [resetandoCiclos, setResetandoCiclos] = useState(false);
+  const [filtrosDashboardOpen, setFiltrosDashboardOpen] = useState(false);
+  const filtrosDashboardRef                 = useRef<HTMLDivElement>(null);
   const cicloInicializadoRef                = useRef(false);
   const alertasBaselineRef                  = useRef(false);
   const previousAlertIdsRef                 = useRef<Set<string>>(new Set());
@@ -93,8 +92,8 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
     : isMedicao
     ? ["visao", "importar", "evidencias"]
     : isFullAdmin
-    ? ["administrativo", "evidencias", "financeiro", "historico", "importar", "usuarios", "visao"]
-    : ["evidencias", "financeiro", "historico", "importar", "usuarios", "visao"];
+    ? ["administrativo", "evidencias", "financeiro", "historico", "importar", "visao"]
+    : ["evidencias", "financeiro", "historico", "importar", "visao"];
   const sectionParam = currentSearchParams.get("section") as Section | null;
   const section: Section = sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : (isFinanceiro ? "financeiro" : isAdministrativo ? "administrativo" : "visao");
   function setSection(s: Section) {
@@ -419,7 +418,6 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
         { id: "evidencias", label: "Evidências",        icon: <FileSearch size={17} /> },
         { id: "financeiro", label: "Financeiro",        icon: <Wallet size={17} /> },
         { id: "historico",  label: "Histórico",         icon: <History size={17} /> },
-        { id: "usuarios",   label: "Usuários",          icon: <ShieldCheck size={17} /> },
         { id: "importar",   label: "Importar Planilha", icon: <Upload size={17} />, bottom: true },
       ];
 
@@ -478,6 +476,23 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
 
   // ─── Filters ─────────────────────────────────────────────────────────────────
 
+  // Mesmo padrão de fechar ao clicar fora já usado no dropdown "Filtros" do Painel Administrativo.
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (filtrosDashboardRef.current && !filtrosDashboardRef.current.contains(e.target as Node)) {
+        setFiltrosDashboardOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
+
+  function handleCicloChange(value: string) {
+    setActiveCiclo(value);
+    setSelectedCodigo("");
+    setSelectedContrato("");
+  }
+
   async function criarCiclo() {
     if (!novoCiclo.trim() || !/^\d{4}$/.test(novoCiclo.trim())) {
       alert("Digite um ciclo válido no formato YYMM (ex: 2606).");
@@ -534,135 +549,153 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
       await refreshAll();
     }
 
-    return (
-      <>
-        <p className="text-card-title mb-2 text-[#1A1A1A]">Filtros</p>
-        <Card className="mb-6 p-4">
-          <div className="flex flex-wrap items-end gap-4">
+    // "Filtro ativo" (chip/contador) = Ciclo fora do padrão "Geral", Fornecedor/Contrato
+    // diferentes de "Todos". Produção/ATO não são filtros de seleção (são dados do contexto do
+    // ciclo), então não entram nos chips/contador — só continuam dentro do dropdown.
+    const chips: { key: string; label: string; onRemove: () => void }[] = [];
+    if (activeCiclo !== CICLO_GERAL) chips.push({ key: "ciclo", label: `Ciclo: ${activeCiclo}`, onRemove: () => handleCicloChange(CICLO_GERAL) });
+    if (selectedCodigo) chips.push({ key: "fornecedor", label: `Fornecedor: ${selectedCodigo}`, onRemove: () => setSelectedCodigo("") });
+    if (selectedContrato) chips.push({ key: "contrato", label: `Contrato: ${selectedContrato}`, onRemove: () => setSelectedContrato("") });
 
-            {/* Ciclo ativo */}
-            <div className="grid gap-1.5">
-              <span className="text-label text-[var(--muted-foreground)]">Ciclo ativo</span>
-              <div className="flex items-center gap-1.5">
-                <Select
-                  className="min-w-[150px]"
-                  value={activeCiclo}
-                  onChange={(e) => { setActiveCiclo(e.target.value); setSelectedCodigo(""); setSelectedContrato(""); }}
-                >
-                  <option value={CICLO_GERAL}>Geral</option>
-                  {ciclos.map((c) => (
-                    <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>
-                  ))}
-                  {!ciclos.find((c) => c.ciclo === activeCiclo) && activeCiclo !== CICLO_GERAL && (
-                    <option value={activeCiclo}>{activeCiclo}</option>
-                  )}
-                </Select>
-                {isAdmin && (
-                  <div className="relative">
-                    <IconButton
-                      title="Novo ciclo"
-                      onClick={() => { setNovoCicloOpen((v) => !v); setNovoCiclo(""); }}
-                      className={novoCicloOpen ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]" : ""}
+    return (
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <div className="relative" ref={filtrosDashboardRef}>
+          <FilterButton count={chips.length} onClick={() => setFiltrosDashboardOpen((v) => !v)} />
+          {filtrosDashboardOpen && (
+            <div className="absolute left-0 top-10 z-40 w-[340px] max-w-[90vw] rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-xl">
+              <p className="mb-3 text-sm font-bold text-[#1A1A1A]">Filtros</p>
+
+              <div className="grid gap-3">
+                {/* Ciclo ativo */}
+                <div className="grid gap-1.5">
+                  <span className="text-label text-[var(--muted-foreground)]">Ciclo ativo</span>
+                  <div className="flex items-center gap-1.5">
+                    <Select
+                      className="flex-1"
+                      value={activeCiclo}
+                      onChange={(e) => handleCicloChange(e.target.value)}
                     >
-                      <Plus size={15} />
-                    </IconButton>
-                    {novoCicloOpen && (
-                      <div className="absolute left-0 top-10 z-40 w-64 rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-xl">
-                        <p className="mb-2 text-sm font-bold text-[#1A1A1A]">Novo ciclo</p>
-                        <p className="mb-3 text-xs text-[#555555]">Formato YYMM — ex: <strong>2606</strong></p>
-                        <input
-                          className="mb-3 h-9 w-full rounded-lg border border-[#E5E7EB] px-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
-                          placeholder="Ex: 2606"
-                          maxLength={4}
-                          value={novoCiclo}
-                          onChange={(e) => setNovoCiclo(e.target.value.replace(/\D/g, ""))}
-                          onKeyDown={(e) => e.key === "Enter" && criarCiclo()}
-                          autoFocus
-                        />
-                        <div className="flex gap-2">
-                          <Button variant="secondary" className="flex-1" onClick={() => { setNovoCicloOpen(false); setNovoCiclo(""); }}>Cancelar</Button>
-                          <Button className="flex-1" onClick={criarCiclo} disabled={criandoCiclo || novoCiclo.length !== 4}>{criandoCiclo ? "Criando…" : "Criar"}</Button>
-                        </div>
+                      <option value={CICLO_GERAL}>Geral</option>
+                      {ciclos.map((c) => (
+                        <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>
+                      ))}
+                      {!ciclos.find((c) => c.ciclo === activeCiclo) && activeCiclo !== CICLO_GERAL && (
+                        <option value={activeCiclo}>{activeCiclo}</option>
+                      )}
+                    </Select>
+                    {isAdmin && (
+                      <div className="relative shrink-0">
+                        <IconButton
+                          title="Novo ciclo"
+                          onClick={() => { setNovoCicloOpen((v) => !v); setNovoCiclo(""); }}
+                          className={novoCicloOpen ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]" : ""}
+                        >
+                          <Plus size={15} />
+                        </IconButton>
+                        {novoCicloOpen && (
+                          <div className="absolute right-0 top-10 z-50 w-64 rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-xl">
+                            <p className="mb-2 text-sm font-bold text-[#1A1A1A]">Novo ciclo</p>
+                            <p className="mb-3 text-xs text-[#555555]">Formato YYMM — ex: <strong>2606</strong></p>
+                            <input
+                              className="mb-3 h-9 w-full rounded-lg border border-[#E5E7EB] px-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+                              placeholder="Ex: 2606"
+                              maxLength={4}
+                              value={novoCiclo}
+                              onChange={(e) => setNovoCiclo(e.target.value.replace(/\D/g, ""))}
+                              onKeyDown={(e) => e.key === "Enter" && criarCiclo()}
+                              autoFocus
+                            />
+                            <div className="flex gap-2">
+                              <Button variant="secondary" className="flex-1" onClick={() => { setNovoCicloOpen(false); setNovoCiclo(""); }}>Cancelar</Button>
+                              <Button className="flex-1" onClick={criarCiclo} disabled={criandoCiclo || novoCiclo.length !== 4}>{criandoCiclo ? "Criando…" : "Criar"}</Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Produção + ATO — oculto no Geral, mesma condição/valores de sempre */}
+                {activeCiclo !== CICLO_GERAL && (
+                  <>
+                    <div className="grid gap-1.5">
+                      <span className="text-label text-[var(--muted-foreground)]">Produção</span>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="date"
+                          className="h-9 min-w-0 flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20"
+                          defaultValue={producaoInicio}
+                          key={producaoInicio}
+                          onBlur={(e) => { if (e.target.value && e.target.value !== producaoInicio) saveContextDates(e.target.value, producaoFim); }}
+                        />
+                        <span className="text-xs text-[#9CA3AF]">a</span>
+                        <input
+                          type="date"
+                          className="h-9 min-w-0 flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20"
+                          defaultValue={producaoFim}
+                          key={producaoFim}
+                          onBlur={(e) => { if (e.target.value && e.target.value !== producaoFim) saveContextDates(producaoInicio, e.target.value); }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-1.5">
+                      <span className="text-label text-[var(--muted-foreground)]">ATO</span>
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex h-9 flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A]">{fmtDate(atoInicio)}</div>
+                        <span className="text-xs text-[#9CA3AF]">a</span>
+                        <div className="flex h-9 flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A]">{fmtDate(atoFim)}</div>
+                      </div>
+                    </div>
+                  </>
                 )}
+
+                {/* Fornecedor */}
+                <label className="text-label grid gap-1.5 text-[var(--muted-foreground)]">
+                  Fornecedor
+                  <Select value={selectedCodigo} onChange={(e) => setSelectedCodigo(e.target.value)}>
+                    <option value="">Todos os fornecedores</option>
+                    {colaboradores.map((p) => (
+                      <option key={p.id} value={p.codigo ?? ""}>{p.codigo}</option>
+                    ))}
+                  </Select>
+                </label>
+
+                {/* Contrato */}
+                <label className="text-label grid gap-1.5 text-[var(--muted-foreground)]">
+                  Contrato
+                  <Select value={selectedContrato} onChange={(e) => setSelectedContrato(e.target.value)}>
+                    <option value="">Todos os contratos</option>
+                    {contratos.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </Select>
+                </label>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between border-t border-[#E5E7EB] pt-3">
+                <button
+                  type="button"
+                  onClick={() => handleCicloChange(CICLO_GERAL)}
+                  className="text-xs font-semibold text-[#6B7280] transition hover:text-[#374151]"
+                >
+                  Limpar filtros
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltrosDashboardOpen(false)}
+                  className="text-xs font-bold text-[#AF1B1B]"
+                >
+                  Concluído
+                </button>
               </div>
             </div>
+          )}
+        </div>
 
-            {/* Divisor vertical — oculto no Geral */}
-            {activeCiclo !== CICLO_GERAL && <div className="hidden self-stretch border-l border-[#E5E7EB] sm:block" />}
-
-            {/* Produção + ATO — oculto no Geral */}
-            {activeCiclo !== CICLO_GERAL && (
-              <>
-                <div className="grid w-full gap-1.5 sm:w-auto">
-                  <span className="text-label text-[var(--muted-foreground)]">Produção</span>
-                  <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
-                    <input
-                      type="date"
-                      className="h-9 min-w-0 flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20 sm:flex-none"
-                      defaultValue={producaoInicio}
-                      key={producaoInicio}
-                      onBlur={(e) => { if (e.target.value && e.target.value !== producaoInicio) saveContextDates(e.target.value, producaoFim); }}
-                    />
-                    <span className="text-xs text-[#9CA3AF]">a</span>
-                    <input
-                      type="date"
-                      className="h-9 min-w-0 flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20 sm:flex-none"
-                      defaultValue={producaoFim}
-                      key={producaoFim}
-                      onBlur={(e) => { if (e.target.value && e.target.value !== producaoFim) saveContextDates(producaoInicio, e.target.value); }}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid w-full gap-1.5 sm:w-auto">
-                  <span className="text-label text-[var(--muted-foreground)]">ATO</span>
-                  <div className="flex items-center gap-1.5">
-                    <div className="flex h-9 flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] sm:flex-none sm:px-3">{fmtDate(atoInicio)}</div>
-                    <span className="text-xs text-[#9CA3AF]">a</span>
-                    <div className="flex h-9 flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] sm:flex-none sm:px-3">{fmtDate(atoFim)}</div>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Divisor vertical */}
-            <div className="hidden self-stretch border-l border-[#E5E7EB] sm:block" />
-
-            {/* Fornecedor */}
-            <label className="text-label grid w-full min-w-0 basis-full gap-1.5 text-[var(--muted-foreground)] sm:min-w-[180px] sm:flex-1 sm:basis-auto">
-              Fornecedor
-              <Select value={selectedCodigo} onChange={(e) => setSelectedCodigo(e.target.value)}>
-                <option value="">Todos os fornecedores</option>
-                {colaboradores.map((p) => (
-                  <option key={p.id} value={p.codigo ?? ""}>{p.codigo}</option>
-                ))}
-              </Select>
-            </label>
-
-            {/* Contrato */}
-            <label className="text-label grid w-full min-w-0 basis-full gap-1.5 text-[var(--muted-foreground)] sm:min-w-[180px] sm:flex-1 sm:basis-auto">
-              Contrato
-              <Select value={selectedContrato} onChange={(e) => setSelectedContrato(e.target.value)}>
-                <option value="">Todos os contratos</option>
-                {contratos.map((c) => <option key={c} value={c}>{c}</option>)}
-              </Select>
-            </label>
-
-            {/* Limpar */}
-            <Button
-              variant="ghost"
-              onClick={() => { setSelectedCodigo(""); setSelectedContrato(""); }}
-              className="shrink-0 self-end"
-            >
-              <X size={14} />
-              Limpar
-            </Button>
-          </div>
-        </Card>
-      </>
+        {chips.map((chip) => (
+          <FilterChip key={chip.key} label={chip.label} onRemove={chip.onRemove} />
+        ))}
+      </div>
     );
   })();
 
@@ -767,10 +800,6 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
 
       {section === "financeiro" && (isAdmin || isFinanceiro || isAdministrativo) && (
         <FinanceiroPanel ciclos={ciclos} exportOnly={isAdministrativo} />
-      )}
-
-      {section === "usuarios" && isAdmin && (
-        <UsuariosPanel canCreateUsers={isFullAdmin} />
       )}
 
       {section === "administrativo" && (isFullAdmin || isAdministrativo) && (

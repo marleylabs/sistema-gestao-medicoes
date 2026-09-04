@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyPasswordReset } from "@/lib/email";
 import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
 import { isValidEmail, requiresEmail, EMAIL_REQUIRED_MESSAGE } from "@/lib/usuario-email-policy";
+import { isValidPerfil } from "@/lib/perfis";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
@@ -71,11 +72,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ ok: true });
   }
 
-  const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "ADMINISTRATIVO"];
-
   if (action === "set_perfil") {
     const perfil = typeof body?.perfil === "string" ? body.perfil : "";
-    if (!VALID_PERFIS.includes(perfil)) return NextResponse.json({ error: "Perfil inválido." }, { status: 400 });
+    if (!isValidPerfil(perfil)) return NextResponse.json({ error: "Perfil inválido." }, { status: 400 });
     if (requiresEmail(perfil, user.ativo) && !decryptSensitive(user.email)) {
       return NextResponse.json({ error: EMAIL_REQUIRED_MESSAGE }, { status: 409 });
     }

@@ -259,11 +259,6 @@ export function MapaPagamentoTable({
     return () => clearTimeout(timer);
   }, [paymentToast]);
 
-  const alocacoesUnicas = useMemo(
-    () => [...new Set(itens.map((i) => i.ato).filter(Boolean) as string[])].sort(),
-    [itens],
-  );
-
   const revisaoMap = useMemo(
     () => new Map(revisoes.map((r) => [r.colaboradorCodigo, r])),
     [revisoes],
@@ -279,12 +274,32 @@ export function MapaPagamentoTable({
       return matchColab && matchContract && (!q || searchable.includes(q));
     });
 
+    // "" ("Ordem padrão") = nenhuma ordenação adicional, mantém a ordem original recebida em
+    // `itens` (mesma regra de sempre — só o nome/terminologia da opção mudou, nunca a ordem).
     if (!sortOrder) return result;
+
+    if (sortOrder === "asc" || sortOrder === "desc") {
+      return [...result].sort((a, b) => {
+        const an = a.responsavel ?? a.projetistaCodigo ?? "";
+        const bn = b.responsavel ?? b.projetistaCodigo ?? "";
+        const cmp = an.localeCompare(bn, "pt-BR", { sensitivity: "base" });
+        return sortOrder === "desc" ? -cmp : cmp;
+      });
+    }
+
+    // Maior/menor valor usam `item.valor` — mesmo campo exibido na coluna "Pagamento" da tabela
+    // (a medida de valor que a tela já mostra por fornecedor). Registro sem valor válido
+    // (null/undefined/NaN) sempre vai para o final, nas duas direções — nunca deixa a ordenação
+    // instável nem finge que "sem valor" é zero.
     return [...result].sort((a, b) => {
-      const an = a.responsavel ?? a.projetistaCodigo ?? "";
-      const bn = b.responsavel ?? b.projetistaCodigo ?? "";
-      const cmp = an.localeCompare(bn, "pt-BR", { sensitivity: "base" });
-      return sortOrder === "desc" ? -cmp : cmp;
+      const av = a.valor;
+      const bv = b.valor;
+      const aValid = typeof av === "number" && Number.isFinite(av);
+      const bValid = typeof bv === "number" && Number.isFinite(bv);
+      if (!aValid && !bValid) return 0;
+      if (!aValid) return 1;
+      if (!bValid) return -1;
+      return sortOrder === "valor-desc" ? bv - av : av - bv;
     });
   }, [itens, search, selectedCodigo, selectedContrato, sortOrder]);
 
@@ -327,18 +342,27 @@ export function MapaPagamentoTable({
               </span>
             </label>
             <label className="grid min-w-[160px] gap-1.5 text-label text-[var(--muted-foreground)]">
-              Ordenar por nome
+              Ordenar por
               <Select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-                <option value="">Padrão da planilha</option>
-                <option value="asc">A → Z</option>
-                <option value="desc">Z → A</option>
+                <option value="">Ordem padrão</option>
+                <option value="asc">Nome — A a Z</option>
+                <option value="desc">Nome — Z a A</option>
+                <option value="valor-desc">Maior valor</option>
+                <option value="valor-asc">Menor valor</option>
               </Select>
             </label>
             {isAdmin && (
-              <Button onClick={() => setIsCreating(true)} className="shrink-0">
-                <Plus size={15} />
-                Adicionar
-              </Button>
+              // "GERAL" é só o filtro do Dashboard para "ver todos os ciclos" — nunca um ciclo real
+              // em que um pagamento possa existir. Criar aqui gerava um item com `ciclo: "GERAL"`
+              // que a própria listagem (agregada por ciclos realmente cadastrados) nunca conseguia
+              // exibir de novo — sucesso real no banco, invisível para sempre (bug crítico
+              // corrigido também no backend, que agora rejeita essa criação de qualquer forma).
+              <div className="relative shrink-0" title={ciclo === "GERAL" ? "Selecione um ciclo específico (não \"Geral\") para cadastrar um novo pagamento." : undefined}>
+                <Button onClick={() => setIsCreating(true)} disabled={ciclo === "GERAL"} className="shrink-0">
+                  <Plus size={15} />
+                  Adicionar
+                </Button>
+              </div>
             )}
           </div>
         </div>
@@ -352,7 +376,6 @@ export function MapaPagamentoTable({
           saving={saving}
           profissionais={profissionais}
           contratos={contratos}
-          alocacoes={alocacoesUnicas}
           onCancel={() => { setIsCreating(false); setEditingItem(null); }}
           onSave={async (payload) => {
             setSaving(true);
@@ -386,9 +409,13 @@ export function MapaPagamentoTable({
           <thead className="sticky top-0 z-10">
             <tr className="bg-[#F9FAFB]">
               {[
+                // "Alocação" NÃO foi renomeada para "Contrato": auditei a fonte (lib/mapa-pagamento.ts)
+                // e esta coluna mostra `cadastro?.tipoCt` (Tipo CT do cadastro administrativo do
+                // fornecedor) — nunca um contrato real. Renomear para "Contrato" seria exatamente a
+                // troca de rótulo sem alinhar o dado que a tarefa pediu para nunca fazer.
                 { label: "Alocação", align: "left" },
-                { label: "Projetista", align: "left" },
-                { label: "CPF / CNPJ", align: "left" },
+                { label: "Nome", align: "left" },
+                { label: "CNPJ", align: "left" },
                 { label: "Razão social", align: "left" },
                 ...contratos.map((c) => ({ label: c.nome, align: "right" as const })),
                 { label: "Pagamento", align: "right" },
@@ -1001,7 +1028,6 @@ function PaymentModal({
   saving,
   profissionais,
   contratos,
-  alocacoes: alocacoesCiclo,
   onCancel,
   onSave,
   onDivergenciaResolvida,
@@ -1011,7 +1037,6 @@ function PaymentModal({
   saving: boolean;
   profissionais: Profissional[];
   contratos: ContratoResumo[];
-  alocacoes: string[];
   onCancel: () => void;
   onSave: (payload: PaymentForm) => Promise<void>;
   /** Chamado depois que Incluir/Descartar é confirmado com sucesso — deixa a linha de Pagamentos
@@ -1021,8 +1046,23 @@ function PaymentModal({
   const [form, setForm] = useState<PaymentForm>(() => paymentForm(item));
   const [codigoQuery, setCodigoQuery] = useState(item?.projetistaCodigo ?? "");
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [alocacoesGlobais, setAlocacoesGlobais] = useState<string[]>([]);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  // Correção da causa raiz de "fornecedor cadastrado não aparece no Nome": a lista de
+  // `profissionais` do componente pai só é recarregada quando o ciclo muda ou um pagamento é
+  // salvo — nunca ao simplesmente abrir este modal. Um fornecedor cadastrado no Administrativo
+  // enquanto o Dashboard já estava aberto ficava invisível aqui até algum refresh não relacionado
+  // acontecer. Busca uma cópia fresca assim que o modal monta, sem esperar F5; usa a prop como
+  // fallback imediato para não piscar lista vazia enquanto a rede responde.
+  const [profissionaisFrescos, setProfissionaisFrescos] = useState<Profissional[]>(profissionais);
+  useEffect(() => {
+    let cancelado = false;
+    fetch("/api/profissionais")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: Profissional[] | null) => { if (!cancelado && data) setProfissionaisFrescos(data); })
+      .catch(() => {});
+    return () => { cancelado = true; };
+  }, []);
 
   // ── Document lines ──
   const [docs, setDocs] = useState<DocLine[]>([]);
@@ -1249,38 +1289,35 @@ function PaymentModal({
     }
   }
 
-  useEffect(() => {
-    fetch("/api/mapa-pagamento/alocacoes")
-      .then((r) => r.json())
-      .then((data: string[]) => setAlocacoesGlobais(data))
-      .catch(() => {});
-  }, []);
-
-  const alocacoes = useMemo(
-    () => [...new Set([...alocacoesGlobais, ...alocacoesCiclo])].sort(),
-    [alocacoesGlobais, alocacoesCiclo],
-  );
-
   const suggestions = useMemo(() => {
     const q = codigoQuery.trim().toLowerCase();
-    if (!q) return profissionais.slice(0, 8);
-    return profissionais
+    if (!q) return profissionaisFrescos.slice(0, 8);
+    return profissionaisFrescos
       .filter((p) =>
         (p.codigo ?? "").toLowerCase().includes(q) ||
         (p.nome ?? "").toLowerCase().includes(q) ||
         (p.nomeCompleto ?? "").toLowerCase().includes(q),
       )
       .slice(0, 8);
-  }, [codigoQuery, profissionais]);
+  }, [codigoQuery, profissionaisFrescos]);
 
   function selectProfissional(p: Profissional) {
+    // CORREÇÃO CRÍTICA: fornecedores legados sem `Profissional.codigo` (import antigo nunca
+    // preencheu essa coluna) caíam para "" aqui — o campo Nome ficava visualmente vazio após
+    // selecionar, e salvar gravava `projetistaCodigo: null` silenciosamente (resolveProjetistaCodigo
+    // trata "" como "nenhum código informado", não como erro). O próprio backend já usa `nome` como
+    // identidade canônica de fallback nesses casos (ver lib/mapa-pagamento.ts:resolveProjetistaCodigo)
+    // — espelha exatamente a mesma regra aqui, nunca grava uma identidade vazia.
+    const identidade = p.codigo || p.nome || "";
     const mappedCondition = fixedConditionFor(p.codigo, p.nomeCompleto, p.nome, p.razaoSocial);
-    setCodigoQuery(p.codigo ?? "");
+    setCodigoQuery(identidade);
     setForm((cur) => ({
       ...cur,
-      projetistaCodigo: p.codigo ?? "",
+      projetistaCodigo: identidade,
       responsavel: p.nomeCompleto || p.nome || "",
-      cpfCnpj: maskCpfCnpj(p.cpf || p.cnpj || cur.cpfCnpj),
+      // Esta tela trabalha só com CNPJ (CPF nunca é a identidade de fornecedor aqui) — nunca usar
+      // p.cpf, mesmo que preenchido.
+      cpfCnpj: maskCpfCnpj(p.cnpj || cur.cpfCnpj),
       razaoSocial: p.razaoSocial || cur.razaoSocial,
       valorFixo: mappedCondition ? currencyInputValue(mappedCondition.valorFixo) : cur.valorFixo,
       tipoContratacao: mappedCondition?.tipoContratacao ?? cur.tipoContratacao,
@@ -1370,36 +1407,22 @@ function PaymentModal({
           <p className="mb-3 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Identificação</p>
           <div className="grid gap-4 sm:grid-cols-2">
 
-            {/* Alocação — combobox com digitação livre */}
-            <MField label="Alocação">
-              <input
-                className="h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] hover:border-[#D1D5DB] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
-                list="alocacoes-list"
-                value={form.ato ?? ""}
-                onChange={(e) => update("ato", e.target.value)}
-                placeholder="Selecione ou digite…"
-                autoComplete="off"
-              />
-              <datalist id="alocacoes-list">
-                {alocacoes.map((a) => (
-                  <option key={a} value={a} />
-                ))}
-              </datalist>
-            </MField>
-
-            {/* Nome (ID) - autocomplete */}
-            <MField label="Nome (ID)">
+            {/* Nome — autocomplete sobre Profissional (fonte espelhada de CadastroFornecedor pelo
+                Administrativo; ver PaymentModal acima para o fetch fresco anti-cache). Ao
+                selecionar, CNPJ/Razão social são preenchidos automaticamente (read-only abaixo). */}
+            <MField label="Nome" className="sm:col-span-2">
               <div className="relative" ref={suggestionsRef}>
                 <input
                   className="h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] hover:border-[#D1D5DB] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
-                  placeholder="Digite o ID ou nome…"
+                  placeholder="Buscar fornecedor..."
                   value={codigoQuery}
                   onChange={(e) => {
                     // codigoQuery (texto visível) e form.projetistaCodigo (valor realmente
                     // enviado) eram dois estados desacoplados — digitar sem clicar numa sugestão
                     // deixava projetistaCodigo vazio, e Documentos/Descontos adicionados depois
                     // falhavam (codigo ausente) sem nenhum aviso. Mantém os dois sincronizados
-                    // para digitação livre também valer.
+                    // para digitação livre também valer — resolveProjetistaCodigo() no backend
+                    // ainda revalida contra Profissional antes de gravar, nunca aceita texto puro.
                     setCodigoQuery(e.target.value);
                     update("projetistaCodigo", e.target.value);
                     setShowSuggestions(true);
@@ -1416,8 +1439,12 @@ function PaymentModal({
                         className="flex w-full flex-col px-3 py-2 text-left hover:bg-[#F5F5F5] border-b border-[#F3F4F6] last:border-0"
                         onMouseDown={() => selectProfissional(p)}
                       >
-                        <span className="text-sm font-semibold text-[#1A1A1A]">{p.codigo}</span>
-                        <span className="text-xs text-[#555555]">{p.nomeCompleto || p.nome}</span>
+                        {/* Nome em destaque (nunca o código/ID) — razão social/CNPJ como pista extra
+                            para distinguir homônimos, já que dois fornecedores podem ter o mesmo nome. */}
+                        <span className="text-sm font-semibold text-[#1A1A1A]">{p.nomeCompleto || p.nome}</span>
+                        {(p.razaoSocial || p.cnpj) && (
+                          <span className="text-xs text-[#555555]">{p.razaoSocial}{p.razaoSocial && p.cnpj ? " · " : ""}{p.cnpj}</span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -1425,29 +1452,26 @@ function PaymentModal({
               </div>
             </MField>
 
-            {/* Projetista — auto-preenchido, editável */}
-            <MField label="Projetista (nome completo)">
-              <Input
-                value={form.responsavel}
-                onChange={(e) => update("responsavel", e.target.value)}
-                placeholder="Preenchido automaticamente"
-              />
-            </MField>
-
-            {/* CPF / CNPJ */}
-            <MField label="CPF / CNPJ">
+            {/* CNPJ — somente leitura: fonte única é o cadastro administrativo (CadastroFornecedor/
+                Profissional), preenchido ao selecionar o Nome. Editar CNPJ é responsabilidade do
+                Painel Administrativo, nunca deste formulário (evita duas fontes de verdade). */}
+            <MField label="CNPJ">
               <Input
                 value={form.cpfCnpj}
-                onChange={(e) => update("cpfCnpj", maskCpfCnpj(e.target.value))}
-                placeholder="000.000.000-00 ou 00.000.000/0000-00"
-                maxLength={18}
-                inputMode="numeric"
+                readOnly
+                placeholder="Preenchido automaticamente"
+                className="cursor-not-allowed bg-[#F9FAFB] text-[#555555]"
               />
             </MField>
 
-            {/* Razão social */}
-            <MField label="Razão social" className="sm:col-span-2">
-              <Input value={form.razaoSocial} onChange={(e) => update("razaoSocial", e.target.value)} />
+            {/* Razão social — mesma regra: somente leitura, vem do cadastro administrativo. */}
+            <MField label="Razão social">
+              <Input
+                value={form.razaoSocial}
+                readOnly
+                placeholder="Preenchida automaticamente"
+                className="cursor-not-allowed bg-[#F9FAFB] text-[#555555]"
+              />
             </MField>
           </div>
 
@@ -1477,87 +1501,33 @@ function PaymentModal({
             </p>
           )}
 
-          {/* Seção: Pagamento */}
-          <p className="mb-3 mt-6 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Pagamento</p>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <MField label="Horas contabilizadas">
-              <div className="relative">
-                <Input
-                  inputMode="decimal"
-                  value={form.horas}
-                  onChange={(e) => update("horas", e.target.value.replace(/[^\d.,]/g, ""))}
-                  placeholder="0"
-                />
-                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-[#9CA3AF]">h</span>
-              </div>
-            </MField>
-            <MField label="Valor previsto">
-              <Input
-                inputMode="decimal"
-                value={form.valor}
-                onBlur={(e) => update("valor", formatCurrencyInput(e.target.value))}
-                onChange={(e) => update("valor", e.target.value)}
-                placeholder="R$ 0,00"
-              />
-            </MField>
-            <MField label="Revisão">
-              <Input value={form.rev} onChange={(e) => update("rev", e.target.value)} placeholder="0" />
-            </MField>
-          </div>
-
-          {/* Seção: Condições fixas */}
+          {/* Seção: Condições fixas — simplificada: só "Valor fixo mensal/contratual" permanece
+              editável aqui (mesmo campo de sempre, form.valorFixo / rawPayload.condicoesFixas.valorFixo
+              — nenhuma propriedade nova). Tipo de contratação, Adicionais fixos e Observações de
+              contrato deixaram de ter input nesta tela, mas continuam existindo no estado (carregados
+              de condicoesFixas/import quando já preenchidos) e são enviados sem alteração no payload —
+              nunca zerados só por não terem mais campo visível. O "Valor previsto líquido" que reunia
+              esses três não faz mais sentido como card cheio para um valor só; a Seção Pagamento
+              (Horas contabilizadas/Valor previsto/Revisão) foi removida por completo por ficar vazia
+              — esses três continuam em form.horas/form.valor/form.rev e são enviados inalterados. */}
           <div className="mt-6 rounded-xl border border-[#E5E7EB] bg-[#FAFAFA] p-4">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Condições fixas</p>
-                <p className="mt-1 text-xs text-[#6B7280]">Regras contratuais usadas como referência para compor o valor previsto.</p>
-              </div>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Condições fixas</p>
               {totalCondicoesFixas > 0 && (
                 <span className="rounded-full bg-[#EFF6FF] px-3 py-1 text-xs font-bold text-[#2563EB] ring-1 ring-[#BFDBFE]">
                   Base: {currency.format(totalCondicoesFixas)}
                 </span>
               )}
             </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <MField label="Valor fixo mensal/contratual">
-                <Input
-                  inputMode="decimal"
-                  value={form.valorFixo}
-                  onChange={(e) => update("valorFixo", e.target.value)}
-                  onBlur={(e) => update("valorFixo", currencyInputValue(parseCurrencyNumber(e.target.value)))}
-                  placeholder="R$ 0,00"
-                />
-              </MField>
-              <MField label="Tipo de contratação/regime">
-                <Input
-                  value={form.tipoContratacao}
-                  onChange={(e) => update("tipoContratacao", e.target.value)}
-                  placeholder="Mensal, por demanda, escopo fechado..."
-                />
-              </MField>
-              <MField label="Adicionais fixos">
-                <Input
-                  inputMode="decimal"
-                  value={form.adicionaisFixos}
-                  onChange={(e) => update("adicionaisFixos", e.target.value)}
-                  onBlur={(e) => update("adicionaisFixos", currencyInputValue(parseCurrencyNumber(e.target.value)))}
-                  placeholder="R$ 0,00"
-                />
-              </MField>
-              <MField label="Valor previsto líquido">
-                <Input value={currencyInputValue(valorPrevistoLiquido)} readOnly className="bg-[#F3F4F6] font-semibold text-[#1F2937]" />
-              </MField>
-              <MField label="Observações de contrato" className="xl:col-span-4">
-                <textarea
-                  value={form.observacoesContrato}
-                  onChange={(e) => update("observacoesContrato", e.target.value)}
-                  rows={3}
-                  className="w-full rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] hover:border-[#D1D5DB] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
-                  placeholder="Observações sobre regra fixa, reajuste, exceções ou composição contratual."
-                />
-              </MField>
-            </div>
+            <MField label="Valor fixo mensal/contratual" className="max-w-xs">
+              <Input
+                inputMode="decimal"
+                value={form.valorFixo}
+                onChange={(e) => update("valorFixo", e.target.value)}
+                onBlur={(e) => update("valorFixo", currencyInputValue(parseCurrencyNumber(e.target.value)))}
+                placeholder="R$ 0,00"
+              />
+            </MField>
           </div>
 
           {/* Seção: Descontos */}

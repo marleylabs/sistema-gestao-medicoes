@@ -35,10 +35,17 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     payload.projetistaCodigo = projetista.codigo;
   }
 
+  // CAUSA RAIZ do mesmo bug crítico do POST (ver comentário lá): o frontend sempre manda no body
+  // o ciclo que o Dashboard está VISUALIZANDO no momento (inclusive o literal "GERAL", que é só o
+  // filtro agregador "ver todos os ciclos", nunca um ciclo real) — nunca uma escolha deliberada
+  // do usuário sobre ESTE item (não existe seletor de ciclo no modal). Editar qualquer pagamento
+  // com o Dashboard em "Geral" sobrescrevia silenciosamente `ciclo` do item para "GERAL",
+  // corrompendo um registro válido e fazendo-o desaparecer da listagem para sempre. O ciclo de um
+  // item já existente nunca é alterado por uma edição — sempre preserva `current.ciclo`.
   const updated = await prisma.mapaPagamentoItem.update({
     where: { id },
     data: {
-      ...mapaPagamentoData(payload, current.sourceRowHash),
+      ...mapaPagamentoData({ ...payload, ciclo: current.ciclo }, current.sourceRowHash),
       updatedAt: new Date(),
     },
   });

@@ -522,6 +522,39 @@ export function resolveFornecedorIdentity(row: CadastroRow, index: IdentityIndex
 }
 
 /**
+ * Resolve, em lote, o `Usuario` (perfil COLABORADOR) de cada `responsavel` informado — mesma regra
+ * de vínculo fornecedor↔acesso usada dentro de `upsertCadastroFornecedor` (match por nome
+ * case-insensitive; não há FK real entre `CadastroFornecedor`/`Profissional` e `Usuario`).
+ * Consultada em lote (uma única query) pela listagem unificada do Painel Administrativo, para não
+ * fazer N+1 nem duplicar a regra de resolução em dois lugares.
+ */
+export async function findColaboradorUsuarios(nomes: string[]) {
+  const wanted = new Set(nomes.map((n) => normalizePersonName(n)).filter(Boolean));
+  const map = new Map<string, { id: string; usuario: string; perfil: string; ativo: boolean; email: string | null; primeiroLogin: boolean; senhaTemporaria: string | null }>();
+  if (wanted.size === 0) return map;
+  // `in` + `mode: insensitive` não é suportado pelo Prisma para filtro de string — carrega todos os
+  // COLABORADOR (mesmo padrão de `buildIdentityIndex`, abaixo) e casa em memória por nome normalizado.
+  const usuarios = await prisma.usuario.findMany({
+    where: { perfil: "COLABORADOR", excluidoAt: null },
+    select: { id: true, usuario: true, nome: true, perfil: true, ativo: true, email: true, primeiroLogin: true, senhaTemporaria: true },
+  });
+  for (const u of usuarios) {
+    const key = normalizePersonName(u.nome);
+    if (!wanted.has(key)) continue;
+    map.set(key, {
+      id: u.id,
+      usuario: u.usuario,
+      perfil: u.perfil,
+      ativo: u.ativo,
+      email: decryptSensitive(u.email),
+      primeiroLogin: u.primeiroLogin,
+      senhaTemporaria: u.primeiroLogin ? u.senhaTemporaria : null,
+    });
+  }
+  return map;
+}
+
+/**
  * Camada de serviço única para "gravar um CadastroFornecedor" — reusada pela importação XLSX
  * (`importCadastrosFornecedores`, abaixo) E pelo cadastro manual do Painel Administrativo
  * (`POST /api/admin/administrativo/fornecedores/manual`). As duas entradas (planilha e formulário)
@@ -625,7 +658,7 @@ export async function upsertCadastroFornecedor(row: CadastroRow, sharedIndex?: I
       },
     });
 
-    let usuarioCriado: { usuario: string; nome: string; senha: string } | null = null;
+    let usuarioCriado: { usuario: string; nome: string; senha: string; email: string | null } | null = null;
     const existingUser = await tx.usuario.findFirst({
       where: { perfil: "COLABORADOR", nome: { equals: row.responsavel, mode: "insensitive" } },
       select: { id: true, usuario: true, excluidoAt: true },
@@ -643,7 +676,7 @@ export async function upsertCadastroFornecedor(row: CadastroRow, sharedIndex?: I
           perfil: "COLABORADOR",
         },
       });
-      usuarioCriado = { usuario, nome: row.responsavel, senha };
+      usuarioCriado = { usuario, nome: row.responsavel, senha, email: row.email ?? null };
     } else if (existingUser.excluidoAt) {
       await tx.usuario.update({
         where: { id: existingUser.id },
@@ -677,7 +710,7 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
   let atualizados = 0;
   let criados = 0;
   let usuariosCriados = 0;
-  const senhasTemporarias: { usuario: string; nome: string; senha: string }[] = [];
+  const senhasTemporarias: { usuario: string; nome: string; senha: string; email: string | null }[] = [];
   const conflitosDetalhe: ImportConflitoDetalhe[] = [];
   const bloqueadosDetalhe: ImportBloqueadoDetalhe[] = [];
 

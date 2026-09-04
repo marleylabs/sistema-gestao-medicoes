@@ -2,6 +2,7 @@
 
 import { clsx } from "clsx";
 import { Card as HeroCard, Chip as HeroChip } from "@heroui/react";
+import { Filter, X } from "lucide-react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { useBlur } from "@/components/providers";
 
@@ -235,4 +236,53 @@ export function PageHeader({
 
 export function PageContainer({ className, children }: { className?: string; children: React.ReactNode }) {
   return <div className={clsx("mx-auto w-full max-w-[1520px] py-6", className)}>{children}</div>;
+}
+
+// ─── FilterButton / FilterChip ─────────────────────────────────────────────────
+// Padrão de "Filtros" com dropdown compacto — introduzido no Painel Administrativo e reaproveitado
+// aqui (Dashboard) para manter a mesma linguagem visual em toda a aplicação. Só o gatilho e o chip
+// são compartilhados; o conteúdo do dropdown de cada tela continua específico (não vale a pena
+// generalizar isso — os filtros de cada tela são conceitualmente diferentes).
+
+export function FilterButton({
+  count = 0,
+  onClick,
+  className,
+}: {
+  count?: number;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={clsx(
+        "inline-flex h-9 items-center gap-2 rounded-lg border bg-white px-3 text-xs font-semibold transition",
+        count > 0 ? "border-[var(--primary)] text-[var(--primary)]" : "border-[var(--border)] text-[#555555] hover:border-[var(--border-strong)]",
+        className,
+      )}
+    >
+      <Filter size={14} />
+      Filtros
+      {count > 0 && (
+        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-white">
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+export function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onRemove}
+      className="inline-flex h-6 items-center gap-1 rounded-full border border-[var(--border)] bg-[#F9FAFB] px-2.5 text-[11px] font-semibold text-[#374151] transition hover:border-[var(--border-strong)]"
+    >
+      {label}
+      <X size={10} />
+    </button>
+  );
 }

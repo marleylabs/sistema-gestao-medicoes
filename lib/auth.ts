@@ -12,6 +12,7 @@ import {
   verifySessionToken,
 } from "@/lib/session";
 import { isInternalAccessCode, normalizeAccessUsername } from "@/lib/usuario-format";
+import { MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 
 const scrypt = promisify(scryptCallback);
 export { createSessionToken, SESSION_COOKIE, verifySessionToken };
@@ -45,11 +46,11 @@ export async function generateUniqueInternalAccessCode(tx: UsuarioDelegate = pri
 
 export function generateTempPassword(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  return Array.from({ length: 14 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  return Array.from({ length: MIN_PASSWORD_LENGTH }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
 export function validatePasswordStrength(password: string) {
-  if (password.length < 12) return "A senha deve ter pelo menos 12 caracteres.";
+  if (password.length < MIN_PASSWORD_LENGTH) return `A senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`;
   if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
     return "A senha deve conter letras maiúsculas, minúsculas e números.";
   }
@@ -87,8 +88,8 @@ export async function ensureBootstrapAdmin() {
   const usuario = requestedUsuario || await generateUniqueInternalAccessCode();
   const password = process.env.AUTH_BOOTSTRAP_PASSWORD;
   const nome = process.env.AUTH_BOOTSTRAP_NAME?.trim() || "Administrador";
-  if (!usuario || !password || password.length < 12) {
-    throw new Error("Configure AUTH_BOOTSTRAP_USERNAME e AUTH_BOOTSTRAP_PASSWORD com pelo menos 12 caracteres.");
+  if (!usuario || !password || password.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(`Configure AUTH_BOOTSTRAP_USERNAME e AUTH_BOOTSTRAP_PASSWORD com pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`);
   }
 
   await prisma.usuario.create({

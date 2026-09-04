@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import { Button, Input } from "@/components/ui";
 import type { AuthUser } from "@/lib/session";
 import { validateUserDisplayName } from "@/lib/usuario-nome";
+import { MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 
 type ProfileData = {
   id: string;
@@ -258,7 +259,7 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
 
   const avatarSrc = useMemo(() => displayProfile.avatarUrl ?? null, [displayProfile.avatarUrl]);
   const passwordRules = useMemo(() => ({
-    length: newPassword.length >= 12,
+    length: newPassword.length >= MIN_PASSWORD_LENGTH,
     uppercase: /[A-ZÁÉÍÓÚÂÊÔÃÕÇ]/.test(newPassword),
     number: /\d/.test(newPassword),
     match: !!newPassword && newPassword === confirmPassword,
@@ -730,7 +731,7 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                         <div className="rounded-lg border border-[#E5E7EB] bg-white p-4">
                           <p className="text-sm font-bold text-[#111827]">Requisitos</p>
                           <ul className="mt-3 grid gap-2">
-                            <Requirement ok={passwordRules.length}>12 ou mais caracteres</Requirement>
+                            <Requirement ok={passwordRules.length}>{MIN_PASSWORD_LENGTH} ou mais caracteres</Requirement>
                             <Requirement ok={passwordRules.uppercase}>Ao menos uma letra maiúscula</Requirement>
                             <Requirement ok={passwordRules.number}>Ao menos um número</Requirement>
                             <Requirement ok={passwordRules.match}>Confirmação igual à nova senha</Requirement>

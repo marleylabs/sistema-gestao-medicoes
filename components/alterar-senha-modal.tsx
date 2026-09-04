@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { KeyRound } from "lucide-react";
 import { Button, Input } from "@/components/ui";
+import { MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 
 export function AlterarSenhaModal({ onSuccess }: { onSuccess: () => void }) {
   const [novaSenha, setNovaSenha] = useState("");
@@ -13,7 +14,7 @@ export function AlterarSenhaModal({ onSuccess }: { onSuccess: () => void }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (novaSenha.length < 12) { setError("A senha deve ter pelo menos 12 caracteres."); return; }
+    if (novaSenha.length < MIN_PASSWORD_LENGTH) { setError(`A senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`); return; }
     if (novaSenha !== confirmar) { setError("As senhas não coincidem."); return; }
     setLoading(true);
     const res = await fetch("/api/auth/alterar-senha", {
@@ -45,7 +46,7 @@ export function AlterarSenhaModal({ onSuccess }: { onSuccess: () => void }) {
             Nova senha
             <Input
               type="password"
-              placeholder="Mínimo 12 caracteres"
+              placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
               value={novaSenha}
               onChange={(e) => setNovaSenha(e.target.value)}
               required

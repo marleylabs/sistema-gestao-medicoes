@@ -1,29 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin";
+import { requireAdministrativo } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { decryptSensitive } from "@/lib/encryption";
 import { criarUsuarioInterno } from "@/lib/usuario-provisioning";
 
+/**
+ * "Funcionários" do Painel Administrativo unificado — todo `Usuario` interno (perfil diferente de
+ * COLABORADOR). Fornecedor é sempre COLABORADOR (ver `lib/cadastro-fornecedor.ts`), então essa
+ * distinção não precisa de heurística de nome: qualquer outro perfil é, por definição, funcionário.
+ */
 export async function GET() {
-  const admin = await requireAdmin();
-  if (admin.response) return admin.response;
-  if (admin.user?.perfil !== "ADMIN") {
-    return NextResponse.json({ error: "Apenas administradores podem gerenciar usuários." }, { status: 403 });
-  }
+  const auth = await requireAdministrativo();
+  if (auth.response) return auth.response;
 
   const usuarios = await prisma.usuario.findMany({
-    where: { excluidoAt: null },
+    where: { perfil: { not: "COLABORADOR" }, excluidoAt: null },
     select: {
-      id: true,
-      usuario: true,
-      nome: true,
-      perfil: true,
-      ativo: true,
-      primeiroLogin: true,
-      senhaTemporaria: true,
-      email: true,
-      ultimoLoginAt: true,
-      createdAt: true,
+      id: true, usuario: true, nome: true, perfil: true, ativo: true,
+      primeiroLogin: true, senhaTemporaria: true, email: true, ultimoLoginAt: true, createdAt: true,
     },
     orderBy: [{ ativo: "desc" }, { nome: "asc" }],
   });
@@ -40,15 +34,15 @@ export async function GET() {
       email: decryptSensitive(u.email),
       ultimoLoginAt: u.ultimoLoginAt?.toISOString() ?? null,
       createdAt: u.createdAt.toISOString(),
-    }))
+    })),
   );
 }
 
 export async function POST(request: NextRequest) {
-  const admin = await requireAdmin();
-  if (admin.response) return admin.response;
-  if (admin.user?.perfil !== "ADMIN") {
-    return NextResponse.json({ error: "Apenas administradores podem criar usuários." }, { status: 403 });
+  const auth = await requireAdministrativo();
+  if (auth.response) return auth.response;
+  if (auth.user?.perfil !== "ADMIN") {
+    return NextResponse.json({ error: "Apenas administradores podem cadastrar funcionários." }, { status: 403 });
   }
 
   const body = await request.json().catch(() => null);

@@ -81,6 +81,20 @@ export async function POST(request: NextRequest) {
   const payload = await request.json();
   const ciclo = typeof payload.ciclo === "string" ? payload.ciclo.trim() : "2605";
 
+  // CAUSA RAIZ de um bug crítico: "GERAL" é só o filtro agregador do Dashboard ("ver todos os
+  // ciclos"), nunca um ciclo real — mas nada aqui impedia persistir esse literal. O GET da
+  // listagem, ao agregar "GERAL", só busca `ciclo IN (ciclos realmente cadastrados)`
+  // (ver GET acima) — um item criado com `ciclo: "GERAL"` nunca aparece em lugar nenhum depois,
+  // mesmo tendo sido criado com sucesso (201) e existindo de verdade no banco. Rejeitar aqui é a
+  // única correção correta — nunca aceitar como sucesso um cadastro que a própria listagem jamais
+  // conseguiria exibir.
+  if (ciclo === "GERAL") {
+    return NextResponse.json(
+      { error: "Selecione um ciclo específico (não \"Geral\") antes de cadastrar um pagamento manual." },
+      { status: 400 },
+    );
+  }
+
   const projetista = await resolveProjetistaCodigo(payload.projetistaCodigo);
   if (projetista.error) {
     return NextResponse.json({ error: projetista.error }, { status: 400 });
