@@ -138,9 +138,30 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   });
 
   if (updated.colaboradorCodigo) {
-    await prisma.profissional.updateMany({
-      where: { codigo: updated.colaboradorCodigo, deletedAt: null },
-      data: {
+    const colaboradorCodigo = updated.colaboradorCodigo;
+    // upsert (não updateMany) — a edição administrativa de um CadastroFornecedor é ação explícita
+    // do ADMIN sobre aquele vínculo, então precisa criar ou reativar o Profissional correspondente
+    // quando ele não existir (ou estiver excluído), do contrário o fornecedor fica invisível para
+    // Novo Pagamento/seletores mesmo com o cadastro administrativo íntegro. Mesmo padrão já usado
+    // em upsertCadastroFornecedor (lib/cadastro-fornecedor.ts) para import em massa/criação manual.
+    await prisma.profissional.upsert({
+      where: { codigo: colaboradorCodigo },
+      create: {
+        nome: colaboradorCodigo,
+        codigo: colaboradorCodigo,
+        nomeCompleto: responsavel,
+        razaoSocial,
+        cpf: encryptSensitive(formatCpf(body.cpf)),
+        cnpj: encryptSensitive(formatCnpj(cnpjNormalizado)),
+        email: encryptSensitive(email),
+        funcao: text(body.cargo),
+      },
+      update: {
+        nome: colaboradorCodigo,
+        deletedAt: null,
+        deletedById: null,
+        deletedByNome: null,
+        deletedReason: null,
         nomeCompleto: responsavel,
         razaoSocial,
         cpf: encryptSensitive(formatCpf(body.cpf)),
