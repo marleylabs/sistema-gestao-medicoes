@@ -45,6 +45,22 @@ alter table usuarios add constraint usuarios_perfil_check check (
     perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','ADMINISTRATIVO')
 );
 
+-- ─── usuarios_permissoes ─────────────────────────────────────
+-- Permissões ADITIVAS concedidas individualmente por um ADMIN a um usuário específico, além do
+-- que o Usuario.perfil já libera de base — nunca substitui perfil, nunca vira regra global por
+-- perfil (ex.: nunca "todo MEDICAO vê Administrativo"). Só ADMIN concede/remove (ver
+-- app/api/admin/usuarios/[id]/route.ts, action set_permissoes_extras).
+create table if not exists usuarios_permissoes (
+    id             uuid        primary key default gen_random_uuid(),
+    usuario_id     uuid        not null references usuarios(id) on delete cascade,
+    permissao      text        not null,
+    created_at     timestamptz not null default now(),
+    created_by_id  uuid        not null,
+    constraint usuarios_permissoes_usuario_permissao_key unique (usuario_id, permissao)
+);
+
+create index if not exists idx_usuarios_permissoes_usuario_id on usuarios_permissoes(usuario_id);
+
 -- ─── chat geral da plataforma ───────────────────────────────
 create table if not exists chat_conversas (
     id         uuid        primary key default gen_random_uuid(),

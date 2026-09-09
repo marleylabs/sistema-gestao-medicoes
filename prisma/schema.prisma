@@ -30,9 +30,28 @@ model Usuario {
 
   chatParticipantes ChatParticipante[]
   chatMensagens     ChatMensagem[]
+  permissoesExtras  UsuarioPermissao[] @relation("PermissoesDoUsuario")
 
   @@index([ativo])
   @@map("usuarios")
+}
+
+/// Permissão ADITIVA concedida individualmente por um ADMIN a um usuário específico, além do que
+/// `Usuario.perfil` já libera de base — nunca substitui perfil, nunca vira regra global por perfil
+/// (ex.: nunca "todo MEDICAO vê Administrativo"). Ver lib/permissoes.ts para o registro central de
+/// valores válidos e app/api/admin/usuarios/[id]/route.ts (action `set_permissoes_extras`,
+/// ADMIN-only) para a única forma de gravar aqui.
+model UsuarioPermissao {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId     String   @map("usuario_id") @db.Uuid
+  usuario       Usuario  @relation("PermissoesDoUsuario", fields: [usuarioId], references: [id], onDelete: Cascade)
+  permissao     String
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdById   String   @map("created_by_id") @db.Uuid
+
+  @@unique([usuarioId, permissao])
+  @@index([usuarioId])
+  @@map("usuarios_permissoes")
 }
 
 model ChatConversa {

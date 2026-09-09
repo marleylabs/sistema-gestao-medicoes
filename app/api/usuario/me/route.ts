@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
 import { resolveNomeUpdate } from "@/lib/usuario-nome";
 import { prisma } from "@/lib/prisma";
+import { getEffectivePermissions } from "@/lib/permissoes-acesso";
 
 function avatarUrl(updatedAt: Date | null) {
   return updatedAt ? `/api/usuario/avatar?v=${updatedAt.getTime()}` : null;
@@ -37,8 +38,13 @@ export async function GET() {
       })
     : null;
 
+  // Permissões efetivas (perfil base + extras concedidas individualmente) — nunca substitui
+  // `perfil`, só informa ao frontend o que este usuário específico pode acessar além do perfil.
+  const permissoes = await getEffectivePermissions(dbUser);
+
   return NextResponse.json({
     ...dbUser,
+    permissoes,
     avatarUrl: avatarUrl(dbUser.avatarAtualizadoAt),
     dadosCadastrais: dadosCadastrais ? serializeCadastroFornecedor(dadosCadastrais) : null,
   });

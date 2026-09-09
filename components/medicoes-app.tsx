@@ -47,7 +47,7 @@ const CICLO_GERAL = "GERAL";
 
 type CicloEntry = { ciclo: string; mesReferencia: string | null; ativoMedicao?: boolean; updatedAt: string };
 
-export function MedicoesApp({ user }: { user: AuthUser }) {
+export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; permissoesExtras?: string[] }) {
   const [dashboard, setDashboard]           = useState<DashboardData | null>(null);
   const [profissionais, setProfissionais]   = useState<Profissional[]>([]);
   const [mapaItens, setMapaItens]           = useState<MapaPagamentoItem[]>([]);
@@ -84,13 +84,19 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
   const isMedicao    = user.perfil === "MEDICAO";
   const isFinanceiro = user.perfil === "FINANCEIRO";
   const isAdministrativo = user.perfil === "ADMINISTRATIVO";
+  // Permissões ADITIVAS concedidas individualmente (lib/permissoes.ts) — nunca liberadas para o
+  // perfil inteiro. ADMIN já tem tudo de base independentemente desta lista. Nenhum perfil além
+  // de ADMIN tem "historico" de base hoje (auditado antes desta mudança — nem MEDICAO) — por isso
+  // HISTORICO_MEDICOES precisa da mesma concessão nominal para qualquer perfil, sem exceção.
+  const temAcessoAdministrativoExtra = permissoesExtras.includes("ADMINISTRATIVO");
+  const temAcessoHistoricoExtra = permissoesExtras.includes("HISTORICO_MEDICOES");
 
   const VALID_SECTIONS: Section[] = isFinanceiro
-    ? ["financeiro"]
+    ? (["financeiro", ...(temAcessoAdministrativoExtra ? ["administrativo" as const] : []), ...(temAcessoHistoricoExtra ? ["historico" as const] : [])])
     : isAdministrativo
-    ? ["administrativo", "financeiro"]
+    ? (["administrativo", "financeiro", ...(temAcessoHistoricoExtra ? ["historico" as const] : [])])
     : isMedicao
-    ? ["visao", "importar", "evidencias"]
+    ? (["visao", "importar", "evidencias", ...(temAcessoAdministrativoExtra ? ["administrativo" as const] : []), ...(temAcessoHistoricoExtra ? ["historico" as const] : [])])
     : isFullAdmin
     ? ["administrativo", "evidencias", "financeiro", "historico", "importar", "visao"]
     : ["evidencias", "financeiro", "historico", "importar", "visao"];
@@ -399,17 +405,27 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
 
   // ─── Nav items ───────────────────────────────────────────────────────────────
 
+  const navItemAdministrativoExtra = { id: "administrativo" as const, label: "Administrativo", icon: <FileText size={17} /> };
+  const navItemHistoricoExtra = { id: "historico" as const, label: "Histórico", icon: <History size={17} /> };
+
   const navItems = isFinanceiro
-    ? [{ id: "financeiro", label: "Financeiro", icon: <Wallet size={17} /> }]
+    ? [
+        { id: "financeiro", label: "Financeiro", icon: <Wallet size={17} /> },
+        ...(temAcessoAdministrativoExtra ? [navItemAdministrativoExtra] : []),
+        ...(temAcessoHistoricoExtra ? [navItemHistoricoExtra] : []),
+      ]
     : isAdministrativo
     ? [
         { id: "administrativo", label: "Administrativo", icon: <FileText size={17} /> },
         { id: "financeiro", label: "Financeiro", icon: <Wallet size={17} /> },
+        ...(temAcessoHistoricoExtra ? [navItemHistoricoExtra] : []),
       ]
     : isMedicao
     ? [
         { id: "visao",      label: "Visão Geral", icon: <LayoutDashboard size={17} /> },
         { id: "evidencias", label: "Evidências",  icon: <FileSearch size={17} /> },
+        ...(temAcessoAdministrativoExtra ? [navItemAdministrativoExtra] : []),
+        ...(temAcessoHistoricoExtra ? [navItemHistoricoExtra] : []),
         { id: "importar",   label: "Importar Planilha", icon: <Upload size={17} />, bottom: true },
       ]
     : [
@@ -802,7 +818,11 @@ export function MedicoesApp({ user }: { user: AuthUser }) {
         <FinanceiroPanel ciclos={ciclos} exportOnly={isAdministrativo} />
       )}
 
-      {section === "administrativo" && (isFullAdmin || isAdministrativo) && (
+      {/* isAdmin aqui (prop do AdministrativoPanel) continua isFullAdmin — quem entra só pela
+          permissão extra ADMINISTRATIVO recebe exatamente a mesma experiência reduzida que o
+          perfil ADMINISTRATIVO nativo já tinha (ver/editar/criar fornecedor, importar planilha,
+          sem ações sensíveis) — decisão explícita do pedido, nada novo a implementar no painel. */}
+      {section === "administrativo" && (isFullAdmin || isAdministrativo || temAcessoAdministrativoExtra) && (
         <AdministrativoPanel isAdmin={isFullAdmin} />
       )}
 

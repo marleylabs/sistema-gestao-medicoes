@@ -7,6 +7,8 @@ import { rotateAndSendFirstAccess } from "@/lib/first-access";
 import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
 import { isValidEmail, requiresEmail, EMAIL_REQUIRED_MESSAGE } from "@/lib/usuario-email-policy";
 import { isValidPerfil } from "@/lib/perfis";
+import { isValidPermissao, isElegivelParaPermissaoExtra, type Permissao } from "@/lib/permissoes";
+import { getPermissoesExtras } from "@/lib/permissoes-acesso";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
@@ -122,6 +124,60 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     await prisma.usuario.update({ where: { id }, data });
     return NextResponse.json({ ok: true });
+  }
+
+  if (action === "set_permissoes_extras") {
+    // Conceder/remover permissão extra é ação de segurança — exclusiva de ADMIN literal (item 19
+    // do pedido). A rota já exige perfil === "ADMIN" no topo deste handler (linha ~14), então
+    // nenhuma checagem adicional é necessária aqui — só documentando a garantia.
+    if (user.perfil === "ADMIN") {
+      return NextResponse.json({ error: "ADMIN já tem acesso total — não recebe permissões extras." }, { status: 409 });
+    }
+    if (!isElegivelParaPermissaoExtra(user.perfil)) {
+      // COLABORADOR (fornecedor externo) nunca pode ganhar módulo interno — princípio do menor
+      // privilégio, sem fallback "se é interno, libera" (item 27).
+      return NextResponse.json({ error: "Este perfil não pode receber permissões extras." }, { status: 409 });
+    }
+    const desejadas = Array.isArray(body?.permissoes) ? body.permissoes : null;
+    if (!desejadas || !desejadas.every(isValidPermissao)) {
+      return NextResponse.json({ error: "Lista de permissões inválida." }, { status: 400 });
+    }
+
+    const atuais = await getPermissoesExtras(user.id);
+    const novasSet = new Set<Permissao>(desejadas);
+    const atuaisSet = new Set<Permissao>(atuais);
+    const paraConceder = [...novasSet].filter((p) => !atuaisSet.has(p));
+    const paraRemover = [...atuaisSet].filter((p) => !novasSet.has(p));
+
+    await prisma.$transaction(async (tx) => {
+      for (const permissao of paraRemover) {
+        await tx.usuarioPermissao.delete({ where: { usuarioId_permissao: { usuarioId: user.id, permissao } } });
+      }
+      for (const permissao of paraConceder) {
+        await tx.usuarioPermissao.create({ data: { usuarioId: user.id, permissao, createdById: admin.user!.id } });
+      }
+      // Auditoria nunca guarda segredo — só quem/quando/qual permissão/ação (item 29).
+      if (paraConceder.length || paraRemover.length) {
+        await tx.adminAuditLog.createMany({
+          data: [
+            ...paraConceder.map((permissao) => ({
+              action: "GRANT_PERMISSAO_EXTRA",
+              adminId: admin.user!.id, adminUsuario: admin.user!.usuario, adminNome: admin.user!.nome,
+              targetType: "Usuario", targetId: user.id, targetCodigo: user.usuario,
+              metadata: { permissao },
+            })),
+            ...paraRemover.map((permissao) => ({
+              action: "REVOKE_PERMISSAO_EXTRA",
+              adminId: admin.user!.id, adminUsuario: admin.user!.usuario, adminNome: admin.user!.nome,
+              targetType: "Usuario", targetId: user.id, targetCodigo: user.usuario,
+              metadata: { permissao },
+            })),
+          ],
+        });
+      }
+    });
+
+    return NextResponse.json({ permissoesExtras: [...novasSet] });
   }
 
   if (action === "set_senha") {

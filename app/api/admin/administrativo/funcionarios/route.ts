@@ -22,6 +22,17 @@ export async function GET() {
     orderBy: [{ ativo: "desc" }, { nome: "asc" }],
   });
 
+  // Uma única query batched (nunca N+1) para as permissões extras de todos os funcionários desta
+  // listagem.
+  const permissoes = await prisma.usuarioPermissao.findMany({
+    where: { usuarioId: { in: usuarios.map((u) => u.id) } },
+    select: { usuarioId: true, permissao: true },
+  });
+  const permissoesPorUsuario = new Map<string, string[]>();
+  for (const p of permissoes) {
+    permissoesPorUsuario.set(p.usuarioId, [...(permissoesPorUsuario.get(p.usuarioId) ?? []), p.permissao]);
+  }
+
   return NextResponse.json(
     usuarios.map((u) => ({
       id: u.id,
@@ -34,6 +45,7 @@ export async function GET() {
       email: decryptSensitive(u.email),
       ultimoLoginAt: u.ultimoLoginAt?.toISOString() ?? null,
       createdAt: u.createdAt.toISOString(),
+      permissoesExtras: permissoesPorUsuario.get(u.id) ?? [],
     })),
   );
 }

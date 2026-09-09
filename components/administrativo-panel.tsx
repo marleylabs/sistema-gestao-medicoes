@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Copy, Download, Edit3, EllipsisVertical, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, RefreshCw, Save, Send, ShieldCheck, ShieldOff, Trash2, Upload, UserCog, X } from "lucide-react";
+import { AlertTriangle, Copy, Download, Edit3, EllipsisVertical, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, RefreshCw, Save, Send, ShieldCheck, ShieldOff, SlidersHorizontal, Trash2, Upload, UserCog, X } from "lucide-react";
 import { Button, Card, FilterButton, FilterChip, IconButton, Input, PageContainer, PageHeader, Select } from "@/components/ui";
 import { normalizeTipoCondicaoFixa } from "@/lib/condicao-fixa";
 import { normalizeFonteMedicao } from "@/lib/fonte-medicao";
 import { INTERNAL_PERFIL_OPTIONS, PERFIL_LABEL_LOOSE as PERFIL_LABEL, PERFIL_OPTIONS } from "@/lib/perfis";
+import { PERMISSAO_OPTIONS, PERMISSAO_LABEL_LOOSE, isElegivelParaPermissaoExtra, PERMISSOES_BASE_POR_PERFIL } from "@/lib/permissoes";
 
 type AcessoInfo = {
   id: string;
@@ -26,6 +27,7 @@ type Funcionario = {
   primeiroLogin: boolean;
   senhaTemporaria: string | null;
   email: string | null;
+  permissoesExtras: string[];
 };
 
 type CadastroFornecedor = {
@@ -874,6 +876,109 @@ function AlterarPerfilModal({
 }
 
 /**
+ * Gerenciar Acessos adicionais — só ADMIN literal chama isto (menu item só aparece quando
+ * isAdmin=isFullAdmin no card, e a rota também exige perfil ADMIN independente do que a UI mostra;
+ * conceder/remover permissão extra é ação de segurança, nunca liberada por uma permissão extra em
+ * si — item 19 do pedido). Mostra separadamente o que já vem do PERFIL (fixo, informativo) do que
+ * é extra e editável.
+ */
+function PermissoesExtrasModal({
+  target,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  target: { usuarioId: string; nome: string; perfil: string; permissoesAtuais: string[] };
+  onClose: () => void;
+  onSaved: () => void;
+  onError: (message: string) => void;
+}) {
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set(target.permissoesAtuais));
+  const [saving, setSaving] = useState(false);
+  const basePerfil = PERMISSOES_BASE_POR_PERFIL[target.perfil] ?? [];
+  // Nunca oferecer como "extra" algo que o perfil já dá de base (item 11 do pedido).
+  const opcoesExtras = PERMISSAO_OPTIONS.filter((o) => !basePerfil.includes(o.value));
+
+  function toggle(value: string) {
+    setSelecionadas((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }
+
+  async function salvar() {
+    setSaving(true);
+    const res = await fetch(`/api/admin/usuarios/${target.usuarioId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set_permissoes_extras", permissoes: [...selecionadas] }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    setSaving(false);
+    if (!res.ok) {
+      onError(payload.error ?? "Não foi possível atualizar os acessos adicionais.");
+      return;
+    }
+    onSaved();
+  }
+
+  const inalterado = selecionadas.size === target.permissoesAtuais.length && target.permissoesAtuais.every((p) => selecionadas.has(p));
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
+      <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
+        <div className="border-b border-[#E5E7EB] px-5 py-4">
+          <h2 className="text-sm font-bold text-[#1A1A1A]">Acessos adicionais</h2>
+          <p className="mt-0.5 text-xs text-[#6B7280]">{target.nome} — perfil {PERFIL_LABEL[target.perfil] ?? target.perfil}</p>
+        </div>
+        <div className="grid gap-4 p-5">
+          {basePerfil.length > 0 && (
+            <div>
+              <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#9CA3AF]">Acessos do perfil</p>
+              <div className="flex flex-wrap gap-1.5">
+                {basePerfil.map((p) => (
+                  <span key={p} className="rounded-full bg-[#F3F4F6] px-2 py-1 text-[11px] font-semibold text-[#6B7280]">
+                    ✓ {PERMISSAO_LABEL_LOOSE[p] ?? p} — incluído pelo perfil
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#9CA3AF]">Acessos adicionais</p>
+            {opcoesExtras.length === 0 ? (
+              <p className="text-xs text-[#9CA3AF]">Nenhum acesso adicional disponível para este perfil.</p>
+            ) : (
+              <div className="grid gap-2">
+                {opcoesExtras.map((option) => (
+                  <label key={option.value} className="flex items-center gap-2 text-sm text-[#1A1A1A]">
+                    <input
+                      type="checkbox"
+                      checked={selecionadas.has(option.value)}
+                      onChange={() => toggle(option.value)}
+                      className="h-4 w-4 cursor-pointer accent-[#AF1B1B]"
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
+          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button onClick={salvar} disabled={saving || inalterado}>
+            {saving ? "Salvando..." : "Salvar"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Modal de credencial — ÚNICO lugar da aplicação onde uma senha temporária em texto puro chega a
  * ser exibida, e só imediatamente após a operação que a gerou (criação de fornecedor/funcionário,
  * ou redefinição de senha). Nunca persiste: `senha` vive só no estado React deste componente,
@@ -1295,6 +1400,7 @@ function FuncionarioCard({
   onSetPerfil,
   onExcluir,
   onEnviarPrimeiroAcesso,
+  onGerenciarPermissoes,
 }: {
   item: Funcionario;
   isAdmin: boolean;
@@ -1303,10 +1409,18 @@ function FuncionarioCard({
   onSetPerfil: (usuarioId: string, nome: string, perfilAtual: string) => void;
   onExcluir: (usuarioId: string, nome: string) => void;
   onEnviarPrimeiroAcesso: (usuarioId: string, nome: string, email: string | null, usuario: string) => void;
+  onGerenciarPermissoes: (usuarioId: string, nome: string, perfil: string, permissoesAtuais: string[]) => void;
 }) {
   const menuActions: MenuAction[] = isAdmin
     ? [
         { label: "Alterar perfil", icon: <UserCog size={13} />, onClick: () => onSetPerfil(item.id, item.nome, item.perfil) },
+        // Conceder/remover permissão extra é ação de segurança — só ADMIN literal (isAdmin aqui
+        // é sempre isFullAdmin, nunca a permissão extra em si). Nunca oferecido para perfil ADMIN
+        // (não precisa, item 9 do pedido) — mas Funcionario nunca é perfil ADMIN excluído desta
+        // lista? na prática ADMIN também aparece como "funcionário" na listagem; escondemos aqui.
+        ...(item.perfil !== "ADMIN" && isElegivelParaPermissaoExtra(item.perfil)
+          ? [{ label: "Acessos adicionais", icon: <SlidersHorizontal size={13} />, onClick: () => onGerenciarPermissoes(item.id, item.nome, item.perfil, item.permissoesExtras) }]
+          : []),
         {
           label: item.ativo ? "Desativar acesso" : "Ativar acesso",
           icon: item.ativo ? <ShieldOff size={13} /> : <ShieldCheck size={13} />,
@@ -1357,6 +1471,15 @@ function FuncionarioCard({
           <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{item.ativo ? "Ativo" : "Inativo"}</p>
         </div>
       </div>
+
+      {isElegivelParaPermissaoExtra(item.perfil) && (
+        <div className="border-t border-[#F3F4F6] px-4 py-2 text-xs">
+          <span className="text-[#94A3B8]">Acessos adicionais: </span>
+          <span className="font-semibold text-[#1F2937]">
+            {item.permissoesExtras.length ? item.permissoesExtras.map((p) => PERMISSAO_LABEL_LOOSE[p] ?? p).join(", ") : "—"}
+          </span>
+        </div>
+      )}
 
       {isAdmin && (
         <div className="flex flex-wrap items-center gap-1.5 border-t border-[#E5E7EB] px-4 py-2">
@@ -1854,6 +1977,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
   const [primeiroAcessoTarget, setPrimeiroAcessoTarget] = useState<{ usuarioId: string; nome: string; email: string; usuario: string; requestId: string } | null>(null);
   const [enviandoPrimeiroAcesso, setEnviandoPrimeiroAcesso] = useState(false);
   const [perfilTarget, setPerfilTarget] = useState<{ usuarioId: string; nome: string; perfilAtual: string } | null>(null);
+  const [permissoesTarget, setPermissoesTarget] = useState<{ usuarioId: string; nome: string; perfil: string; permissoesAtuais: string[] } | null>(null);
   const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // Guarda tanto a exclusão individual (1 item, disparada pelo botão da lixeira no card) quanto a
@@ -2396,6 +2520,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
                 onSetPerfil={(usuarioId, nome, perfilAtual) => setPerfilTarget({ usuarioId, nome, perfilAtual })}
                 onExcluir={excluirFuncionario}
                 onEnviarPrimeiroAcesso={pedirPrimeiroAcesso}
+                onGerenciarPermissoes={(usuarioId, nome, perfil, permissoesAtuais) => setPermissoesTarget({ usuarioId, nome, perfil, permissoesAtuais })}
               />
             ),
           )}
@@ -2494,6 +2619,19 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
           onSaved={async () => {
             setPerfilTarget(null);
             setToast({ tone: "success", message: "Perfil atualizado." });
+            await load();
+          }}
+          onError={(message) => setToast({ tone: "error", message })}
+        />
+      )}
+
+      {permissoesTarget && (
+        <PermissoesExtrasModal
+          target={permissoesTarget}
+          onClose={() => setPermissoesTarget(null)}
+          onSaved={async () => {
+            setPermissoesTarget(null);
+            setToast({ tone: "success", message: "Acessos adicionais atualizados." });
             await load();
           }}
           onError={(message) => setToast({ tone: "error", message })}
