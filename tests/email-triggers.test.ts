@@ -97,6 +97,11 @@ test("matriz de eventos: os 7 eventos continuam conectados às rotas/transiçõe
       file: "app/api/admin/financeiro/route.ts",
       mustContain: [/status: "PAGO"/, /notifyPaymentCompleted\(/],
     },
+    {
+      event: "FIRST_ACCESS",
+      file: "app/api/admin/usuarios/[id]/route.ts",
+      mustContain: [/action === "enviar_primeiro_acesso"/, /rotateAndSendFirstAccess\(/],
+    },
   ];
 
   for (const entry of matrix) {

@@ -5,6 +5,7 @@
  */
 export type EmailEvent =
   | "PASSWORD_RESET"
+  | "FIRST_ACCESS"
   | "BM_AVAILABLE"
   | "BM_DIVERGENCE"
   | "BM_APPROVED"

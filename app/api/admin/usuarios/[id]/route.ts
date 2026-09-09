@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin";
 import { generateTempPassword, generateUniqueInternalAccessCode, hashPassword, isInternalUserProfile, validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { notifyPasswordReset } from "@/lib/email";
+import { rotateAndSendFirstAccess } from "@/lib/first-access";
 import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
 import { isValidEmail, requiresEmail, EMAIL_REQUIRED_MESSAGE } from "@/lib/usuario-email-policy";
 import { isValidPerfil } from "@/lib/perfis";
@@ -55,6 +56,40 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       emailNotificado,
       aviso: emailDestino ? null : "Senha redefinida. O usuário não possui e-mail cadastrado e não receberá a notificação.",
     });
+  }
+
+  if (action === "enviar_primeiro_acesso") {
+    // Regra de negócio explícita (não é permissão de rota): mesmo que alguém chame a API
+    // diretamente, um alvo ADMIN nunca recebe credencial por e-mail assim — vale para P0000001 e
+    // para qualquer ADMIN futuro, sem checar nome/código específico.
+    if (user.perfil === "ADMIN") {
+      return NextResponse.json({ error: "Não é possível enviar primeiro acesso para um administrador." }, { status: 403 });
+    }
+    const emailDestino = decryptSensitive(user.email);
+    if (!emailDestino) {
+      return NextResponse.json({ error: "Este usuário não possui e-mail cadastrado." }, { status: 409 });
+    }
+
+    // Rotação + envio extraídos para lib/first-access.ts (testável isoladamente, sem servidor
+    // HTTP — ver tests/first-access-concurrency.ts) — garante idempotência real por
+    // (usuarioId, requestId) via advisory lock, não por updatedAt.getTime(). Ver o comentário
+    // completo na função sobre por que isso é necessário.
+    const rotation = await rotateAndSendFirstAccess({
+      db: prisma,
+      requestId: body?.requestId,
+      usuarioId: user.id,
+      usuarioNome: user.nome,
+      usuarioLogin: user.usuario,
+      email: emailDestino,
+      adminId: admin.user!.id,
+      adminUsuario: admin.user!.usuario,
+      adminNome: admin.user!.nome,
+    });
+
+    if (!rotation.ok) {
+      return NextResponse.json({ error: rotation.error, alreadyProcessed: rotation.alreadyProcessed }, { status: rotation.status });
+    }
+    return NextResponse.json({ ok: true, alreadyProcessed: rotation.alreadyProcessed });
   }
 
   if (action === "set_email") {

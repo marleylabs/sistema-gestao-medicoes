@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Copy, Download, Edit3, EllipsisVertical, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, RefreshCw, Save, ShieldCheck, ShieldOff, Trash2, Upload, UserCog, X } from "lucide-react";
+import { AlertTriangle, Copy, Download, Edit3, EllipsisVertical, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, RefreshCw, Save, Send, ShieldCheck, ShieldOff, Trash2, Upload, UserCog, X } from "lucide-react";
 import { Button, Card, FilterButton, FilterChip, IconButton, Input, PageContainer, PageHeader, Select } from "@/components/ui";
 import { normalizeTipoCondicaoFixa } from "@/lib/condicao-fixa";
 import { normalizeFonteMedicao } from "@/lib/fonte-medicao";
@@ -1003,6 +1003,79 @@ function ResetSenhaButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+/**
+ * Só aparece enquanto `primeiroLogin` está pendente (mesma flag que já controla o fluxo de troca
+ * obrigatória em `/api/auth/alterar-senha`) — depois que a pessoa troca a senha, a ação deixa de
+ * fazer sentido e só "Redefinir senha" continua visível (item 26 do pedido).
+ */
+function PrimeiroAcessoButton({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={disabled ? "Este usuário não possui e-mail cadastrado." : undefined}
+      className="inline-flex h-7 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2.5 text-[11px] font-semibold text-[#555555] transition hover:border-[#2563EB] hover:text-[#2563EB] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#E5E7EB] disabled:hover:text-[#555555]"
+    >
+      <Send size={12} />
+      Enviar primeiro acesso
+    </button>
+  );
+}
+
+function ConfirmPrimeiroAcessoModal({
+  nome,
+  email,
+  usuario,
+  confirming,
+  onCancel,
+  onConfirm,
+}: {
+  nome: string;
+  email: string;
+  usuario: string;
+  confirming: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
+      <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
+        <div className="border-b border-[#E5E7EB] px-5 py-4">
+          <h2 className="text-sm font-bold text-[#1A1A1A]">Enviar primeiro acesso</h2>
+          <p className="mt-1 text-xs text-[#6B7280]">
+            Será gerada uma nova senha temporária para este usuário e enviada para o e-mail cadastrado.
+          </p>
+        </div>
+        <div className="space-y-1.5 border-b border-[#E5E7EB] px-5 py-4 text-xs">
+          <div className="flex justify-between gap-3">
+            <span className="text-[#94A3B8]">Nome</span>
+            <span className="font-semibold text-[#1F2937]">{nome}</span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-[#94A3B8]">E-mail</span>
+            <span className="font-semibold text-[#1F2937]">{email}</span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-[#94A3B8]">Usuário/Login</span>
+            <span className="font-technical font-semibold text-[#1F2937]">{usuario}</span>
+          </div>
+        </div>
+        <div className="border-b border-[#FDE68A] bg-[#FFFBEB] px-5 py-2.5 text-[11px] text-[#92400E]">
+          Uma senha temporária anterior, caso exista, deixará de ser válida.
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4">
+          <Button variant="secondary" onClick={onCancel} disabled={confirming}>Cancelar</Button>
+          <Button onClick={onConfirm} disabled={confirming}>
+            <Send size={14} />
+            {confirming ? "Enviando..." : "Enviar acesso"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type MenuAction = { label: string; icon: React.ReactNode; onClick: () => void; tone?: "danger" };
 
 /**
@@ -1068,6 +1141,7 @@ function CadastroCard({
   onToggleSelected,
   onResetSenha,
   onToggleAtivo,
+  onEnviarPrimeiroAcesso,
 }: {
   item: CadastroFornecedor;
   onEdit: (item: CadastroFornecedor) => void;
@@ -1077,6 +1151,7 @@ function CadastroCard({
   onToggleSelected: (id: string) => void;
   onResetSenha: (usuarioId: string, nome: string, email: string | null) => void;
   onToggleAtivo: (usuarioId: string, ativoAtual: boolean) => void;
+  onEnviarPrimeiroAcesso: (usuarioId: string, nome: string, email: string | null, usuario: string) => void;
 }) {
   const menuActions: MenuAction[] = [];
   if (isAdmin && item.acesso) {
@@ -1116,6 +1191,11 @@ function CadastroCard({
               {item.acesso && (
                 <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${item.acesso.ativo ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#F3F4F6] text-[#6B7280]"}`}>
                   {item.acesso.ativo ? "Ativo" : "Inativo"}
+                </span>
+              )}
+              {item.acesso?.primeiroLogin && (
+                <span className="shrink-0 rounded-full bg-[#FEF3C7] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[#92400E]">
+                  Primeiro acesso pendente
                 </span>
               )}
             </div>
@@ -1186,8 +1266,16 @@ function CadastroCard({
       )}
 
       {isAdmin && item.acesso && (
-        <div className="border-t border-[#E5E7EB] px-4 py-2">
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-[#E5E7EB] px-4 py-2">
           <ResetSenhaButton onClick={() => onResetSenha(item.acesso!.id, item.responsavel, item.acesso!.email)} />
+          {/* perfil !== "ADMIN" é regra genérica (item 2 do pedido) — na prática o acesso de um
+              fornecedor é sempre COLABORADOR, mas a checagem nunca depende de nome/código. */}
+          {item.acesso.perfil !== "ADMIN" && item.acesso.primeiroLogin && (
+            <PrimeiroAcessoButton
+              disabled={!item.acesso.email}
+              onClick={() => onEnviarPrimeiroAcesso(item.acesso!.id, item.responsavel, item.acesso!.email, item.acesso!.usuario)}
+            />
+          )}
         </div>
       )}
     </Card>
@@ -1201,6 +1289,7 @@ function FuncionarioCard({
   onToggleAtivo,
   onSetPerfil,
   onExcluir,
+  onEnviarPrimeiroAcesso,
 }: {
   item: Funcionario;
   isAdmin: boolean;
@@ -1208,6 +1297,7 @@ function FuncionarioCard({
   onToggleAtivo: (usuarioId: string, ativoAtual: boolean) => void;
   onSetPerfil: (usuarioId: string, nome: string, perfilAtual: string) => void;
   onExcluir: (usuarioId: string, nome: string) => void;
+  onEnviarPrimeiroAcesso: (usuarioId: string, nome: string, email: string | null, usuario: string) => void;
 }) {
   const menuActions: MenuAction[] = isAdmin
     ? [
@@ -1233,6 +1323,11 @@ function FuncionarioCard({
             <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${item.ativo ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#F3F4F6] text-[#6B7280]"}`}>
               {item.ativo ? "Ativo" : "Inativo"}
             </span>
+            {item.primeiroLogin && (
+              <span className="shrink-0 rounded-full bg-[#FEF3C7] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[#92400E]">
+                Primeiro acesso pendente
+              </span>
+            )}
           </div>
           <p className="truncate text-[11px] text-[#6B7280]">{item.email ?? "Sem e-mail cadastrado"}</p>
         </div>
@@ -1259,8 +1354,16 @@ function FuncionarioCard({
       </div>
 
       {isAdmin && (
-        <div className="border-t border-[#E5E7EB] px-4 py-2">
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-[#E5E7EB] px-4 py-2">
           <ResetSenhaButton onClick={() => onResetSenha(item.id, item.nome, item.email)} />
+          {/* item 2 do pedido: nunca aparece para perfil ADMIN — vale para P0000001 e qualquer
+              ADMIN futuro, checado só pelo campo perfil. */}
+          {item.perfil !== "ADMIN" && item.primeiroLogin && (
+            <PrimeiroAcessoButton
+              disabled={!item.email}
+              onClick={() => onEnviarPrimeiroAcesso(item.id, item.nome, item.email, item.usuario)}
+            />
+          )}
         </div>
       )}
     </Card>
@@ -1742,6 +1845,8 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
   const [credencial, setCredencial] = useState<{ titulo: string; nome: string; email: string | null; usuario?: string; senha: string } | null>(null);
   const [resetSenhaTarget, setResetSenhaTarget] = useState<{ usuarioId: string; nome: string; email: string | null } | null>(null);
   const [resettingSenha, setResettingSenha] = useState(false);
+  const [primeiroAcessoTarget, setPrimeiroAcessoTarget] = useState<{ usuarioId: string; nome: string; email: string; usuario: string; requestId: string } | null>(null);
+  const [enviandoPrimeiroAcesso, setEnviandoPrimeiroAcesso] = useState(false);
   const [perfilTarget, setPerfilTarget] = useState<{ usuarioId: string; nome: string; perfilAtual: string } | null>(null);
   const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1893,6 +1998,44 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
       await load();
     } finally {
       setResettingSenha(false);
+    }
+  }
+
+  function pedirPrimeiroAcesso(usuarioId: string, nome: string, email: string | null, usuario: string) {
+    if (!email) {
+      setToast({ tone: "error", message: "Este usuário não possui e-mail cadastrado." });
+      return;
+    }
+    // requestId gerado UMA VEZ aqui, ao abrir a confirmação — nunca recriado por um retry HTTP da
+    // mesma chamada em confirmarPrimeiroAcesso (o backend serializa por usuarioId+requestId). Uma
+    // NOVA chamada deste handler (novo clique, depois de cancelar/concluir) sempre gera um UUID
+    // novo, permitindo uma rotação legítima nova.
+    setPrimeiroAcessoTarget({ usuarioId, nome, email, usuario, requestId: crypto.randomUUID() });
+  }
+
+  async function confirmarPrimeiroAcesso() {
+    if (!primeiroAcessoTarget) return;
+    const { usuarioId, email, requestId } = primeiroAcessoTarget;
+    setEnviandoPrimeiroAcesso(true);
+    try {
+      const res = await fetch(`/api/admin/usuarios/${usuarioId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "enviar_primeiro_acesso", requestId }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      setPrimeiroAcessoTarget(null);
+      if (!res.ok) {
+        // A senha pode já ter sido trocada mesmo com o e-mail falhando (ver rota) — recarrega para
+        // refletir o estado real (badge "Primeiro acesso pendente" continua correto).
+        setToast({ tone: "error", message: payload.error ?? "Não foi possível enviar o primeiro acesso." });
+        await load();
+        return;
+      }
+      setToast({ tone: "success", message: `Acesso enviado para ${email}.` });
+      await load();
+    } finally {
+      setEnviandoPrimeiroAcesso(false);
     }
   }
 
@@ -2235,6 +2378,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
                 onToggleSelected={toggleSelected}
                 onResetSenha={pedirResetSenha}
                 onToggleAtivo={toggleAtivoUsuario}
+                onEnviarPrimeiroAcesso={pedirPrimeiroAcesso}
               />
             ) : (
               <FuncionarioCard
@@ -2245,6 +2389,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
                 onToggleAtivo={toggleAtivoUsuario}
                 onSetPerfil={(usuarioId, nome, perfilAtual) => setPerfilTarget({ usuarioId, nome, perfilAtual })}
                 onExcluir={excluirFuncionario}
+                onEnviarPrimeiroAcesso={pedirPrimeiroAcesso}
               />
             ),
           )}
@@ -2322,6 +2467,17 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
           confirming={resettingSenha}
           onCancel={() => setResetSenhaTarget(null)}
           onConfirm={confirmarResetSenha}
+        />
+      )}
+
+      {primeiroAcessoTarget && (
+        <ConfirmPrimeiroAcessoModal
+          nome={primeiroAcessoTarget.nome}
+          email={primeiroAcessoTarget.email}
+          usuario={primeiroAcessoTarget.usuario}
+          confirming={enviandoPrimeiroAcesso}
+          onCancel={() => setPrimeiroAcessoTarget(null)}
+          onConfirm={confirmarPrimeiroAcesso}
         />
       )}
 

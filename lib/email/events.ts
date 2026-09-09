@@ -3,6 +3,7 @@ import { sendTransactionalEmail } from "@/lib/email/send-email";
 import { getEmailCcForEvent } from "@/lib/email/cc-policy";
 import { resolveFornecedorEmail, resolveMedicaoTeamEmails, resolveFinanceiroTeamEmails } from "@/lib/email/resolve-recipients";
 import { passwordResetTemplate } from "@/lib/email/templates/password-reset";
+import { firstAccessTemplate } from "@/lib/email/templates/first-access";
 import { bmAvailableTemplate } from "@/lib/email/templates/bm-available";
 import { bmDivergenceTemplate } from "@/lib/email/templates/bm-divergence";
 import { bmApprovedTemplate } from "@/lib/email/templates/bm-approved";
@@ -65,6 +66,30 @@ export async function notifyPasswordReset(input: { usuarioId: string; nome: stri
     content,
     idempotencyKey: `password-reset/${input.usuarioId}/${bucket}`,
     metadata: { usuarioId: input.usuarioId, recipientMissing: !input.email },
+  });
+}
+
+/**
+ * Diferente de PASSWORD_RESET: aqui a senha temporária VAI no corpo do e-mail (ver
+ * `firstAccessTemplate`), porque a entrega ao usuário é explicitamente por e-mail — não existe
+ * outro canal (a tela não mostra mais a senha ao admin para este fluxo). `metadata` nunca recebe
+ * `senhaTemporaria` — só o suficiente para auditoria (ver `email_logs`/`AdminAuditLog`).
+ *
+ * `credentialVersion` é o `requestId` (UUID) gerado pelo frontend UMA VEZ por confirmação do
+ * ADMIN — não mais um timestamp. A rota (`app/api/admin/usuarios/[id]/route.ts`) já usa a MESMA
+ * string como chave de um advisory lock que serializa a rotação de credencial inteira (não só
+ * este envio) antes mesmo de chegar aqui — ver o comentário lá para o motivo de timestamp não ser
+ * uma identidade robusta o suficiente para essa trava.
+ */
+export async function notifyFirstAccess(input: { usuarioId: string; nome: string; usuario: string; email: string; senhaTemporaria: string; credentialVersion: string }) {
+  const content = firstAccessTemplate({ nome: input.nome, usuario: input.usuario, senhaTemporaria: input.senhaTemporaria, appUrl: loginUrl() });
+  return sendTransactionalEmail({
+    event: "FIRST_ACCESS",
+    to: [input.email],
+    cc: getEmailCcForEvent("FIRST_ACCESS"),
+    content,
+    idempotencyKey: `first-access/${input.usuarioId}/${input.credentialVersion}`,
+    metadata: { usuarioId: input.usuarioId },
   });
 }
 
