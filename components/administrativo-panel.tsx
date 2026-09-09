@@ -1008,13 +1008,13 @@ function ResetSenhaButton({ onClick }: { onClick: () => void }) {
  * obrigatória em `/api/auth/alterar-senha`) — depois que a pessoa troca a senha, a ação deixa de
  * fazer sentido e só "Redefinir senha" continua visível (item 26 do pedido).
  */
-function PrimeiroAcessoButton({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
+function PrimeiroAcessoButton({ onClick, disabled, tooltip }: { onClick: () => void; disabled: boolean; tooltip?: string }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      title={disabled ? "Este usuário não possui e-mail cadastrado." : undefined}
+      title={disabled ? tooltip : undefined}
       className="inline-flex h-7 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2.5 text-[11px] font-semibold text-[#555555] transition hover:border-[#2563EB] hover:text-[#2563EB] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#E5E7EB] disabled:hover:text-[#555555]"
     >
       <Send size={12} />
@@ -1273,6 +1273,11 @@ function CadastroCard({
           {item.acesso.perfil !== "ADMIN" && item.acesso.primeiroLogin && (
             <PrimeiroAcessoButton
               disabled={!item.acesso.email}
+              // item.email é o e-mail CADASTRAL (CadastroFornecedor, exibido no card) — diferente
+              // de item.acesso.email (Usuario, o que FIRST_ACCESS de fato usa). Quando o cadastral
+              // existe mas o de acesso ainda não foi sincronizado, o aviso é específico (e a
+              // reimportação da Consulta PJ resolve, sem precisar editar nada aqui).
+              tooltip={item.email ? "E-mail de acesso ainda não sincronizado. Reimporte a Consulta PJ para sincronizar." : "Este usuário não possui e-mail cadastrado."}
               onClick={() => onEnviarPrimeiroAcesso(item.acesso!.id, item.responsavel, item.acesso!.email, item.acesso!.usuario)}
             />
           )}
@@ -1361,6 +1366,7 @@ function FuncionarioCard({
           {item.perfil !== "ADMIN" && item.primeiroLogin && (
             <PrimeiroAcessoButton
               disabled={!item.email}
+              tooltip="Este usuário não possui e-mail cadastrado."
               onClick={() => onEnviarPrimeiroAcesso(item.id, item.nome, item.email, item.usuario)}
             />
           )}

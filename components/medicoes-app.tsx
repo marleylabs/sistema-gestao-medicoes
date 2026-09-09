@@ -26,7 +26,7 @@ import { ComentarioDropdown, MapaPagamentoTable } from "@/components/mapa-pagame
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { AdministrativoPanel } from "@/components/administrativo-panel";
-import { Badge, Button, Card, FilterButton, FilterChip, IconButton, PageContainer, PageHeader, Select } from "@/components/ui";
+import { Badge, Button, Card, FilterButton, FilterChip, IconButton, Input, PageContainer, PageHeader, Select } from "@/components/ui";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "@/lib/presence";
@@ -869,34 +869,38 @@ function HistoricoSection({
     new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(v));
 
   return (
-    <div className="grid gap-6">
-      <div className="flex items-center justify-end gap-4">
-        {isAdmin && (
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <input
-              className="h-9 w-32 rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
-              placeholder="Ex: 2606"
-              maxLength={4}
-              value={novoCiclo}
-              onChange={(e) => setNovoCiclo(e.target.value.replace(/\D/g, ""))}
-              onKeyDown={(e) => e.key === "Enter" && onCriarCiclo()}
-            />
-            <Button onClick={onCriarCiclo} disabled={criandoCiclo || !novoCiclo}>
-              <Plus size={14} />
-              Novo ciclo
+    // min-w-0: mesmo padrão já aplicado em EvidenciasSection — permite este container encolher
+    // dentro do ancestral flex/grid do AppShell em vez de a tabela abaixo empurrar a página.
+    <div className="grid min-w-0 max-w-full gap-6">
+      {isAdmin && (
+        <div className="flex w-full flex-wrap items-center justify-end gap-2">
+          <input
+            className="h-9 w-full min-w-0 flex-1 rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 sm:w-32 sm:flex-none"
+            placeholder="Ex: 2606"
+            maxLength={4}
+            value={novoCiclo}
+            onChange={(e) => setNovoCiclo(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => e.key === "Enter" && onCriarCiclo()}
+          />
+          <Button className="w-full sm:w-auto" onClick={onCriarCiclo} disabled={criandoCiclo || !novoCiclo}>
+            <Plus size={14} />
+            Novo ciclo
+          </Button>
+          {canResetCiclos && (
+            <Button className="w-full sm:w-auto" variant="danger" onClick={() => onResetCiclos(novoCiclo)} disabled={resetandoCiclos || !/^\d{4}$/.test(novoCiclo)}>
+              <Trash2 size={14} />
+              {resetandoCiclos ? "Excluindo..." : "Excluir ciclo"}
             </Button>
-            {canResetCiclos && (
-              <Button variant="danger" onClick={() => onResetCiclos(novoCiclo)} disabled={resetandoCiclos || !/^\d{4}$/.test(novoCiclo)}>
-                <Trash2 size={14} />
-                {resetandoCiclos ? "Excluindo..." : "Excluir ciclo"}
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      <Card className="overflow-hidden">
-        <table className="w-full border-collapse text-sm">
+      {/* w-full/min-w-0/max-w-full no Card (HeroUI é flex-col por padrão, ver correção já aplicada
+          em Evidências de Medição) + overflow-x-auto no wrapper DIRETO da tabela — o scroll
+          horizontal, quando necessário, fica contido aqui, nunca na página. */}
+      <Card className="w-full min-w-0 max-w-full overflow-hidden">
+        <div className="w-full max-w-full overflow-x-auto">
+        <table className="w-full min-w-[860px] border-collapse text-sm">
           <thead>
             <tr className="bg-[#F9FAFB]">
               {["Ciclo", "Mês de referência", "Última atualização", ""].map((h, i) => (
@@ -936,7 +940,7 @@ function HistoricoSection({
                     )}
                   </td>
                   <td className="px-4 py-3 text-[#555555]">{c.mesReferencia ?? "–"}</td>
-                  <td className="px-4 py-3 text-[#555555]">{dateLabel(c.updatedAt)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-[#555555]">{dateLabel(c.updatedAt)}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
                       {isAdmin && (
@@ -971,6 +975,7 @@ function HistoricoSection({
             })}
           </tbody>
         </table>
+        </div>
       </Card>
     </div>
   );
@@ -1408,120 +1413,248 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
 
 // ─── EvidenciasSection ────────────────────────────────────────────────────────
 
+type EvidenciaListItem = {
+  sgcId: string;
+  colaboradorCodigo: string;
+  colaboradorNome: string | null;
+  ciclo: string;
+  status: string;
+  revisaoNumero: number;
+  statusConferencia: string;
+  aprovadoAt: string | null;
+};
+
+// Evidências representa a EXISTÊNCIA do Boletim de Medição (qualquer status a partir do envio),
+// não um recorte transitório de "aguardando aprovação" — mas AGUARDANDO_ENVIO (BM ainda não
+// disponibilizado) e CANCELADO nunca contam como evidência real. Mesma regra que já existia antes
+// desta correção, só que aplicada de forma consistente à listagem inteira (nunca só ao ciclo mais
+// recente de cada fornecedor).
+function isEvidenciaVisivel(status: string) {
+  return status !== "AGUARDANDO_ENVIO" && status !== "CANCELADO";
+}
+
+// Mesmos rótulos já usados em components/colaborador-app.tsx (statusConfig) — mantém a mesma
+// linguagem de status em toda a aplicação, sem inventar status novos.
+function evidenciaStatusConfig(status: string) {
+  if (status === "PAGO")               return { label: "Medição concluída",      variant: "success" as const };
+  if (status === "APROVADO")           return { label: "Aguardando pagamento",   variant: "brand" as const };
+  if (status === "AGUARDANDO_NF")      return { label: "Aguardando envio da NF", variant: "warning" as const };
+  if (status === "REVISAO_SOLICITADA") return { label: "Revisão solicitada",     variant: "warning" as const };
+  return                                      { label: "Pendente de validação",  variant: "neutral" as const };
+}
+
 function EvidenciasSection({ ciclos }: { ciclos: CicloEntry[] }) {
-  const TODOS = "__todos__";
-  const [selectedCiclo,  setSelectedCiclo]  = useState(TODOS);
-  const [selectedCodigo, setSelectedCodigo] = useState("");
-  const [bm, setBm]       = useState<BmData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const filtrosRef = useRef<HTMLDivElement>(null);
+
+  // null = "Todos" — nunca um valor mágico de string que possa colidir com um ciclo/código real.
+  const [selectedCiclo, setSelectedCiclo] = useState<string | null>(null);
+  const [selectedFornecedor, setSelectedFornecedor] = useState<{ codigo: string; nome: string } | null>(null);
+  const [fornecedorQuery, setFornecedorQuery] = useState("");
+  const [showFornecedorSuggestions, setShowFornecedorSuggestions] = useState(false);
+
+  // Lista completa de fornecedores com pelo menos uma evidência (qualquer ciclo) — carregada uma
+  // única vez, só para alimentar a busca do combobox (nome ou código P0). A identidade
+  // armazenada/selecionada é sempre colaboradorCodigo, nunca o texto digitado.
+  const [todosFornecedores, setTodosFornecedores] = useState<{ codigo: string; nome: string }[]>([]);
+
+  const [resultados, setResultados] = useState<EvidenciaListItem[] | null>(null);
+  const [loadingLista, setLoadingLista] = useState(false);
+
+  const [bm, setBm] = useState<BmData | null>(null);
+  const [bmContext, setBmContext] = useState<{ ciclo: string; nome: string } | null>(null);
+  const [loadingBm, setLoadingBm] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // colaboradorCodigo (chave canônica do SGC) → { ciclo mais recente com BM, nome para exibição }.
-  // Evidências representa a EXISTÊNCIA do Boletim de Medição (qualquer status a partir do envio),
-  // não um recorte transitório de "aguardando aprovação" — por isso a fonte é o próprio SGC
-  // (mesma tabela/regra usada em app/api/colaborador/sgc/route.ts: status !== AGUARDANDO_ENVIO/CANCELADO),
-  // e não a lista de Profissional (cujo campo `codigo` fica vazio na maioria dos cadastros importados
-  // pelo ETL e não deve ser usado como chave de correspondência aqui).
-  const [aprovadosMap, setAprovadosMap] = useState<Map<string, { ciclo: string; nome: string }>>(new Map());
 
   useEffect(() => {
-    setSelectedCodigo("");
-    setBm(null);
-    const ciclosParaBuscar = selectedCiclo === TODOS ? ciclos.map((c) => c.ciclo) : [selectedCiclo];
-    if (ciclosParaBuscar.length === 0) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (filtrosRef.current && !filtrosRef.current.contains(e.target as Node)) setFiltrosAbertos(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
-    Promise.all(
-      ciclosParaBuscar.map((ciclo) =>
-        fetch(`/api/sgc/status?ciclo=${encodeURIComponent(ciclo)}`)
-          .then((r) => r.json() as Promise<Record<string, { status: string; colaboradorNome: string | null }>>)
-          .then((data) => ({ ciclo, data }))
-          .catch(() => ({ ciclo, data: {} as Record<string, { status: string; colaboradorNome: string | null }> }))
-      )
-    ).then((results) => {
-      // ciclos já vêm ordenados desc; iterar do mais antigo ao mais recente
-      // para que o mais recente sobreescreva no map
-      const map = new Map<string, { ciclo: string; nome: string }>();
-      for (const { ciclo, data } of [...results].reverse()) {
-        for (const [codigo, entry] of Object.entries(data)) {
-          if (entry.status !== "AGUARDANDO_ENVIO" && entry.status !== "CANCELADO") {
-            map.set(codigo, { ciclo, nome: entry.colaboradorNome || codigo });
-          }
+  useEffect(() => {
+    fetch("/api/sgc/status")
+      .then((r) => r.json() as Promise<EvidenciaListItem[]>)
+      .then((data) => {
+        const porCodigo = new Map<string, string>();
+        for (const item of data) {
+          if (!isEvidenciaVisivel(item.status)) continue;
+          if (!porCodigo.has(item.colaboradorCodigo)) porCodigo.set(item.colaboradorCodigo, item.colaboradorNome || item.colaboradorCodigo);
         }
-      }
-      setAprovadosMap(map);
-    });
-  }, [selectedCiclo, ciclos]);
+        setTodosFornecedores(
+          Array.from(porCodigo.entries())
+            .map(([codigo, nome]) => ({ codigo, nome }))
+            .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
+        );
+      })
+      .catch(() => {});
+  }, []);
 
-  const colaboradoresAprovados = Array.from(aprovadosMap.entries())
-    .map(([codigo, info]) => ({ codigo, nome: info.nome }))
-    .sort((a, b) => a.nome.localeCompare(b.nome));
+  // Filtros independentes (item central da correção): nenhum é pré-requisito do outro. Sem NENHUM
+  // filtro, não busca nada automaticamente — evita carregar todas as evidências da aplicação à toa
+  // (estado inicial explícito, ver empty state abaixo).
+  useEffect(() => {
+    setBm(null);
+    setBmContext(null);
+    setError(null);
+    if (!selectedCiclo && !selectedFornecedor) {
+      setResultados(null);
+      return;
+    }
+    setLoadingLista(true);
+    const params = new URLSearchParams();
+    if (selectedCiclo) params.set("ciclo", selectedCiclo);
+    if (selectedFornecedor) params.set("colaboradorCodigo", selectedFornecedor.codigo);
+    fetch(`/api/sgc/status?${params.toString()}`)
+      .then((r) => r.json() as Promise<EvidenciaListItem[]>)
+      .then((data) => setResultados(data.filter((item) => isEvidenciaVisivel(item.status))))
+      .catch(() => setResultados([]))
+      .finally(() => setLoadingLista(false));
+  }, [selectedCiclo, selectedFornecedor]);
 
-  async function buscar() {
-    if (!selectedCodigo) return;
-    const ciclo = selectedCiclo === TODOS ? (aprovadosMap.get(selectedCodigo)?.ciclo ?? "") : selectedCiclo;
-    if (!ciclo) return;
-    setLoading(true);
+  const fornecedorSugestoes = useMemo(() => {
+    const q = fornecedorQuery.trim().toLowerCase();
+    if (!q) return todosFornecedores.slice(0, 20);
+    return todosFornecedores.filter((f) => f.nome.toLowerCase().includes(q) || f.codigo.toLowerCase().includes(q)).slice(0, 20);
+  }, [todosFornecedores, fornecedorQuery]);
+
+  async function verBoletim(item: EvidenciaListItem) {
+    // Usa o colaboradorCodigo/ciclo REAIS deste item específico — nunca reconstrói a busca por
+    // nome, mesmo quando existem vários resultados na tela.
+    setLoadingBm(true);
     setError(null);
     setBm(null);
-    const res = await fetch(`/api/admin/bm?codigo=${encodeURIComponent(selectedCodigo)}&ciclo=${encodeURIComponent(ciclo)}`);
+    const res = await fetch(`/api/admin/bm?codigo=${encodeURIComponent(item.colaboradorCodigo)}&ciclo=${encodeURIComponent(item.ciclo)}`);
     const data = await res.json();
     if (!res.ok) { setError(data.error ?? "Erro ao buscar boletim."); }
     else if (!data.pagamento && !data.documentos?.length) { setError("Nenhuma medição encontrada para este fornecedor e ciclo."); }
-    else setBm(data);
-    setLoading(false);
+    else { setBm(data); setBmContext({ ciclo: item.ciclo, nome: item.colaboradorNome || item.colaboradorCodigo }); }
+    setLoadingBm(false);
   }
 
+  function limparFiltros() {
+    setSelectedCiclo(null);
+    setSelectedFornecedor(null);
+    setFornecedorQuery("");
+  }
+
+  const activeFilterCount = (selectedCiclo ? 1 : 0) + (selectedFornecedor ? 1 : 0);
+
   return (
-    <div className="grid gap-6">
-      <Card className="overflow-hidden">
-        <div className="border-b border-[#E5E7EB] px-5 py-4">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#FFF0F0] text-[#AF1B1B]">
-              <FileSearch size={16} />
-            </span>
-            <div>
-              <p className="text-card-title text-[#1A1A1A]">Filtros</p>
-              <p className="text-helper text-[#9CA3AF]">Selecione o ciclo e o fornecedor para visualizar o boletim</p>
+    // min-w-0: item de grid/flex de qualquer ancestral (AppShell) precisa poder encolher — sem
+    // isso, a tabela larga do Boletim (min-w-[800px], dentro de um Card flex-col do HeroUI)
+    // empurraria a largura de toda a página em vez de só rolar dentro de si mesma.
+    <div className="grid min-w-0 max-w-full gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative shrink-0" ref={filtrosRef}>
+          <FilterButton count={activeFilterCount} onClick={() => setFiltrosAbertos((v) => !v)} />
+          {filtrosAbertos && (
+            <div className="absolute left-0 top-11 z-40 w-[300px] max-w-[90vw] rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
+              <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-[#9CA3AF]">Evidências</p>
+              <label className="text-label grid gap-1.5 text-[var(--muted-foreground)]">
+                Ciclo
+                <Select value={selectedCiclo ?? ""} onChange={(e) => setSelectedCiclo(e.target.value || null)}>
+                  <option value="">Todos os ciclos</option>
+                  {ciclos.map((c) => (
+                    <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="text-label relative mt-3 grid gap-1.5 text-[var(--muted-foreground)]">
+                Fornecedor
+                <Input
+                  value={selectedFornecedor ? selectedFornecedor.nome : fornecedorQuery}
+                  placeholder="Todos os fornecedores / buscar…"
+                  onFocus={() => setShowFornecedorSuggestions(true)}
+                  onChange={(e) => {
+                    setSelectedFornecedor(null);
+                    setFornecedorQuery(e.target.value);
+                    setShowFornecedorSuggestions(true);
+                  }}
+                />
+                {showFornecedorSuggestions && !selectedFornecedor && fornecedorSugestoes.length > 0 && (
+                  <div className="absolute top-full z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[var(--border)] bg-white shadow-lg">
+                    {fornecedorSugestoes.map((f) => (
+                      <button
+                        key={f.codigo}
+                        type="button"
+                        onClick={() => {
+                          setSelectedFornecedor(f);
+                          setFornecedorQuery("");
+                          setShowFornecedorSuggestions(false);
+                        }}
+                        className="flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-[#F9FAFB]"
+                      >
+                        <span className="font-semibold text-[#1A1A1A]">{f.nome}</span>
+                        <span className="font-technical text-[10px] text-[#9CA3AF]">{f.codigo}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </label>
+              <button
+                type="button"
+                onClick={limparFiltros}
+                className="mt-4 text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+              >
+                Limpar filtros
+              </button>
             </div>
-          </div>
+          )}
         </div>
 
-        <div className="flex flex-wrap items-end gap-3 p-5">
-          <label className="text-label grid w-full gap-1.5 text-[var(--muted-foreground)] sm:w-auto">
-            Ciclo
-            <Select value={selectedCiclo} onChange={(e) => setSelectedCiclo(e.target.value)} className="sm:min-w-[200px]">
-              <option value={TODOS}>Todos os ciclos</option>
-              {ciclos.map((c) => (
-                <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>
-              ))}
-            </Select>
-          </label>
-          <label className="text-label grid w-full gap-1.5 text-[var(--muted-foreground)] sm:w-auto">
-            Fornecedor
-            <Select value={selectedCodigo} onChange={(e) => setSelectedCodigo(e.target.value)} className="sm:min-w-[220px]" disabled={colaboradoresAprovados.length === 0}>
-              <option value="">
-                {colaboradoresAprovados.length === 0 ? "Nenhum Boletim de Medição encontrado neste ciclo" : "Selecione…"}
-              </option>
-              {colaboradoresAprovados.map((c) => (
-                <option key={c.codigo} value={c.codigo}>{c.nome}</option>
-              ))}
-            </Select>
-          </label>
-          <Button onClick={buscar} disabled={!selectedCodigo || loading}>
-            {loading ? "Carregando…" : "Ver Boletim"}
-          </Button>
-        </div>
+        {selectedCiclo && <FilterChip label={`Ciclo: ${selectedCiclo}`} onRemove={() => setSelectedCiclo(null)} />}
+        {selectedFornecedor && <FilterChip label={selectedFornecedor.nome} onRemove={() => setSelectedFornecedor(null)} />}
+      </div>
 
-        {error && (
-          <div className="mx-5 mb-5 rounded-lg bg-[#FEF2F2] px-4 py-3 text-xs text-[#B91C1C]">{error}</div>
-        )}
-      </Card>
+      {resultados === null ? (
+        <Card className="p-6 text-sm text-[var(--muted-foreground)]">
+          Selecione um ciclo ou fornecedor para visualizar as evidências.
+        </Card>
+      ) : loadingLista ? (
+        <Card className="p-6 text-sm text-[var(--muted-foreground)]">Carregando…</Card>
+      ) : resultados.length === 0 ? (
+        <Card className="p-6 text-sm text-[var(--muted-foreground)]">Nenhuma evidência encontrada para os filtros selecionados.</Card>
+      ) : (
+        <div className="grid gap-2">
+          {resultados.map((item) => {
+            const statusInfo = evidenciaStatusConfig(item.status);
+            return (
+              <Card key={item.sgcId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-technical rounded bg-[#F3F4F6] px-1.5 py-0.5 text-[10px] font-bold text-[#6B7280]">{item.ciclo}</span>
+                    <p className="truncate text-sm font-semibold text-[#1A1A1A]">{item.colaboradorNome || item.colaboradorCodigo}</p>
+                  </div>
+                  <Badge variant={statusInfo.variant} className="mt-1">{statusInfo.label}</Badge>
+                </div>
+                <Button variant="secondary" onClick={() => verBoletim(item)} disabled={loadingBm}>
+                  Ver boletim
+                </Button>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-lg bg-[#FEF2F2] px-4 py-3 text-xs text-[#B91C1C]">{error}</div>
+      )}
 
       {bm && (
-        <Card>
-          <div className="border-b border-[#E5E7EB] px-5 py-4">
-            <p className="text-sm font-semibold text-[#1A1A1A]">Boletim de Medição</p>
+        // min-w-0 + max-w-full: o Card do HeroUI é flex-col por padrão (ver card.css) — sem isso
+        // ele cresce para acomodar a largura mínima da tabela do boletim em vez de rolar internamente.
+        <Card className="w-full min-w-0 max-w-full">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E7EB] px-5 py-4">
+            <p className="text-sm font-semibold text-[#1A1A1A]">
+              Boletim de Medição{bmContext ? ` — ${bmContext.nome} (${bmContext.ciclo})` : ""}
+            </p>
           </div>
-          <div className="p-5 overflow-x-auto">
+          {/* Sem overflow-x-auto aqui: BoletimMedicao já rola horizontalmente por conta própria
+              (ver components/boletim-medicao.tsx) — evita dois containers de scroll aninhados. */}
+          <div className="min-w-0 max-w-full p-5">
             <BoletimMedicao data={bm} />
           </div>
         </Card>

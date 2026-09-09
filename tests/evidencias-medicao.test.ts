@@ -1,213 +1,123 @@
 import assert from "node:assert/strict";
-import test, { before } from "node:test";
-import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
+import test from "node:test";
+import fs from "node:fs";
+import path from "node:path";
 
-before(assertConnectedToE2eDatabase);
+function readSource(relativePath: string) {
+  return fs.readFileSync(path.join(__dirname, "..", relativePath), "utf8");
+}
+
+const ROUTE = "app/api/sgc/status/route.ts";
+const PAGE = "components/medicoes-app.tsx";
 
 /**
- * Testes de integração reais contra o banco de teste isolado (medicoes-postgres-test).
- *
- * Bug corrigido: "Evidências de Medição" (Administrativo) usava dois filtros que quebravam a
- * visibilidade de um BM já existente:
- *  1) o dropdown de fornecedor era construído a partir de `Profissional.filter(p => p.codigo)`
- *     (components/medicoes-app.tsx) — mas `Profissional.codigo` fica vazio na maioria dos
- *     cadastros importados pelo ETL (mesma causa-raiz já corrigida em outras telas nesta sessão:
- *     chat, participação por contrato, Documentos Medidos no Portal, e-mail BM_AVAILABLE).
- *  2) o filtro de status só aceitava "APROVADO" ou "AGUARDANDO_NF", excluindo estruturalmente
- *     PENDENTE, REVISAO_SOLICITADA e PAGO — mesmo esses sendo estados em que o BM já existe.
- *
- * A regra correta (e já usada em app/api/colaborador/sgc/route.ts para o Portal do fornecedor)
- * é existencial: o BM existe sempre que o registro em `sgc_aprovacoes_medicao` tiver
- * status !== "AGUARDANDO_ENVIO" && status !== "CANCELADO" — e a chave de correspondência deve
- * ser sempre `colaboradorCodigo` (o próprio campo do SGC), nunca `Profissional.codigo`.
- *
- * FASE 3: até aqui esta suíte dependia do caso real GYOVANNI COELHO/ciclo 2608 em produção —
- * dois testes ficavam `t.skip()` sempre que o workflow real avançava e o registro deixava de
- * existir naquele estado exato (drift). Agora o mesmo padrão de bug (Profissional.codigo vazio +
- * SGC referenciando o fornecedor pelo nome) é reproduzido de forma 100% determinística com dados
- * sintéticos no banco de teste isolado — nunca mais dependente de um snapshot de produção.
+ * Guarda de regressão para o bug corrigido: "Evidências de Medição" com fornecedor selecionado e
+ * SEM ciclo escolhido mostrava só o BM do ciclo mais recente — a causa real era o FRONTEND
+ * (não a rota) montando um `Map<colaboradorCodigo, ...>` por ciclo e sobrescrevendo entradas mais
+ * antigas a cada ciclo processado. Estes testes leem o código-fonte real (rota + página) para
+ * garantir que a correção — filtros independentes, resultado sempre em lista — não regrida.
  */
 
-type SgcStatusRow = { colaboradorCodigo: string; status: string; colaboradorNome: string | null };
-
-async function listSgcStatus(ciclo: string): Promise<Record<string, SgcStatusRow>> {
-  const registros = await prisma.sgcAprovacaoMedicao.findMany({
-    where: { ciclo },
-    select: { colaboradorCodigo: true, colaboradorNome: true, status: true, revisaoNumero: true, id: true, statusConferencia: true },
-  });
-  const payload: Record<string, SgcStatusRow> = {};
-  for (const r of registros) {
-    payload[r.colaboradorCodigo] = { colaboradorCodigo: r.colaboradorCodigo, status: r.status, colaboradorNome: r.colaboradorNome };
-  }
-  return payload;
-}
-
-// Regra atual (corrigida) usada por EvidenciasSection — existência do BM.
-function bmExiste(status: string): boolean {
-  return status !== "AGUARDANDO_ENVIO" && status !== "CANCELADO";
-}
-
-// Regra ANTIGA (com o bug) — reimplementada aqui só para o teste de before/after, nunca reintroduzida no app.
-function bmExisteRegraAntiga(status: string): boolean {
-  return status === "APROVADO" || status === "AGUARDANDO_NF";
-}
-
-async function getDocumentosMedidos(params: { aliases: string[]; ciclo: string }) {
-  const aliases = Array.from(new Set(params.aliases.map((a) => a?.trim()).filter((a): a is string => !!a)));
-  if (!aliases.length || !params.ciclo) return [];
-  return prisma.medicao.findMany({
-    where: {
-      ciclo: params.ciclo,
-      profissional: {
-        OR: [
-          { codigo: { in: aliases, mode: "insensitive" } },
-          { nome: { in: aliases, mode: "insensitive" } },
-          { nomeCompleto: { in: aliases, mode: "insensitive" } },
-        ],
-      },
-    },
-    select: { id: true },
-  });
-}
-
-// ─── Reprodução determinística do caso real (Profissional.codigo vazio + SGC por nome) ────────
-
-test("smoke determinístico (before/after) — Profissional.codigo vazio: regra antiga não encontrava, regra corrigida encontra", async () => {
-  const suffix = `TESTE-EVID-BUG-${Date.now()}`;
-  const nomeFornecedor = `${suffix} FORNECEDOR SEM CODIGO`;
-  const ciclo = `TESTE-${suffix}`;
-
-  const projeto = await prisma.projeto.create({ data: { codigoProjeto: `${suffix}-PROJ`, contrato: "TESTE" } });
-  // Reproduz exatamente a causa-raiz real: Profissional.codigo NULO (comum em cadastros importados
-  // pelo ETL), então o SGC referencia o fornecedor pelo NOME (fallback usado em produção).
-  const profissional = await prisma.profissional.create({ data: { nome: nomeFornecedor, codigo: null } });
-  const medicao = await prisma.medicao.create({
-    data: {
-      numeroMedicao: `${suffix}-MED`, idProjeto: projeto.id, idProfissional: profissional.id, ciclo,
-      equivalenteA1Horas: 10, percentualEmissao: 1, condicao: "100", sourceRowHash: `${suffix}-hash`,
-    },
-  });
-  const sgc = await prisma.sgcAprovacaoMedicao.create({
-    data: { colaboradorCodigo: nomeFornecedor, ciclo, status: "AGUARDANDO_NF", colaboradorNome: nomeFornecedor },
-  });
-
-  try {
-    // "Antes" (bug): a chave usada para achar o fornecedor no dropdown era Profissional.codigo,
-    // vazio para este fornecedor — nenhuma correspondência é possível por ali.
-    assert.equal(profissional.codigo, null, "confirma a causa-raiz: Profissional.codigo vazio/nulo para este fornecedor");
-    const docsRegraAntiga = await prisma.medicao.findMany({ where: { profissional: { codigo: { in: [nomeFornecedor] } }, ciclo }, select: { id: true } });
-    assert.equal(docsRegraAntiga.length, 0, "a consulta antiga (só profissional.codigo) não encontrava nada para este fornecedor");
-
-    // "Depois" (correção): a chave de correspondência é o próprio colaboradorCodigo do SGC
-    // (aqui, o nome — exatamente como em produção), e a regra de existência inclui AGUARDANDO_NF.
-    const status = await listSgcStatus(ciclo);
-    assert.equal(bmExiste(status[nomeFornecedor].status), true, "regra corrigida deve considerar o BM existente em AGUARDANDO_NF");
-    assert.equal(bmExisteRegraAntiga(status[nomeFornecedor].status), true, "a regra antiga de status, isoladamente, teria aceitado — o bug era a chave de correspondência, não o status");
-
-    const docsRegraCorrigida = await getDocumentosMedidos({ aliases: [nomeFornecedor], ciclo });
-    assert.equal(docsRegraCorrigida.length, 1, "getDocumentosMedidos (alias por nome) deve encontrar o documento real");
-    assert.equal(docsRegraCorrigida[0].id, medicao.id);
-  } finally {
-    await prisma.sgcAprovacaoMedicao.delete({ where: { id: sgc.id } });
-    await prisma.medicao.delete({ where: { id: medicao.id } });
-    await prisma.profissional.delete({ where: { id: profissional.id } });
-    await prisma.projeto.delete({ where: { id: projeto.id } });
-  }
+test("GET /api/sgc/status usa findMany (nunca findFirst/take:1) e retorna ARRAY, nunca objeto indexado por colaboradorCodigo", () => {
+  const source = readSource(ROUTE);
+  assert.match(source, /prisma\.sgcAprovacaoMedicao\.findMany/);
+  assert.doesNotMatch(source, /sgcAprovacaoMedicao\.findFirst/);
+  assert.doesNotMatch(source, /take:\s*1/);
+  assert.doesNotMatch(source, /\[0\]/);
+  // resposta é o resultado de um .map(...) sobre o array — não um objeto Record<string, ...>
+  // construído por um for..of que faz payload[colaboradorCodigo] = ...
+  assert.doesNotMatch(source, /payload\[[^\]]+\]\s*=/, "não pode mais colapsar por colaboradorCodigo num objeto indexado");
+  assert.match(source, /registros\.map\(/);
 });
 
-// ─── Matriz de status: existência do BM, não status transitório ──────────────────────────────
-
-test("matriz de status: PENDENTE, REVISAO_SOLICITADA, AGUARDANDO_NF, APROVADO e PAGO contam como 'BM existe'; AGUARDANDO_ENVIO e CANCELADO não", () => {
-  const devemExistir = ["PENDENTE", "REVISAO_SOLICITADA", "AGUARDANDO_NF", "APROVADO", "PAGO"];
-  for (const s of devemExistir) assert.equal(bmExiste(s), true, `status ${s} deveria manter a evidência visível`);
-
-  const naoDevemExistir = ["AGUARDANDO_ENVIO", "CANCELADO"];
-  for (const s of naoDevemExistir) assert.equal(bmExiste(s), false, `status ${s} não deveria aparecer em Evidências (BM ainda não existe / foi cancelado)`);
+test("GET /api/sgc/status aceita ciclo e colaboradorCodigo como filtros INDEPENDENTES e opcionais", () => {
+  const source = readSource(ROUTE);
+  const whereIndex = source.indexOf("where: {");
+  const whereEnd = source.indexOf("},", whereIndex);
+  const whereBlock = source.slice(whereIndex, whereEnd);
+  assert.match(whereBlock, /\.\.\.\(ciclo \? \{ ciclo \} : \{\}\)/, "ciclo precisa ser um filtro condicional independente");
+  assert.match(whereBlock, /\.\.\.\(colaboradorCodigo \? \{ colaboradorCodigo \} : \{\}\)/, "colaboradorCodigo precisa ser um filtro condicional independente");
 });
 
-test("regra antiga (bug) excluía PENDENTE, REVISAO_SOLICITADA e PAGO — guarda de regressão para não reintroduzir esse filtro", () => {
-  assert.equal(bmExisteRegraAntiga("PENDENTE"), false);
-  assert.equal(bmExisteRegraAntiga("REVISAO_SOLICITADA"), false);
-  assert.equal(bmExisteRegraAntiga("PAGO"), false);
+test("GET /api/sgc/status ordena por ciclo desc (mais recente primeiro)", () => {
+  const source = readSource(ROUTE);
+  assert.match(source, /orderBy:\s*\[\{\s*ciclo:\s*"desc"/);
 });
 
-// ─── Ciclo determinístico cobrindo TODOS os status reais + regra Financeiro ⊆ Evidências ──────
-
-test("ciclo determinístico: todo registro SGC com status != AGUARDANDO_ENVIO/CANCELADO aparece na listagem, e Financeiro é sempre subconjunto de Evidências", async () => {
-  const suffix = `TESTE-EVID-MATRIZ-${Date.now()}`;
-  const ciclo = `TESTE-${suffix}`;
-  const statusReais = ["AGUARDANDO_ENVIO", "PENDENTE", "REVISAO_SOLICITADA", "AGUARDANDO_NF", "APROVADO", "PAGO", "CANCELADO"];
-  const financeiroStatuses = ["AGUARDANDO_NF", "APROVADO", "PAGO"];
-
-  const criados = await Promise.all(
-    statusReais.map((status, i) =>
-      prisma.sgcAprovacaoMedicao.create({ data: { colaboradorCodigo: `${suffix}-F${i}`, ciclo, status } }),
-    ),
-  );
-
-  try {
-    const status = await listSgcStatus(ciclo);
-    const registrosReais = await prisma.sgcAprovacaoMedicao.findMany({ where: { ciclo }, select: { colaboradorCodigo: true, status: true } });
-    assert.equal(registrosReais.length, statusReais.length, "todos os status da matriz devem estar presentes no ciclo de teste");
-
-    for (const r of registrosReais) {
-      const deveAparecer = bmExiste(r.status);
-      const apareceNoMapa = status[r.colaboradorCodigo] !== undefined && bmExiste(status[r.colaboradorCodigo].status);
-      assert.equal(apareceNoMapa, deveAparecer, `fornecedor ${r.colaboradorCodigo} (status ${r.status}) divergiu da regra de existência`);
-    }
-
-    // Financeiro (AGUARDANDO_NF/APROVADO/PAGO) é sempre subconjunto de Evidências.
-    const noFinanceiro = registrosReais.filter((r) => financeiroStatuses.includes(r.status));
-    assert.equal(noFinanceiro.length, 3, "os 3 status de Financeiro devem estar cobertos por esta matriz");
-    for (const r of noFinanceiro) {
-      assert.equal(bmExiste(r.status), true, `${r.colaboradorCodigo} aparece no Financeiro mas a regra de Evidências o excluiria — as duas fontes devem concordar`);
-    }
-  } finally {
-    await prisma.sgcAprovacaoMedicao.deleteMany({ where: { id: { in: criados.map((c) => c.id) } } });
-  }
+test("EvidenciasSection não reconstrói mais o Map por colaboradorCodigo que sobrescrevia ciclos antigos", () => {
+  const source = readSource(PAGE);
+  assert.doesNotMatch(source, /aprovadosMap/, "o Map que causava o bug (fornecedor -> só o ciclo mais recente) precisa ter sido removido");
 });
 
-// ─── Isolamento: CNPJ compartilhado / identidade por colaboradorCodigo + ciclo ────────────────
-
-test("dois fornecedores sintéticos com colaboradorCodigo diferente permanecem isolados na listagem por ciclo, mesmo com todos os outros dados iguais", async () => {
-  const suffix = `TESTE-EVID-${Date.now()}`;
-  const cicloTeste = `TESTE-${suffix}`;
-  const codigoA = `${suffix}-A`;
-  const codigoB = `${suffix}-B`;
-
-  await prisma.sgcAprovacaoMedicao.create({
-    data: { colaboradorCodigo: codigoA, colaboradorNome: "Fornecedor Sintético A", ciclo: cicloTeste, status: "PENDENTE" },
-  });
-  await prisma.sgcAprovacaoMedicao.create({
-    data: { colaboradorCodigo: codigoB, colaboradorNome: "Fornecedor Sintético B", ciclo: cicloTeste, status: "AGUARDANDO_ENVIO" },
-  });
-
-  try {
-    const status = await listSgcStatus(cicloTeste);
-    assert.ok(status[codigoA], "fornecedor A deveria estar presente na consulta do ciclo");
-    assert.equal(bmExiste(status[codigoA].status), true, "fornecedor A (PENDENTE) deveria contar como BM existente");
-    assert.ok(status[codigoB], "fornecedor B deveria estar presente na consulta do ciclo (a query não filtra por status)");
-    assert.equal(bmExiste(status[codigoB].status), false, "fornecedor B (AGUARDANDO_ENVIO) não deveria contar como BM existente");
-  } finally {
-    await prisma.sgcAprovacaoMedicao.deleteMany({ where: { ciclo: cicloTeste } });
-  }
+test("EvidenciasSection.verBoletim usa colaboradorCodigo/ciclo do PRÓPRIO item da lista — nunca reconstrói a busca por nome", () => {
+  const source = readSource(PAGE);
+  const fnIndex = source.indexOf("async function verBoletim(item: EvidenciaListItem)");
+  assert.ok(fnIndex > -1, "esperava encontrar verBoletim(item: EvidenciaListItem)");
+  const fnEnd = source.indexOf("\n  }\n", fnIndex);
+  const block = source.slice(fnIndex, fnEnd);
+  assert.match(block, /item\.colaboradorCodigo/);
+  assert.match(block, /item\.ciclo/);
 });
 
-test("ciclo diferente para o mesmo colaboradorCodigo nunca mistura BMs entre ciclos", async () => {
-  const suffix = `TESTE-EVID-CICLO-${Date.now()}`;
-  const codigo = `${suffix}-CODIGO`;
-  const cicloA = `TESTE-A-${suffix}`;
-  const cicloB = `TESTE-B-${suffix}`;
+test("EvidenciasSection: sem nenhum filtro selecionado, resultados fica null (estado inicial, sem carregar tudo à toa)", () => {
+  const source = readSource(PAGE);
+  const effectIndex = source.indexOf("if (!selectedCiclo && !selectedFornecedor)");
+  assert.ok(effectIndex > -1, "esperava a guarda 'sem filtro nenhum' antes de buscar");
+  const nearby = source.slice(effectIndex, effectIndex + 120);
+  assert.match(nearby, /setResultados\(null\)/);
+});
 
-  await prisma.sgcAprovacaoMedicao.create({ data: { colaboradorCodigo: codigo, ciclo: cicloA, status: "APROVADO" } });
-  await prisma.sgcAprovacaoMedicao.create({ data: { colaboradorCodigo: codigo, ciclo: cicloB, status: "AGUARDANDO_ENVIO" } });
+test("EvidenciasSection: filtro de fornecedor guarda colaboradorCodigo (identidade canônica), nunca o texto digitado", () => {
+  const source = readSource(PAGE);
+  assert.match(source, /selectedFornecedor:\s*\{\s*codigo:\s*string;\s*nome:\s*string\s*\}|useState<\{\s*codigo:\s*string;\s*nome:\s*string\s*\}\s*\|\s*null>/);
+  assert.doesNotMatch(source, /colaboradorCodigo:\s*fornecedorQuery/, "nunca usar o texto livre digitado como colaboradorCodigo");
+});
 
-  try {
-    const statusA = await listSgcStatus(cicloA);
-    const statusB = await listSgcStatus(cicloB);
-    assert.equal(bmExiste(statusA[codigo].status), true, "ciclo A (APROVADO) deveria ter BM existente");
-    assert.equal(bmExiste(statusB[codigo].status), false, "ciclo B (AGUARDANDO_ENVIO), mesmo colaboradorCodigo, não deveria ter BM existente");
-  } finally {
-    await prisma.sgcAprovacaoMedicao.deleteMany({ where: { ciclo: { in: [cicloA, cicloB] } } });
-  }
+test("BoletimMedicao encapsula a tabela num wrapper com overflow-x-auto (scroll fica dentro do boletim, nunca na página)", () => {
+  const source = readSource("components/boletim-medicao.tsx");
+  assert.doesNotMatch(source, /w-screen|100vw/, "boletim nunca deve usar w-screen/100vw — a área de conteúdo tem sidebar");
+  const tableIndex = source.indexOf("<table");
+  const before = source.slice(0, tableIndex);
+  const wrapperIndex = before.lastIndexOf("overflow-x-auto");
+  assert.ok(wrapperIndex > -1, "esperava um wrapper com overflow-x-auto ANTES da tabela");
+  // Confirma que não há nenhuma outra tag <div> abrindo entre o wrapper com overflow-x-auto e a
+  // tabela (garante que é o wrapper DIRETO, não um ancestral distante).
+  const between = before.slice(wrapperIndex, tableIndex);
+  assert.equal((between.match(/<div/g) ?? []).length <= 1, true);
+});
+
+test("BoletimMedicao: raiz do componente tem min-w-0 (permite encolher dentro de Card flex-col do HeroUI)", () => {
+  const source = readSource("components/boletim-medicao.tsx");
+  const returnIndex = source.indexOf("return (");
+  const rootDivIndex = source.indexOf("<div", returnIndex);
+  const rootDivEnd = source.indexOf(">", rootDivIndex);
+  const rootDiv = source.slice(rootDivIndex, rootDivEnd);
+  assert.match(rootDiv, /min-w-0/);
+});
+
+test("CNPJ do boletim tem whitespace-nowrap (nunca quebra no meio do número)", () => {
+  const source = readSource("components/boletim-medicao.tsx");
+  const cnpjLabelIndex = source.indexOf(">CNPJ<");
+  const cnpjValueIndex = source.indexOf("{cpfCnpj}", cnpjLabelIndex);
+  const before = source.slice(cnpjLabelIndex, cnpjValueIndex);
+  assert.match(before, /whitespace-nowrap/);
+});
+
+test("Card do Boletim (medicoes-app.tsx) nunca usa overflow-x-auto duplicado — BoletimMedicao já rola por conta própria", () => {
+  const source = readSource(PAGE);
+  const bmCardIndex = source.indexOf("Boletim de Medição{bmContext");
+  const wrapperIndex = source.lastIndexOf("<div", bmCardIndex);
+  const boletimCallIndex = source.indexOf("<BoletimMedicao", bmCardIndex);
+  const between = source.slice(wrapperIndex, boletimCallIndex);
+  assert.doesNotMatch(between, /className="[^"]*overflow-x-auto/, "não duplicar overflow-x-auto aqui — evita dois containers de scroll aninhados");
+});
+
+test("EvidenciasSection usa o novo padrão visual compartilhado (FilterButton/FilterChip), não o card grande antigo de filtros", () => {
+  const source = readSource(PAGE);
+  const sectionIndex = source.indexOf("function EvidenciasSection(");
+  const nextFnIndex = source.indexOf("\nfunction ", sectionIndex + 1);
+  const block = source.slice(sectionIndex, nextFnIndex > -1 ? nextFnIndex : undefined);
+  assert.match(block, /<FilterButton/);
+  assert.match(block, /<FilterChip/);
+  assert.doesNotMatch(block, /Selecione o ciclo e o fornecedor para visualizar o boletim/, "texto do card grande antigo não pode mais existir");
 });

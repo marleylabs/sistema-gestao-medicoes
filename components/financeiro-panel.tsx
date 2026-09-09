@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, CheckCircle2, Download, FileText, RefreshCw, X } from "lucide-react";
-import { Badge, BlurValue, Button, Card, Input, Select, PageContainer, PageHeader } from "@/components/ui";
+import { Badge, BlurValue, Button, Card, FilterButton, FilterChip, Input, Select, PageContainer, PageHeader } from "@/components/ui";
 import { useBlur } from "@/components/providers";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
@@ -36,6 +36,13 @@ function statusInfo(status: string) {
   if (status === "APROVADO")     return { label: "Aguardando pgto.", badge: "brand"   as const, color: "text-[#2563EB]" };
   return                                { label: "Aguardando NF",   badge: "warning"  as const, color: "text-[#D97706]" };
 }
+
+// Mesmos rótulos já usados nas <option> do filtro de Status — reaproveitado só para o texto do chip.
+const STATUS_FILTRO_LABEL: Record<string, string> = {
+  AGUARDANDO_NF: "Aguardando NF",
+  APROVADO: "Aguardando pgto.",
+  PAGO: "Concluído",
+};
 
 function rowBg(status: string) {
   if (status === "PAGO")     return "border-[#BBF7D0] bg-[#F0FDF4]";
@@ -71,7 +78,7 @@ const FINANCEIRO_FLOW = [
 
 function KpiCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <Card className="p-4">
+    <Card className="min-w-0 p-4">
       <p className="text-stat-label uppercase tracking-wide text-[var(--muted-foreground)]">{label}</p>
       <p className={`text-stat-value mt-1 ${color}`}>{value}</p>
     </Card>
@@ -90,6 +97,16 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
   const [comprovanteFile, setComprovanteFile] = useState<File | null>(null);
   const [uploadError, setUploadError]     = useState<string | null>(null);
   const [filterStatus, setFilterStatus]   = useState("todos");
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const filtrosRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (filtrosRef.current && !filtrosRef.current.contains(e.target as Node)) setFiltrosAbertos(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (!selectedCiclo && ciclos[0]?.ciclo) {
@@ -181,12 +198,12 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
         title="Painel Financeiro"
         description="Acompanhe o fluxo de notas fiscais e pagamentos por ciclo."
         action={!exportOnly ? (
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button variant="secondary" onClick={exportarPagamentosConcluidos} disabled={!selectedCiclo || loading}>
+          <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto">
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={exportarPagamentosConcluidos} disabled={!selectedCiclo || loading}>
               <Download size={14} />
               Exportar concluídos
             </Button>
-            <Button variant="secondary" onClick={() => load()} disabled={loading}>
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={() => load()} disabled={loading}>
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
               Atualizar
             </Button>
@@ -221,41 +238,61 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
       </Card>
 
       {/* KPIs */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <KpiCard label="Aguardando NF"    value={nAguardandoNf}    color="text-[#D97706]" />
         <KpiCard label="Aguardando pgto." value={nAguardandoPgto}  color="text-[#2563EB]" />
         <KpiCard label="Concluído"        value={nConcluido}        color="text-[#16A34A]" />
       </div>
 
-      {/* Filtros */}
-      <Card className="p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="grid w-full gap-1.5 text-label text-[var(--muted-foreground)] sm:w-auto">
-            Ciclo
-            <Select value={selectedCiclo} onChange={(e) => setSelectedCiclo(e.target.value)} className="sm:min-w-[160px]">
-              {ciclos.map((c) => <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>)}
-            </Select>
-          </label>
-          <label className="grid w-full gap-1.5 text-label text-[var(--muted-foreground)] sm:w-auto">
-            Status
-            <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="sm:min-w-[180px]">
-              <option value="todos">Todos</option>
-              <option value="AGUARDANDO_NF">Aguardando NF</option>
-              <option value="APROVADO">Aguardando pgto.</option>
-              <option value="PAGO">Concluído</option>
-            </Select>
-          </label>
-          <div className="flex-1">
-            <p className="mb-1.5 text-label text-[var(--muted-foreground)]">Buscar</p>
-            <Input
-              placeholder="Nome, ID ou empresa..."
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              className="min-w-[220px]"
-            />
-          </div>
+      {/* Filtros — mesmo padrão de Evidências/Administrativo/Dashboard/Histórico: FilterButton +
+          popover + chips. Ciclo continua sempre exigido pela tela (não há "Todos os ciclos" aqui),
+          então não conta como filtro ativo nem vira chip removível — só Status é um filtro real
+          (Todos vs. específico). Buscar fica SEMPRE visível fora do popover (uso frequente). */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative shrink-0" ref={filtrosRef}>
+          <FilterButton count={filterStatus !== "todos" ? 1 : 0} onClick={() => setFiltrosAbertos((v) => !v)} />
+          {filtrosAbertos && (
+            <div className="absolute left-0 top-11 z-40 w-[280px] max-w-[90vw] rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
+              <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-[#9CA3AF]">Financeiro</p>
+              <label className="text-label grid gap-1.5 text-[var(--muted-foreground)]">
+                Ciclo
+                <Select value={selectedCiclo} onChange={(e) => setSelectedCiclo(e.target.value)}>
+                  {ciclos.map((c) => <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>)}
+                </Select>
+              </label>
+              <label className="text-label mt-3 grid gap-1.5 text-[var(--muted-foreground)]">
+                Status
+                <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+                  <option value="todos">Todos</option>
+                  <option value="AGUARDANDO_NF">Aguardando NF</option>
+                  <option value="APROVADO">Aguardando pgto.</option>
+                  <option value="PAGO">Concluído</option>
+                </Select>
+              </label>
+              <button
+                type="button"
+                onClick={() => setFilterStatus("todos")}
+                className="mt-4 text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+              >
+                Limpar filtros
+              </button>
+            </div>
+          )}
         </div>
-      </Card>
+
+        {filterStatus !== "todos" && (
+          <FilterChip label={`Status: ${STATUS_FILTRO_LABEL[filterStatus]}`} onRemove={() => setFilterStatus("todos")} />
+        )}
+
+        <div className="min-w-0 flex-1">
+          <Input
+            placeholder="Nome, ID ou empresa..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="w-full min-w-0"
+          />
+        </div>
+      </div>
 
       {/* Modal BM */}
       {(bmData || bmLoading || bmError) && (
@@ -286,8 +323,9 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
         </div>
       )}
 
-      {/* Tabela */}
-      <Card className="overflow-hidden">
+      {/* Tabela — mesmo padrão já aplicado em Evidências/Histórico: Card com min-w-0/max-w-full
+          (HeroUI Card é flex-col por padrão) + overflow-x-auto no wrapper DIRETO da tabela. */}
+      <Card className="w-full min-w-0 max-w-full overflow-hidden">
         {loading ? (
           <div className="flex items-center gap-3 p-6 text-sm text-[#555555]">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#2563EB]" />
@@ -299,8 +337,8 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
           </div>
         ) : (
           <>
-            <div className="overflow-auto">
-              <table className="w-full border-collapse">
+            <div className="w-full max-w-full overflow-x-auto">
+              <table className="w-full min-w-[1050px] border-collapse">
                 <thead>
                   <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB]">
                     {["Fornecedor", "CNPJ / CPF", "Razão Social", "Valor", "Boletim", "Nota Fiscal", "Recebida em", "Pagamento em", "Status", ""].map((h, i) => (
@@ -332,7 +370,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
                           <td className="px-3 py-2.5 text-right">
                             <button
                               onClick={() => openBm(item)}
-                              className="inline-flex items-center gap-1 rounded-lg bg-[#1F3864]/10 px-2 py-1 text-[10px] font-medium text-[#1F3864] hover:bg-[#1F3864]/20"
+                              className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-[#1F3864]/10 px-2 py-1 text-[10px] font-medium text-[#1F3864] hover:bg-[#1F3864]/20"
                             >
                               <FileText size={11} />
                               Ver BM

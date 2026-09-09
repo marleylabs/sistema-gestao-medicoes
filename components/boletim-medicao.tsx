@@ -207,17 +207,22 @@ export function BoletimMedicao({ data }: { data: BmData }) {
   }
 
   return (
-    <div>
+    // min-w-0 é o que permite este componente ENCOLHER dentro de qualquer ancestral flex/grid
+    // (Card do HeroUI é flex-col por padrão) — sem isso, a tabela abaixo (min-w-[800px]) empurra
+    // a largura de toda a página, não só do próprio boletim.
+    <div className="min-w-0 w-full max-w-full">
       {/* Print button */}
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-wrap justify-end gap-2">
         <Button variant="secondary" onClick={handlePrint}>
           <Printer size={14} />
           Gerar PDF / Imprimir
         </Button>
       </div>
 
-      {/* BM content */}
-      <div ref={printRef}>
+      {/* BM content — o scroll horizontal (quando a tabela não cabe) fica CONTIDO aqui, nunca na
+          página. printRef continua apontando para o mesmo conteúdo (só a tabela) — as classes do
+          wrapper não têm efeito na impressão, que usa só o <style> inline abaixo, não o Tailwind. */}
+      <div ref={printRef} className="w-full max-w-full overflow-x-auto">
         <table className="w-full min-w-[800px] border-collapse text-[10px]" style={{ fontFamily: "Arial, sans-serif" }}>
 
           {/* ── Linha 1: Título ── */}
@@ -236,7 +241,10 @@ export function BoletimMedicao({ data }: { data: BmData }) {
               <Th colSpan={1} className="bm-top-cell">Função</Th>
               <Td colSpan={1} className="bm-top-cell">{funcao}</Td>
               <Th colSpan={1} className="bm-top-cell">CNPJ</Th>
-              <Td colSpan={1} className="bm-top-cell">{cpfCnpj}</Td>
+              {/* whitespace-nowrap só aqui — CNPJ nunca deve quebrar no meio ("01.234.567/8910-\n11").
+                  A tabela já tem scroll horizontal próprio (ver wrapper acima); a largura da tabela
+                  é resolvida por scroll, não por quebrar o CNPJ. */}
+              <Td colSpan={1} className="bm-top-cell whitespace-nowrap">{cpfCnpj}</Td>
               <Th colSpan={1} className="bm-top-cell">Pagamento</Th>
               <Td bold className="bm-top-cell text-center">{mesLabel(ctx?.mesReferencia ?? null)}</Td>
             </tr>

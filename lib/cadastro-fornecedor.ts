@@ -943,6 +943,10 @@ export async function upsertCadastroFornecedor(
           senhaTemporaria: senha,
           primeiroLogin: true,
           perfil: "COLABORADOR",
+          // Mesmo e-mail já gravado em CadastroFornecedor/Profissional acima — sem isso,
+          // Usuario.email fica NULL para todo fornecedor novo, e qualquer ação que dependa dele
+          // (ex.: "Enviar primeiro acesso") fica indisponível mesmo com o e-mail certo já cadastrado.
+          email: encryptSensitive(row.email),
         },
       });
       usuarioCriado = { usuario, nome: row.responsavel, senha, email: row.email ?? null };
@@ -965,10 +969,25 @@ export async function upsertCadastroFornecedor(
           excluidoAt: null,
           perfil: "COLABORADOR",
           updatedAt: now,
+          // Mesma sincronização do caminho de criação (acima) — a exclusão administrativa já limpa
+          // este campo (ver deleteFornecedoresDefinitivamente), então uma reativação sem isso
+          // deixaria o Usuario permanentemente sem e-mail mesmo com CadastroFornecedor.email válido.
+          email: encryptSensitive(row.email),
           ...(senhaReativacao ? { senhaHash: await hashPassword(senhaReativacao), senhaTemporaria: senhaReativacao, primeiroLogin: true } : {}),
         },
       });
       usuarioReativado = { usuario: existingUser.usuario, nome: row.responsavel, senha: senhaReativacao, email: row.email ?? null };
+    } else {
+      // Usuario já existe e já está ATIVO (nem criação, nem reativação) — reimportar precisa
+      // sincronizar só o e-mail com o que a planilha trouxe agora, sem tocar primeiroLogin,
+      // senhaHash, perfil ou ativo (nenhuma dessas regras muda para quem já concluiu ou não o
+      // primeiro acesso). Sem este branch, um Usuario criado ANTES desta correção (email sempre
+      // NULL) nunca seria corrigido por reimportações futuras, porque nem `create` nem a
+      // reativação (acima) chegam a rodar para ele.
+      await tx.usuario.update({
+        where: { id: existingUser.id },
+        data: { email: encryptSensitive(row.email) },
+      });
     }
 
     const recreated = created && (reactivating || resolution.kind === "RECREATE_FROM_HISTORY");
