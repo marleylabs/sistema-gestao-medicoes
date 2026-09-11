@@ -521,9 +521,14 @@ def collect_import_collaborator_codes(
             continue
 
         professional_raw = extract(row, PROFESSIONAL_COLUMNS)
+        # add_code roda SEMPRE (antes do skip de DOCUMENTOS_AUXILIARES abaixo): mesmo quando a linha
+        # é corretamente ignorada por pertencer à aba errada para este fornecedor, o colaborador
+        # precisa continuar marcado como "presente nesta planilha" para que clear_imported_collaborators
+        # reconcilie o ciclo (remova Medicao antigas persistidas por um roteamento anterior incorreto).
+        # Sem isso, corrigir uses_documentos_auxiliares() não limpa dados já errados no ciclo.
+        add_code(professional_raw["nome"])
         if uses_documentos_auxiliares(professional_raw["nome"], canonical_codes, fonte_medicao_map) and not discount_only:
             continue
-        add_code(professional_raw["nome"])
 
     for _, row in bm_aux_df.iterrows():
         raw = extract(row, BM_AUX_COLUMNS)
@@ -1547,13 +1552,27 @@ def uses_documentos_auxiliares(value: Any, canonical_codes: dict[str, str], font
     """Substitui `is_bm_aux_only_collaborator` (checagem por nome hardcoded, removida) — resolve a
     IDENTIDADE CANÔNICA real (mesmo `canonical_codes` já usado em todo o pipeline, nunca CNPJ) e
     consulta `fonte_medicao_map`. Nunca decide por nome diretamente: `value` só existe para chegar
-    ao código canônico via `canonical_codes`."""
+    ao código canônico via `canonical_codes`.
+
+    Fallback fuzzy (mesma resolução de `matches_any_collaborator`/`same_person_name` já usada no
+    resto do pipeline, nunca uma segunda implementação): quando não há `Profissional.codigo` real
+    ligando `CadastroFornecedor` ao nome que aparece na planilha, a identidade cadastrada no Painel
+    Administrativo pode estar no nome completo (ex.: "CRISTIANO JEFERSON DA COSTA SILVA") enquanto a
+    planilha usa a forma abreviada (ex.: "CRISTIANO JEFERSON") — bug real encontrado nesta auditoria:
+    a comparação exata nunca batia, então `fonteMedicao = DOCUMENTOS_AUXILIARES` configurado no
+    cadastro era silenciosamente ignorado pelo ETL."""
     name = clean_text(value)
     if not name:
         return False
     normalized = normalize_for_compare(name)
     canonical = canonical_codes.get(normalized, name)
-    fonte = fonte_medicao_map.get(normalize_for_compare(canonical)) or fonte_medicao_map.get(normalized)
+    canonical_normalized = normalize_for_compare(canonical)
+    fonte = fonte_medicao_map.get(canonical_normalized) or fonte_medicao_map.get(normalized)
+    if fonte is None:
+        for key, mapped_fonte in fonte_medicao_map.items():
+            if same_person_name(canonical_normalized, key) or same_person_name(normalized, key):
+                fonte = mapped_fonte
+                break
     return fonte == "DOCUMENTOS_AUXILIARES"
 
 
