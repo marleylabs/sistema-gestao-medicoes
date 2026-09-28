@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-from ingest_medicoes import ingest
+from ingest_medicoes import InvalidMeasurementRowError, ingest
 
 DATABASE_URL = os.environ.get("ETL_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
 PORT = int(os.environ.get("ETL_SERVER_PORT", "4000"))
@@ -21,21 +21,25 @@ _running = False
 _started_at: datetime | None = None
 _last_result: dict | None = None
 _last_error: str | None = None
+_last_error_type: str | None = None
+_last_error_details: list[dict] = []
 _watchdog_timer: threading.Timer | None = None
 
 
 def _reset_running() -> None:
     """Chamado pelo watchdog se ETL ultrapassar o timeout."""
-    global _running, _last_error, _watchdog_timer
+    global _running, _last_error, _last_error_type, _last_error_details, _watchdog_timer
     with _lock:
         if _running:
             _running = False
             _last_error = f"ETL cancelado automaticamente após {ETL_TIMEOUT_SECONDS}s sem resposta."
+            _last_error_type = "internal"
+            _last_error_details = []
             _watchdog_timer = None
 
 
 def run_etl(file_bytes: bytes, ciclo: str | None) -> None:
-    global _running, _last_result, _last_error, _watchdog_timer
+    global _running, _last_result, _last_error, _last_error_type, _last_error_details, _watchdog_timer
     tmp_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
@@ -54,11 +58,24 @@ def run_etl(file_bytes: bytes, ciclo: str | None) -> None:
         )
         _last_result = result
         _last_error = None
+        _last_error_type = None
+        _last_error_details = []
+    except InvalidMeasurementRowError as error:
+        _last_error = str(error)
+        _last_error_type = "validation"
+        _last_error_details = error.invalid_rows
+        _last_result = None
+        print(json.dumps({"event": "etl_validation_rejected", **error.to_dict()}, ensure_ascii=False), flush=True)
     except ValueError as error:
         _last_error = str(error)
+        _last_error_type = "validation"
+        _last_error_details = []
         _last_result = None
     except Exception:
-        _last_error = traceback.format_exc()
+        print(traceback.format_exc(), flush=True)
+        _last_error = "Falha interna inesperada durante a importação. Nenhum dado foi alterado."
+        _last_error_type = "internal"
+        _last_error_details = []
         _last_result = None
     finally:
         if tmp_path:
@@ -128,17 +145,24 @@ class Handler(BaseHTTPRequestHandler):
             elapsed = None
             if _running and _started_at:
                 elapsed = int((datetime.now(timezone.utc) - _started_at).total_seconds())
-            self.send_json(200, {
+            status = 200
+            if not _running and _last_error_type == "validation":
+                status = 422
+            elif not _running and _last_error_type == "internal":
+                status = 500
+            self.send_json(status, {
                 "running": _running,
                 "elapsedSeconds": elapsed,
                 "lastResult": _last_result,
                 "lastError": _last_error,
+                "lastErrorType": _last_error_type,
+                "lastErrorDetails": _last_error_details,
             })
         else:
             self.send_json(404, {"error": "not found"})
 
     def do_POST(self):
-        global _running, _started_at, _watchdog_timer
+        global _running, _started_at, _last_result, _last_error, _last_error_type, _last_error_details, _watchdog_timer
         if self.path != "/run":
             self.send_json(404, {"error": "not found"})
             return
@@ -161,6 +185,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _running = True
             _started_at = datetime.now(timezone.utc)
+            _last_result = None
+            _last_error = None
+            _last_error_type = None
+            _last_error_details = []
             # Watchdog: reseta _running se ETL travar além do timeout
             _watchdog_timer = threading.Timer(ETL_TIMEOUT_SECONDS, _reset_running)
             _watchdog_timer.daemon = True

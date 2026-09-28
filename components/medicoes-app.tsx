@@ -1188,7 +1188,32 @@ function SgcReviewModal({
 
 // ─── ImportarPlanilhaSection ──────────────────────────────────────────────────
 
-type EtlStatus = { running: boolean; lastResult: Record<string, number> | null; lastError: string | null };
+type EtlInvalidRow = {
+  origin: string;
+  excelRow: number | null;
+  numeroDocumento: string | null;
+  numeroMedicao: string | null;
+  ciclo: string;
+  negativeFields: Record<string, string>;
+};
+
+type EtlStatus = {
+  running: boolean;
+  lastResult: Record<string, number> | null;
+  lastError: string | null;
+  lastErrorType?: "validation" | "internal" | null;
+  lastErrorDetails?: EtlInvalidRow[];
+};
+
+const negativeMeasurementFieldLabels: Record<string, string> = {
+  quantidade: "Quantidade",
+  valor_total: "Valor total",
+  valor_medicao: "Valor da medição",
+  equivalente_a1_horas: "Equivalente A1/horas",
+  medido_horas: "Medido em horas",
+  valor_bruto: "Valor bruto",
+  valor_reajuste: "Valor do reajuste",
+};
 
 function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[]; onImported: () => void }) {
   const [file, setFile]         = useState<File | null>(null);
@@ -1202,7 +1227,7 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/etl");
-      if (res.ok) setStatus(await res.json());
+      if (res.ok || res.status === 422 || res.status === 500) setStatus(await res.json());
     } catch {}
   }, []);
 
@@ -1215,13 +1240,18 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
     if (status?.running) {
       pollingRef.current = setInterval(async () => {
         const res = await fetch("/api/admin/etl");
-        if (!res.ok) return;
+        if (!res.ok && res.status !== 422 && res.status !== 500) return;
         const data: EtlStatus = await res.json();
         setStatus(data);
         if (!data.running) {
           clearInterval(pollingRef.current!);
           if (data.lastError) {
-            setMsg({ type: "error", text: "ETL encerrou com erro. Veja os detalhes abaixo." });
+            setMsg({
+              type: "error",
+              text: data.lastErrorType === "validation"
+                ? "Importação bloqueada. Revise as linhas indicadas abaixo; nenhum dado foi alterado."
+                : "A importação encerrou com uma falha interna. Nenhum dado foi alterado.",
+            });
           } else {
             setMsg({ type: "success", text: "Importação concluída com sucesso!" });
             onImported();
@@ -1399,7 +1429,29 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
           </div>
           <div className="p-5">
             {status.lastError ? (
-              <pre className="overflow-auto rounded-lg bg-[#FEF2F2] p-3 text-xs text-[#B91C1C] whitespace-pre-wrap">{status.lastError}</pre>
+              <div className="grid gap-3 rounded-lg bg-[#FEF2F2] p-3 text-xs text-[#B91C1C]">
+                <p className="whitespace-pre-line font-medium">
+                  {status.lastErrorDetails?.length
+                    ? `Importação bloqueada. ${status.lastErrorDetails.length} medição(ões) com valores negativos foram encontradas. Revise as linhas abaixo. Nenhum dado foi alterado.`
+                    : status.lastError}
+                </p>
+                {!!status.lastErrorDetails?.length && (
+                  <ol className="grid list-decimal gap-2 pl-5">
+                    {status.lastErrorDetails.map((row, index) => (
+                      <li key={`${row.origin}-${row.excelRow ?? index}-${row.numeroDocumento ?? index}`}>
+                        <span className="font-semibold">
+                          {row.origin}{row.excelRow ? `, linha ${row.excelRow}` : ""} — {row.numeroDocumento ?? "Documento não informado"}
+                        </span>
+                        <span className="block">
+                          {Object.entries(row.negativeFields)
+                            .map(([field, value]) => `${negativeMeasurementFieldLabels[field] ?? field}: ${value}`)
+                            .join("; ")}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
             ) : status.lastResult ? (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {Object.entries(status.lastResult).map(([key, val]) => (

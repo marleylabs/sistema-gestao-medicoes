@@ -161,6 +161,70 @@ BM_AUX_COLUMNS = {
     "valor_medicao": ["VALOR DA MEDIÇÃO", "VALOR DA MEDICAO", "Valor De Medição"],
 }
 
+BLOCKING_NEGATIVE_MEASUREMENT_FIELDS = ("quantidade", "valor_total", "valor_medicao")
+RELATED_NEGATIVE_MEASUREMENT_FIELDS = (
+    "equivalente_a1_horas",
+    "medido_horas",
+    "valor_bruto",
+    "valor_reajuste",
+)
+MEASUREMENT_FIELD_LABELS = {
+    "quantidade": "Quantidade",
+    "valor_total": "Valor total",
+    "valor_medicao": "Valor da medição",
+    "equivalente_a1_horas": "Equivalente A1/horas",
+    "medido_horas": "Medido em horas",
+    "valor_bruto": "Valor bruto",
+    "valor_reajuste": "Valor do reajuste",
+}
+
+
+class InvalidMeasurementRowError(ValueError):
+    """Erro de conteúdo da planilha, seguro para ser apresentado ao usuário."""
+
+    code = "INVALID_MEASUREMENT_ROWS"
+
+    def __init__(self, invalid_rows: list[dict[str, Any]]):
+        self.invalid_rows = invalid_rows
+        super().__init__(self._build_message())
+
+    def _build_message(self) -> str:
+        count = len(self.invalid_rows)
+        lines = [
+            "Importação bloqueada.",
+            (
+                "Foi encontrada 1 medição com valores negativos incompatíveis com o modelo atual."
+                if count == 1
+                else f"Foram encontradas {count} medições com valores negativos incompatíveis com o modelo atual."
+            ),
+        ]
+        for position, row in enumerate(self.invalid_rows, start=1):
+            location = row["origin"]
+            if row.get("excelRow") is not None:
+                location += f", linha {row['excelRow']}"
+            negative_values = ", ".join(
+                f"{MEASUREMENT_FIELD_LABELS.get(field, field)}: {value}"
+                for field, value in row["negativeFields"].items()
+            )
+            lines.append(
+                f"{position}. {location} — Documento {row.get('numeroDocumento') or 'não informado'}"
+                f" — {negative_values}"
+            )
+        lines.extend(
+            [
+                "Revise as linhas na planilha antes de realizar uma nova importação.",
+                "Nenhum dado foi alterado.",
+            ]
+        )
+        return "\n".join(lines)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "error": str(self),
+            "invalidRows": self.invalid_rows,
+        }
+
 
 def is_valid_measurement_key(numero_medicao: str | None, codigo_projeto: str | None) -> bool:
     if not numero_medicao or not codigo_projeto:
@@ -1020,7 +1084,7 @@ def read_excel_table(excel_path: Path, sheet_name: str, table_name: str | list[s
         workbook.close()
 
 
-def dataframe_from_excel_rows(rows: list[list[Any]]) -> pd.DataFrame:
+def dataframe_from_excel_rows(rows: list[list[Any]], first_excel_row: int | None = None) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame()
 
@@ -1029,7 +1093,16 @@ def dataframe_from_excel_rows(rows: list[list[Any]]) -> pd.DataFrame:
         return pd.DataFrame(columns=headers)
 
     df = pd.DataFrame(rows[1:], columns=headers)
-    return df.dropna(how="all").reset_index(drop=True)
+    populated = ~df.isna().all(axis=1)
+    excel_rows = [
+        first_excel_row + offset + 1
+        for offset, keep in enumerate(populated.tolist())
+        if keep
+    ] if first_excel_row is not None else []
+    df = df.loc[populated].reset_index(drop=True)
+    if excel_rows:
+        df.attrs["excel_row_numbers"] = excel_rows
+    return df
 
 
 def read_excel_header_region(
@@ -1091,7 +1164,7 @@ def read_excel_header_region(
             [sheet.cell(row_number, column).value for column in range(min_col, max_col + 1)]
             for row_number in range(header_row, last_row + 1)
         ]
-        return dataframe_from_excel_rows(rows)
+        return dataframe_from_excel_rows(rows, first_excel_row=header_row)
     finally:
         workbook.close()
 
@@ -1220,7 +1293,10 @@ def normalize_measurements_layout(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     normalized_rows = [normalize_positioned_measurement_row(row) for _, row in df.iterrows()]
-    return pd.DataFrame(normalized_rows).dropna(how="all").reset_index(drop=True)
+    normalized = pd.DataFrame(normalized_rows).dropna(how="all").reset_index(drop=True)
+    if df.attrs.get("excel_row_numbers"):
+        normalized.attrs["excel_row_numbers"] = df.attrs["excel_row_numbers"]
+    return normalized
 
 
 def cell_at(row: pd.Series, position: int) -> Any:
@@ -1977,6 +2053,69 @@ def build_measurement(row: pd.Series) -> dict[str, Any]:
     return payload
 
 
+def negative_measurement_fields(measurement: dict[str, Any]) -> dict[str, str]:
+    """Retorna todos os valores negativos úteis ao diagnóstico, sem mudar seus sinais."""
+    fields = (*BLOCKING_NEGATIVE_MEASUREMENT_FIELDS, *RELATED_NEGATIVE_MEASUREMENT_FIELDS)
+    return {
+        field: str(measurement[field])
+        for field in fields
+        if measurement.get(field) is not None and measurement[field] < 0
+    }
+
+
+def prevalidate_normal_measurements(
+    df: pd.DataFrame,
+    sheet_name: str,
+    ciclo: str,
+    canonical_codes: dict[str, str],
+    fonte_medicao_map: dict[str, str],
+) -> None:
+    """Coleta todas as medições normais incompatíveis antes de qualquer escrita."""
+    invalid_rows: list[dict[str, Any]] = []
+    excel_rows = df.attrs.get("excel_row_numbers", [])
+
+    for position, (_, row) in enumerate(df.iterrows()):
+        project_raw = extract(row, PROJECT_COLUMNS)
+        codigo_projeto = clean_text(project_raw["codigo_projeto"])
+        numero_medicao = clean_text(first_value(row, MEASUREMENT_COLUMNS["numero_medicao"]))
+        if not is_valid_measurement_key(numero_medicao, codigo_projeto):
+            # Linhas exclusivamente de desconto seguem o fluxo oficial próprio.
+            continue
+
+        professional_raw = extract(row, PROFESSIONAL_COLUMNS)
+        if uses_documentos_auxiliares(professional_raw["nome"], canonical_codes, fonte_medicao_map):
+            continue
+
+        measurement = build_measurement(row)
+        blocking_fields = {
+            field: str(measurement[field])
+            for field in BLOCKING_NEGATIVE_MEASUREMENT_FIELDS
+            if measurement.get(field) is not None and measurement[field] < 0
+        }
+        if not blocking_fields:
+            continue
+
+        invalid_rows.append(
+            {
+                "origin": sheet_name,
+                "excelRow": excel_rows[position] if position < len(excel_rows) else None,
+                "numeroMedicao": measurement.get("numero_medicao"),
+                "ciclo": ciclo,
+                "numeroDocumento": measurement.get("numero_documento"),
+                "evidencia": measurement.get("evidencia"),
+                "responsavel": clean_text(professional_raw["nome"]),
+                "quantidade": str(measurement["quantidade"]),
+                "valorTotal": str(measurement["valor_total"]),
+                "valorMedicao": str(measurement["valor_medicao"]),
+                "blockingFields": blocking_fields,
+                "negativeFields": negative_measurement_fields(measurement),
+            }
+        )
+
+    if invalid_rows:
+        raise InvalidMeasurementRowError(invalid_rows)
+
+
 def build_discount_measurement(row: pd.Series, base_measurement: dict[str, Any], ciclo: str) -> dict[str, Any] | None:
     raw_measurement = extract(row, MEASUREMENT_COLUMNS)
     valor_desconto = clean_decimal(raw_measurement["valor_desconto"], default=None)
@@ -2122,6 +2261,17 @@ def ingest(
     )
     ciclo_efetivo = payment_context["ciclo"]
     affected_collaborator_codes = collect_import_collaborator_codes(df, bm_aux_df, canonical_codes, fonte_medicao_map, ciclo_efetivo)
+
+    # Depois da normalização/classificação da origem e antes de engine.begin():
+    # uma planilha inválida não inicia full_refresh nem upserts.
+    prevalidate_normal_measurements(
+        df,
+        sheet_name,
+        ciclo_efetivo,
+        canonical_codes,
+        fonte_medicao_map,
+    )
+
     base_loaded = 0
     payment_status_loaded = 0
     payment_items_loaded = 0
