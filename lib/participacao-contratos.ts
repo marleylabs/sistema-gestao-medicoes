@@ -1,5 +1,6 @@
 import "server-only";
 
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { calcularValorMedido } from "@/lib/mapa-pagamento";
 import {
@@ -84,12 +85,27 @@ async function resolverContratosCanonicos(nomesEmOrdem: string[]): Promise<Map<s
     let resumo = porChave.get(key);
     if (!resumo) {
       const nome = normalizeContratoNome(nomeBruto);
-      const criado = await prisma.contrato.upsert({
-        where: { nome },
-        create: { nome, ativo: true },
-        update: {},
-        select: { id: true, nome: true },
-      });
+      let criado: ContratoResumo;
+      try {
+        criado = await prisma.contrato.upsert({
+          where: { nome },
+          create: { nome, ativo: true },
+          update: {},
+          select: { id: true, nome: true },
+        });
+      } catch (error) {
+        // Dashboard e Mapa são carregados em paralelo. Ambos podem ler a lista antes de o outro
+        // registrar o mesmo contrato; o segundo upsert pode então receber P2002. A unicidade é a
+        // proteção correta: relê exatamente o registro vencedor, sem inventar nome ou remover a
+        // constraint. Qualquer outro erro continua subindo normalmente.
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
+        const concorrente = await prisma.contrato.findUnique({
+          where: { nome },
+          select: { id: true, nome: true },
+        });
+        if (!concorrente) throw error;
+        criado = concorrente;
+      }
       resumo = { id: criado.id, nome: criado.nome };
       porChave.set(key, resumo);
     }
