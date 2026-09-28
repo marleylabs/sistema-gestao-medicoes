@@ -97,15 +97,11 @@ async function main() {
   // Mesma consulta e mesma resolução de identidade de `validateFornecedorForNfUpload`
   // (lib/cadastro-fornecedor.ts) — `selectCadastroForAuthenticatedUser` é importado real, não
   // reimplementado.
-  const loginCnpj = onlyDigits(colaboradorCodigo);
   const cadastros = await prisma.cadastroFornecedor.findMany({
     where: {
       OR: [
         { colaboradorCodigo },
         ...(nome ? [{ responsavel: { equals: nome, mode: "insensitive" as const } }] : []),
-        ...(loginCnpj.length === 14 && nome
-          ? [{ cnpjNormalizado: loginCnpj, responsavel: { equals: nome, mode: "insensitive" as const } }]
-          : []),
       ],
     },
     orderBy: { updatedAt: "desc" },
@@ -142,12 +138,12 @@ async function main() {
     },
     profissionalVinculado: profissional
       ? { encontrado: true, cnpjConsistenteComCadastro: cnpjConsistente, cnpjProfissional: profissionalCnpjDigits ? formatCnpj(profissionalCnpjDigits) : null }
-      : { encontrado: false, observacao: "Sem Profissional correspondente — upload real seria bloqueado antes mesmo de ler o PDF (\"cadastro administrativo sem profissional correspondente\")." },
+      : { encontrado: false, observacao: "Sem Profissional correspondente. Informação apenas diagnóstica: este dado não bloqueia o upload da NF." },
     parser: {
       bibliotecaExtracaoTexto: "pdf-parse (classe PDFParse, método getText())",
-      labelsTomador: ["TOMADOR DO SERVI[CÇ]O (regex, com/sem acento)", "DADOS DO TOMADOR"],
+      labelsTomador: ["TOMADOR DO SERVI[CÇ]O (regex, com/sem acento)", "DADOS DO TOMADOR", "TOMADOR / ADQUIRENTE"],
       labelsFimSecaoTomador: ["INTERMEDI[AÁ]RIO DO SERVI[CÇ]O", "SERVI[CÇ]O PRESTADO", "DISCRIMINA[CÇ][AÃ]O", "VALOR TOTAL"],
-      labelsPrestador: ["EMITENTE DA NFS?-?E (regex)", "PRESTADOR DO SERVI[CÇ]O"],
+      labelsPrestador: ["EMITENTE DA NFS?-?E (regex)", "PRESTADOR DO SERVI[CÇ]O", "PRESTADOR / FORNECEDOR"],
       labelsFimSecaoPrestador: ["TOMADOR DO SERVI[CÇ]O", "INTERMEDI[AÁ]RIO DO SERVI[CÇ]O", "SERVI[CÇ]O PRESTADO"],
       labelsRazaoSocial: ["nome\\s*/\\s*nome\\s*empresarial", "razao\\s*social", "razão\\s*social", "prestador"],
       regexCnpjFormatado: "\\b\\d{2}\\.\\d{3}\\.\\d{3}\\/\\d{4}-\\d{2}\\b",
@@ -186,10 +182,10 @@ async function main() {
   console.log("\n=== AUTOTESTE — extractPrestador()/extractTomador() reais contra o texto acima ===");
   console.log("Prestador detectado:", detectedPrestador);
   console.log("  CNPJ bate com esperado?", detectedPrestador.cnpj === cadastro.cnpjNormalizado);
-  console.log("  Razão social bate (companyMatches real)?", companyMatches(detectedPrestador.razaoSocial, cadastro.razaoSocial));
+  console.log("  Razão social bate (diagnóstico, não bloqueia)?", companyMatches(detectedPrestador.razaoSocial, cadastro.razaoSocial));
   console.log("Tomador detectado:", detectedTomador);
   console.log("  CNPJ bate com esperado?", detectedTomador.cnpj === EXPECTED_TOMADOR_CNPJ);
-  console.log("  Razão social bate (companyMatches real)?", companyMatches(detectedTomador.razaoSocial, EXPECTED_TOMADOR_RAZAO_SOCIAL));
+  console.log("  Razão social bate (diagnóstico, não bloqueia)?", companyMatches(detectedTomador.razaoSocial, EXPECTED_TOMADOR_RAZAO_SOCIAL));
 
   if (pdfPath) {
     console.log(`\n=== TESTE CONTRA PDF REAL: ${pdfPath} ===`);
@@ -198,7 +194,6 @@ async function main() {
       buffer,
       mimeType: "application/pdf",
       expectedCnpj: cadastro.cnpjNormalizado,
-      expectedRazaoSocial: cadastro.razaoSocial,
     });
     console.log(JSON.stringify(result, null, 2));
   }

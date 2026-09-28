@@ -8,24 +8,22 @@ OUT = Path(__file__).parent / "fixtures" / "nf"
 OUT.mkdir(parents=True, exist_ok=True)
 
 
-def make_pdf(name: str, prestador_cnpj: str, prestador_razao: str, tomador_cnpj: str = "04.892.580/0001-20", tomador_razao: str = "PROJETA CONSULTORIA E SERVICOS LTDA", multiline: bool = False) -> None:
+def make_pdf(name: str, prestador_cnpj: str | None, prestador_razao: str, tomador_cnpj: str | None = "04.892.580/0001-20", tomador_razao: str = "PROJETA CONSULTORIA E SERVICOS LTDA", multiline: bool = False, valor: str | None = None, include_prestador: bool = True, include_tomador: bool = True) -> None:
     pdf = canvas.Canvas(str(OUT / name), pagesize=A4, pageCompression=0)
     pdf.setTitle("Fixture NF anonima")
     pdf.setFont("Helvetica", 11)
-    lines = [
-        "PRESTADOR DO SERVICO",
-        "Nome / Nome Empresarial",
-        prestador_razao,
-        "CNPJ",
-        prestador_cnpj,
-        "TOMADOR DO SERVICO",
-        "Nome / Nome Empresarial",
-        tomador_razao,
-        "CNPJ",
-        tomador_cnpj,
-        "SERVICO PRESTADO",
-        "Documento sintetico sem valor fiscal para teste automatizado.",
-    ]
+    lines = []
+    if include_prestador:
+        lines.extend(["PRESTADOR DO SERVICO", "Nome / Nome Empresarial", prestador_razao, "CNPJ"])
+        if prestador_cnpj:
+            lines.append(prestador_cnpj)
+    if include_tomador:
+        lines.extend(["TOMADOR DO SERVICO", "Nome / Nome Empresarial", tomador_razao, "CNPJ"])
+        if tomador_cnpj:
+            lines.append(tomador_cnpj)
+    lines.extend(["SERVICO PRESTADO", "Documento sintetico sem valor fiscal para teste automatizado."])
+    if valor:
+        lines.append(f"Valor total: {valor}")
     y = 790
     for line in lines:
         if multiline and line == prestador_razao:
@@ -45,6 +43,19 @@ make_pdf("cnpj-errado.pdf", "99.999.999/0001-99", "TESTE B SERVICOS LTDA")
 make_pdf("razao-errada.pdf", "11.222.333/0001-81", "OUTRA EMPRESA LTDA")
 make_pdf("tomador-errado.pdf", "11.222.333/0001-81", "TESTE B SERVICOS LTDA", "99.999.999/0001-99", "OUTRO TOMADOR LTDA")
 make_pdf("quebras-alternativas.pdf", "11.222.333/0001-81", "TESTE B SERVICOS LTDA", multiline=True)
+make_pdf("ambos-errados.pdf", "99.999.999/0001-99", "OUTRO FORNECEDOR", "88.888.888/0001-88", "OUTRO TOMADOR")
+make_pdf("prestador-ausente.pdf", None, "QUALQUER FORNECEDOR")
+make_pdf("tomador-ausente.pdf", "11.222.333/0001-81", "QUALQUER FORNECEDOR", None, "QUALQUER TOMADOR")
+make_pdf("secao-prestador-ausente.pdf", None, "", include_prestador=False)
+make_pdf("secao-tomador-ausente.pdf", "11.222.333/0001-81", "QUALQUER FORNECEDOR", include_tomador=False)
+make_pdf(
+    "cnpjs-sem-mascara-nomes-e-valor-diferentes.pdf",
+    "11222333000181",
+    "NOME DO FORNECEDOR TOTALMENTE DIFERENTE",
+    "04892580000120",
+    "NOME DO TOMADOR TOTALMENTE DIFERENTE",
+    valor="R$ 999.999,99",
+)
 
 
 def make_pdf_cnpj_teste(name: str, cnpj: str, prestador_razao: str) -> None:

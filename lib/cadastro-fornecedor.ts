@@ -1251,15 +1251,11 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
 }
 
 export async function validateFornecedorForNfUpload(colaboradorCodigo: string, usuarioNome?: string | null) {
-  const loginCnpj = normalizeCnpjDigits(colaboradorCodigo);
   const cadastros = await prisma.cadastroFornecedor.findMany({
     where: {
       OR: [
         { colaboradorCodigo },
         ...(usuarioNome ? [{ responsavel: { equals: usuarioNome, mode: "insensitive" as const } }] : []),
-        ...(loginCnpj.length === 14 && usuarioNome
-          ? [{ cnpjNormalizado: loginCnpj, responsavel: { equals: usuarioNome, mode: "insensitive" as const } }]
-          : []),
       ],
     },
     orderBy: { updatedAt: "desc" },
@@ -1268,32 +1264,10 @@ export async function validateFornecedorForNfUpload(colaboradorCodigo: string, u
   const cadastro = selected.cadastro;
   if (!cadastro) return { ok: false, error: selected.error, cadastro: null };
 
-  const codigoProfissional = cadastro.colaboradorCodigo;
-  if (!codigoProfissional) {
-    return { ok: false, error: "Upload bloqueado: cadastro administrativo sem código de colaborador.", cadastro };
-  }
-  const profissional = await prisma.profissional.findUnique({
-    where: { codigo: codigoProfissional, deletedAt: null },
-    select: { cnpj: true, nomeCompleto: true, nome: true },
-  });
-  if (!profissional) {
-    return { ok: false, error: "Upload bloqueado: cadastro administrativo sem profissional correspondente.", cadastro };
-  }
-  const profissionalCnpj = onlyDigits(decryptSensitive(profissional?.cnpj));
-
-  if (profissionalCnpj.length !== 14 || profissionalCnpj !== cadastro.cnpjNormalizado) {
+  if (normalizeCnpjDigits(cadastro.cnpjNormalizado).length !== 14) {
     return {
       ok: false,
-      error: "Upload bloqueado por divergência de CNPJ entre a medição e o cadastro administrativo. Entre em contato com a empresa pelos canais oficiais de atendimento via WhatsApp.",
-      cadastro,
-    };
-  }
-
-  const validade = cadastroStatusVisual(cadastro.final, cadastro.statusCadastro);
-  if (validade.dias !== null && validade.dias < 0) {
-    return {
-      ok: false,
-      error: "Upload bloqueado: cadastro do fornecedor vencido. Entre em contato com a empresa pelos canais oficiais de atendimento via WhatsApp.",
+      error: "Não foi possível identificar o CNPJ cadastrado do fornecedor.",
       cadastro,
     };
   }

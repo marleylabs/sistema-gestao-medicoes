@@ -3,7 +3,6 @@ import { getCurrentUser } from "@/lib/auth";
 import { detectAllowedDocumentMime, safeDownloadName } from "@/lib/file-security";
 import { prisma } from "@/lib/prisma";
 import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
-import { toColaboradorCodigo } from "@/lib/usuario-format";
 import { validateFornecedorForNfUpload } from "@/lib/cadastro-fornecedor";
 import { validateNfDocumentAgainstCadastro } from "@/lib/nf-document-validation";
 import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
@@ -17,7 +16,6 @@ export async function POST(request: NextRequest) {
   if (user.perfil !== "COLABORADOR") return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
 
   const cicloAtivo = await getCicloAtivoMedicao();
-  const colaboradorCodigo = toColaboradorCodigo(user.usuario);
   const codigoAliases = await getColaboradorCodigoAliases(user.usuario, cicloAtivo);
   const sgc = await prisma.sgcAprovacaoMedicao.findFirst({
     where: { colaboradorCodigo: { in: codigoAliases }, ciclo: cicloAtivo },
@@ -29,7 +27,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Medição não está aguardando NF." }, { status: 409 });
   }
 
-  const cadastroValidation = await validateFornecedorForNfUpload(colaboradorCodigo, user.nome);
+  const cadastroValidation = await validateFornecedorForNfUpload(sgc.colaboradorCodigo, user.nome);
   if (!cadastroValidation.ok || !cadastroValidation.cadastro) {
     return NextResponse.json({ error: cadastroValidation.error }, { status: 409 });
   }
@@ -54,7 +52,6 @@ export async function POST(request: NextRequest) {
     buffer,
     mimeType: detectedMime,
     expectedCnpj: cadastroValidation.cadastro.cnpjNormalizado,
-    expectedRazaoSocial: cadastroValidation.cadastro.razaoSocial,
   });
   if (!nfValidation.ok) {
     return NextResponse.json({ error: nfValidation.error }, { status: 409 });

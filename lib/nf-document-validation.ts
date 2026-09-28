@@ -1,6 +1,6 @@
 import { PDFParse } from "pdf-parse";
 
-function onlyDigits(value: string | number | null | undefined) {
+export function normalizeCnpj(value: string | number | null | undefined) {
   return value === null || value === undefined ? "" : String(value).replace(/\D/g, "");
 }
 
@@ -18,7 +18,6 @@ type ValidateNfDocumentInput = {
   buffer: Buffer;
   mimeType: string;
   expectedCnpj: string;
-  expectedRazaoSocial: string;
 };
 
 type ValidateNfDocumentResult =
@@ -95,7 +94,9 @@ function sectionBetween(text: string, startPatterns: RegExp[], endPatterns: RegE
     })
     .filter((index) => index >= 0);
 
-  if (!startIndexes.length) return text;
+  // Sem cabeçalho da parte, não vasculhar o documento inteiro: isso poderia atribuir ao tomador
+  // o CNPJ do prestador (ou vice-versa), exatamente o falso positivo que a extração por seção evita.
+  if (!startIndexes.length) return "";
   const start = Math.min(...startIndexes);
   const rest = text.slice(start);
   const endIndexes = endPatterns
@@ -111,7 +112,7 @@ function sectionBetween(text: string, startPatterns: RegExp[], endPatterns: RegE
 
 export function extractCnpj(text: string) {
   const match = text.match(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/) ?? text.match(/\b\d{14}\b/);
-  return match ? onlyDigits(match[0]) : null;
+  return match ? normalizeCnpj(match[0]) : null;
 }
 
 function extractRazaoSocial(lines: string[]) {
@@ -141,8 +142,8 @@ function extractRazaoSocial(lines: string[]) {
 export function extractPrestador(text: string): NfParty {
   const prestadorSection = sectionBetween(
     text,
-    [/EMITENTE\s*DA\s*NFS?-?E/i, /PRESTADOR\s*DO\s*SERVI[CÇ]O/i],
-    [/TOMADOR\s*DO\s*SERVI[CÇ]O/i, /INTERMEDI[AÁ]RIO\s*DO\s*SERVI[CÇ]O/i, /SERVI[CÇ]O\s*PRESTADO/i],
+    [/PRESTADOR\s*\/\s*FORNECEDOR/i, /EMITENTE\s*DA\s*NFS?-?E/i, /PRESTADOR\s*DO\s*SERVI[CÇ]O/i],
+    [/TOMADOR\s*\/\s*ADQUIRENTE/i, /TOMADOR\s*DO\s*SERVI[CÇ]O/i, /INTERMEDI[AÁ]RIO\s*DO\s*SERVI[CÇ]O/i, /SERVI[CÇ]O\s*PRESTADO/i],
   );
   const lines = linesFromText(prestadorSection);
   return {
@@ -154,7 +155,7 @@ export function extractPrestador(text: string): NfParty {
 export function extractTomador(text: string): NfParty {
   const tomadorSection = sectionBetween(
     text,
-    [/TOMADOR\s*DO\s*SERVI[CÇ]O/i, /DADOS\s*DO\s*TOMADOR/i],
+    [/TOMADOR\s*\/\s*ADQUIRENTE/i, /TOMADOR\s*DO\s*SERVI[CÇ]O/i, /DADOS\s*DO\s*TOMADOR/i],
     [/INTERMEDI[AÁ]RIO\s*DO\s*SERVI[CÇ]O/i, /SERVI[CÇ]O\s*PRESTADO/i, /DISCRIMINA[CÇ][AÃ]O/i, /VALOR\s*TOTAL/i],
   );
   const lines = linesFromText(tomadorSection);
@@ -196,72 +197,21 @@ export async function validateNfDocumentAgainstCadastro(input: ValidateNfDocumen
   const detectedPrestador = extractPrestador(text);
   const detectedTomador = extractTomador(text);
   const detected = { prestador: detectedPrestador, tomador: detectedTomador };
-  const expectedCnpj = onlyDigits(input.expectedCnpj);
+  const expectedCnpj = normalizeCnpj(input.expectedCnpj);
+  const errors: string[] = [];
+
   if (!detectedPrestador.cnpj) {
-    return {
-      ok: false,
-      error: "Upload bloqueado: não foi possível localizar o CNPJ do prestador na NF.",
-      detected,
-    };
-  }
-
-  if (detectedPrestador.cnpj !== expectedCnpj) {
-    return {
-      ok: false,
-      error: "Upload bloqueado: o CNPJ do prestador na NF diverge do cadastro administrativo.",
-      detected,
-    };
-  }
-
-  const detectedCompany = normalizeCompany(detectedPrestador.razaoSocial);
-  if (!detectedCompany) {
-    return {
-      ok: false,
-      error: "Upload bloqueado: não foi possível localizar a razão social do prestador na NF.",
-      detected,
-    };
-  }
-
-  if (!companyMatches(detectedPrestador.razaoSocial, input.expectedRazaoSocial)) {
-    return {
-      ok: false,
-      error: "Upload bloqueado: a razão social do prestador na NF diverge do cadastro administrativo.",
-      detected,
-    };
+    errors.push("Não foi possível identificar o CNPJ do fornecedor na NF.");
+  } else if (detectedPrestador.cnpj !== expectedCnpj) {
+    errors.push("CNPJ do fornecedor da NF não corresponde ao fornecedor cadastrado.");
   }
 
   if (!detectedTomador.cnpj) {
-    return {
-      ok: false,
-      error: "Upload bloqueado: não foi possível localizar o CNPJ do tomador do serviço na NF.",
-      detected,
-    };
+    errors.push("Não foi possível identificar o CNPJ do tomador na NF.");
+  } else if (detectedTomador.cnpj !== EXPECTED_TOMADOR_CNPJ) {
+    errors.push("CNPJ do tomador da NF não corresponde à Projeta.");
   }
 
-  if (detectedTomador.cnpj !== EXPECTED_TOMADOR_CNPJ) {
-    return {
-      ok: false,
-      error: "Upload bloqueado: o CNPJ do tomador do serviço na NF deve ser 04.892.580/0001-20.",
-      detected,
-    };
-  }
-
-  const detectedTomadorCompany = normalizeCompany(detectedTomador.razaoSocial);
-  if (!detectedTomadorCompany) {
-    return {
-      ok: false,
-      error: "Upload bloqueado: não foi possível localizar o Nome / Nome Empresarial do tomador do serviço na NF.",
-      detected,
-    };
-  }
-
-  if (!companyMatches(detectedTomador.razaoSocial, EXPECTED_TOMADOR_RAZAO_SOCIAL)) {
-    return {
-      ok: false,
-      error: "Upload bloqueado: o tomador do serviço na NF deve ser PROJETA CONSULTORIA E SERVICOS LTDA.",
-      detected,
-    };
-  }
-
+  if (errors.length) return { ok: false, error: errors.join("\n"), detected };
   return { ok: true, detected };
 }
