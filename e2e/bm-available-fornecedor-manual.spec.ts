@@ -37,7 +37,7 @@ async function criarFornecedorManual(page: import("@playwright/test").Page, opts
   await expect(page.getByRole("heading", { name: "Painel Administrativo" })).toBeVisible();
   await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Novo fornecedor" }).click();
+  await page.getByRole("button", { name: "Cadastro", exact: true }).click();
   await page.getByLabel("Nome / Responsável").fill(opts.responsavel);
   await page.getByLabel("CNPJ", { exact: true }).fill(opts.cnpj);
   await page.getByLabel("Razão social").fill(`${opts.responsavel} LTDA`);
@@ -45,7 +45,8 @@ async function criarFornecedorManual(page: import("@playwright/test").Page, opts
   const criarResponse = page.waitForResponse((r) => r.url().endsWith("/api/admin/administrativo/fornecedores/manual") && r.request().method() === "POST");
   await page.getByRole("button", { name: "Cadastrar fornecedor" }).click();
   await criarResponse;
-  await expect(page.getByText("Fornecedor cadastrado com sucesso.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Fornecedor cadastrado com sucesso" })).toBeVisible();
+  await page.getByRole("button", { name: "Concluir" }).click();
   await page.request.post("/api/auth/logout");
 }
 
@@ -67,9 +68,9 @@ test.describe.serial("Diagnóstico + regressão BM_AVAILABLE — fornecedor cria
     await page.goto("/?section=visao");
     await page.getByRole("button", { name: "Adicionar" }).click();
     await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
-    await page.getByPlaceholder("Digite o ID ou nome…").fill(codigoCanonico);
-    await page.getByRole("button", { name: new RegExp(codigoCanonico) }).click();
-    await expect(page.getByPlaceholder("Digite o ID ou nome…")).toHaveValue(codigoCanonico);
+    await page.getByRole("textbox", { name: "Nome", exact: true }).fill(codigoCanonico);
+    await page.getByRole("button", { name: new RegExp(responsavel) }).click();
+    await expect(page.getByRole("textbox", { name: "Nome", exact: true })).toHaveValue(codigoCanonico);
 
     const criarPagamento = page.waitForResponse((r) => r.url().endsWith("/api/mapa-pagamento") && r.request().method() === "POST");
     await page.getByRole("button", { name: "Cadastrar", exact: true }).click();
@@ -133,7 +134,7 @@ test.describe.serial("Diagnóstico + regressão BM_AVAILABLE — fornecedor cria
     // Digita exatamente como aparece na tela ("Fornecedor Manual Email B", não o código
     // canônico em maiúsculas) e NUNCA clica na sugestão — antes da correção, isso persistia
     // uma identidade divergente em silêncio.
-    await page.getByPlaceholder("Digite o ID ou nome…").fill(responsavel);
+    await page.getByRole("textbox", { name: "Nome", exact: true }).fill(responsavel);
     await page.getByRole("heading", { name: "Novo pagamento" }).click();
 
     const criarPagamento = page.waitForResponse((r) => r.url().endsWith("/api/mapa-pagamento") && r.request().method() === "POST");
@@ -173,7 +174,7 @@ test.describe.serial("Diagnóstico + regressão BM_AVAILABLE — fornecedor cria
     await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
 
     const codigoInexistente = "CODIGO-QUE-NUNCA-EXISTIU-XYZ";
-    await page.getByPlaceholder("Digite o ID ou nome…").fill(codigoInexistente);
+    await page.getByRole("textbox", { name: "Nome", exact: true }).fill(codigoInexistente);
     await page.getByRole("heading", { name: "Novo pagamento" }).click();
 
     const criarPagamento = page.waitForResponse((r) => r.url().endsWith("/api/mapa-pagamento") && r.request().method() === "POST");
@@ -205,14 +206,14 @@ test.describe.serial("Diagnóstico + regressão BM_AVAILABLE — fornecedor cria
     expect(cadastroC.cnpjNormalizado).toBe(cadastroD.cnpjNormalizado);
     expect(cadastroC.colaboradorCodigo).not.toBe(cadastroD.colaboradorCodigo);
 
-    async function enviarBmParaCodigo(codigo: string) {
+    async function enviarBmParaCodigo(codigo: string, nome: string) {
       const login = new LoginPage(page);
       await login.goto();
       await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
       await page.goto("/?section=visao");
       await page.getByRole("button", { name: "Adicionar" }).click();
-      await page.getByPlaceholder("Digite o ID ou nome…").fill(codigo);
-      await page.getByRole("button", { name: new RegExp(codigo) }).click();
+      await page.getByRole("textbox", { name: "Nome", exact: true }).fill(codigo);
+      await page.getByRole("button", { name: new RegExp(nome) }).click();
       const criarPagamento = page.waitForResponse((r) => r.url().endsWith("/api/mapa-pagamento") && r.request().method() === "POST");
       await page.getByRole("button", { name: "Cadastrar", exact: true }).click();
       await criarPagamento;
@@ -223,8 +224,8 @@ test.describe.serial("Diagnóstico + regressão BM_AVAILABLE — fornecedor cria
       await page.request.post("/api/auth/logout");
     }
 
-    await enviarBmParaCodigo(cadastroC.colaboradorCodigo!);
-    await enviarBmParaCodigo(cadastroD.colaboradorCodigo!);
+    await enviarBmParaCodigo(cadastroC.colaboradorCodigo!, respC);
+    await enviarBmParaCodigo(cadastroD.colaboradorCodigo!, respD);
 
     const sgcC = await prisma.sgcAprovacaoMedicao.findFirstOrThrow({ where: { colaboradorCodigo: cadastroC.colaboradorCodigo! } });
     const sgcD = await prisma.sgcAprovacaoMedicao.findFirstOrThrow({ where: { colaboradorCodigo: cadastroD.colaboradorCodigo! } });
@@ -258,7 +259,7 @@ test.describe.serial("Diagnóstico + regressão BM_AVAILABLE — fornecedor cria
 
       // Digita o NOME compartilhado (não um dos dois códigos) sem clicar em nenhuma sugestão —
       // resolveProjetistaCodigo() precisa recusar a ambiguidade, nunca escolher X ou Y sozinho.
-      await page.getByPlaceholder("Digite o ID ou nome…").fill(nomeHomonimo);
+      await page.getByRole("textbox", { name: "Nome", exact: true }).fill(nomeHomonimo);
       await page.getByRole("heading", { name: "Novo pagamento" }).click();
 
       const criarPagamento = page.waitForResponse((r) => r.url().endsWith("/api/mapa-pagamento") && r.request().method() === "POST");

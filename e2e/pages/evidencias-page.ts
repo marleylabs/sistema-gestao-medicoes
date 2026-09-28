@@ -8,30 +8,32 @@ export class EvidenciasPage {
     await this.page.goto("/?section=evidencias");
   }
 
-  // getByLabel("Ciclo")/("Fornecedor") por texto colide entre os dois <select> nesta tela (o nome
-  // acessível de um <label> implícito inclui o texto da <option> selecionada, então "Fornecedor"
-  // com a opção "Nenhum Boletim..." pode ser encontrado por buscas parciais inesperadas) — escopa
-  // por conteúdo real de <option> em vez disso, mais robusto.
-  private cicloSelect() {
-    return this.page.locator("select").filter({ has: this.page.locator('option[value="__todos__"]') });
-  }
-  private fornecedorSelect() {
-    return this.page.locator("select").filter({ has: this.page.locator("option", { hasText: /Selecione…|Nenhum Boletim/ }) });
+  private async abrirFiltros() {
+    const ciclo = this.page.getByRole("combobox", { name: "Ciclo", exact: true });
+    if (!(await ciclo.isVisible())) await this.page.getByRole("button", { name: /^Filtros/ }).click();
   }
 
   async selectCiclo(ciclo: string) {
-    await this.cicloSelect().selectOption(ciclo);
+    await this.abrirFiltros();
+    await this.page.getByRole("combobox", { name: "Ciclo", exact: true }).selectOption(ciclo);
   }
 
   async selectFornecedor(nome: string) {
-    await this.fornecedorSelect().selectOption({ label: nome });
+    await this.abrirFiltros();
+    await this.page.getByPlaceholder("Todos os fornecedores / buscar…").fill(nome);
+    await this.page.getByRole("button", { name: new RegExp(nome, "i") }).click();
   }
 
-  async verBoletim() {
-    await this.page.getByRole("button", { name: "Ver Boletim" }).click();
+  async verBoletim(fornecedorNome: string) {
+    const card = this.page
+      .getByText(fornecedorNome, { exact: true })
+      .locator("xpath=ancestor::*[contains(@class, 'justify-between')][1]");
+    await card.getByRole("button", { name: "Ver boletim" }).click();
   }
 
   async expectFornecedorDisponivel(nome: string) {
-    await expect(this.fornecedorSelect().locator("option", { hasText: nome })).toHaveCount(1);
+    await this.abrirFiltros();
+    await this.page.getByPlaceholder("Todos os fornecedores / buscar…").fill(nome);
+    await expect(this.page.getByRole("button", { name: new RegExp(nome, "i") })).toHaveCount(1);
   }
 }

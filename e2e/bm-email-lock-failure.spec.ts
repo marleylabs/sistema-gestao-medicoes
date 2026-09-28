@@ -31,6 +31,9 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
   test.afterEach(async ({ page }) => {
     // Garantia de limpeza: nenhum teste seguinte (nesta suíte ou em qualquer outra rodando depois,
     // já que o toggle é um estado em memória do processo do servidor) pode herdar a injeção ligada.
+    await page.request.post("/api/auth/logout").catch(() => {});
+    const loginAdmin = await page.request.post("/api/auth/login", { data: e2eUsers.admin });
+    expect(loginAdmin.status()).toBe(200);
     await setLockFailureInjection(page, false);
     await page.request.post("/api/auth/logout").catch(() => {});
   });
@@ -41,10 +44,10 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
 
     const login = new LoginPage(page);
     await login.goto();
-    await login.login(e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
+    await login.login(e2eUsers.admin.usuario, e2eUsers.admin.senha);
     await page.goto("/?section=administrativo");
     await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
-    await page.getByRole("button", { name: "Novo fornecedor" }).click();
+    await page.getByRole("button", { name: "Cadastro", exact: true }).click();
     await page.getByLabel("Nome / Responsável").fill(resp);
     await page.getByLabel("CNPJ", { exact: true }).fill("22.333.444/0001-02");
     await page.getByLabel("Razão social").fill(`${resp} LTDA`);
@@ -52,6 +55,7 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
     const criarResponse = page.waitForResponse((r) => r.url().endsWith("/api/admin/administrativo/fornecedores/manual") && r.request().method() === "POST");
     await page.getByRole("button", { name: "Cadastrar fornecedor" }).click();
     await criarResponse;
+    await setLockFailureInjection(page, true);
     await page.request.post("/api/auth/logout");
 
     const cadastro = await prisma.cadastroFornecedor.findFirstOrThrow({ where: { responsavel: resp } });
@@ -60,8 +64,6 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
 
     await login.goto();
     await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
-
-    await setLockFailureInjection(page, true);
 
     // POST direto (equivalente ao clique real de "Enviar BM") — o workflow de negócio (upsert do
     // SgcAprovacaoMedicao) roda ANTES da notificação e não depende dela; a resposta HTTP precisa
@@ -94,10 +96,10 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
 
     const login = new LoginPage(page);
     await login.goto();
-    await login.login(e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
+    await login.login(e2eUsers.admin.usuario, e2eUsers.admin.senha);
     await page.goto("/?section=administrativo");
     await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
-    await page.getByRole("button", { name: "Novo fornecedor" }).click();
+    await page.getByRole("button", { name: "Cadastro", exact: true }).click();
     await page.getByLabel("Nome / Responsável").fill(resp);
     await page.getByLabel("CNPJ", { exact: true }).fill("33.444.555/0001-03");
     await page.getByLabel("Razão social").fill(`${resp} LTDA`);
@@ -105,6 +107,7 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
     const criarResponse = page.waitForResponse((r) => r.url().endsWith("/api/admin/administrativo/fornecedores/manual") && r.request().method() === "POST");
     await page.getByRole("button", { name: "Cadastrar fornecedor" }).click();
     await criarResponse;
+    await setLockFailureInjection(page, true);
     await page.request.post("/api/auth/logout");
 
     const cadastro = await prisma.cadastroFornecedor.findFirstOrThrow({ where: { responsavel: resp } });
@@ -113,8 +116,6 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
 
     await login.goto();
     await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
-
-    await setLockFailureInjection(page, true);
 
     const [r1, r2] = await Promise.all([
       page.request.post("/api/sgc/enviar", { data: { colaboradorCodigo: codigo, ciclo } }),
@@ -138,10 +139,10 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
 
     const login = new LoginPage(page);
     await login.goto();
-    await login.login(e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
+    await login.login(e2eUsers.admin.usuario, e2eUsers.admin.senha);
     await page.goto("/?section=administrativo");
     await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
-    await page.getByRole("button", { name: "Novo fornecedor" }).click();
+    await page.getByRole("button", { name: "Cadastro", exact: true }).click();
     await page.getByLabel("Nome / Responsável").fill(resp);
     await page.getByLabel("CNPJ", { exact: true }).fill("44.555.666/0001-04");
     await page.getByLabel("Razão social").fill(`${resp} LTDA`);
@@ -159,8 +160,8 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
     await page.goto("/?section=visao");
     await page.getByRole("button", { name: "Adicionar" }).click();
     await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
-    await page.getByPlaceholder("Digite o ID ou nome…").fill(codigo);
-    await page.getByRole("button", { name: new RegExp(codigo) }).click();
+    await page.getByRole("textbox", { name: "Nome", exact: true }).fill(codigo);
+    await page.getByRole("button", { name: new RegExp(resp) }).click();
     const criarPagamento = page.waitForResponse((r) => r.url().endsWith("/api/mapa-pagamento") && r.request().method() === "POST");
     await page.getByRole("button", { name: "Cadastrar", exact: true }).click();
     await criarPagamento;

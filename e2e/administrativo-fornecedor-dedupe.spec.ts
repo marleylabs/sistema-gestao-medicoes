@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { test, expect } from "./fixtures/test-with-error-guard";
 import { LoginPage } from "./pages/login-page";
+import { EvidenciasPage } from "./pages/evidencias-page";
 import { e2eUsers } from "./fixtures";
 import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
 import { buildConsultaPjWorkbook } from "./fixtures/administrativo-xlsx";
@@ -195,7 +196,7 @@ test.describe.serial("Administrativo — importação idempotente, sem duplicar 
 });
 
 test.describe.serial("Administrativo — exclusão em massa", () => {
-  test("CENÁRIO C — selecionar 3 fornecedores sem vínculos, excluir em massa, confirmar modal, TOTAL atualizado sem F5", async ({ page }) => {
+  test("CENÁRIO C — selecionar 3 fornecedores sem vínculos, excluir em massa e atualizar a lista sem F5", async ({ page }) => {
     await loginAdmin(page);
     const nomes = ["E2E BulkDelete Um", "E2E BulkDelete Dois", "E2E BulkDelete Tres"];
     const wb = buildConsultaPjWorkbook(
@@ -213,7 +214,7 @@ test.describe.serial("Administrativo — exclusão em massa", () => {
     await importWorkbook(page, wb, "bulk-delete.xlsx");
     await expect(fornecedorHeading(page, nomes[0])).toBeVisible();
 
-    const totalAntes = await page.locator("p.text-stat-value").first().innerText();
+    const totalAntes = await prisma.cadastroFornecedor.count();
 
     for (const nome of nomes) {
       await page.getByRole("checkbox", { name: `Selecionar ${nome}` }).check();
@@ -242,11 +243,7 @@ test.describe.serial("Administrativo — exclusão em massa", () => {
       await expect(fornecedorHeading(page, nome)).toHaveCount(0);
     }
 
-    await expect
-      .poll(async () => Number(await page.locator("p.text-stat-value").first().innerText()), {
-        message: "TOTAL precisa recalcular sozinho após a exclusão em massa, sem F5",
-      })
-      .toBe(Number(totalAntes) - 3);
+    await expect.poll(() => prisma.cadastroFornecedor.count()).toBe(totalAntes - 3);
 
     const remaining = await prisma.cadastroFornecedor.count({ where: { responsavel: { in: nomes } } });
     expect(remaining).toBe(0);
@@ -344,8 +341,8 @@ test("Exclusão: sem sessão e perfis MEDICAO/COLABORADOR não podem forjar ADMI
   expect(await prisma.cadastroFornecedor.count({ where: { id: target.id } })).toBe(1);
 });
 
-test.describe.serial("Administrativo — exclusão + reimportação (estado coerente, sem ressurreição/duplicidade)", () => {
-  test("CENÁRIO G — excluir fornecedor SEM histórico mantém tombstone explícito, desativa usuário e bloqueia reimportação", async ({ page }) => {
+test.describe.serial("Administrativo — exclusão + reimportação (estado coerente, sem duplicidade)", () => {
+  test("CENÁRIO G — excluir fornecedor SEM histórico mantém tombstone e reimportação administrativa reativa a mesma identidade", async ({ page }) => {
     await loginAdmin(page);
     const responsavel = "E2E Exclusao Reimportacao";
     const email = "exclusao.reimportacao@example.test";
@@ -372,7 +369,7 @@ test.describe.serial("Administrativo — exclusão + reimportação (estado coer
     await expect(fornecedorHeading(page, responsavel)).toHaveCount(0);
 
     // 2) Cadastro administrativo some, mas Profissional permanece como tombstone explícito,
-    // sem dados pessoais. Isso impede reativação silenciosa por importação.
+    // sem dados pessoais. Uma eventual reativação precisa reutilizar esta identidade.
     const cadastroApagado = await prisma.cadastroFornecedor.findUnique({ where: { id: cadastroOriginal.id } });
     expect(cadastroApagado, "CadastroFornecedor precisa ter sido realmente excluído").toBeNull();
     const profissionalApagado = await prisma.profissional.findUniqueOrThrow({ where: { id: profissionalOriginal.id } });
@@ -387,23 +384,28 @@ test.describe.serial("Administrativo — exclusão + reimportação (estado coer
     expect(usuarioDesativado!.ativo).toBe(false);
     expect(usuarioDesativado!.excluidoAt).toBeTruthy();
 
-    // 3) Reimportar a mesma identidade deve gerar conflito controlado, nunca restaurar/criar.
+    // 3) A Consulta PJ é uma ação administrativa explícita: reativa a identidade existente,
+    // reutilizando código/Profissional/Usuario e sem criar uma segunda identidade.
     const wb2 = buildConsultaPjWorkbook([
       { responsavel, cnpj: "70.111.222/0001-11", razaoSocial, email, telefone, inicio: "02/01/2026", final: "02/01/2027", status: "VALIDO" },
     ]);
     const res2 = await importWorkbook(page, wb2, "exclusao-2.xlsx");
     const payload2 = await res2.json();
     expect(payload2.criados ?? 0).toBe(0);
-    expect(payload2.bloqueados ?? 0).toBeGreaterThanOrEqual(1);
+    expect(payload2.recriados ?? 0).toBe(1);
+    expect(payload2.bloqueados ?? 0).toBe(0);
     expect(payload2.conflitos ?? 0).toBe(0);
 
     const cadastrosFinais = await prisma.cadastroFornecedor.findMany({ where: { responsavel } });
-    expect(cadastrosFinais.length, "identidade excluída não pode voltar à operação").toBe(0);
+    expect(cadastrosFinais.length, "reativação recria exatamente um cadastro").toBe(1);
+    expect(cadastrosFinais[0].colaboradorCodigo).toBe(colaboradorCodigo);
 
     const profissionaisFinais = await prisma.profissional.count({ where: { codigo: colaboradorCodigo } });
-    expect(profissionaisFinais, "tombstone técnico continua único").toBe(1);
+    expect(profissionaisFinais, "a identidade técnica continua única").toBe(1);
 
-    await expect(fornecedorHeading(page, responsavel)).toHaveCount(0);
+    const profissionalReativado = await prisma.profissional.findUniqueOrThrow({ where: { id: profissionalOriginal.id } });
+    expect(profissionalReativado.deletedAt).toBeNull();
+    await expect(fornecedorHeading(page, responsavel)).toBeVisible();
 
     await page.request.post("/api/auth/logout");
   });
@@ -714,7 +716,7 @@ test.describe.serial("Validação direcionada — restrição de perfil e efeito
     await login.login(e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
     await page.goto("/?section=administrativo");
     await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
-    await page.getByRole("button", { name: "Novo fornecedor" }).click();
+    await page.getByRole("button", { name: "Cadastro", exact: true }).click();
     await page.getByLabel("Nome / Responsável").fill(responsavel);
     await page.getByLabel("CNPJ", { exact: true }).fill("85.000.000/0001-85");
     await page.getByLabel("Razão social").fill(`${responsavel} LTDA`);
@@ -735,14 +737,14 @@ test.describe.serial("Validação direcionada — restrição de perfil e efeito
     // o que importa é provar que a exclusão administrativa nunca apaga essas colunas) e um
     // MapaPagamentoItem (linha real de "Pagamentos por Fornecedor"). O seletor de ciclo em
     // Evidências (GET /api/ciclos) lê de MapaPagamentoContexto, não de SgcAprovacaoMedicao —
-    // sem este registro o ciclo "9996" nunca aparece na lista de opções.
+    // sem este registro o ciclo "2611" nunca aparece na lista de opções.
     await prisma.mapaPagamentoContexto.create({
-      data: { ciclo: "9996", mesReferencia: "E2E Cenario L", producaoInicio: new Date("2026-01-01"), producaoFim: new Date("2026-01-31"), atoCiclo: "9996" },
+      data: { ciclo: "2611", mesReferencia: "E2E Cenario L", producaoInicio: new Date("2026-01-01"), producaoFim: new Date("2026-01-31"), atoCiclo: "2611" },
     });
     const sgc = await prisma.sgcAprovacaoMedicao.create({
       data: {
         colaboradorCodigo,
-        ciclo: "9996",
+        ciclo: "2611",
         status: "PAGO",
         colaboradorNome: responsavel,
         nfArquivo: Buffer.from("nf-fake-pdf-bytes"),
@@ -753,7 +755,7 @@ test.describe.serial("Validação direcionada — restrição de perfil e efeito
       },
     });
     const mapaItem = await prisma.mapaPagamentoItem.create({
-      data: { ciclo: "9996", ordem: 1, projetistaCodigo: colaboradorCodigo, responsavel, valor: 1000, sourceRowHash: `e2e-cenario-l-${Date.now()}` },
+      data: { ciclo: "2611", ordem: 1, projetistaCodigo: colaboradorCodigo, responsavel, valor: 1000, sourceRowHash: `e2e-cenario-l-${Date.now()}` },
     });
 
     // 3) Login do fornecedor ANTES da exclusão — precisa funcionar (prova que a credencial é real).
@@ -800,11 +802,10 @@ test.describe.serial("Validação direcionada — restrição de perfil e efeito
 
     // 9) Evidências: o fornecedor continua aparecendo (dado histórico de SGC, nunca dependeu do
     // CadastroFornecedor administrativo, que já foi excluído neste ponto).
-    await page.goto("/?section=evidencias");
-    const cicloSelect = page.locator("select").filter({ has: page.locator('option[value="__todos__"]') });
-    await cicloSelect.selectOption("9996");
-    const fornecedorSelect = page.locator("select").filter({ has: page.locator("option", { hasText: /Selecione…|Nenhum Boletim/ }) });
-    await expect(fornecedorSelect.locator("option", { hasText: responsavel })).toHaveCount(1);
+    const evidencias = new EvidenciasPage(page);
+    await evidencias.goto();
+    await evidencias.selectCiclo("2611");
+    await evidencias.expectFornecedorDisponivel(responsavel);
 
     // 10) Profissional preservado como tombstone técnico; nome pessoal e campos operacionais limpos.
     const profissionalDepois = await prisma.profissional.findUniqueOrThrow({ where: { id: profissional.id } });
@@ -825,7 +826,7 @@ test.describe.serial("Validação direcionada — restrição de perfil e efeito
     await page.request.post("/api/auth/logout");
     await prisma.sgcAprovacaoMedicao.deleteMany({ where: { id: sgc.id } });
     await prisma.mapaPagamentoItem.deleteMany({ where: { id: mapaItem.id } });
-    await prisma.mapaPagamentoContexto.deleteMany({ where: { ciclo: "9996" } });
+    await prisma.mapaPagamentoContexto.deleteMany({ where: { ciclo: "2611" } });
     await prisma.profissional.deleteMany({ where: { id: profissional.id } });
     await prisma.usuario.deleteMany({ where: { id: usuario.id } });
   });

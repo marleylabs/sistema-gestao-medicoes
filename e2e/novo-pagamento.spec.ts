@@ -30,21 +30,19 @@ async function abrirNovoPagamento(page: import("@playwright/test").Page) {
 }
 
 test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silêncio", () => {
-  test("SUCESSO: condições fixas + desconto + documento medido → cadastra, calcula R$ 11.900,00, sem F5", async ({ page }) => {
+  test("SUCESSO: condição fixa + desconto + documento medido → cadastra, calcula R$ 9.900,00, sem F5", async ({ page }) => {
     await abrirNovoPagamento(page);
 
     // Seleciona um fornecedor REAL (via sugestão do autocomplete) — sincroniza codigoQuery e
     // form.projetistaCodigo corretamente.
-    await page.getByPlaceholder("Digite o ID ou nome…").fill(CODIGO);
-    await page.getByRole("button", { name: new RegExp(CODIGO) }).click();
-    await expect(page.getByPlaceholder("Digite o ID ou nome…")).toHaveValue(CODIGO);
+    await page.getByRole("textbox", { name: "Nome", exact: true }).fill(CODIGO);
+    await page.getByRole("button", { name: new RegExp(FORNECEDOR_NOME) }).click();
+    await expect(page.getByRole("textbox", { name: "Nome", exact: true })).toHaveValue(CODIGO);
 
-    // Condições fixas: Valor fixo R$5.000,00 + Adicionais R$2.000,00 = R$7.000,00.
+    // Condição fixa: a UI atual mantém somente o valor mensal/contratual editável.
     await page.getByLabel("Valor fixo mensal/contratual").fill("5000");
     await page.getByLabel("Valor fixo mensal/contratual").blur();
-    await page.getByLabel("Adicionais fixos").fill("2000");
-    await page.getByLabel("Adicionais fixos").blur();
-    await expect(page.getByText("Base: R$ 7.000,00")).toBeVisible();
+    await expect(page.getByText("Base: R$ 5.000,00")).toBeVisible();
 
     // Desconto: descrição "TESTE", valor R$ 100,00.
     await page.getByRole("button", { name: "Adicionar desconto" }).click();
@@ -69,7 +67,7 @@ test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silê
     await precoInput.fill("5000");
 
     await expect(page.getByText("Total medido líquido")).toBeVisible();
-    await expect(page.getByText("R$ 11.900,00").last()).toBeVisible();
+    await expect(page.getByText("R$ 9.900,00").last()).toBeVisible();
 
     const cadastrarBtn = page.getByRole("button", { name: "Cadastrar", exact: true });
     const criarResponse = page.waitForResponse((r) => r.url().endsWith("/api/mapa-pagamento") && r.request().method() === "POST");
@@ -84,10 +82,10 @@ test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silê
     // "Pagamentos por fornecedor" é a única tabela com a coluna "Ações" — as outras duas
     // ("Tipos e Preços" e o resumo do dashboard) também listam o nome do fornecedor.
     const pagamentosTable = page.locator("table").filter({ has: page.getByText("Ações", { exact: true }) });
-    await expect(pagamentosTable.locator("tr", { hasText: FORNECEDOR_NOME })).toContainText("R$ 11.900,00");
+    await expect(pagamentosTable.locator("tr", { hasText: FORNECEDOR_NOME })).toContainText("R$ 9.900,00");
 
     const item = await prisma.mapaPagamentoItem.findFirstOrThrow({ where: { ciclo: e2eCiclo(), projetistaCodigo: CODIGO } });
-    expect(Number(item.valor)).toBe(11900);
+    expect(Number(item.valor)).toBe(9900);
 
     const documentoMedido = await prisma.medicao.findFirst({ where: { ciclo: e2eCiclo(), numeroDocumento: "NR-TESTE" } });
     expect(documentoMedido).toBeTruthy();
@@ -105,7 +103,7 @@ test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silê
 
     // Digita livremente SEM clicar em nenhuma sugestão — simula o cenário real que causava a
     // falha silenciosa.
-    await page.getByPlaceholder("Digite o ID ou nome…").fill("CODIGO-QUE-NAO-EXISTE-99999");
+    await page.getByRole("textbox", { name: "Nome", exact: true }).fill("CODIGO-QUE-NAO-EXISTE-99999");
     await page.getByRole("heading", { name: "Novo pagamento" }).click(); // fecha a lista de sugestões
 
     await page.getByRole("button", { name: "Adicionar linha" }).click();
@@ -124,7 +122,7 @@ test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silê
     await expect(page.getByText(/Fornecedor não encontrado|Não foi possível cadastrar/i)).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
     // Dados digitados preservados — o campo não foi limpo.
-    await expect(page.getByPlaceholder("Digite o ID ou nome…")).toHaveValue("CODIGO-QUE-NAO-EXISTE-99999");
+    await expect(page.getByRole("textbox", { name: "Nome", exact: true })).toHaveValue("CODIGO-QUE-NAO-EXISTE-99999");
 
     const depoisCount = await prisma.mapaPagamentoItem.count({ where: { ciclo: e2eCiclo(), projetistaCodigo: "CODIGO-QUE-NAO-EXISTE-99999" } });
     expect(depoisCount).toBe(0);

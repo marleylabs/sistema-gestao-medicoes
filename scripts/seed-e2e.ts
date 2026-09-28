@@ -68,7 +68,9 @@ async function main() {
   await prisma.projeto.deleteMany({ where: { codigoProjeto: { startsWith: "E2E-PROJ" } } });
   await prisma.adminAuditLog.deleteMany({ where: { adminUsuario: { in: usuarios.map((u) => u.usuario) } } });
   await prisma.usuario.deleteMany({ where: { usuario: { in: usuarios.map((u) => u.usuario) } } });
-  await prisma.mapaPagamentoContexto.deleteMany({ where: { OR: [{ ciclo }, { ciclo: { startsWith: "26" }, mesReferencia: "E2E" }] } });
+  await prisma.mapaPagamentoContexto.deleteMany({
+    where: { OR: [{ ciclo }, { mesReferencia: { startsWith: "E2E" } }] },
+  });
 
   // Cadastros criados pelos specs de "Novo pagamento" / "Novo fornecedor" (não fazem parte dos
   // fornecedores fixos acima — nascem e morrem dentro do próprio teste, mas limpa aqui também
@@ -96,16 +98,19 @@ async function main() {
   await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: "Fornecedor Retorno BM", mode: "insensitive" } } });
   await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "Fornecedor Retorno BM" } } });
   await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "Fornecedor Retorno BM" } } });
+  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "Fornecedor Retorno BM" } } });
   // e2e/bm-email-lock-failure.spec.ts — injeção proposital de falha do advisory lock (nunca deve
   // cair para envio sem trava).
   await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorCodigo: { startsWith: "Fornecedor Lock Falha", mode: "insensitive" } } });
   await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: "Fornecedor Lock Falha", mode: "insensitive" } } });
   await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "Fornecedor Lock Falha" } } });
   await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "Fornecedor Lock Falha" } } });
+  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "Fornecedor Lock Falha" } } });
   await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorCodigo: { startsWith: "Fornecedor Lock Recuperado", mode: "insensitive" } } });
   await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: "Fornecedor Lock Recuperado", mode: "insensitive" } } });
   await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "Fornecedor Lock Recuperado" } } });
   await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "Fornecedor Lock Recuperado" } } });
+  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "Fornecedor Lock Recuperado" } } });
   // e2e/administrativo-fornecedor-dedupe.spec.ts — importação idempotente + exclusão em massa.
   await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorCodigo: { startsWith: "E2E FORNECEDOR REDUNDANTE", mode: "insensitive" } } });
   await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: "E2E FORNECEDOR REDUNDANTE", mode: "insensitive" } } });

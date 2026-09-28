@@ -190,7 +190,7 @@ test.describe.serial("Happy path — MEDICAO envia BM → FORNECEDOR conclui →
     await evidencias.selectCiclo(e2eCiclo());
     await evidencias.expectFornecedorDisponivel(FORNECEDOR_NOME);
     await evidencias.selectFornecedor(FORNECEDOR_NOME);
-    await evidencias.verBoletim();
+    await evidencias.verBoletim(FORNECEDOR_NOME);
     await expect(page.getByText(/BOLETIM DE MEDIÇÃO/i)).toBeVisible();
     await expect(page.getByRole("cell", { name: FORNECEDOR_NOME })).toBeVisible();
 

@@ -14,9 +14,12 @@ test.describe("Login por perfil", () => {
     await login.login(e2eUsers.admin.usuario, e2eUsers.admin.senha);
 
     await expect(page).toHaveURL("/");
-    for (const label of ["Visão Geral", "Administrativo", "Evidências", "Financeiro", "Histórico", "Usuários"]) {
+    for (const label of ["Visão Geral", "Administrativo", "Evidências", "Financeiro", "Histórico"]) {
       await expect(page.getByRole("button", { name: label })).toBeVisible();
     }
+    // Usuários e fornecedores foram unificados no Painel Administrativo; não há mais uma quarta
+    // rota/sidebar duplicada só para usuários.
+    await expect(page.getByRole("button", { name: "Usuários" })).toHaveCount(0);
   });
 
   test("MEDICAO: login, sessão criada, sidebar restrita (sem Administrativo/Financeiro/Usuários)", async ({ page }) => {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after, before } from "node:test";
 import { prisma } from "../lib/prisma";
 
 /**
@@ -29,14 +29,48 @@ async function getDocumentosMedidos(params: { aliases: string[]; ciclo: string }
   });
 }
 
-test("caso real P0129103/2608: encontra os mesmos documentos que a tela Editar Pagamento (nunca 0 quando existem documentos reais)", async () => {
-  const docs = await getDocumentosMedidos({ aliases: ["P0129103", "ALEXANDRE BORGES", "ALEXANDRE BORGES DE SOUSA"], ciclo: "2608" });
+const fixtureSuffix = `DOCS-MEDIDOS-${Date.now()}`;
+const fixtureCiclo = `2608-${fixtureSuffix}`;
+const fixtureOutroCiclo = `2609-${fixtureSuffix}`;
+const fixtureCodigo = `P0129103-${fixtureSuffix}`;
+const fixtureNome = `ALEXANDRE BORGES ${fixtureSuffix}`;
+const fixtureNomeCompleto = `ALEXANDRE BORGES DE SOUSA ${fixtureSuffix}`;
+const fixtureOutroNome = `ADILSON GAIO ${fixtureSuffix}`;
+let fixtureProjetoId = "";
+let fixtureProfissionalIds: string[] = [];
+
+before(async () => {
+  const projeto = await prisma.projeto.create({ data: { codigoProjeto: `${fixtureSuffix}-PROJ`, contrato: "TESTE" } });
+  fixtureProjetoId = projeto.id;
+  const alexandre = await prisma.profissional.create({
+    data: { nome: fixtureNome, codigo: fixtureCodigo, nomeCompleto: fixtureNomeCompleto },
+  });
+  const adilson = await prisma.profissional.create({ data: { nome: fixtureOutroNome } });
+  fixtureProfissionalIds = [alexandre.id, adilson.id];
+  await prisma.medicao.createMany({
+    data: [
+      { numeroMedicao: `${fixtureSuffix}-A-1`, idProjeto: projeto.id, idProfissional: alexandre.id, ciclo: fixtureCiclo, equivalenteA1Horas: 1, percentualEmissao: 1, condicao: "100", sourceRowHash: `${fixtureSuffix}-hash-a1` },
+      { numeroMedicao: `${fixtureSuffix}-A-2`, idProjeto: projeto.id, idProfissional: alexandre.id, ciclo: fixtureCiclo, equivalenteA1Horas: 2, percentualEmissao: 1, condicao: "100", sourceRowHash: `${fixtureSuffix}-hash-a2` },
+      { numeroMedicao: `${fixtureSuffix}-A-OUTRO`, idProjeto: projeto.id, idProfissional: alexandre.id, ciclo: fixtureOutroCiclo, equivalenteA1Horas: 3, percentualEmissao: 1, condicao: "100", sourceRowHash: `${fixtureSuffix}-hash-a3` },
+      { numeroMedicao: `${fixtureSuffix}-B-1`, idProjeto: projeto.id, idProfissional: adilson.id, ciclo: fixtureCiclo, equivalenteA1Horas: 4, percentualEmissao: 1, condicao: "100", sourceRowHash: `${fixtureSuffix}-hash-b1` },
+    ],
+  });
+});
+
+after(async () => {
+  await prisma.medicao.deleteMany({ where: { numeroMedicao: { startsWith: fixtureSuffix } } });
+  if (fixtureProfissionalIds.length) await prisma.profissional.deleteMany({ where: { id: { in: fixtureProfissionalIds } } });
+  if (fixtureProjetoId) await prisma.projeto.delete({ where: { id: fixtureProjetoId } });
+});
+
+test("regressão P0129103/2608 com fixture própria: encontra os mesmos documentos da tela Editar Pagamento", async () => {
+  const docs = await getDocumentosMedidos({ aliases: [fixtureCodigo, fixtureNome, fixtureNomeCompleto], ciclo: fixtureCiclo });
   assert.ok(docs.length > 0, "esperava encontrar Documentos Medidos reais para este fornecedor/ciclo — não pode ser 0");
 });
 
 test("mesma consulta usando somente o codigo canônico (comportamento da tela Editar Pagamento) retorna a mesma contagem", async () => {
-  const porAliasCompleto = await getDocumentosMedidos({ aliases: ["P0129103", "ALEXANDRE BORGES", "ALEXANDRE BORGES DE SOUSA"], ciclo: "2608" });
-  const porCodigoUnico = await getDocumentosMedidos({ aliases: ["ALEXANDRE BORGES"], ciclo: "2608" });
+  const porAliasCompleto = await getDocumentosMedidos({ aliases: [fixtureCodigo, fixtureNome, fixtureNomeCompleto], ciclo: fixtureCiclo });
+  const porCodigoUnico = await getDocumentosMedidos({ aliases: [fixtureCodigo], ciclo: fixtureCiclo });
   assert.equal(porAliasCompleto.length, porCodigoUnico.length);
   assert.deepEqual(
     porAliasCompleto.map((d) => d.id).sort(),
@@ -45,22 +79,22 @@ test("mesma consulta usando somente o codigo canônico (comportamento da tela Ed
 });
 
 test("fornecedor diferente no mesmo ciclo não vaza documentos de outro fornecedor", async () => {
-  const alexandre = await getDocumentosMedidos({ aliases: ["ALEXANDRE BORGES"], ciclo: "2608" });
-  const outro = await getDocumentosMedidos({ aliases: ["ADILSON GAIO"], ciclo: "2608" });
+  const alexandre = await getDocumentosMedidos({ aliases: [fixtureCodigo], ciclo: fixtureCiclo });
+  const outro = await getDocumentosMedidos({ aliases: [fixtureOutroNome], ciclo: fixtureCiclo });
   const idsAlexandre = new Set(alexandre.map((d) => d.id));
   for (const doc of outro) assert.equal(idsAlexandre.has(doc.id), false, "documento de outro fornecedor vazou para o conjunto de Alexandre");
 });
 
 test("ciclo diferente para o mesmo fornecedor nunca mistura documentos entre ciclos", async () => {
-  const docs2608 = await getDocumentosMedidos({ aliases: ["ALEXANDRE BORGES"], ciclo: "2608" });
-  const docsInexistente = await getDocumentosMedidos({ aliases: ["ALEXANDRE BORGES"], ciclo: "9999-CICLO-INEXISTENTE" });
+  const docs2608 = await getDocumentosMedidos({ aliases: [fixtureCodigo], ciclo: fixtureCiclo });
+  const docsInexistente = await getDocumentosMedidos({ aliases: [fixtureCodigo], ciclo: "9999-CICLO-INEXISTENTE" });
   assert.equal(docsInexistente.length, 0);
   assert.ok(docs2608.length > 0);
 });
 
 test("aliases vazios ou ciclo vazio nunca retornam o banco inteiro por engano", async () => {
-  assert.deepEqual(await getDocumentosMedidos({ aliases: [], ciclo: "2608" }), []);
-  assert.deepEqual(await getDocumentosMedidos({ aliases: ["ALEXANDRE BORGES"], ciclo: "" }), []);
+  assert.deepEqual(await getDocumentosMedidos({ aliases: [], ciclo: fixtureCiclo }), []);
+  assert.deepEqual(await getDocumentosMedidos({ aliases: [fixtureCodigo], ciclo: "" }), []);
 });
 
 // ─── CNPJ compartilhado: dois fornecedores de teste com o MESMO CNPJ, códigos diferentes ───

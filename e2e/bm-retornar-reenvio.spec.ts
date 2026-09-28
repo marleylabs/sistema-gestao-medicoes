@@ -57,7 +57,7 @@ test.describe.serial("Auditoria — idempotência do BM_AVAILABLE em Enviar BM /
     await expect(page.getByRole("heading", { name: "Painel Administrativo" })).toBeVisible();
     await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Novo fornecedor" }).click();
+    await page.getByRole("button", { name: "Cadastro", exact: true }).click();
     await page.getByLabel("Nome / Responsável").fill(responsavel);
     await page.getByLabel("CNPJ", { exact: true }).fill("88.222.444/0001-90");
     await page.getByLabel("Razão social").fill(`${responsavel} LTDA`);
@@ -65,7 +65,8 @@ test.describe.serial("Auditoria — idempotência do BM_AVAILABLE em Enviar BM /
     const criarResponse = page.waitForResponse((r) => r.url().endsWith("/api/admin/administrativo/fornecedores/manual") && r.request().method() === "POST");
     await page.getByRole("button", { name: "Cadastrar fornecedor" }).click();
     await criarResponse;
-    await expect(page.getByText("Fornecedor cadastrado com sucesso.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Fornecedor cadastrado com sucesso" })).toBeVisible();
+    await page.getByRole("button", { name: "Concluir" }).click();
     await page.request.post("/api/auth/logout");
 
     const cadastro = await prisma.cadastroFornecedor.findFirstOrThrow({ where: { responsavel } });
@@ -78,9 +79,9 @@ test.describe.serial("Auditoria — idempotência do BM_AVAILABLE em Enviar BM /
     await page.goto("/?section=visao");
     await page.getByRole("button", { name: "Adicionar" }).click();
     await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
-    await page.getByPlaceholder("Digite o ID ou nome…").fill(codigoCanonico);
-    await page.getByRole("button", { name: new RegExp(codigoCanonico) }).click();
-    await expect(page.getByPlaceholder("Digite o ID ou nome…")).toHaveValue(codigoCanonico);
+    await page.getByRole("textbox", { name: "Nome", exact: true }).fill(codigoCanonico);
+    await page.getByRole("button", { name: new RegExp(responsavel) }).click();
+    await expect(page.getByRole("textbox", { name: "Nome", exact: true })).toHaveValue(codigoCanonico);
 
     const criarPagamento = page.waitForResponse((r) => r.url().endsWith("/api/mapa-pagamento") && r.request().method() === "POST");
     await page.getByRole("button", { name: "Cadastrar", exact: true }).click();
@@ -174,7 +175,7 @@ test.describe.serial("Auditoria — idempotência do BM_AVAILABLE em Enviar BM /
     await login.login(e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
     await page.goto("/?section=administrativo");
     await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
-    await page.getByRole("button", { name: "Novo fornecedor" }).click();
+    await page.getByRole("button", { name: "Cadastro", exact: true }).click();
     await page.getByLabel("Nome / Responsável").fill(resp);
     await page.getByLabel("CNPJ", { exact: true }).fill("11.222.333/0001-01");
     await page.getByLabel("Razão social").fill(`${resp} LTDA`);
