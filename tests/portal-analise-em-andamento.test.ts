@@ -70,7 +70,7 @@ test("Equipe de Medição (Pagamentos por Fornecedor / mapa-pagamento-table.tsx)
   // ser reaproveitada de forma confiável) — mapa-pagamento-table.tsx agora consome o helper em vez
   // de reescrever a comparação, e o próprio helper continua expondo DIVERGENCIA sem alteração.
   const tableSource = readSource("components/mapa-pagamento-table.tsx");
-  assert.match(tableSource, /getMapaPagamentoDisplayStatus\(sgcStatusValue, sgcEntry\?\.statusConferencia\)/);
+  assert.match(tableSource, /getMapaPagamentoStatusMeta\(sgcStatusValue, sgcEntry\?\.statusConferencia\)/);
   const helperSource = readSource("lib/sgc-display-status.ts");
   assert.match(helperSource, /statusConferencia === "DIVERGENCIA"/);
 });

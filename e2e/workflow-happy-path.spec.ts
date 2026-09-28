@@ -21,12 +21,27 @@ test.describe.serial("Happy path — MEDICAO envia BM → FORNECEDOR conclui →
     const pagamentos = new PagamentosPage(page);
     await pagamentos.goto();
     await pagamentos.enviarBm(FORNECEDOR_NOME);
-    await pagamentos.expectStatusBadge(FORNECEDOR_NOME, "Aguardando");
+    await pagamentos.expectStatusBadge(FORNECEDOR_NOME, "Aguardando fornecedor");
+    await pagamentos.expectNoEnviarBm(FORNECEDOR_NOME);
 
     const sgc = await prisma.sgcAprovacaoMedicao.findUnique({ where: { colaboradorCodigo_ciclo: { colaboradorCodigo: CODIGO_A, ciclo: e2eCiclo() } } });
     expect(sgc?.status).toBe("PENDENTE");
     expect(sgc?.statusConferencia).toBe("AGUARDANDO_UPLOAD");
 
+    // Reload completo deve reconstruir o estado a partir da lista retornada por /api/sgc/status,
+    // sem cair no fallback AGUARDANDO_ENVIO nem reexibir a ação inicial.
+    await page.reload();
+    await pagamentos.expectStatusBadge(FORNECEDOR_NOME, "Aguardando fornecedor");
+    await pagamentos.expectNoEnviarBm(FORNECEDOR_NOME);
+
+    await page.request.post("/api/auth/logout");
+
+    // ADMIN e MEDICAO consomem a mesma autoridade de workflow e precisam enxergar o mesmo estado.
+    await login.goto();
+    await login.login(e2eUsers.admin.usuario, e2eUsers.admin.senha);
+    await pagamentos.goto();
+    await pagamentos.expectStatusBadge(FORNECEDOR_NOME, "Aguardando fornecedor");
+    await pagamentos.expectNoEnviarBm(FORNECEDOR_NOME);
     await page.request.post("/api/auth/logout");
   });
 

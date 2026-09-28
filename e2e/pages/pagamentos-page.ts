@@ -45,6 +45,10 @@ export class PagamentosPage {
     await expect(this.rowFor(fornecedorNome)).toContainText(label);
   }
 
+  async expectNoEnviarBm(fornecedorNome: string) {
+    await expect(this.rowFor(fornecedorNome).getByRole("button", { name: /Enviar BM/i })).toHaveCount(0);
+  }
+
   async abrirEditarPagamento(fornecedorNome: string) {
     await this.rowFor(fornecedorNome).getByRole("button", { name: "Editar pagamento" }).click();
     // O heading do modal está sempre presente; a seção "Divergências da Medição" só aparece

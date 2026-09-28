@@ -46,6 +46,10 @@ test.describe.serial("Divergência — upload divergente → EM ANÁLISE (fornec
     const pagamentos = new PagamentosPage(page);
     await pagamentos.goto();
     await pagamentos.expectStatusBadge(FORNECEDOR_NOME, "Divergência");
+    await pagamentos.expectNoEnviarBm(FORNECEDOR_NOME);
+    await page.reload();
+    await pagamentos.expectStatusBadge(FORNECEDOR_NOME, "Divergência");
+    await pagamentos.expectNoEnviarBm(FORNECEDOR_NOME);
     await pagamentos.abrirEditarPagamento(FORNECEDOR_NOME);
 
     await expect(page.getByText("2 divergências encontradas")).toBeVisible();

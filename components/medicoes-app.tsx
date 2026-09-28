@@ -31,6 +31,7 @@ import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } f
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "@/lib/presence";
 import type { AuthUser } from "@/lib/session";
+import { indexSgcStatusByColaborador, type SgcStatusApiEntry, type SgcStatusEntry } from "@/lib/sgc-display-status";
 
 type Section = "visao" | "historico" | "importar" | "evidencias" | "financeiro" | "administrativo";
 
@@ -54,7 +55,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
   const [contratosCiclo, setContratosCiclo] = useState<ContratoResumo[]>([]);
   const [sgcAlertas, setSgcAlertas]         = useState<SgcAlerta[]>([]);
   const [sgcConversas, setSgcConversas]     = useState<SgcAlerta[]>([]);
-  const [sgcStatus, setSgcStatus]           = useState<Record<string, { status: string; revisaoNumero: number; id: string }>>({});
+  const [sgcStatus, setSgcStatus]           = useState<Record<string, SgcStatusEntry>>({});
   const [reenviandoId, setReenviandoId]     = useState<string | null>(null);
   const [selectedAlerta, setSelectedAlerta] = useState<SgcAlerta | null>(null);
   const [selectedChatAlerta, setSelectedChatAlerta] = useState<SgcAlerta | null>(null);
@@ -169,7 +170,10 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
       fetch(`/api/sgc/conversas?ciclo=${activeCiclo}`),
     ]);
     if (alertasRes.ok) setSgcAlertas(await alertasRes.json());
-    if (statusRes.ok) setSgcStatus(await statusRes.json());
+    if (statusRes.ok) {
+      const entries = await statusRes.json() as SgcStatusApiEntry[];
+      setSgcStatus(indexSgcStatusByColaborador(entries));
+    }
     if (conversasRes.ok) setSgcConversas(await conversasRes.json());
   }, [isAdmin, activeCiclo]);
 

@@ -102,15 +102,15 @@ test.describe.serial("Atualização automática (sem F5) entre dois usuários", 
       await atorCtx.close();
     }
 
-    // Sem reload no observador — a linha vira "Concluído" (badge usado para todo status
-    // isConcluido = APROVADO/AGUARDANDO_NF/PAGO) só via polling/SSE.
+    // Sem reload no observador — a linha passa a mostrar o estágio canônico AGUARDANDO_NF,
+    // sem colapsá-lo no rótulo genérico antigo "Concluído", só via polling/SSE.
     await expect.poll(
       async () => {
         const row = pagamentosObservador["rowFor"](FORNECEDOR_NOME);
         return (await row.textContent()) ?? "";
       },
       { timeout: 15000, intervals: [500, 1000, 1500] },
-    ).toContain("Concluído");
+    ).toContain("Aguardando NF");
 
     await observador.request.post("/api/auth/logout");
     await observadorCtx.close();

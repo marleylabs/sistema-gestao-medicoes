@@ -4,7 +4,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useMemo, useState } fro
 import { AlertTriangle, ArrowRight, Check, CheckCheck, Edit3, MessageCircle, Mic, Plus, RotateCcw, Search, Send, StopCircle, Trash2, X } from "lucide-react";
 import { Badge, BlurValue, Button, Card, Field, IconButton, Input, Select, Textarea } from "@/components/ui";
 import type { ContratoResumo, MapaPagamentoItem, Profissional } from "@/components/types";
-import { getMapaPagamentoDisplayStatus } from "@/lib/sgc-display-status";
+import { getMapaPagamentoStatusMeta, type SgcStatusEntry } from "@/lib/sgc-display-status";
 import { resolveCondicaoFixa, toCondicaoFixaConfig } from "@/lib/condicao-fixa";
 
 type Revisao = {
@@ -35,13 +35,6 @@ type SgcChatMessage = {
   lidoAt: string | null;
   criadoAt: string;
   enviando?: boolean;
-};
-
-type SgcStatusEntry = {
-  status: string;
-  revisaoNumero: number;
-  id: string;
-  statusConferencia?: string;
 };
 
 type DivergenciaLinha = {
@@ -397,26 +390,21 @@ export function MapaPagamentoTable({
                 ? new Date(item.updatedAt) > new Date(revisao.revisaoSolicitadaAt)
                 : true;
               const enviando = enviandoCodigo === codigo;
-              const isConcluido = ["APROVADO", "AGUARDANDO_NF", "PAGO"].includes(sgcStatusValue);
-              const isPendente = sgcStatusValue === "PENDENTE";
-              // Fonte única de verdade para "o que mostrar" (lib/sgc-display-status.ts) — nunca
-              // reconstruir esta regra localmente de novo (foi daí que veio o bug de status
-              // "DIVERGÊNCIA" preso mesmo depois de resolvida a última divergência pendente).
-              const isDivergente = getMapaPagamentoDisplayStatus(sgcStatusValue, sgcEntry?.statusConferencia) === "DIVERGENCIA";
-              const podeEnviar = isAdmin && onEnviarBm && ["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA"].includes(sgcStatusValue) && temAlteracao && !isConcluido;
+              // Fonte única para rótulo, cor e estágio visual; sempre deriva dos valores canônicos
+              // persistidos, nunca de texto traduzido ou de estado otimista local.
+              const statusMeta = getMapaPagamentoStatusMeta(sgcStatusValue, sgcEntry?.statusConferencia);
+              const podeEnviar = isAdmin && onEnviarBm && ["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA"].includes(sgcStatusValue) && temAlteracao;
               const podeRetornar = isAdmin && onRetornarBm && sgcEntry?.id && ["PENDENTE", "REVISAO_SOLICITADA"].includes(sgcStatusValue);
 
               return (
                 <tr
                   key={item.id}
                   className={`border-b last:border-0 transition-colors ${
-                    isConcluido
+                    statusMeta.rowTone === "success"
                       ? "border-[#BBF7D0] bg-[#F0FDF4] hover:bg-[#DCFCE7]"
-                      : isDivergente
+                      : statusMeta.rowTone === "danger"
                       ? "border-[#FCA5A5] bg-[#FEF2F2] hover:bg-[#FEE2E2]"
-                      : isPendente
-                      ? "border-[#D1D5DB] bg-[#E5E7EB] hover:bg-[#D1D5DB]"
-                      : hasRevisao
+                      : statusMeta.rowTone === "warning"
                       ? "border-[#FDE68A] bg-[#FFFBEB] hover:bg-[#FEF3C7]"
                       : `border-[#F3F4F6] hover:bg-[#F9FAFB] ${i % 2 !== 0 ? "bg-[#FAFAFA]" : "bg-white"}`
                   }`}
@@ -425,17 +413,7 @@ export function MapaPagamentoTable({
                   <td className="px-4 py-3 font-semibold text-[#1A1A1A]">
                     <div className="flex items-center gap-2">
                       {item.responsavel ?? item.projetistaCodigo ?? "–"}
-                      {isConcluido && (
-                        <Badge variant="success" className="shrink-0">Concluído</Badge>
-                      )}
-                      {isPendente && (
-                        isDivergente
-                          ? <Badge variant="danger" className="shrink-0">Divergência</Badge>
-                          : <Badge variant="neutral" className="shrink-0">Aguardando</Badge>
-                      )}
-                      {!isConcluido && !isPendente && hasRevisao && (
-                        <Badge variant="warning" className="shrink-0">Revisão</Badge>
-                      )}
+                      <Badge variant={statusMeta.badge} className="shrink-0">{statusMeta.label}</Badge>
                       {item.documentosPendentesContrato > 0 && (
                         <span
                           className="shrink-0 text-[#D97706]"

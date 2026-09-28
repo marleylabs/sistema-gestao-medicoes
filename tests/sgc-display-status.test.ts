@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getMapaPagamentoDisplayStatus } from "../lib/sgc-display-status";
+import {
+  getMapaPagamentoDisplayStatus,
+  getMapaPagamentoStatusMeta,
+  indexSgcStatusByColaborador,
+} from "../lib/sgc-display-status";
 
 /**
  * Guarda de regressão do BUG 1B: "Pagamentos por Fornecedor" continuava mostrando DIVERGÊNCIA
@@ -39,6 +43,36 @@ test("AGUARDANDO_ENVIO, REVISAO_SOLICITADA, APROVADO, PAGO, CANCELADO passam dir
   assert.equal(getMapaPagamentoDisplayStatus("APROVADO", "CONCLUIDA"), "APROVADO");
   assert.equal(getMapaPagamentoDisplayStatus("PAGO", "CONCLUIDA"), "PAGO");
   assert.equal(getMapaPagamentoDisplayStatus("CANCELADO", "CONCLUIDA"), "CANCELADO");
+});
+
+test("resposta em lista de /api/sgc/status é indexada pelo colaborador e preserva o id real", () => {
+  const indexed = indexSgcStatusByColaborador([{
+    sgcId: "sgc-1",
+    colaboradorCodigo: "P0000001",
+    ciclo: "2608",
+    status: "PENDENTE",
+    revisaoNumero: 0,
+    statusConferencia: "AGUARDANDO_UPLOAD",
+  }]);
+  assert.deepEqual(indexed.P0000001, {
+    id: "sgc-1",
+    status: "PENDENTE",
+    revisaoNumero: 0,
+    statusConferencia: "AGUARDANDO_UPLOAD",
+  });
+});
+
+test("mapper visual cobre todos os estados canônicos sem fallback cinza para workflow ativo", () => {
+  assert.deepEqual(getMapaPagamentoStatusMeta("AGUARDANDO_ENVIO", "CONCLUIDA"), {
+    label: "Aguardando envio", badge: "neutral", rowTone: "neutral", final: false,
+  });
+  assert.equal(getMapaPagamentoStatusMeta("PENDENTE", "AGUARDANDO_UPLOAD").badge, "warning");
+  assert.equal(getMapaPagamentoStatusMeta("PENDENTE", "DIVERGENCIA").badge, "danger");
+  assert.equal(getMapaPagamentoStatusMeta("REVISAO_SOLICITADA", "CONCLUIDA").badge, "warning");
+  assert.equal(getMapaPagamentoStatusMeta("AGUARDANDO_NF", "CONCLUIDA").label, "Aguardando NF");
+  assert.equal(getMapaPagamentoStatusMeta("APROVADO", "CONCLUIDA").label, "Aguardando pagamento");
+  assert.equal(getMapaPagamentoStatusMeta("PAGO", "CONCLUIDA").badge, "success");
+  assert.equal(getMapaPagamentoStatusMeta("CANCELADO", "CONCLUIDA").label, "Cancelado");
 });
 
 test("status desconhecido nunca quebra — cai para AGUARDANDO em vez de lançar", () => {
