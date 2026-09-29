@@ -29,7 +29,7 @@ export async function resolveFornecedorEmail(colaboradorCodigo: string, nomeFall
     return { email: null, nome: nomeFallback || colaboradorCodigo, missing: true };
   }
   const cadastro = await prisma.cadastroFornecedor.findFirst({
-    where: { colaboradorCodigo },
+    where: { ativo: true, colaboradorCodigo },
     orderBy: { updatedAt: "desc" },
     select: { email: true, responsavel: true },
   });

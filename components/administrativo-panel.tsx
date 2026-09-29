@@ -58,6 +58,8 @@ type CadastroFornecedor = {
   statusCadastro: string | null;
   primeiroAditivo: string | null;
   segundoAditivo: string | null;
+  ativo: boolean;
+  inativadoAt: string | null;
   diasAteVencimento: number | null;
   validadeLabel: string;
   validadeTone: "danger" | "warning" | "notice" | "success" | "neutral";
@@ -1245,7 +1247,7 @@ function CadastroCard({
   selected,
   onToggleSelected,
   onResetSenha,
-  onToggleAtivo,
+  onSetCadastroAtivo,
   onEnviarPrimeiroAcesso,
 }: {
   item: CadastroFornecedor;
@@ -1255,19 +1257,19 @@ function CadastroCard({
   selected: boolean;
   onToggleSelected: (id: string) => void;
   onResetSenha: (usuarioId: string, nome: string, email: string | null) => void;
-  onToggleAtivo: (usuarioId: string, ativoAtual: boolean) => void;
+  onSetCadastroAtivo: (item: CadastroFornecedor) => void;
   onEnviarPrimeiroAcesso: (usuarioId: string, nome: string, email: string | null, usuario: string) => void;
 }) {
   const menuActions: MenuAction[] = [];
-  if (isAdmin && item.acesso) {
+  if (isAdmin) {
     menuActions.push({
-      label: item.acesso.ativo ? "Desativar acesso" : "Ativar acesso",
-      icon: item.acesso.ativo ? <ShieldOff size={13} /> : <ShieldCheck size={13} />,
-      onClick: () => onToggleAtivo(item.acesso!.id, item.acesso!.ativo),
+      label: item.ativo ? "Inativar fornecedor" : "Reativar fornecedor",
+      icon: item.ativo ? <ShieldOff size={13} /> : <ShieldCheck size={13} />,
+      onClick: () => onSetCadastroAtivo(item),
     });
   }
   if (isAdmin) {
-    menuActions.push({ label: "Excluir fornecedor", icon: <Trash2 size={13} />, tone: "danger", onClick: () => onDelete(item) });
+    menuActions.push({ label: "Excluir definitivamente", icon: <Trash2 size={13} />, tone: "danger", onClick: () => onDelete(item) });
   }
 
   return (
@@ -1293,11 +1295,9 @@ function CadastroCard({
               <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ring-1 ${toneClass[item.validadeTone]}`}>
                 {item.validadeLabel}
               </span>
-              {item.acesso && (
-                <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${item.acesso.ativo ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#F3F4F6] text-[#6B7280]"}`}>
-                  {item.acesso.ativo ? "Ativo" : "Inativo"}
-                </span>
-              )}
+              <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${item.ativo ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#F3F4F6] text-[#6B7280]"}`}>
+                {item.ativo ? "Ativo" : "Inativo"}
+              </span>
               {item.acesso?.primeiroLogin && (
                 <span className="shrink-0 rounded-full bg-[#FEF3C7] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[#92400E]">
                   Primeiro acesso pendente
@@ -1961,6 +1961,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
   const [perfilFiltro, setPerfilFiltro] = useState("todos");
   const [acessoFiltro, setAcessoFiltro] = useState<Set<AcessoOpcao>>(new Set());
   const [situacaoFiltro, setSituacaoFiltro] = useState<Set<SituacaoOpcao>>(new Set());
+  const [mostrarInativos, setMostrarInativos] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [mostrarAtencao, setMostrarAtencao] = useState(false);
   const [resolverItem, setResolverItem] = useState<(ImportAtencaoDetalhe & { categoria: string }) | null>(null);
@@ -1993,7 +1994,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
   const load = useCallback(async () => {
     setLoading(true);
     const [resFornecedores, resFuncionarios] = await Promise.all([
-      fetch("/api/admin/administrativo/fornecedores"),
+      fetch("/api/admin/administrativo/fornecedores?includeInactive=true"),
       fetch("/api/admin/administrativo/funcionarios"),
     ]);
     if (resFornecedores.ok) {
@@ -2013,6 +2014,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return items.filter((item) => {
+      if (!mostrarInativos && !item.ativo) return false;
       const matchesSearch = !q || [item.responsavel, item.razaoSocial, item.cnpj, item.colaboradorCodigo, item.email]
         .some((value) => value?.toLowerCase().includes(q));
       const matchesPerfil = perfilFiltro === "todos" || item.acesso?.perfil === perfilFiltro;
@@ -2030,7 +2032,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
         (situacaoFiltro.has("pendencias") && item.pendencias.length > 0);
       return matchesSearch && matchesPerfil && matchesAcesso && matchesSituacao;
     });
-  }, [items, search, perfilFiltro, acessoFiltro, situacaoFiltro]);
+  }, [items, search, perfilFiltro, acessoFiltro, situacaoFiltro, mostrarInativos]);
 
   const filteredFuncionarios = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -2181,6 +2183,23 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
       return;
     }
     setToast({ tone: "success", message: ativoAtual ? "Acesso desativado." : "Acesso ativado." });
+    await load();
+  }
+
+  async function setCadastroAtivo(item: CadastroFornecedor) {
+    const acao = item.ativo ? "inativar" : "reativar";
+    if (!window.confirm(`Deseja ${acao} o fornecedor "${item.responsavel}"?`)) return;
+    const res = await fetch("/api/admin/administrativo/fornecedores/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [item.id], ativo: !item.ativo }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setToast({ tone: "error", message: payload.error ?? `Não foi possível ${acao} o fornecedor.` });
+      return;
+    }
+    setToast({ tone: "success", message: item.ativo ? "Fornecedor inativado." : "Fornecedor reativado." });
     await load();
   }
 
@@ -2477,6 +2496,16 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
           </div>
         )}
 
+        <label className="flex w-fit items-center gap-2 text-xs font-semibold text-[#555555]">
+          <input
+            type="checkbox"
+            checked={mostrarInativos}
+            onChange={(event) => setMostrarInativos(event.target.checked)}
+            className="h-3.5 w-3.5 cursor-pointer accent-[#AF1B1B]"
+          />
+          Mostrar fornecedores inativos
+        </label>
+
         {isAdmin && filtered.length > 0 && (
           <label className="flex w-fit items-center gap-2 text-xs font-semibold text-[#555555]">
             <input
@@ -2507,7 +2536,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
                 selected={selectedIds.has(pessoa.data.id)}
                 onToggleSelected={toggleSelected}
                 onResetSenha={pedirResetSenha}
-                onToggleAtivo={toggleAtivoUsuario}
+                onSetCadastroAtivo={setCadastroAtivo}
                 onEnviarPrimeiroAcesso={pedirPrimeiroAcesso}
               />
             ) : (

@@ -259,6 +259,8 @@ model CadastroFornecedor {
   primeiroAditivo    String?   @map("primeiro_aditivo")
   segundoAditivo     String?   @map("segundo_aditivo")
   rawPayload         Json      @default("{}") @map("raw_payload")
+  ativo              Boolean   @default(true)
+  inativadoAt        DateTime? @map("inativado_at") @db.Timestamptz
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 

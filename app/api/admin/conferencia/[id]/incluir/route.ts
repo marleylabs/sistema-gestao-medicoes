@@ -15,7 +15,7 @@ async function localizarPreco(colaboradorCodigo: string, tipo: string | null) {
   const campo = tipo ? PRECO_POR_TIPO[tipo.trim().toUpperCase()] : undefined;
   if (!campo) return null;
   const cadastro = await prisma.cadastroFornecedor.findFirst({
-    where: { OR: [{ colaboradorCodigo }, { responsavel: colaboradorCodigo }] },
+    where: { ativo: true, OR: [{ colaboradorCodigo }, { responsavel: colaboradorCodigo }] },
     select: { valorHora: true, valorDocumento: true, valorA1Equivalente: true },
     orderBy: { updatedAt: "desc" },
   });

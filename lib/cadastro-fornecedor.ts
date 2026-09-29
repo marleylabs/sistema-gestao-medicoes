@@ -47,6 +47,8 @@ export type CadastroRow = {
   rawPayload: Record<string, string | number | null>;
 };
 
+export type AdminActor = { id: string; usuario: string; nome: string };
+
 const HEADER_MAP: Record<string, keyof CadastroRow> = {
   "STATUS CT": "statusContrato",
   "RESPONSAVEL": "responsavel",
@@ -757,6 +759,7 @@ export async function upsertCadastroFornecedor(
    * vindo direto do cliente sem validação prévia (ver `resolverIdentidadeManualmente`, que só
    * constrói este objeto depois de confirmar que o código pertence a um candidato real). */
   overrideResolution?: FornecedorIdentityResolution,
+  admin?: AdminActor,
 ) {
   const index = sharedIndex ?? (await buildIdentityIndex());
   const resolution = overrideResolution ?? resolveFornecedorIdentity(row, index);
@@ -818,10 +821,19 @@ export async function upsertCadastroFornecedor(
 
     let cadastroId: string;
     let created: boolean;
+    let cadastroReativado = false;
     let administrativeConfigRestored = false;
     let administrativeConfigSnapshotMalformed = false;
     if (resolution.kind === "CADASTRO_MATCH") {
-      await tx.cadastroFornecedor.update({ where: { id: resolution.cadastroId }, data: { ...data, updatedAt: now } });
+      const cadastroAtual = await tx.cadastroFornecedor.findUniqueOrThrow({
+        where: { id: resolution.cadastroId },
+        select: { ativo: true },
+      });
+      cadastroReativado = !cadastroAtual.ativo;
+      await tx.cadastroFornecedor.update({
+        where: { id: resolution.cadastroId },
+        data: { ...data, ativo: true, inativadoAt: null, updatedAt: now },
+      });
       cadastroId = resolution.cadastroId;
       created = false;
     } else {
@@ -832,7 +844,12 @@ export async function upsertCadastroFornecedor(
       // apenas o cadastro administrativo (nunca duplica Profissional/Usuario, ver upsert abaixo).
       const linkedId = resolution.kind === "PROFISSIONAL_MATCH" ? index.cadastroIdByColaboradorCodigo.get(normalizePersonName(colaboradorCodigo)) : undefined;
       if (linkedId) {
-        await tx.cadastroFornecedor.update({ where: { id: linkedId }, data: { ...data, updatedAt: now } });
+        const cadastroAtual = await tx.cadastroFornecedor.findUniqueOrThrow({ where: { id: linkedId }, select: { ativo: true } });
+        cadastroReativado = !cadastroAtual.ativo;
+        await tx.cadastroFornecedor.update({
+          where: { id: linkedId },
+          data: { ...data, ativo: true, inativadoAt: null, updatedAt: now },
+        });
         cadastroId = linkedId;
         created = false;
       } else {
@@ -926,7 +943,7 @@ export async function upsertCadastroFornecedor(
     // primeiro encontrado.
     const existingUsers = await tx.usuario.findMany({
       where: { perfil: "COLABORADOR", nome: { equals: row.responsavel, mode: "insensitive" } },
-      select: { id: true, usuario: true, excluidoAt: true, senhaTemporaria: true },
+      select: { id: true, usuario: true, ativo: true, excluidoAt: true, senhaTemporaria: true },
     });
     if (existingUsers.length > 1) {
       throw new FornecedorUsuarioAmbiguoError(`Identidade de acesso ambígua para "${row.responsavel}" — mais de um Usuario compatível encontrado. Resolva manualmente antes de importar esta linha.`);
@@ -977,6 +994,14 @@ export async function upsertCadastroFornecedor(
         },
       });
       usuarioReativado = { usuario: existingUser.usuario, nome: row.responsavel, senha: senhaReativacao, email: row.email ?? null };
+    } else if (!existingUser.ativo) {
+      // Inativação administrativa não é exclusão: restaura o mesmo acesso sem tocar em senha,
+      // primeiroLogin ou excluidoAt.
+      await tx.usuario.update({
+        where: { id: existingUser.id },
+        data: { ativo: true, email: encryptSensitive(row.email), updatedAt: now },
+      });
+      usuarioReativado = { usuario: existingUser.usuario, nome: row.responsavel, senha: null, email: row.email ?? null };
     } else {
       // Usuario já existe e já está ATIVO (nem criação, nem reativação) — reimportar precisa
       // sincronizar só o e-mail com o que a planilha trouxe agora, sem tocar primeiroLogin,
@@ -987,6 +1012,21 @@ export async function upsertCadastroFornecedor(
       await tx.usuario.update({
         where: { id: existingUser.id },
         data: { email: encryptSensitive(row.email) },
+      });
+    }
+
+    if (cadastroReativado && admin) {
+      await tx.adminAuditLog.create({
+        data: {
+          action: "FORNECEDOR_REATIVADO",
+          adminId: admin.id,
+          adminUsuario: admin.usuario,
+          adminNome: admin.nome,
+          targetType: "CadastroFornecedor",
+          targetId: cadastroId,
+          targetCodigo: colaboradorCodigo,
+          metadata: { origem: "UPSERT_ADMINISTRATIVO", usuarioId: existingUser?.id ?? null },
+        },
       });
     }
 
@@ -1008,6 +1048,7 @@ export async function upsertCadastroFornecedor(
       administrativeConfigSnapshotMalformed,
       usuarioCriado,
       usuarioReativado,
+      cadastroReativado,
     };
   });
 
@@ -1075,7 +1116,7 @@ export async function resolverIdentidadeManualmente(
     const overrideResolution: FornecedorIdentityResolution = index.deletedCodigos.has(alvoNormalizado)
       ? { kind: "PROFISSIONAL_MATCH", colaboradorCodigo: codigoReal, reactivatingDeletedIdentity: true }
       : { kind: "RECREATE_FROM_HISTORY", colaboradorCodigo: codigoReal };
-    const resultado = await upsertCadastroFornecedor(row, index, overrideResolution);
+    const resultado = await upsertCadastroFornecedor(row, index, overrideResolution, admin);
     await prisma.adminAuditLog.create({
       data: {
         action: "IDENTITY_MANUAL_RESOLUTION",
@@ -1102,7 +1143,7 @@ export async function resolverIdentidadeManualmente(
     );
   }
   const overrideResolution: FornecedorIdentityResolution = { kind: "CREATE", colaboradorCodigo: codigoNovo };
-  const resultado = await upsertCadastroFornecedor(row, index, overrideResolution);
+  const resultado = await upsertCadastroFornecedor(row, index, overrideResolution, admin);
   await prisma.adminAuditLog.create({
     data: {
       action: "IDENTITY_MANUAL_RESOLUTION",
@@ -1148,7 +1189,7 @@ export type ImportRevisaoDetalhe = {
   linha: CadastroRow;
 };
 
-export async function importCadastrosFornecedores(buffer: Buffer) {
+export async function importCadastrosFornecedores(buffer: Buffer, admin?: AdminActor) {
   const rows = parseCadastroFornecedorWorkbook(buffer);
   let atualizados = 0;
   let criados = 0;
@@ -1169,7 +1210,7 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
 
   for (const row of rows) {
     try {
-      const resultado = await upsertCadastroFornecedor(row, index);
+      const resultado = await upsertCadastroFornecedor(row, index, undefined, admin);
       if (resultado.recreated) {
         recriados += 1;
         if (resultado.administrativeConfigRestored) recriadosComConfigRestaurada += 1;
@@ -1253,6 +1294,7 @@ export async function importCadastrosFornecedores(buffer: Buffer) {
 export async function validateFornecedorForNfUpload(colaboradorCodigo: string, usuarioNome?: string | null) {
   const cadastros = await prisma.cadastroFornecedor.findMany({
     where: {
+      ativo: true,
       OR: [
         { colaboradorCodigo },
         ...(usuarioNome ? [{ responsavel: { equals: usuarioNome, mode: "insensitive" as const } }] : []),
@@ -1310,6 +1352,8 @@ export function serializeCadastroFornecedor(item: any) {
     statusCadastro: item.statusCadastro,
     primeiroAditivo: item.primeiroAditivo,
     segundoAditivo: item.segundoAditivo,
+    ativo: item.ativo,
+    inativadoAt: item.inativadoAt?.toISOString() ?? null,
     diasAteVencimento: visual.dias,
     validadeLabel: visual.label,
     validadeTone: visual.tone,
@@ -1620,6 +1664,114 @@ export type IdentityCleanupPlan =
   | { codigoKey: string; action: "PRESERVE_PROFISSIONAL_FOR_HISTORY"; profissionalId: string | null }
   | { codigoKey: string; action: "DELETE_PROFISSIONAL"; profissionalId: string }
   | { codigoKey: string; action: "NO_PROFISSIONAL_NO_HISTORY" };
+
+export class FornecedorInativacaoError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FornecedorInativacaoError";
+  }
+}
+
+/**
+ * Operação administrativa cotidiana. Diferentemente da exclusão definitiva, nunca remove ou
+ * anonimiza Profissional e nunca preenche Usuario.excluidoAt.
+ */
+export async function setFornecedoresAtivos(ids: string[], ativo: boolean, admin: AdminActor) {
+  const uniqueIds = [...new Set(ids)];
+  const cadastros = await prisma.cadastroFornecedor.findMany({
+    where: { id: { in: uniqueIds } },
+    select: { id: true, ativo: true, colaboradorCodigo: true, responsavel: true },
+  });
+  if (cadastros.length !== uniqueIds.length) {
+    throw new FornecedorInativacaoError("Um ou mais fornecedores não foram encontrados. Nenhuma alteração foi feita.");
+  }
+
+  const codigos = [...new Set(cadastros.map((c) => c.colaboradorCodigo).filter((c): c is string => !!c))];
+  const profissionais = codigos.length
+    ? await prisma.profissional.findMany({
+        where: { OR: codigos.map((codigo) => ({ codigo: { equals: codigo, mode: "insensitive" as const } })) },
+        select: { id: true, codigo: true, deletedAt: true },
+      })
+    : [];
+  const profissionaisAtivosPorCodigo = new Map<string, { id: string; codigo: string | null }[]>();
+  for (const profissional of profissionais.filter((p) => !p.deletedAt)) {
+    const key = normalizePersonName(profissional.codigo);
+    const list = profissionaisAtivosPorCodigo.get(key) ?? [];
+    list.push(profissional);
+    profissionaisAtivosPorCodigo.set(key, list);
+  }
+  if (ativo) {
+    for (const cadastro of cadastros) {
+      if (!cadastro.colaboradorCodigo) {
+        throw new FornecedorInativacaoError(`O fornecedor "${cadastro.responsavel}" não possui colaboradorCodigo canônico. Reconcilie a identidade antes de reativar.`);
+      }
+      const encontrados = profissionaisAtivosPorCodigo.get(normalizePersonName(cadastro.colaboradorCodigo)) ?? [];
+      if (encontrados.length !== 1) {
+        throw new FornecedorInativacaoError(`O fornecedor "${cadastro.responsavel}" não resolve para exatamente um Profissional ativo. Execute a reconciliação oficial antes de reativar.`);
+      }
+    }
+  }
+
+  const usuarios = await prisma.usuario.findMany({
+    where: { perfil: "COLABORADOR", excluidoAt: null },
+    select: { id: true, nome: true, ativo: true },
+  });
+  const usuariosPorNome = new Map<string, typeof usuarios>();
+  for (const usuario of usuarios) {
+    const key = normalizePersonName(usuario.nome);
+    const list = usuariosPorNome.get(key) ?? [];
+    list.push(usuario);
+    usuariosPorNome.set(key, list);
+  }
+  for (const cadastro of cadastros) {
+    if ((usuariosPorNome.get(normalizePersonName(cadastro.responsavel)) ?? []).length > 1) {
+      throw new FornecedorInativacaoError(`Acesso ambíguo para "${cadastro.responsavel}". Nenhuma alteração foi feita.`);
+    }
+  }
+
+  const codigosAlvo = cadastros.map((c) => c.colaboradorCodigo).filter((c): c is string => !!c);
+  const outrosCadastrosAtivos = !ativo && codigosAlvo.length
+    ? await prisma.cadastroFornecedor.findMany({
+        where: {
+          ativo: true,
+          id: { notIn: uniqueIds },
+          OR: codigosAlvo.map((codigo) => ({ colaboradorCodigo: { equals: codigo, mode: "insensitive" as const } })),
+        },
+        select: { colaboradorCodigo: true },
+      })
+    : [];
+  const codigosAindaAtivos = new Set(outrosCadastrosAtivos.map((c) => normalizePersonName(c.colaboradorCodigo)));
+
+  const alterados = cadastros.filter((c) => c.ativo !== ativo);
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    for (const cadastro of alterados) {
+      await tx.cadastroFornecedor.update({
+        where: { id: cadastro.id },
+        data: { ativo, inativadoAt: ativo ? null : now, updatedAt: now },
+      });
+      const usuario = (usuariosPorNome.get(normalizePersonName(cadastro.responsavel)) ?? [])[0];
+      const deveAlterarUsuario = ativo || !cadastro.colaboradorCodigo || !codigosAindaAtivos.has(normalizePersonName(cadastro.colaboradorCodigo));
+      if (usuario && deveAlterarUsuario) {
+        // Mantém excluidoAt, senha e política de primeiro acesso intactos.
+        await tx.usuario.update({ where: { id: usuario.id }, data: { ativo, updatedAt: now } });
+      }
+      await tx.adminAuditLog.create({
+        data: {
+          action: ativo ? "FORNECEDOR_REATIVADO" : "FORNECEDOR_INATIVADO",
+          adminId: admin.id,
+          adminUsuario: admin.usuario,
+          adminNome: admin.nome,
+          targetType: "CadastroFornecedor",
+          targetId: cadastro.id,
+          targetCodigo: cadastro.colaboradorCodigo,
+          metadata: { usuarioId: usuario?.id ?? null, usuarioAlterado: !!usuario && deveAlterarUsuario, profissionalPreservado: true },
+        },
+      });
+    }
+  });
+  return { requested: uniqueIds.length, changed: alterados.length, ativo };
+}
 
 /**
  * Decide, por identidade (colaboradorCodigo) distinta entre os cadastros solicitados, o que fazer

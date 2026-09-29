@@ -109,7 +109,11 @@ export async function POST(request: NextRequest) {
 
   let resultado: Awaited<ReturnType<typeof upsertCadastroFornecedor>>;
   try {
-    resultado = await upsertCadastroFornecedor(row);
+    resultado = await upsertCadastroFornecedor(row, undefined, undefined, {
+      id: auth.user!.id,
+      usuario: auth.user!.usuario,
+      nome: auth.user!.nome,
+    });
   } catch (error) {
     if (error instanceof FornecedorIdentityConflictError) {
       // Mesma regra da importação em lote (lib/cadastro-fornecedor.ts) — nunca escolhe um
