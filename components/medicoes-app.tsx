@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Bell,
   BellRing,
@@ -15,6 +15,7 @@ import {
   SlidersHorizontal,
   Trash2,
   Upload,
+  Users,
   Wallet,
   X,
 } from "lucide-react";
@@ -22,7 +23,8 @@ import { AppShell } from "@/components/app-shell";
 import { AccountMenu } from "@/components/account-menu";
 import { GeneralChatWidget } from "@/components/general-chat-widget";
 import { DashboardPilot } from "@/components/dashboard-pilot";
-import { ComentarioDropdown, MapaPagamentoTable } from "@/components/mapa-pagamento-table";
+import { ComentarioDropdown } from "@/components/mapa-pagamento-table";
+import { FornecedoresPage } from "@/components/fornecedores";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { AdministrativoPanel } from "@/components/administrativo-panel";
@@ -33,10 +35,14 @@ import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "@/lib/presence";
 import type { AuthUser } from "@/lib/session";
 import { indexSgcStatusByColaborador, type SgcStatusApiEntry, type SgcStatusEntry } from "@/lib/sgc-display-status";
 
-type Section = "visao" | "historico" | "importar" | "evidencias" | "financeiro" | "administrativo";
+type Section = "visao" | "fornecedores" | "historico" | "importar" | "evidencias" | "financeiro" | "administrativo";
+
+/** Única seção com rota própria; as demais continuam em /?section=. */
+const FORNECEDORES_PATH = "/fornecedores";
 
 const TITLES: Record<Section, string> = {
   visao: "Dashboard",
+  fornecedores: "Fornecedores",
   historico: "Histórico de Medições",
   importar: "Importar Planilha",
   evidencias: "Evidências de Medição",
@@ -63,7 +69,11 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
   const [seenIds, setSeenIds]               = useState<string[]>([]);
   const [selectedCodigo, setSelectedCodigo] = useState("");
   const [selectedContrato, setSelectedContrato] = useState("");
-  const [activeCiclo, setActiveCiclo]       = useState(CICLO_GERAL);
+  const initialSearchParams                  = useSearchParams();
+  const [activeCiclo, setActiveCiclo]       = useState(() => {
+    const cicloUrl = initialSearchParams?.get("ciclo");
+    return cicloUrl && /^\d{4}$/.test(cicloUrl) ? cicloUrl : CICLO_GERAL;
+  });
   const [ciclos, setCiclos]                 = useState<CicloEntry[]>([]);
   const [novoCiclo, setNovoCiclo]           = useState("");
   const [criandoCiclo, setCriandoCiclo]     = useState(false);
@@ -78,6 +88,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
   const previousAlertMessageIdsRef          = useRef<Map<string, string>>(new Map());
 
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentSearchParams = searchParams ?? new URLSearchParams();
   const isAdmin      = user.perfil === "MEDICAO" || user.perfil === "ADMIN";
@@ -97,13 +108,27 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
     : isAdministrativo
     ? (["administrativo", "financeiro", ...(temAcessoHistoricoExtra ? ["historico" as const] : [])])
     : isMedicao
-    ? (["visao", "importar", "evidencias", ...(temAcessoAdministrativoExtra ? ["administrativo" as const] : []), ...(temAcessoHistoricoExtra ? ["historico" as const] : [])])
+    ? (["visao", "fornecedores", "importar", "evidencias", ...(temAcessoAdministrativoExtra ? ["administrativo" as const] : []), ...(temAcessoHistoricoExtra ? ["historico" as const] : [])])
     : isFullAdmin
-    ? ["administrativo", "evidencias", "financeiro", "historico", "importar", "visao"]
-    : ["evidencias", "financeiro", "historico", "importar", "visao"];
+    ? ["administrativo", "evidencias", "financeiro", "fornecedores", "historico", "importar", "visao"]
+    : ["evidencias", "financeiro", "fornecedores", "historico", "importar", "visao"];
   const sectionParam = currentSearchParams.get("section") as Section | null;
-  const section: Section = sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : (isFinanceiro ? "financeiro" : isAdministrativo ? "administrativo" : "visao");
+  const defaultSection: Section = isFinanceiro ? "financeiro" : isAdministrativo ? "administrativo" : "visao";
+  const naRotaFornecedores = pathname === FORNECEDORES_PATH;
+  const section: Section = naRotaFornecedores
+    ? (VALID_SECTIONS.includes("fornecedores") ? "fornecedores" : defaultSection)
+    : sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : defaultSection;
   function setSection(s: Section) {
+    // Entre / e /fornecedores o ciclo ativo segue pela URL (?ciclo=), para não voltar a "Geral".
+    const cicloParam = activeCiclo !== CICLO_GERAL ? `ciclo=${activeCiclo}` : "";
+    if (s === "fornecedores") {
+      router.push(`${FORNECEDORES_PATH}${cicloParam ? `?${cicloParam}` : ""}`);
+      return;
+    }
+    if (naRotaFornecedores) {
+      router.push(`/?section=${s}${cicloParam ? `&${cicloParam}` : ""}`);
+      return;
+    }
     const params = new URLSearchParams(currentSearchParams.toString());
     params.set("section", s);
     router.replace(`?${params.toString()}`);
@@ -427,6 +452,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
     : isMedicao
     ? [
         { id: "visao",      label: "Visão Geral", icon: <LayoutDashboard size={17} /> },
+        { id: "fornecedores", label: "Fornecedores", icon: <Users size={17} /> },
         { id: "evidencias", label: "Evidências",  icon: <FileSearch size={17} /> },
         ...(temAcessoAdministrativoExtra ? [navItemAdministrativoExtra] : []),
         ...(temAcessoHistoricoExtra ? [navItemHistoricoExtra] : []),
@@ -434,6 +460,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
       ]
     : [
         { id: "visao",      label: "Visão Geral",      icon: <LayoutDashboard size={17} /> },
+        { id: "fornecedores", label: "Fornecedores",    icon: <Users size={17} /> },
         { id: "administrativo", label: "Administrativo", icon: <FileText size={17} /> },
         { id: "evidencias", label: "Evidências",        icon: <FileSearch size={17} /> },
         { id: "financeiro", label: "Financeiro",        icon: <Wallet size={17} /> },
@@ -511,6 +538,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
     setActiveCiclo(value);
     setSelectedCodigo("");
     setSelectedContrato("");
+    if (naRotaFornecedores) router.replace(value === CICLO_GERAL ? FORNECEDORES_PATH : `${FORNECEDORES_PATH}?ciclo=${value}`);
   }
 
   async function criarCiclo() {
@@ -747,29 +775,32 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
               contratos={contratosCiclo}
               statuses={sgcStatus}
               ciclo={activeCiclo}
+              onVerTodosFornecedores={() => setSection("fornecedores")}
             />
-            <div className="grid gap-4 border-t border-[var(--border)] pt-6">
-              <div>
-                <h2 className="text-section-title text-[var(--foreground)]">Operação por fornecedor</h2>
-                <p className="text-page-description mt-1 text-[var(--muted-foreground)]">Ações e detalhes completos permanecem disponíveis sem alteração de workflow.</p>
-              </div>
-            <MapaPagamentoTable
-              itens={mapaItens}
-              contratos={contratosCiclo}
-              profissionais={profissionais}
-              selectedCodigo={selectedCodigo}
-              selectedContrato={selectedContrato}
-              isAdmin={isAdmin}
-              onChanged={refreshAll}
-              revisoes={sgcAlertas}
-              sgcStatus={sgcStatus}
-              onEnviarBm={enviarBm}
-              onRetornarBm={retornarBm}
-              onDivergenciaResolvida={loadAlertas}
-              ciclo={activeCiclo}
-            />
-            </div>
           </div>
+        </PageContainer>
+      )}
+
+      {section === "fornecedores" && isAdmin && (
+        <PageContainer>
+          <FornecedoresPage
+            itens={mapaItens}
+            contratos={contratosCiclo}
+            profissionais={profissionais}
+            revisoes={sgcAlertas}
+            sgcStatus={sgcStatus}
+            isAdmin={isAdmin}
+            ciclo={activeCiclo}
+            ciclos={ciclos.map((c) => c.ciclo)}
+            contratoSelecionado={selectedContrato}
+            tiposPrecos={dashboard?.tiposPrecos ?? []}
+            onCicloChange={handleCicloChange}
+            onContratoChange={setSelectedContrato}
+            onChanged={refreshAll}
+            onEnviarBm={enviarBm}
+            onRetornarBm={retornarBm}
+            onDivergenciaResolvida={loadAlertas}
+          />
         </PageContainer>
       )}
 

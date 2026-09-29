@@ -157,7 +157,7 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
 
     await login.goto();
     await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
-    await page.goto("/?section=visao");
+    await page.goto("/fornecedores");
     await page.getByRole("button", { name: "Adicionar" }).click();
     await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
     await page.getByRole("textbox", { name: "Nome", exact: true }).fill(codigo);

@@ -65,7 +65,7 @@ test.describe.serial("Diagnóstico + regressão BM_AVAILABLE — fornecedor cria
     const login = new LoginPage(page);
     await login.goto();
     await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
-    await page.goto("/?section=visao");
+    await page.goto("/fornecedores");
     await page.getByRole("button", { name: "Adicionar" }).click();
     await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
     await page.getByRole("textbox", { name: "Nome", exact: true }).fill(codigoCanonico);
@@ -127,7 +127,7 @@ test.describe.serial("Diagnóstico + regressão BM_AVAILABLE — fornecedor cria
     const login = new LoginPage(page);
     await login.goto();
     await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
-    await page.goto("/?section=visao");
+    await page.goto("/fornecedores");
     await page.getByRole("button", { name: "Adicionar" }).click();
     await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
 
@@ -169,7 +169,7 @@ test.describe.serial("Diagnóstico + regressão BM_AVAILABLE — fornecedor cria
     const login = new LoginPage(page);
     await login.goto();
     await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
-    await page.goto("/?section=visao");
+    await page.goto("/fornecedores");
     await page.getByRole("button", { name: "Adicionar" }).click();
     await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
 
@@ -210,7 +210,7 @@ test.describe.serial("Diagnóstico + regressão BM_AVAILABLE — fornecedor cria
       const login = new LoginPage(page);
       await login.goto();
       await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
-      await page.goto("/?section=visao");
+      await page.goto("/fornecedores");
       await page.getByRole("button", { name: "Adicionar" }).click();
       await page.getByRole("textbox", { name: "Nome", exact: true }).fill(codigo);
       await page.getByRole("button", { name: new RegExp(nome) }).click();
@@ -253,7 +253,7 @@ test.describe.serial("Diagnóstico + regressão BM_AVAILABLE — fornecedor cria
       const login = new LoginPage(page);
       await login.goto();
       await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
-      await page.goto("/?section=visao");
+      await page.goto("/fornecedores");
       await page.getByRole("button", { name: "Adicionar" }).click();
       await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
 

@@ -84,3 +84,8 @@ export function getMapaPagamentoStatusMeta(
 ): SgcStatusMeta {
   return STATUS_META[getMapaPagamentoDisplayStatus(status, statusConferencia)];
 }
+
+/** Metadados de um status de apresentação já resolvido (ex.: opções de filtro) — mesmo mapa STATUS_META. */
+export function getSgcDisplayStatusMeta(status: SgcDisplayStatus): SgcStatusMeta {
+  return STATUS_META[status];
+}

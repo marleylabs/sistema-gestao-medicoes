@@ -19,12 +19,14 @@ export function DashboardPilot({
   contratos,
   statuses,
   ciclo,
+  onVerTodosFornecedores,
 }: {
   data: DashboardData | null;
   mapaItens: MapaPagamentoItem[];
   contratos: ContratoResumo[];
   statuses: Record<string, SgcStatusEntry>;
   ciclo: string;
+  onVerTodosFornecedores?: () => void;
 }) {
   if (!data) {
     return (
@@ -81,7 +83,7 @@ export function DashboardPilot({
         <DashboardStatusList statuses={statuses} />
       </div>
 
-      <DashboardRecentBm items={mapaItens} contratos={contratos} statuses={statuses} ciclo={ciclo} />
+      <DashboardRecentBm items={mapaItens} contratos={contratos} statuses={statuses} ciclo={ciclo} onVerTodos={onVerTodosFornecedores} />
     </section>
   );
 }

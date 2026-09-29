@@ -21,7 +21,9 @@ test.describe("Dashboard piloto — Wealth + En Passant", () => {
     await expect(page.getByText("Distribuição por contrato", { exact: true })).toBeVisible();
     await expect(page.getByText("Status dos BMs", { exact: true })).toBeVisible();
     await expect(page.getByText("BMs e fornecedores recentes", { exact: true })).toBeVisible();
-    await expect(page.getByText("Operação por fornecedor", { exact: true })).toBeVisible();
+    // A operação completa saiu do Dashboard (agora em /fornecedores); fica só o resumo com "Ver todos".
+    await expect(page.getByText("Operação por fornecedor", { exact: true })).toHaveCount(0);
+    await expect(page.getByTestId("fornecedores-tabela")).toHaveCount(0);
 
     // Evolução: eixo em mês/ano (nunca o YYMM cru), valor visível no ponto e valor exato no tooltip.
     const evolucao = page.locator(".recharts-wrapper").first();

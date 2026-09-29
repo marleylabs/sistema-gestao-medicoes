@@ -1,13 +1,13 @@
 "use client";
 
 import { type ReactNode, useCallback, useEffect, useRef, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, Check, CheckCheck, Edit3, MessageCircle, Mic, Plus, RotateCcw, Search, Send, StopCircle, Trash2, X } from "lucide-react";
-import { Badge, BlurValue, Button, Card, Field, IconButton, Input, Select, Textarea } from "@/components/ui";
+import { AlertTriangle, Check, CheckCheck, Edit3, MessageCircle, Mic, Plus, RotateCcw, Search, Send, StopCircle, Trash2, X } from "lucide-react";
+import { Badge, Button, Field, IconButton, Input, Textarea } from "@/components/ui";
 import type { ContratoResumo, MapaPagamentoItem, Profissional } from "@/components/types";
-import { getMapaPagamentoStatusMeta, type SgcStatusEntry } from "@/lib/sgc-display-status";
+import type { SgcStatusEntry } from "@/lib/sgc-display-status";
 import { resolveCondicaoFixa, toCondicaoFixaConfig } from "@/lib/condicao-fixa";
 
-type Revisao = {
+export type Revisao = {
   id: string;
   colaboradorCodigo: string;
   colaboradorNome: string | null;
@@ -62,7 +62,7 @@ function normalizeText(value: string | null) {
   return (value ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase();
 }
 
-function money(value: number) {
+export function money(value: number) {
   return value ? currency.format(value) : "–";
 }
 
@@ -142,7 +142,7 @@ function ratio(value: number) {
 }
 
 /** Distingue "sem documento classificado nesse contrato" (undefined → "–") de "0% real" (documento existe, valor zero). */
-function formatParticipacao(value: number | undefined) {
+export function formatParticipacao(value: number | undefined) {
   return value === undefined ? "–" : percent.format(value / 100);
 }
 
@@ -153,399 +153,197 @@ function formatParticipacao(value: number | undefined) {
  * percentual por contrato nesta mesma tabela. Nunca mais os 4 contratos fixos hardcoded
  * (Intr. Sossego/Salobo/ACG/Escadas Alumar) — funciona com qualquer contrato descoberto no ciclo.
  */
-function contractParticipation(item: MapaPagamentoItem, contrato: string, contratos: ContratoResumo[]) {
+export function contractParticipation(item: MapaPagamentoItem, contrato: string, contratos: ContratoResumo[]) {
   const contratoId = contratos.find((c) => c.nome === contrato)?.id;
   if (!contratoId) return 0;
   return item.participacaoContratos?.[contratoId] ?? 0;
 }
 
-export function MapaPagamentoTable({
+/**
+ * Ações de um fornecedor no Mapa de Pagamento (Retornar/Enviar/Reenviar BM, chat de revisão, Editar,
+ * Excluir) — mesmas condições de sempre, exibidas no detalhe (drawer) da tela Fornecedores. Estado canônico vem de `sgcStatus` (lib/sgc-display-status.ts), nunca otimista.
+ */
+export function MapaItemActions({
+  item,
   itens,
-  contratos = [],
-  profissionais = [],
-  selectedCodigo,
-  selectedContrato,
-  isAdmin = false,
-  onChanged,
+  sgcEntry,
+  revisao,
   revisoes = [],
-  sgcStatus = {},
+  isAdmin = false,
   onEnviarBm,
   onRetornarBm,
-  onDivergenciaResolvida,
-  ciclo = "2605",
+  onEdit,
+  onChanged,
+  dropdownOpen = false,
+  onToggleDropdown,
+  onOpenDropdownFor,
+  ciclo,
 }: {
+  item: MapaPagamentoItem;
   itens: MapaPagamentoItem[];
-  contratos?: ContratoResumo[];
-  profissionais?: Profissional[];
-  selectedCodigo: string;
-  selectedContrato: string;
-  isAdmin?: boolean;
-  onChanged?: () => Promise<void> | void;
+  sgcEntry?: SgcStatusEntry;
+  revisao?: Revisao;
   revisoes?: Revisao[];
-  sgcStatus?: Record<string, SgcStatusEntry>;
+  isAdmin?: boolean;
   onEnviarBm?: (colaboradorCodigo: string) => Promise<void>;
   onRetornarBm?: (sgcId: string) => Promise<void>;
-  /** Refresh imediato de sgcStatus (fora deste componente) depois de Incluir/Descartar. */
-  onDivergenciaResolvida?: () => void;
-  ciclo?: string;
+  onEdit: (item: MapaPagamentoItem) => void;
+  onChanged?: () => Promise<void> | void;
+  dropdownOpen?: boolean;
+  onToggleDropdown?: () => void;
+  onOpenDropdownFor?: (itemId: string | null) => void;
+  ciclo: string;
 }) {
-  const [search, setSearch]           = useState("");
-  const [sortOrder, setSortOrder]     = useState("");
-  const [editingItem, setEditingItem] = useState<MapaPagamentoItem | null>(null);
-  const [isCreating, setIsCreating]   = useState(false);
-  const [saving, setSaving]           = useState(false);
-  const [paymentToast, setPaymentToast] = useState<string | null>(null);
-  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
-  const [enviandoCodigo, setEnviandoCodigo] = useState<string | null>(null);
-  const [retornandoId, setRetornandoId] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [retornando, setRetornando] = useState(false);
+  if (!isAdmin) return null;
 
-  useEffect(() => {
-    if (!paymentToast) return;
-    const timer = setTimeout(() => setPaymentToast(null), 4000);
-    return () => clearTimeout(timer);
-  }, [paymentToast]);
-
-  const revisaoMap = useMemo(
-    () => new Map(revisoes.map((r) => [r.colaboradorCodigo, r])),
-    [revisoes],
-  );
-
-  const filteredItems = useMemo(() => {
-    const q = search.trim().toLocaleLowerCase("pt-BR");
-    const result = itens.filter((item) => {
-      const matchColab       = selectedCodigo ? item.projetistaCodigo === selectedCodigo : true;
-      const matchContract    = selectedContrato ? contractParticipation(item, selectedContrato, contratos) > 0 : true;
-      const searchable       = [item.ato, item.projetistaCodigo, item.responsavel, item.cpfCnpj, item.razaoSocial, item.fornecedor?.cpfCnpj, item.fornecedor?.razaoSocial]
-        .filter(Boolean).join(" ").toLocaleLowerCase("pt-BR");
-      return matchColab && matchContract && (!q || searchable.includes(q));
-    });
-
-    // "" ("Ordem padrão") = nenhuma ordenação adicional, mantém a ordem original recebida em
-    // `itens` (mesma regra de sempre — só o nome/terminologia da opção mudou, nunca a ordem).
-    if (!sortOrder) return result;
-
-    if (sortOrder === "asc" || sortOrder === "desc") {
-      return [...result].sort((a, b) => {
-        const an = a.responsavel ?? a.projetistaCodigo ?? "";
-        const bn = b.responsavel ?? b.projetistaCodigo ?? "";
-        const cmp = an.localeCompare(bn, "pt-BR", { sensitivity: "base" });
-        return sortOrder === "desc" ? -cmp : cmp;
-      });
-    }
-
-    // Maior/menor valor usam `item.valor` — mesmo campo exibido na coluna "Pagamento" da tabela
-    // (a medida de valor que a tela já mostra por fornecedor). Registro sem valor válido
-    // (null/undefined/NaN) sempre vai para o final, nas duas direções — nunca deixa a ordenação
-    // instável nem finge que "sem valor" é zero.
-    return [...result].sort((a, b) => {
-      const av = a.valor;
-      const bv = b.valor;
-      const aValid = typeof av === "number" && Number.isFinite(av);
-      const bValid = typeof bv === "number" && Number.isFinite(bv);
-      if (!aValid && !bValid) return 0;
-      if (!aValid) return 1;
-      if (!bValid) return -1;
-      return sortOrder === "valor-desc" ? bv - av : av - bv;
-    });
-  }, [itens, search, selectedCodigo, selectedContrato, sortOrder, contratos]);
-
-  const filterDescription = selectedContrato
-    ? `${filteredItems.length} participantes alocados em ${selectedContrato}`
-    : `${filteredItems.length} participantes com pagamento no ciclo atual`;
+  const codigo = item.projetistaCodigo ?? "";
+  const sgcStatusValue = sgcEntry?.status ?? "AGUARDANDO_ENVIO";
+  const isRevisaoEnvio = sgcStatusValue === "REVISAO_SOLICITADA";
+  const temAlteracao = isRevisaoEnvio && revisao?.revisaoSolicitadaAt && item.updatedAt
+    ? new Date(item.updatedAt) > new Date(revisao.revisaoSolicitadaAt)
+    : true;
+  const podeEnviar = onEnviarBm && ["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA"].includes(sgcStatusValue) && temAlteracao;
+  const sgcId = sgcEntry?.id;
+  const podeRetornar = onRetornarBm && sgcId && ["PENDENTE", "REVISAO_SOLICITADA"].includes(sgcStatusValue);
+  async function excluir() {
+    if (!window.confirm("Excluir este pagamento?")) return;
+    const res = await fetch(`/api/mapa-pagamento/${item.id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Falha ao excluir pagamento.");
+    await onChanged?.();
+  }
 
   return (
-    <Card className="overflow-hidden">
-      {/* ── Fluxo do processo ── */}
-      <div className="border-b border-[#E5E7EB] bg-[#FAFAFA] px-5 py-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-[#9CA3AF]">Fluxo Medição</span>
-          {[
-            { label: "Envio do BM",  bg: "bg-[#F3F4F6]",  color: "text-[#555555]" },
-            { label: "Validação",    bg: "bg-[#FFFBEB]",   color: "text-[#D97706]" },
-            { label: "Conclusão",    bg: "bg-[#F0FDF4]",   color: "text-[#16A34A]" },
-          ].map((s, i, arr) => (
-            <div key={i} className="flex items-center gap-1">
-              <span className={`rounded-lg ${s.bg} px-2.5 py-1 text-[11px] font-semibold ${s.color}`}>{s.label}</span>
-              {i < arr.length - 1 && <ArrowRight size={12} className="text-[#9CA3AF]" />}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Toolbar ── */}
-      <div className="border-b border-[#E5E7EB] bg-white px-5 py-4">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
-          <div className="min-w-0">
-            <h2 className="text-base font-bold text-[#1A1A1A]">Pagamentos por fornecedor</h2>
-            <p className="mt-0.5 text-sm text-[#555555]">{filterDescription}</p>
-          </div>
-          <div className="flex flex-1 flex-wrap items-end gap-3 xl:justify-end">
-            <label className="grid min-w-[200px] flex-1 gap-1.5 text-label text-[var(--muted-foreground)]">
-              Pesquisar
-              <span className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" size={14} />
-                <Input className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ID, nome ou empresa" />
-              </span>
-            </label>
-            <label className="grid min-w-[160px] gap-1.5 text-label text-[var(--muted-foreground)]">
-              Ordenar por
-              <Select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-                <option value="">Ordem padrão</option>
-                <option value="asc">Nome — A a Z</option>
-                <option value="desc">Nome — Z a A</option>
-                <option value="valor-desc">Maior valor</option>
-                <option value="valor-asc">Menor valor</option>
-              </Select>
-            </label>
-            {isAdmin && (
-              // "GERAL" é só o filtro do Dashboard para "ver todos os ciclos" — nunca um ciclo real
-              // em que um pagamento possa existir. Criar aqui gerava um item com `ciclo: "GERAL"`
-              // que a própria listagem (agregada por ciclos realmente cadastrados) nunca conseguia
-              // exibir de novo — sucesso real no banco, invisível para sempre (bug crítico
-              // corrigido também no backend, que agora rejeita essa criação de qualquer forma).
-              <div className="relative shrink-0" title={ciclo === "GERAL" ? "Selecione um ciclo específico (não \"Geral\") para cadastrar um novo pagamento." : undefined}>
-                <Button onClick={() => setIsCreating(true)} disabled={ciclo === "GERAL"} className="shrink-0">
-                  <Plus size={15} />
-                  Adicionar
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Payment modal ── */}
-      {isAdmin && (isCreating || editingItem) && (
-        <PaymentModal
-          item={editingItem}
-          ciclo={ciclo}
-          saving={saving}
-          profissionais={profissionais}
-          contratos={contratos}
-          onCancel={() => { setIsCreating(false); setEditingItem(null); }}
-          onSave={async (payload) => {
-            setSaving(true);
-            try {
-              const url = editingItem ? `/api/mapa-pagamento/${editingItem.id}` : "/api/mapa-pagamento";
-              const res = await fetch(url, {
-                method: editingItem ? "PATCH" : "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ...payload, ciclo }),
-              });
-              if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
-                throw new Error(body.error || "Não foi possível cadastrar o pagamento. Tente novamente.");
-              }
-              const wasCreating = !editingItem;
-              setIsCreating(false);
-              setEditingItem(null);
-              setPaymentToast(wasCreating ? "Pagamento cadastrado com sucesso." : "Pagamento atualizado com sucesso.");
-              await onChanged?.();
-            } finally {
-              setSaving(false);
-            }
+    <div className="flex flex-wrap items-center justify-start gap-1.5">
+      {podeRetornar && (
+        <Button
+          disabled={retornando}
+          title="Retornar BM para aguardando envio"
+          onClick={async () => {
+            setRetornando(true);
+            try { await onRetornarBm(sgcId); } finally { setRetornando(false); }
           }}
-          onDivergenciaResolvida={onDivergenciaResolvida}
-        />
+          className="h-8 shrink-0 gap-1 whitespace-nowrap border border-[#FCA5A5] bg-[#FEF2F2] px-2 text-xs font-semibold !text-[#DC2626] hover:border-[#F87171] hover:bg-[#FEE2E2]"
+          variant="ghost"
+        >
+          <RotateCcw size={12} />
+          {retornando ? "Retornando..." : "Retornar BM"}
+        </Button>
       )}
-
-      {/* ── Table ── */}
-      <div className="max-h-[560px] overflow-auto">
-        <table className="w-full min-w-[1380px] border-collapse text-sm">
-          <thead className="sticky top-0 z-10">
-            <tr className="bg-[#F9FAFB]">
-              {[
-                // "Alocação" NÃO foi renomeada para "Contrato": auditei a fonte (lib/mapa-pagamento.ts)
-                // e esta coluna mostra `cadastro?.tipoCt` (Tipo CT do cadastro administrativo do
-                // fornecedor) — nunca um contrato real. Renomear para "Contrato" seria exatamente a
-                // troca de rótulo sem alinhar o dado que a tarefa pediu para nunca fazer.
-                { label: "Alocação", align: "left" },
-                { label: "Nome", align: "left" },
-                { label: "CNPJ", align: "left" },
-                { label: "Razão social", align: "left" },
-                ...contratos.map((c) => ({ label: c.nome, align: "right" as const })),
-                { label: "Pagamento", align: "right" },
-                { label: "Revisão", align: "right" },
-                ...(isAdmin ? [{ label: "Ações", align: "right" }] : []),
-              ].map(({ label, align }) => (
-                <th
-                  key={label}
-                  className={`text-table-header border-b border-[#E5E7EB] px-4 py-2.5 text-[var(--muted-foreground)] text-${align}`}
-                >
-                  {label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredItems.map((item, i) => {
-              const codigo = item.projetistaCodigo ?? "";
-              const revisao = revisaoMap.get(codigo);
-              const hasRevisao = !!revisao;
-              const dropdownOpen = openDropdownId === item.id;
-              const sgcEntry = sgcStatus[codigo];
-              const sgcStatusValue = sgcEntry?.status ?? "AGUARDANDO_ENVIO";
-              const isRevisaoEnvio = sgcStatusValue === "REVISAO_SOLICITADA";
-              const temAlteracao = isRevisaoEnvio && revisao?.revisaoSolicitadaAt && item.updatedAt
-                ? new Date(item.updatedAt) > new Date(revisao.revisaoSolicitadaAt)
-                : true;
-              const enviando = enviandoCodigo === codigo;
-              // Fonte única para rótulo, cor e estágio visual; sempre deriva dos valores canônicos
-              // persistidos, nunca de texto traduzido ou de estado otimista local.
-              const statusMeta = getMapaPagamentoStatusMeta(sgcStatusValue, sgcEntry?.statusConferencia);
-              const podeEnviar = isAdmin && onEnviarBm && ["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA"].includes(sgcStatusValue) && temAlteracao;
-              const podeRetornar = isAdmin && onRetornarBm && sgcEntry?.id && ["PENDENTE", "REVISAO_SOLICITADA"].includes(sgcStatusValue);
-
-              return (
-                <tr
-                  key={item.id}
-                  className={`border-b last:border-0 transition-colors ${
-                    statusMeta.rowTone === "success"
-                      ? "border-[#BBF7D0] bg-[#F0FDF4] hover:bg-[#DCFCE7]"
-                      : statusMeta.rowTone === "danger"
-                      ? "border-[#FCA5A5] bg-[#FEF2F2] hover:bg-[#FEE2E2]"
-                      : statusMeta.rowTone === "warning"
-                      ? "border-[#FDE68A] bg-[#FFFBEB] hover:bg-[#FEF3C7]"
-                      : `border-[#F3F4F6] hover:bg-[#F9FAFB] ${i % 2 !== 0 ? "bg-[#FAFAFA]" : "bg-white"}`
-                  }`}
-                >
-                  <td className="px-4 py-3 font-medium text-[#1A1A1A]">{item.alocacao ?? "–"}</td>
-                  <td className="px-4 py-3 font-semibold text-[#1A1A1A]">
-                    <div className="flex items-center gap-2">
-                      {item.responsavel ?? item.projetistaCodigo ?? "–"}
-                      <Badge variant={statusMeta.badge} className="shrink-0">{statusMeta.label}</Badge>
-                      {item.documentosPendentesContrato > 0 && (
-                        <span
-                          className="shrink-0 text-[#D97706]"
-                          title={`${item.documentosPendentesContrato} documento(s) sem contrato (CTO) válido — ${money(item.valorNaoClassificadoContrato)} (${percent.format(item.percentualNaoClassificadoContrato / 100)}) do total ainda não classificado. Os contratos identificados abaixo continuam corretos.`}
-                        >
-                          <AlertTriangle size={13} />
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="font-technical px-4 py-3 text-[#555555]"><BlurValue>{item.fornecedor?.cpfCnpj ?? item.cpfCnpj ?? "–"}</BlurValue></td>
-                  <td className="px-4 py-3 text-[#555555]">{item.fornecedor?.razaoSocial ?? item.razaoSocial ?? "–"}</td>
-                  {contratos.map((c) => (
-                    <td key={c.id} className="px-4 py-3 text-right tabular-nums text-[#555555]">
-                      {formatParticipacao(item.participacaoContratos[c.id])}
-                    </td>
-                  ))}
-                  <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#1A1A1A]"><BlurValue>{money(item.valor)}</BlurValue></td>
-                  <td className="px-4 py-3 text-right tabular-nums text-[#555555]">
-                    {sgcEntry && sgcEntry.revisaoNumero > 0 ? `Rev. ${sgcEntry.revisaoNumero}` : "–"}
-                  </td>
-                  {isAdmin && (
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1.5">
-                        {podeRetornar && (
-                          <Button
-                            disabled={retornandoId === sgcEntry.id}
-                            title="Retornar BM para aguardando envio"
-                            onClick={async () => {
-                              setRetornandoId(sgcEntry.id);
-                              try { await onRetornarBm!(sgcEntry.id); } finally { setRetornandoId(null); }
-                            }}
-                            className="h-8 shrink-0 gap-1 whitespace-nowrap border border-[#FCA5A5] bg-[#FEF2F2] px-2 text-xs font-semibold !text-[#DC2626] hover:border-[#F87171] hover:bg-[#FEE2E2]"
-                            variant="ghost"
-                          >
-                            <RotateCcw size={12} />
-                            {retornandoId === sgcEntry.id ? "Retornando..." : "Retornar BM"}
-                          </Button>
-                        )}
-                        {(podeEnviar || (isRevisaoEnvio && !temAlteracao)) && (
-                          <Button
-                            disabled={enviando || !temAlteracao}
-                            title={
-                              !temAlteracao
-                                ? "Faça alguma alteração no pagamento antes de reenviar"
-                                : isRevisaoEnvio
-                                ? "Reenviar medição revisada"
-                                : "Enviar BM para o fornecedor"
-                            }
-                            onClick={async () => {
-                              setEnviandoCodigo(codigo);
-                              try { await onEnviarBm!(codigo); } finally { setEnviandoCodigo(null); }
-                            }}
-                            className={`h-8 shrink-0 gap-1 whitespace-nowrap px-2 text-xs font-semibold ${
-                              isRevisaoEnvio
-                                ? "border border-[#FCD34D] bg-[#FFFBEB] !text-[#D97706] hover:bg-[#FEF3C7]"
-                                : "border border-[#BFDBFE] bg-[#EFF6FF] !text-[#2563EB] hover:bg-[#DBEAFE]"
-                            }`}
-                            variant="ghost"
-                          >
-                            <Send size={12} />
-                            {enviando ? "Enviando…" : isRevisaoEnvio ? "Reenviar BM" : "Enviar BM"}
-                          </Button>
-                        )}
-                        {hasRevisao && (
-                          <div className="relative">
-                            <IconButton
-                              className={hasUnreadFornecedorMessages(revisao.mensagens)
-                                ? "border-[#86EFAC] bg-[#F0FDF4] text-[#16A34A] hover:border-[#22C55E] hover:bg-[#DCFCE7]"
-                                : "border-[#FCD34D] bg-[#FFFBEB] text-[#D97706] hover:border-[#F59E0B] hover:bg-[#FEF3C7]"}
-                              title="Ver comentário do fornecedor"
-                              onClick={() => setOpenDropdownId(dropdownOpen ? null : item.id)}
-                            >
-                              <MessageCircle size={14} />
-                            </IconButton>
-                            {dropdownOpen && (
-                              <ComentarioDropdown
-                                revisao={revisao}
-                                conversas={revisoes}
-                                onClose={() => setOpenDropdownId(null)}
-                                onRespondido={onChanged}
-                                onSelectRevisao={(next) => {
-                                  const target = itens.find((it) => it.projetistaCodigo === next.colaboradorCodigo);
-                                  if (target) setOpenDropdownId(target.id);
-                                }}
-                                ciclo={ciclo}
-                              />
-                            )}
-                          </div>
-                        )}
-                        <IconButton
-                          className="hover:border-[#2563EB] hover:text-[#2563EB]"
-                          title="Editar pagamento"
-                          onClick={() => setEditingItem(item)}
-                        >
-                          <Edit3 size={14} />
-                        </IconButton>
-                        <IconButton
-                          className="hover:border-[#DC2626] hover:text-[#DC2626]"
-                          title="Excluir pagamento"
-                          onClick={async () => {
-                            if (!window.confirm("Excluir este pagamento?")) return;
-                            const res = await fetch(`/api/mapa-pagamento/${item.id}`, { method: "DELETE" });
-                            if (!res.ok) throw new Error("Falha ao excluir pagamento.");
-                            await onChanged?.();
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </IconButton>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-            {!filteredItems.length && (
-              <tr>
-                <td colSpan={(isAdmin ? 7 : 6) + contratos.length} className="px-4 py-12 text-center text-sm text-[#9CA3AF]">
-                  Nenhuma linha encontrada com os filtros aplicados.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {paymentToast && (
-        <div className="fixed bottom-5 right-5 z-[60] rounded-lg bg-[#16A34A] px-4 py-3 text-sm font-semibold text-white shadow-lg">
-          {paymentToast}
+      {onEnviarBm && (podeEnviar || (isRevisaoEnvio && !temAlteracao)) && (
+        <Button
+          disabled={enviando || !temAlteracao}
+          title={
+            !temAlteracao
+              ? "Faça alguma alteração no pagamento antes de reenviar"
+              : isRevisaoEnvio
+              ? "Reenviar medição revisada"
+              : "Enviar BM para o fornecedor"
+          }
+          onClick={async () => {
+            setEnviando(true);
+            try { await onEnviarBm(codigo); } finally { setEnviando(false); }
+          }}
+          className={`h-8 shrink-0 gap-1 whitespace-nowrap px-2 text-xs font-semibold ${
+            isRevisaoEnvio
+              ? "border border-[#FCD34D] bg-[#FFFBEB] !text-[#D97706] hover:bg-[#FEF3C7]"
+              : "border border-[#BFDBFE] bg-[#EFF6FF] !text-[#2563EB] hover:bg-[#DBEAFE]"
+          }`}
+          variant="ghost"
+        >
+          <Send size={12} />
+          {enviando ? "Enviando…" : isRevisaoEnvio ? "Reenviar BM" : "Enviar BM"}
+        </Button>
+      )}
+      {revisao && (
+        <div className="relative">
+          <IconButton
+            className={hasUnreadFornecedorMessages(revisao.mensagens)
+              ? "border-[#86EFAC] bg-[#F0FDF4] text-[#16A34A] hover:border-[#22C55E] hover:bg-[#DCFCE7]"
+              : "border-[#FCD34D] bg-[#FFFBEB] text-[#D97706] hover:border-[#F59E0B] hover:bg-[#FEF3C7]"}
+            title="Ver comentário do fornecedor"
+            onClick={onToggleDropdown}
+          >
+            <MessageCircle size={14} />
+          </IconButton>
+          {dropdownOpen && (
+            <ComentarioDropdown
+              revisao={revisao}
+              conversas={revisoes}
+              onClose={() => onOpenDropdownFor?.(null)}
+              onRespondido={onChanged}
+              onSelectRevisao={(next) => {
+                const target = itens.find((it) => it.projetistaCodigo === next.colaboradorCodigo);
+                if (target) onOpenDropdownFor?.(target.id);
+              }}
+              ciclo={ciclo}
+            />
+          )}
         </div>
       )}
-    </Card>
+      <Button variant="secondary" className="h-8 gap-1.5 px-2.5 text-xs" onClick={() => onEdit(item)}>
+        <Edit3 size={13} />
+        Editar pagamento
+      </Button>
+      <Button variant="ghost" className="h-8 gap-1.5 px-2.5 text-xs !text-[#DC2626] hover:bg-[#FEF2F2]" onClick={excluir}>
+        <Trash2 size={13} />
+        Excluir pagamento
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Cadastro/edição de pagamento — mesmo PaymentModal e mesma chamada POST /api/mapa-pagamento ou
+ * PATCH /api/mapa-pagamento/[id] de sempre (o backend continua rejeitando ciclo "GERAL").
+ */
+export function MapaPagamentoEditor({
+  item,
+  ciclo,
+  profissionais = [],
+  contratos = [],
+  onClose,
+  onSaved,
+  onDivergenciaResolvida,
+}: {
+  item: MapaPagamentoItem | null;
+  ciclo: string;
+  profissionais?: Profissional[];
+  contratos?: ContratoResumo[];
+  onClose: () => void;
+  onSaved: (mensagem: string) => Promise<void> | void;
+  onDivergenciaResolvida?: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  return (
+    <PaymentModal
+      item={item}
+      ciclo={ciclo}
+      saving={saving}
+      profissionais={profissionais}
+      contratos={contratos}
+      onCancel={onClose}
+      onSave={async (payload) => {
+        setSaving(true);
+        try {
+          const url = item ? `/api/mapa-pagamento/${item.id}` : "/api/mapa-pagamento";
+          const res = await fetch(url, {
+            method: item ? "PATCH" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...payload, ciclo }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.error || "Não foi possível cadastrar o pagamento. Tente novamente.");
+          }
+          await onSaved(item ? "Pagamento atualizado com sucesso." : "Pagamento cadastrado com sucesso.");
+        } finally {
+          setSaving(false);
+        }
+      }}
+      onDivergenciaResolvida={onDivergenciaResolvida}
+    />
   );
 }
 

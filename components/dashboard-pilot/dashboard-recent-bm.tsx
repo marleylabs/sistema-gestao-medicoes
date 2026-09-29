@@ -1,6 +1,18 @@
+import { ArrowRight } from "lucide-react";
 import type { ContratoResumo, MapaPagamentoItem } from "@/components/types";
 import { Badge, BlurValue, Card } from "@/components/ui";
+import { formatCicloLabel } from "@/lib/ciclo";
 import { getMapaPagamentoStatusMeta, type SgcStatusEntry } from "@/lib/sgc-display-status";
+
+const LIMITE_RESUMO = 5;
+
+function cicloLegivel(ciclo: string) {
+  try {
+    return formatCicloLabel(ciclo);
+  } catch {
+    return ciclo;
+  }
+}
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -15,11 +27,14 @@ export function DashboardRecentBm({
   contratos,
   statuses,
   ciclo,
+  onVerTodos,
 }: {
   items: MapaPagamentoItem[];
   contratos: ContratoResumo[];
   statuses: Record<string, SgcStatusEntry>;
   ciclo: string;
+  /** Leva à tela operacional completa (/fornecedores) — este bloco é só um resumo. */
+  onVerTodos?: () => void;
 }) {
   const recent = [...items]
     .sort((a, b) => {
@@ -27,7 +42,7 @@ export function DashboardRecentBm({
       const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
       return bTime - aTime || a.ordem - b.ordem;
     })
-    .slice(0, 6);
+    .slice(0, LIMITE_RESUMO);
 
   return (
     <Card className="min-w-0 overflow-hidden">
@@ -36,9 +51,21 @@ export function DashboardRecentBm({
           <p className="text-card-title text-[var(--foreground)]">BMs e fornecedores recentes</p>
           <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">Resumo operacional com os dados já carregados da medição</p>
         </div>
-        <span className="rounded-md border border-[var(--border)] bg-[#FAFAF8] px-2 py-1 font-technical text-[10px] text-[var(--muted-foreground)]">
-          Ciclo {ciclo === "GERAL" ? "geral" : ciclo}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="rounded-md border border-[var(--border)] bg-[#FAFAF8] px-2 py-1 font-technical text-[10px] text-[var(--muted-foreground)]">
+            Ciclo {ciclo === "GERAL" ? "geral" : cicloLegivel(ciclo)}
+          </span>
+          {onVerTodos && (
+            <button
+              type="button"
+              onClick={onVerTodos}
+              className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--primary)] hover:text-[var(--primary-hover,#8C1616)] focus-visible:outline-none focus-visible:underline"
+            >
+              Ver todos
+              <ArrowRight size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
       {recent.length ? (
@@ -67,7 +94,7 @@ export function DashboardRecentBm({
                       {codigo && <p className="mt-0.5 font-technical text-[9px] text-[var(--muted-foreground)]">{codigo}</p>}
                     </td>
                     <td className="max-w-[220px] truncate px-5 py-3 text-[11px] text-[var(--muted-foreground)]">{principalContract(item, contratos)}</td>
-                    <td className="px-5 py-3 font-technical text-[10px] text-[var(--muted-foreground)]">{ciclo === "GERAL" ? "—" : ciclo}</td>
+                    <td className="px-5 py-3 text-[11px] text-[var(--muted-foreground)]">{ciclo === "GERAL" ? "—" : cicloLegivel(ciclo)}</td>
                     <td className="px-5 py-3 text-right text-[11px] font-semibold tabular-nums text-[var(--foreground)]"><BlurValue>{currency.format(item.valor ?? 0)}</BlurValue></td>
                     <td className="px-5 py-3 text-right"><Badge variant={meta.badge}>{meta.label}</Badge></td>
                   </tr>

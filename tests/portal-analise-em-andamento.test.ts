@@ -64,13 +64,15 @@ test("Portal do Fornecedor: não expõe quantidade de divergências nem detalhes
   assert.doesNotMatch(block, /documento[s]? divergente/i);
 });
 
-test("Equipe de Medição (Pagamentos por Fornecedor / mapa-pagamento-table.tsx) continua usando DIVERGENCIA sem alteração", () => {
+test("Equipe de Medição (tela Fornecedores / fornecedores-table.tsx) continua usando DIVERGENCIA sem alteração", () => {
   // A comparação foi centralizada em lib/sgc-display-status.ts (BUG 1B desta auditoria — o
   // status visual ficava preso em DIVERGÊNCIA porque a regra estava duplicada/local demais para
-  // ser reaproveitada de forma confiável) — mapa-pagamento-table.tsx agora consome o helper em vez
-  // de reescrever a comparação, e o próprio helper continua expondo DIVERGENCIA sem alteração.
-  const tableSource = readSource("components/mapa-pagamento-table.tsx");
-  assert.match(tableSource, /getMapaPagamentoStatusMeta\(sgcStatusValue, sgcEntry\?\.statusConferencia\)/);
+  // ser reaproveitada de forma confiável). A tabela operacional da equipe (antes em
+  // mapa-pagamento-table.tsx, agora na tela Fornecedores) consome o helper em vez de reescrever a
+  // comparação, e o próprio helper continua expondo DIVERGENCIA sem alteração.
+  const tableSource = readSource("components/fornecedores/fornecedores-table.tsx");
+  assert.match(tableSource, /getMapaPagamentoStatusMeta\(sgcEntry\?\.status \?\? "AGUARDANDO_ENVIO", sgcEntry\?\.statusConferencia\)/);
+  assert.doesNotMatch(tableSource, /=== "DIVERGENCIA"/, "a tabela nunca deve reescrever a comparação localmente");
   const helperSource = readSource("lib/sgc-display-status.ts");
   assert.match(helperSource, /statusConferencia === "DIVERGENCIA"/);
 });

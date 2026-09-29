@@ -1,11 +1,14 @@
 import { expect, type Page } from "@playwright/test";
 
-/** Página "Visão Geral" (MEDICAO/ADMIN) — onde vive a tabela "Pagamentos por fornecedor" com o botão Enviar BM. */
+/**
+ * Tela "Fornecedores" (MEDICAO/ADMIN). A tabela é só leitura; as ações (Enviar/Reenviar/Retornar BM,
+ * chat, Editar/Excluir pagamento) ficam no detalhe (drawer) aberto ao clicar na linha.
+ */
 export class PagamentosPage {
   constructor(private readonly page: Page) {}
 
   async goto() {
-    await this.page.goto("/?section=visao");
+    await this.page.goto("/fornecedores");
   }
 
   async selectCiclo(ciclo: string) {
@@ -14,30 +17,42 @@ export class PagamentosPage {
   }
 
   private table() {
-    // "Tipos e Preços por fornecedor" também lista o nome do fornecedor numa tabela diferente —
-    // escopa pela tabela "Pagamentos por fornecedor", identificável pela coluna "AÇÕES", única a ela.
-    return this.page.locator("table").filter({ has: this.page.getByText("Ações", { exact: true }) });
+    return this.page.getByTestId("fornecedores-tabela");
   }
 
   private rowFor(fornecedorNome: string) {
     return this.table().locator("tr", { hasText: fornecedorNome });
   }
 
-  async enviarBm(fornecedorNome: string) {
+  /** Abre (ou reaproveita) o detalhe do fornecedor; fecha antes o de outro fornecedor, se houver. */
+  async abrirDetalhe(fornecedorNome: string) {
+    const detalhe = this.page.getByRole("dialog", { name: `Detalhe de ${fornecedorNome}` });
+    if (await detalhe.isVisible()) return detalhe;
+    const outroDetalhe = this.page.getByRole("dialog", { name: /^Detalhe de / });
+    if (await outroDetalhe.isVisible()) {
+      await this.page.keyboard.press("Escape");
+      await expect(outroDetalhe).toHaveCount(0);
+    }
     const row = this.rowFor(fornecedorNome);
     await expect(row).toBeVisible();
+    await row.locator("td").first().click();
+    await expect(detalhe).toBeVisible();
+    return detalhe;
+  }
+
+  async enviarBm(fornecedorNome: string) {
+    const detalhe = await this.abrirDetalhe(fornecedorNome);
     const responsePromise = this.page.waitForResponse((r) => r.url().includes("/api/sgc/enviar") && r.request().method() === "POST");
-    await row.getByRole("button", { name: /Enviar BM/i }).click();
+    await detalhe.getByRole("button", { name: /Enviar BM/i }).click();
     await responsePromise;
   }
 
   async retornarBm(fornecedorNome: string) {
-    const row = this.rowFor(fornecedorNome);
-    await expect(row).toBeVisible();
+    const detalhe = await this.abrirDetalhe(fornecedorNome);
     const responsePromise = this.page.waitForResponse((r) => r.url().includes("/api/admin/financeiro") && r.request().method() === "POST");
     // retornarBm() usa window.confirm() — mesmo cuidado de salvarEEnviarBm().
     this.page.once("dialog", (dialog) => dialog.accept());
-    await row.getByRole("button", { name: /Retornar BM/i }).click();
+    await detalhe.getByRole("button", { name: /Retornar BM/i }).click();
     await responsePromise;
   }
 
@@ -46,11 +61,13 @@ export class PagamentosPage {
   }
 
   async expectNoEnviarBm(fornecedorNome: string) {
-    await expect(this.rowFor(fornecedorNome).getByRole("button", { name: /Enviar BM/i })).toHaveCount(0);
+    const detalhe = await this.abrirDetalhe(fornecedorNome);
+    await expect(detalhe.getByRole("button", { name: /Enviar BM/i })).toHaveCount(0);
   }
 
   async abrirEditarPagamento(fornecedorNome: string) {
-    await this.rowFor(fornecedorNome).getByRole("button", { name: "Editar pagamento" }).click();
+    const detalhe = await this.abrirDetalhe(fornecedorNome);
+    await detalhe.getByRole("button", { name: "Editar pagamento" }).click();
     // O heading do modal está sempre presente; a seção "Divergências da Medição" só aparece
     // quando há divergências pendentes — não pode ser a condição de "modal aberto".
     await expect(this.page.getByRole("heading", { name: "Editar pagamento" })).toBeVisible();

@@ -50,6 +50,28 @@ test.describe.serial("Revisão — Solicitar revisão → motivo persistido → 
     await page.request.post("/api/auth/logout");
   });
 
+  test("MEDICAO vê a revisão no detalhe do fornecedor (tela Fornecedores): uma única instância do chat, fechável sem perder o detalhe", async ({ page }) => {
+    const login = new LoginPage(page);
+    await login.goto();
+    await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
+    const pagamentos = new PagamentosPage(page);
+    await pagamentos.goto();
+
+    const linha = page.getByTestId("fornecedores-tabela").locator("tr", { hasText: FORNECEDOR_NOME });
+    await expect(linha).toContainText("Revisão solicitada");
+    await linha.locator("td").first().click();
+    const detalhe = page.getByRole("dialog", { name: `Detalhe de ${FORNECEDOR_NOME}` });
+    await expect(detalhe).toBeVisible();
+    await detalhe.getByRole("button", { name: "Ver comentário do fornecedor" }).click();
+    await expect(page.getByRole("button", { name: "Fechar chat" })).toHaveCount(1);
+    await expect(page.getByText(MOTIVO).first()).toBeVisible();
+    await page.getByRole("button", { name: "Fechar chat" }).click();
+    await expect(page.getByRole("button", { name: "Fechar chat" })).toHaveCount(0);
+    await expect(detalhe).toBeVisible();
+
+    await page.request.post("/api/auth/logout");
+  });
+
   test("MEDICAO reenvia o BM revisado → status volta a PENDENTE, revisaoNumero incrementa, pontosDiscordancia é limpo", async ({ page }) => {
     const login = new LoginPage(page);
     await login.goto();

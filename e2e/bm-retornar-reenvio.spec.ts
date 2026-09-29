@@ -76,7 +76,7 @@ test.describe.serial("Auditoria — idempotência do BM_AVAILABLE em Enviar BM /
     // 2) Cria o pagamento e envia o primeiro BM (via botão real da UI — item 21/22).
     await login.goto();
     await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
-    await page.goto("/?section=visao");
+    await page.goto("/fornecedores");
     await page.getByRole("button", { name: "Adicionar" }).click();
     await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
     await page.getByRole("textbox", { name: "Nome", exact: true }).fill(codigoCanonico);

@@ -24,7 +24,7 @@ async function abrirNovoPagamento(page: import("@playwright/test").Page) {
   const login = new LoginPage(page);
   await login.goto();
   await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
-  await page.goto("/?section=visao");
+  await page.goto("/fornecedores");
   await page.getByRole("button", { name: "Adicionar" }).click();
   await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
 }
@@ -79,9 +79,7 @@ test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silê
     // Sucesso: toast aparece, modal fecha, SEM reload.
     await expect(page.getByText("Pagamento cadastrado com sucesso.")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Novo pagamento" })).toHaveCount(0);
-    // "Pagamentos por fornecedor" é a única tabela com a coluna "Ações" — as outras duas
-    // ("Tipos e Preços" e o resumo do dashboard) também listam o nome do fornecedor.
-    const pagamentosTable = page.locator("table").filter({ has: page.getByText("Ações", { exact: true }) });
+    const pagamentosTable = page.getByTestId("fornecedores-tabela");
     await expect(pagamentosTable.locator("tr", { hasText: FORNECEDOR_NOME })).toContainText("R$ 9.900,00");
 
     const item = await prisma.mapaPagamentoItem.findFirstOrThrow({ where: { ciclo: e2eCiclo(), projetistaCodigo: CODIGO } });
