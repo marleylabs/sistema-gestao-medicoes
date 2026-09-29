@@ -7,7 +7,8 @@ import { assertConnectedToE2eDatabase, prismaTest } from "../lib/prisma-test";
 /**
  * Fornecedor explicitamente inativo (possui CadastroFornecedor, nenhum ativo) não participa de novas
  * operações: não recebe e-mail operacional (resolveFornecedorEmail) nem nova Medicao pela inclusão
- * de divergência (POST /api/admin/conferencia/[id]/incluir). Profissional legado, sem qualquer
+ * de divergência (POST /api/admin/conferencia/[id]/incluir) ou pela inclusão manual de documento em
+ * Editar pagamento (POST /api/mapa-pagamento/documentos). Profissional legado, sem qualquer
  * CadastroFornecedor, mantém o comportamento histórico. A identidade é sempre colaboradorCodigo /
  * Profissional.codigo — todos os fixtures compartilham o MESMO CNPJ para provar que ele não interfere.
  */
@@ -32,6 +33,7 @@ async function main() {
   };
   const { resolveFornecedorEmail } = require("../lib/email/resolve-recipients");
   const { POST: incluirDivergencia } = require("../app/api/admin/conferencia/[id]/incluir/route");
+  const { POST: incluirDocumentoManual } = require("../app/api/mapa-pagamento/documentos/route");
   Module._load = originalLoad;
 
   const suffix = randomUUID().slice(0, 8).toUpperCase();
@@ -40,12 +42,14 @@ async function main() {
   const usuarioIds: string[] = [];
   const sgcIds: string[] = [];
   const codigos: string[] = [];
+  const projetoIds: string[] = [];
 
-  async function criarFornecedor(label: string, opts: { cadastro: "ATIVO" | "INATIVO" | "NENHUM"; valorDocumento?: number }) {
+  async function criarFornecedor(label: string, opts: { cadastro: "ATIVO" | "INATIVO" | "NENHUM"; valorDocumento?: number; semCodigo?: boolean }) {
+    // `semCodigo`: Profissional legado com codigo NULL — o cadastro grava o `nome` como colaboradorCodigo.
     const codigo = `TESTE INATIVO OPS ${label} ${suffix}`;
     const nome = `Fornecedor ${label} ${suffix}`;
     const profissional = await prismaTest.profissional.create({
-      data: { nome: codigo, codigo, nomeCompleto: nome, email: `profissional.${label.toLowerCase()}.${suffix}@example.test`, cnpj: CNPJ_COMPARTILHADO },
+      data: { nome: codigo, codigo: opts.semCodigo ? null : codigo, nomeCompleto: nome, email: `profissional.${label.toLowerCase()}.${suffix}@example.test`, cnpj: CNPJ_COMPARTILHADO },
     });
     profissionalIds.push(profissional.id);
     codigos.push(codigo);
@@ -90,20 +94,26 @@ async function main() {
     return { status: response.status, body: await response.json() };
   }
 
+  async function incluirDocumento(body: Record<string, unknown>) {
+    const response = await incluirDocumentoManual({ json: async () => body } as any);
+    return { status: response.status, body: await response.json() };
+  }
+
   // Contagens sempre restritas à identidade testada: `tsx --test` executa os arquivos em paralelo no
   // mesmo banco E2E, então contagens globais oscilam por causa de outras suítes.
-  async function snapshot(fornecedor: { codigo: string; nome: string; profissionalId: string; usuarioId: string }, divergenciaId: string) {
-    const [medicoes, medicoesCondicaoZero, mapa, divergencia, cadastros, profissional, usuario] = await Promise.all([
+  async function snapshot(fornecedor: { codigo: string; nome: string; profissionalId: string; usuarioId: string }, divergenciaId: string | null) {
+    const [medicoes, medicoesCondicaoZero, mapa, cadastros, profissional, usuario, projetos] = await Promise.all([
       prismaTest.medicao.count({ where: { idProfissional: fornecedor.profissionalId } }),
       prismaTest.medicao.count({ where: { idProfissional: fornecedor.profissionalId, condicao: "0" } }),
       prismaTest.mapaPagamentoItem.count({ where: { OR: [{ projetistaCodigo: fornecedor.codigo }, { responsavel: fornecedor.nome }] } }),
-      prismaTest.divergenciaMedicao.findUniqueOrThrow({ where: { id: divergenciaId } }),
       prismaTest.cadastroFornecedor.findMany({ where: { colaboradorCodigo: fornecedor.codigo }, orderBy: { id: "asc" } }),
       prismaTest.profissional.findUniqueOrThrow({ where: { id: fornecedor.profissionalId } }),
       prismaTest.usuario.findUniqueOrThrow({ where: { id: fornecedor.usuarioId } }),
+      prismaTest.projeto.findMany({ where: { id: { in: projetoIds } }, orderBy: { id: "asc" } }),
     ]);
-    const sgc = await prismaTest.sgcAprovacaoMedicao.findUniqueOrThrow({ where: { id: divergencia.sgcId } });
-    return JSON.parse(JSON.stringify({ medicoes, medicoesCondicaoZero, mapa, divergencia, cadastros, profissional, usuario, sgc }));
+    const divergencia = divergenciaId ? await prismaTest.divergenciaMedicao.findUniqueOrThrow({ where: { id: divergenciaId } }) : null;
+    const sgc = divergencia ? await prismaTest.sgcAprovacaoMedicao.findUniqueOrThrow({ where: { id: divergencia.sgcId } }) : null;
+    return JSON.parse(JSON.stringify({ medicoes, medicoesCondicaoZero, mapa, cadastros, profissional, usuario, projetos, divergencia, sgc }));
   }
 
   async function assertBloqueadoSemEscrita(fornecedor: { codigo: string; nome: string; profissionalId: string; usuarioId: string }, referencia: string) {
@@ -130,6 +140,7 @@ async function main() {
     const inativo = await criarFornecedor("INATIVO", { cadastro: "INATIVO", valorDocumento: 200 });
     const legado = await criarFornecedor("LEGADO", { cadastro: "NENHUM" });
     const porResponsavel = await criarFornecedor("RESPONSAVEL", { cadastro: "ATIVO", valorDocumento: 175 });
+    const inativoSemCodigo = await criarFornecedor("SEMCODIGO", { cadastro: "INATIVO", semCodigo: true });
 
     // ─── HIGH 1 — e-mail operacional ───
     const emailAtivo = await resolveFornecedorEmail(ativo.codigo, ativo.nome);
@@ -159,6 +170,7 @@ async function main() {
     // Inativo pelo código canônico e pelo nome/nomeCompleto (com caixa diferente): 409 e zero escrita.
     await assertBloqueadoSemEscrita(inativo, inativo.codigo);
     await assertBloqueadoSemEscrita(inativo, inativo.nome.toLowerCase());
+    await assertBloqueadoSemEscrita(inativoSemCodigo, inativoSemCodigo.nome);
 
     // Legado sem CadastroFornecedor: comportamento histórico preservado (sem preço cadastrado → "0").
     const divergenciaLegado = await criarDivergencia(legado.codigo, legado.codigo);
@@ -172,11 +184,43 @@ async function main() {
     const medicaoResponsavel = await prismaTest.medicao.findFirstOrThrow({ where: { idProfissional: porResponsavel.profissionalId } });
     assert.equal(medicaoResponsavel.condicao, "175");
 
+    // ─── Inclusão manual de documento (Editar pagamento) ───
+    // SE existente: o upsert de Projeto atualizaria o contrato — também precisa ficar intocado no 409.
+    const seExistente = await prismaTest.projeto.create({ data: { codigoProjeto: `SE-INATIVO-OPS-${suffix}`, contrato: "CT-ORIGINAL" } });
+    projetoIds.push(seExistente.id);
+
+    // Ativo (mesmo CNPJ do inativo): inclusão manual continua funcionando com a condição informada.
+    const manualAtivo = await incluirDocumento({ codigo: ativo.codigo, ciclo: CICLO, numeroDocumento: `DOC-ATIVO-${suffix}`, tipo2: "DOC", condicao: "150" });
+    assert.equal(manualAtivo.status, 201);
+    assert.equal(manualAtivo.body.condicao, "150");
+    assert.equal(await prismaTest.medicao.count({ where: { idProfissional: ativo.profissionalId, numeroDocumento: `DOC-ATIVO-${suffix}` } }), 1);
+
+    // Inativo pelo código canônico e por nome (caixa diferente), sem condição informada (antes virava "0"):
+    // 409 e zero escrita, inclusive no Projeto da SE existente.
+    for (const [fornecedor, referencia] of [[inativo, inativo.codigo], [inativo, inativo.nome.toLowerCase()], [inativoSemCodigo, inativoSemCodigo.nome]] as const) {
+      const antes = await snapshot(fornecedor, null);
+      const resultado = await incluirDocumento({ codigo: referencia, ciclo: CICLO, se: seExistente.codigoProjeto, contrato: "CT-NOVO", numeroDocumento: `DOC-INATIVO-${suffix}`, tipo2: "DOC" });
+      assert.equal(resultado.status, 409);
+      assert.deepEqual(resultado.body, { error: MENSAGEM_INATIVO });
+      const depois = await snapshot(fornecedor, null);
+      assert.deepEqual(depois, antes);
+      assert.equal(depois.medicoes, 0);
+      assert.equal(depois.medicoesCondicaoZero, 0);
+      assert.equal(depois.mapa, 0);
+    }
+    assert.equal(await prismaTest.medicao.count({ where: { numeroDocumento: `DOC-INATIVO-${suffix}` } }), 0);
+    assert.equal((await prismaTest.projeto.findUniqueOrThrow({ where: { id: seExistente.id } })).contrato, "CT-ORIGINAL");
+
+    // Legado sem CadastroFornecedor: comportamento histórico preservado (sem condição → "0").
+    const manualLegado = await incluirDocumento({ codigo: legado.codigo, ciclo: CICLO, numeroDocumento: `DOC-LEGADO-${suffix}`, tipo2: "DOC" });
+    assert.equal(manualLegado.status, 201);
+    assert.equal(manualLegado.body.condicao, "0");
+
     console.log("PASS: fornecedor inativo bloqueado em e-mail e inclusão; legado, responsavel e CNPJ compartilhado preservados.");
   } finally {
     const medicoes = await prismaTest.medicao.findMany({ where: { idProfissional: { in: profissionalIds } }, select: { idProjeto: true } });
     await prismaTest.medicao.deleteMany({ where: { idProfissional: { in: profissionalIds } } });
-    await prismaTest.projeto.deleteMany({ where: { id: { in: medicoes.map((item) => item.idProjeto) } } });
+    await prismaTest.projeto.deleteMany({ where: { id: { in: [...medicoes.map((item) => item.idProjeto), ...projetoIds] } } });
     await prismaTest.sgcLog.deleteMany({ where: { OR: [{ sgcId: { in: sgcIds } }, { colaboradorCodigo: { in: codigos } }] } });
     await prismaTest.divergenciaMedicao.deleteMany({ where: { sgcId: { in: sgcIds } } });
     await prismaTest.sgcAprovacaoMedicao.deleteMany({ where: { id: { in: sgcIds } } });

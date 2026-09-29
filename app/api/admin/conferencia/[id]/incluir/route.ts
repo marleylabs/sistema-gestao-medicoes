@@ -5,6 +5,7 @@ import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { logBmAction } from "@/lib/bm-log";
 import { liberarConferenciaSeCompleta } from "@/lib/conferencia-resolucao";
+import { FORNECEDOR_INATIVO_MENSAGEM, isFornecedorInativo } from "@/lib/fornecedor-inativo";
 
 const PRECO_POR_TIPO: Record<string, "valorHora" | "valorDocumento" | "valorA1Equivalente"> = {
   HH: "valorHora",
@@ -24,19 +25,6 @@ async function localizarPreco(tx: CadastroTx, colaboradorCodigo: string, tipo: s
   });
   const valor = cadastro?.[campo];
   return valor ? Number(valor) : null;
-}
-
-/**
- * Inativação explícita: a identidade canônica (`Profissional.codigo`) possui CadastroFornecedor e
- * nenhum está ativo. Profissional legado, sem qualquer cadastro, não é considerado inativo.
- */
-async function fornecedorInativo(tx: CadastroTx, codigoCanonico: string | null) {
-  if (!codigoCanonico) return false;
-  const cadastros = await tx.cadastroFornecedor.findMany({
-    where: { colaboradorCodigo: codigoCanonico },
-    select: { ativo: true },
-  });
-  return cadastros.length > 0 && !cadastros.some((item) => item.ativo);
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -82,7 +70,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (!profissional) throw new Error("FORNECEDOR_NAO_ENCONTRADO");
         // A situação administrativa é decidida pela identidade canônica do Profissional resolvido
         // (a divergência pode trazer nome/nomeCompleto), dentro da transação e antes de qualquer escrita.
-        if (await fornecedorInativo(tx, profissional.codigo)) throw new Error("FORNECEDOR_INATIVO");
+        if (await isFornecedorInativo(tx, profissional)) throw new Error("FORNECEDOR_INATIVO");
 
         const codigoProjeto = `MANUAL-${divergencia.ciclo}-${Date.now()}`;
         const projeto = await tx.projeto.upsert({
@@ -127,10 +115,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
   } catch (err) {
     if (err instanceof Error && err.message === "FORNECEDOR_INATIVO") {
-      return NextResponse.json(
-        { error: "Fornecedor inativo. Reative o fornecedor no Administrativo antes de incluí-lo em uma nova medição." },
-        { status: 409 },
-      );
+      return NextResponse.json({ error: FORNECEDOR_INATIVO_MENSAGEM }, { status: 409 });
     }
     if (err instanceof Error && err.message === "FORNECEDOR_NAO_ENCONTRADO") {
       return NextResponse.json({ error: "Fornecedor não encontrado para incluir este documento." }, { status: 409 });
