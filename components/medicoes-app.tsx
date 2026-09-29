@@ -21,7 +21,7 @@ import {
 import { AppShell } from "@/components/app-shell";
 import { AccountMenu } from "@/components/account-menu";
 import { GeneralChatWidget } from "@/components/general-chat-widget";
-import { Dashboard, MapaPagamentoResumo } from "@/components/dashboard";
+import { DashboardPilot } from "@/components/dashboard-pilot";
 import { ComentarioDropdown, MapaPagamentoTable } from "@/components/mapa-pagamento-table";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
@@ -578,7 +578,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
     if (selectedContrato) chips.push({ key: "contrato", label: `Contrato: ${selectedContrato}`, onRemove: () => setSelectedContrato("") });
 
     return (
-      <div className="mb-6 flex flex-wrap items-center gap-2">
+      <div className={section === "visao" ? "flex flex-wrap items-center gap-2" : "mb-6 flex flex-wrap items-center gap-2"}>
         <div className="relative" ref={filtrosDashboardRef}>
           <FilterButton count={chips.length} onClick={() => setFiltrosDashboardOpen((v) => !v)} />
           {filtrosDashboardOpen && (
@@ -732,15 +732,27 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
       {floatingNotifications}
       {section === "visao" && (
         <PageContainer className="grid gap-6">
-          <PageHeader
-            eyebrow="Visão geral"
-            title="Dashboard"
-            description="Acompanhe os indicadores consolidados de medição e participação."
-          />
-          {filtersBar}
-          <div className="grid gap-6">
-            <Dashboard data={dashboard} />
-            <MapaPagamentoResumo data={dashboard} isAdmin={isAdmin} onChanged={refreshAll} ciclo={activeCiclo} />
+          <div className="flex flex-col justify-between gap-4 border-b border-[var(--border)] pb-5 sm:flex-row sm:items-end">
+            <PageHeader
+              eyebrow="Visão geral"
+              title="Dashboard"
+              description="Visão consolidada das medições e do fluxo operacional dos BMs."
+            />
+            <div className="shrink-0">{filtersBar}</div>
+          </div>
+          <div className="grid gap-8">
+            <DashboardPilot
+              data={dashboard}
+              mapaItens={mapaItens}
+              contratos={contratosCiclo}
+              statuses={sgcStatus}
+              ciclo={activeCiclo}
+            />
+            <div className="grid gap-4 border-t border-[var(--border)] pt-6">
+              <div>
+                <h2 className="text-section-title text-[var(--foreground)]">Operação por fornecedor</h2>
+                <p className="text-page-description mt-1 text-[var(--muted-foreground)]">Ações e detalhes completos permanecem disponíveis sem alteração de workflow.</p>
+              </div>
             <MapaPagamentoTable
               itens={mapaItens}
               contratos={contratosCiclo}
@@ -756,6 +768,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
               onDivergenciaResolvida={loadAlertas}
               ciclo={activeCiclo}
             />
+            </div>
           </div>
         </PageContainer>
       )}
