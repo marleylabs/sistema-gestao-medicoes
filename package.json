@@ -12,10 +12,12 @@
     "test:security": "tsx --test tests/security-audit.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:seed": "tsx scripts/seed-e2e.ts",
+    "test:ciclo-cleanup": "tsx scripts/test-ciclo-profissional-cleanup.ts",
     "test:e2e:workflow": "playwright test e2e/workflow-happy-path.spec.ts e2e/workflow-divergence.spec.ts e2e/workflow-revision.spec.ts e2e/realtime-multiuser.spec.ts e2e/bm-available-fornecedor-manual.spec.ts",
     "test:all": "npm run test:targeted && npm run test:e2e",
     "prisma:generate": "prisma generate",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "identities:reconcile": "tsx scripts/audit-active-cadastro-identities.ts"
   },
   "dependencies": {
     "@heroui/react": "^3.2.0",

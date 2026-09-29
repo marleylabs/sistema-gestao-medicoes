@@ -1773,6 +1773,94 @@ export async function setFornecedoresAtivos(ids: string[], ativo: boolean, admin
   return { requested: uniqueIds.length, changed: alterados.length, ativo };
 }
 
+export type CadastroIdentityInconsistency = {
+  cadastroId: string;
+  colaboradorCodigo: string;
+  responsavel: string;
+  usuario: { id: string; usuario: string; ativo: boolean } | null;
+  profissionaisAtivos: { id: string; codigo: string | null }[];
+  auditHistorico: number;
+};
+
+/** Auditoria estritamente read-only do invariante CadastroFornecedor ativo -> Profissional. */
+export async function auditActiveCadastroIdentityInconsistencies(): Promise<CadastroIdentityInconsistency[]> {
+  const [cadastros, profissionais, usuarios, audits] = await Promise.all([
+    prisma.cadastroFornecedor.findMany({ where: { ativo: true, colaboradorCodigo: { not: null } }, select: { id: true, colaboradorCodigo: true, responsavel: true } }),
+    prisma.profissional.findMany({ where: { deletedAt: null, codigo: { not: null } }, select: { id: true, codigo: true } }),
+    prisma.usuario.findMany({ where: { perfil: "COLABORADOR", excluidoAt: null }, select: { id: true, usuario: true, nome: true, ativo: true } }),
+    prisma.adminAuditLog.findMany({ where: { action: "FORNECEDOR_EXCLUSAO_DEFINITIVA" }, select: { targetCodigo: true } }),
+  ]);
+  const profByCode = new Map<string, { id: string; codigo: string | null }[]>();
+  for (const p of profissionais) {
+    const key = normalizePersonName(p.codigo);
+    const list = profByCode.get(key) ?? [];
+    list.push(p);
+    profByCode.set(key, list);
+  }
+  const userByName = new Map(usuarios.map((u) => [normalizePersonName(u.nome), { id: u.id, usuario: u.usuario, ativo: u.ativo }]));
+  const auditCount = new Map<string, number>();
+  for (const a of audits) {
+    const key = normalizePersonName(a.targetCodigo);
+    if (key) auditCount.set(key, (auditCount.get(key) ?? 0) + 1);
+  }
+  return cadastros.flatMap((c) => {
+    const codigo = c.colaboradorCodigo!;
+    const profissionaisAtivos = profByCode.get(normalizePersonName(codigo)) ?? [];
+    return profissionaisAtivos.length === 1 ? [] : [{
+      cadastroId: c.id,
+      colaboradorCodigo: codigo,
+      responsavel: c.responsavel,
+      usuario: userByName.get(normalizePersonName(c.responsavel)) ?? null,
+      profissionaisAtivos,
+      auditHistorico: auditCount.get(normalizePersonName(codigo)) ?? 0,
+    }];
+  });
+}
+
+/** Reparo explícito de uma única identidade; nunca chamado automaticamente pelo ETL. */
+export async function reconcileActiveCadastroIdentity(cadastroId: string, admin: AdminActor) {
+  return prisma.$transaction(async (tx) => {
+    const cadastro = await tx.cadastroFornecedor.findUnique({ where: { id: cadastroId } });
+    if (!cadastro?.ativo || !cadastro.colaboradorCodigo) {
+      throw new FornecedorInativacaoError("Cadastro ativo com colaboradorCodigo não encontrado.");
+    }
+    const atuais = await tx.profissional.findMany({
+      where: { codigo: { equals: cadastro.colaboradorCodigo, mode: "insensitive" } },
+      select: { id: true, codigo: true, deletedAt: true },
+    });
+    const ativos = atuais.filter((p) => !p.deletedAt);
+    if (ativos.length === 1) return { created: false, profissionalId: ativos[0].id, colaboradorCodigo: cadastro.colaboradorCodigo };
+    if (ativos.length > 1 || atuais.length > 0) {
+      throw new FornecedorInativacaoError("A identidade possui registro profissional conflitante/tombstoned; requer revisão manual.");
+    }
+    const profissional = await tx.profissional.create({
+      data: {
+        nome: cadastro.colaboradorCodigo,
+        codigo: cadastro.colaboradorCodigo,
+        nomeCompleto: cadastro.responsavel,
+        cpf: cadastro.cpf,
+        cnpj: cadastro.cnpj,
+        email: cadastro.email,
+        razaoSocial: cadastro.razaoSocial,
+        funcao: cadastro.cargo,
+      },
+    });
+    await tx.adminAuditLog.create({
+      data: {
+        action: "FORNECEDOR_IDENTIDADE_RECONCILIADA",
+        adminId: admin.id,
+        adminUsuario: admin.usuario,
+        adminNome: admin.nome,
+        targetType: "Profissional",
+        targetId: profissional.id,
+        targetCodigo: cadastro.colaboradorCodigo,
+        metadata: { cadastroId: cadastro.id, estrategia: "NOVO_UUID_MESMO_CODIGO_CANONICO" },
+      },
+    });
+    return { created: true, profissionalId: profissional.id, colaboradorCodigo: cadastro.colaboradorCodigo };
+  });
+}
+
 /**
  * Decide, por identidade (colaboradorCodigo) distinta entre os cadastros solicitados, o que fazer
  * com `Profissional` — função PURA (sem chamada a banco), testável diretamente. `deleteFornecedoresDefinitivamente`
