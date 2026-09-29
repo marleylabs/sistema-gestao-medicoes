@@ -23,6 +23,15 @@ test.describe("Dashboard piloto — Wealth + En Passant", () => {
     await expect(page.getByText("BMs e fornecedores recentes", { exact: true })).toBeVisible();
     await expect(page.getByText("Operação por fornecedor", { exact: true })).toBeVisible();
 
+    // Evolução: eixo em mês/ano (nunca o YYMM cru), valor visível no ponto e valor exato no tooltip.
+    const evolucao = page.locator(".recharts-wrapper").first();
+    await expect(evolucao.locator(".recharts-cartesian-axis-tick-value", { hasText: "Dez/2026" })).toBeVisible();
+    await expect(evolucao.locator(".recharts-cartesian-axis-tick-value", { hasText: /^2612$/ })).toHaveCount(0);
+    await expect(evolucao.getByTestId("evolution-data-label").first()).toHaveText(/^R\$\s?[\d.,]+(\s(mil|mi))?$/);
+    await evolucao.locator(".recharts-area-dot").first().hover();
+    await expect(evolucao.locator(".recharts-tooltip-wrapper")).toContainText("Dezembro de 2026");
+    await expect(evolucao.locator(".recharts-tooltip-wrapper")).toContainText(/R\$\s?[\d.]+,\d{2}/);
+
     const hasGlobalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     expect(hasGlobalOverflow).toBe(false);
 

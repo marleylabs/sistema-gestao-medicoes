@@ -4,7 +4,13 @@ import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { toNumber } from "@/lib/format";
 import { cadastroFornecedorOverrideForMapaItem } from "@/lib/mapa-pagamento-cadastro";
-import { getDistribuicaoContratosCiclos, getParticipacaoPorFornecedorCiclo, normalizeAlias } from "@/lib/participacao-contratos";
+import { cicloToDates } from "@/lib/ciclo";
+import {
+  getDistribuicaoContratosCiclos,
+  getParticipacaoPorFornecedorCiclo,
+  normalizeAlias,
+  type DistribuicaoContratosResultado,
+} from "@/lib/participacao-contratos";
 
 /**
  * "Atos ativos"/"Produção ativos" (cards do Dashboard) — contagem de fornecedores distintos com
@@ -41,6 +47,26 @@ async function computeAtivosCards(ciclos: string[], codigo: string | null, contr
     }
   }
   return { atosAtivos: atosAtivos.size, producaoAtivos: producaoAtivos.size };
+}
+
+/**
+ * "Valor medido" do ciclo — fonte canônica ÚNICA do KPI e do gráfico "Evolução das medições":
+ * valor de pagamento do Mapa (mapaPagamentoItem.valor, via getDistribuicaoContratosCiclos), que já
+ * considera condição fixa e descontos; com filtro de contrato, só a parcela atribuída ao contrato.
+ * Nunca a soma crua de medicoes.valor_medicao (conta DESCONTO como positivo e ignora condição fixa).
+ */
+function valorMedidoDaDistribuicao(resultado: DistribuicaoContratosResultado, contrato: string | null) {
+  if (!contrato) return resultado.valorTotalConsiderado;
+  return resultado.contratos.filter((item) => item.contrato === contrato).reduce((total, item) => total + item.valorMedido, 0);
+}
+
+function periodoDoCiclo(ciclo: string) {
+  try {
+    const { atoInicio, atoFim } = cicloToDates(ciclo);
+    return { periodoInicio: atoInicio, periodoFim: atoFim };
+  } catch {
+    return { periodoInicio: "", periodoFim: "" };
+  }
 }
 
 const emptyDashboard = {
@@ -258,10 +284,31 @@ export async function GET(request: NextRequest) {
     ? distribuicaoCompleta.filter((item) => item.contrato === contrato)
     : distribuicaoCompleta;
   const totalDistribuido = distribuicao.reduce((total, item) => total + item.valor, 0);
-  const totalMedido = contrato ? totalDistribuido : distribuicaoResultado.valorTotalConsiderado;
+  const totalBaseRateio = contrato ? totalDistribuido : distribuicaoResultado.valorTotalConsiderado;
+
+  // Série por ciclo com a MESMA agregação do KPI, ciclo a ciclo; o KPI é a soma dessa série, então
+  // "KPI do ciclo X = ponto X do gráfico" vale por construção (inclusive com filtros).
+  const ciclosDoFiltro = isGeral ? [...ciclosPermitidos].sort() : [ciclo];
+  const distribuicaoPorCiclo = isGeral
+    ? await Promise.all(
+        ciclosDoFiltro.map((item) => getDistribuicaoContratosCiclos([item], codigo ? { colaboradorCodigo: codigo } : undefined)),
+      )
+    : [distribuicaoResultado];
+  const producaoPorCiclo = new Map(porCiclo.map((item) => [item.ciclo, item]));
+  const serieValorMedido = ciclosDoFiltro.map((item, index) => {
+    const producao = producaoPorCiclo.get(item);
+    return {
+      ciclo: item,
+      ...periodoDoCiclo(item),
+      totalMedido: valorMedidoDaDistribuicao(distribuicaoPorCiclo[index], contrato ?? null),
+      totalHoras: toNumber(producao?.total_horas as any),
+      totalRegistros: Number(producao?.total_registros ?? 0),
+    };
+  });
+  const totalMedido = serieValorMedido.reduce((total, item) => total + item.totalMedido, 0);
   const rateio = distribuicao.map((item) => ({
     contrato: item.contrato,
-    percentual: totalMedido > 0 ? item.valor / totalMedido : 0,
+    percentual: totalBaseRateio > 0 ? item.valor / totalBaseRateio : 0,
   }));
 
   const projetoIds = porProjeto.map((item) => item.id_projeto);
@@ -293,14 +340,7 @@ export async function GET(request: NextRequest) {
           percentualNaoClassificado: distribuicaoResultado.percentualNaoClassificado,
         }
       : null,
-    porCiclo: porCiclo.map((item) => ({
-      ciclo: item.ciclo,
-      periodoInicio: item.periodo_inicio?.toISOString().slice(0, 10),
-      periodoFim: item.periodo_fim?.toISOString().slice(0, 10),
-      totalMedido: toNumber(item.total_medido as any),
-      totalHoras: toNumber(item.total_horas as any),
-      totalRegistros: Number(item.total_registros),
-    })),
+    porCiclo: serieValorMedido,
     porProjeto: porProjeto.map((item) => ({
       idProjeto: item.id_projeto,
       codigoProjeto: projetoMap.get(item.id_projeto)?.codigoProjeto ?? item.id_projeto,

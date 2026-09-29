@@ -44,11 +44,18 @@ export function cicloToDates(ciclo: string) {
   };
 }
 
+const MESES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+
 export function cicloToMesReferencia(ciclo: string): string {
   const { year, month } = parseCiclo(ciclo);
-  const meses = [
-    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
-  ];
-  return `${meses[month - 1]} de ${year}`;
+  return `${MESES[month - 1]} de ${year}`;
+}
+
+/** Rótulo visual curto de um ciclo YYMM, com o ano sempre visível: "2608" → "Ago/2026". */
+export function formatCicloLabel(ciclo: string): string {
+  const { year, month } = parseCiclo(ciclo);
+  return `${MESES[month - 1].slice(0, 3)}/${year}`;
 }
