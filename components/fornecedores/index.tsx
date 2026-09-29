@@ -6,7 +6,7 @@ import { contractParticipation, MapaItemActions, MapaPagamentoEditor, type Revis
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
 import { formatCicloLabel } from "@/lib/ciclo";
-import { getSgcDisplayStatusMeta, type SgcDisplayStatus, type SgcStatusEntry } from "@/lib/sgc-display-status";
+import { getMapaPagamentoStatusMeta, getSgcDisplayStatusMeta, type SgcDisplayStatus, type SgcStatusEntry } from "@/lib/sgc-display-status";
 import { FornecedorDrawer } from "./fornecedor-drawer";
 import { displayStatusOf, FornecedoresKpis } from "./fornecedores-kpis";
 import { FornecedoresTable } from "./fornecedores-table";
@@ -117,6 +117,13 @@ export function FornecedoresPage({
   }, [itens, search, contratoSelecionado, contratos, statusFiltro, alocacaoFiltro, sgcStatus, sortOrder]);
 
   const detalhe = detalheId ? itens.find((item) => item.id === detalheId) ?? null : null;
+  // Modo do painel lateral: "details" (drawer compacto) ou "edit-payment" (editor largo do mesmo fornecedor).
+  const editandoDoDetalhe = !!(editingItem && detalhe && editingItem.id === detalhe.id);
+  const contextoEditor = (item: MapaPagamentoItem) => {
+    const entry = sgcStatus[item.projetistaCodigo ?? ""];
+    const meta = getMapaPagamentoStatusMeta(entry?.status ?? "AGUARDANDO_ENVIO", entry?.statusConferencia);
+    return { nome: item.responsavel ?? item.projetistaCodigo, statusLabel: meta.label, statusBadge: meta.badge, cicloLabel: cicloOptionLabel(ciclo).split(" · ")[0] };
+  };
   // Ações só no detalhe (drawer) — a tabela é leitura. Mesmas regras de sempre (MapaItemActions).
   const renderActions = (item: MapaPagamentoItem) => (
     <MapaItemActions
@@ -128,7 +135,7 @@ export function FornecedoresPage({
       isAdmin={isAdmin}
       onEnviarBm={onEnviarBm}
       onRetornarBm={onRetornarBm}
-      onEdit={setEditingItem}
+      onEdit={(alvo) => { setOpenDropdownId(null); setEditingItem(alvo); }}
       onChanged={onChanged}
       dropdownOpen={openDropdownId === item.id}
       onToggleDropdown={() => setOpenDropdownId(openDropdownId === item.id ? null : item.id)}
@@ -233,7 +240,7 @@ export function FornecedoresPage({
         </div>
       </Card>
 
-      {detalhe && (
+      {detalhe && !editandoDoDetalhe && (
         <FornecedorDrawer
           item={detalhe}
           contratos={contratos}
@@ -251,8 +258,12 @@ export function FornecedoresPage({
           ciclo={ciclo}
           profissionais={profissionais}
           contratos={contratos}
-          onClose={() => { setIsCreating(false); setEditingItem(null); }}
+          contexto={editingItem ? contextoEditor(editingItem) : { cicloLabel: cicloOptionLabel(ciclo).split(" · ")[0] }}
+          // Aberto pelo detalhe: Voltar/Cancelar/Esc retornam ao detalhe; o X fecha tudo.
+          onBack={editandoDoDetalhe ? () => setEditingItem(null) : undefined}
+          onClose={() => { setIsCreating(false); setEditingItem(null); setDetalheId(null); }}
           onSaved={async (mensagem) => {
+            // Editado a partir do detalhe: volta ao detalhe (atualizado por onChanged).
             setIsCreating(false);
             setEditingItem(null);
             setToast(mensagem);

@@ -1,8 +1,8 @@
 "use client";
 
 import { type ReactNode, useCallback, useEffect, useRef, useMemo, useState } from "react";
-import { AlertTriangle, Check, CheckCheck, Edit3, MessageCircle, Mic, Plus, RotateCcw, Search, Send, StopCircle, Trash2, X } from "lucide-react";
-import { Badge, Button, Field, IconButton, Input, Textarea } from "@/components/ui";
+import { AlertTriangle, ArrowLeft, Check, CheckCheck, Edit3, MessageCircle, Mic, Plus, RotateCcw, Search, Send, StopCircle, Trash2, X } from "lucide-react";
+import { Badge, BlurValue, Button, Field, IconButton, Input, Textarea } from "@/components/ui";
 import type { ContratoResumo, MapaPagamentoItem, Profissional } from "@/components/types";
 import type { SgcStatusEntry } from "@/lib/sgc-display-status";
 import { resolveCondicaoFixa, toCondicaoFixaConfig } from "@/lib/condicao-fixa";
@@ -304,6 +304,8 @@ export function MapaPagamentoEditor({
   profissionais = [],
   contratos = [],
   onClose,
+  onBack,
+  contexto,
   onSaved,
   onDivergenciaResolvida,
 }: {
@@ -311,7 +313,11 @@ export function MapaPagamentoEditor({
   ciclo: string;
   profissionais?: Profissional[];
   contratos?: ContratoResumo[];
+  /** Fecha o painel (X). */
   onClose: () => void;
+  /** Aberto a partir do detalhe do fornecedor: Voltar/Cancelar/Esc retornam ao detalhe. */
+  onBack?: () => void;
+  contexto?: PagamentoEditorContexto;
   onSaved: (mensagem: string) => Promise<void> | void;
   onDivergenciaResolvida?: () => void;
 }) {
@@ -323,7 +329,10 @@ export function MapaPagamentoEditor({
       saving={saving}
       profissionais={profissionais}
       contratos={contratos}
-      onCancel={onClose}
+      onCancel={onBack ?? onClose}
+      onBack={onBack}
+      onClose={onClose}
+      contexto={contexto}
       onSave={async (payload) => {
         setSaving(true);
         try {
@@ -750,6 +759,18 @@ function paymentForm(item: MapaPagamentoItem | null): PaymentForm {
   };
 }
 
+export type PagamentoEditorContexto = {
+  nome?: string | null;
+  statusLabel?: string;
+  statusBadge?: "brand" | "success" | "warning" | "danger" | "neutral";
+  cicloLabel?: string;
+};
+
+/**
+ * Formulário de pagamento (cadastro/edição) em painel lateral. A lógica (estado, efeitos, cálculos,
+ * documentos, descontos, divergências e salvar) é a mesma de sempre — só a apresentação mudou.
+ * `onCancel` = Cancelar/Esc (volta ao detalhe quando há `onBack`); `onClose` = X (fecha tudo).
+ */
 function PaymentModal({
   item,
   ciclo,
@@ -757,6 +778,9 @@ function PaymentModal({
   profissionais,
   contratos,
   onCancel,
+  onBack,
+  onClose,
+  contexto,
   onSave,
   onDivergenciaResolvida,
 }: {
@@ -766,6 +790,9 @@ function PaymentModal({
   profissionais: Profissional[];
   contratos: ContratoResumo[];
   onCancel: () => void;
+  onBack?: () => void;
+  onClose?: () => void;
+  contexto?: PagamentoEditorContexto;
   onSave: (payload: PaymentForm) => Promise<void>;
   /** Chamado depois que Incluir/Descartar é confirmado com sucesso — deixa a linha de Pagamentos
    * por Fornecedor (fora deste modal) atualizar o badge de status sem esperar o próximo polling. */
@@ -1136,6 +1163,22 @@ function PaymentModal({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Foco no painel ao abrir (teclado/leitor de tela começam no editor, não atrás do overlay).
+  const painelRef = useRef<HTMLElement>(null);
+  useEffect(() => { painelRef.current?.focus(); }, []);
+
+  // Mesma busca de fornecedor dos efeitos de condição fixa acima — só para EXIBIR os valores
+  // "com/sem produção" do cadastro (a resolução continua no efeito CONDICIONAL_PRODUCAO).
+  const condicaoCondicional = useMemo(() => {
+    const target = normalizeText(form.projetistaCodigo || form.responsavel || codigoQuery);
+    const matched = target
+      ? profissionaisFrescos.find((p) => normalizeText(p.codigo) === target || normalizeText(p.nome) === target || normalizeText(p.nomeCompleto) === target)
+      : undefined;
+    if (!matched || matched.tipoCondicaoFixa !== "CONDICIONAL_PRODUCAO") return null;
+    const config = toCondicaoFixaConfig(matched);
+    return { comProducao: config.valorCondicaoFixaComProducao, semProducao: config.valorCondicaoFixaSemProducao };
+  }, [codigoQuery, form.projetistaCodigo, form.responsavel, profissionaisFrescos]);
+
   // close on Escape
   useEffect(() => {
     function handler(e: KeyboardEvent) { if (e.key === "Escape") onCancel(); }
@@ -1143,521 +1186,455 @@ function PaymentModal({
     return () => document.removeEventListener("keydown", handler);
   }, [onCancel]);
 
+  const tituloPainel = item ? "Editar pagamento" : "Novo pagamento";
+  const nomeContexto = contexto?.nome || form.responsavel || codigoQuery || null;
+  const valorFixoExibido = form.valorFixo && !form.valorFixo.includes("R$")
+    ? currencyInputValue(parseCurrencyNumber(form.valorFixo))
+    : form.valorFixo;
+  const resumo: Array<{ label: string; valor: string; tom?: "danger" | "strong" }> = [
+    ...(item ? [{ label: "Pagamento atual", valor: currency.format(item.valor || 0) }] : []),
+    { label: "Condição fixa", valor: currency.format(totalCondicoesFixas) },
+    { label: "Documentos medidos", valor: currency.format(totalDocsValorBruto) },
+    { label: "Descontos", valor: `- ${currency.format(totalDescontos)}`, tom: totalDescontos > 0 ? "danger" : undefined },
+    { label: "Total medido líquido", valor: currency.format(valorPrevistoLiquido), tom: "strong" },
+  ];
+  const secaoTitulo = "text-sm font-semibold text-[var(--foreground)]";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
-      <div className="ds-dialog min-h-screen w-full max-w-[1400px] overflow-hidden rounded-none border-0 sm:min-h-0 sm:rounded-[14px] sm:border">
+    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-labelledby="pagamento-editor-titulo">
+      {/* Overlay sem ação de fechar: evita perder edição por um clique acidental (Esc/Voltar/X/Cancelar fecham). */}
+      <div className="absolute inset-0 bg-black/30" aria-hidden="true" />
+      <aside ref={painelRef} tabIndex={-1} className="relative flex h-full w-full max-w-full flex-col bg-[var(--surface)] shadow-2xl outline-none sm:w-[88vw] lg:w-[clamp(820px,65vw,960px)]">
 
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#E5E7EB] px-6 py-4">
-          <div>
-            <h2 className="text-base font-bold text-[#1A1A1A]">
-              {item ? "Editar pagamento" : "Novo pagamento"}
-            </h2>
-            <p className="mt-0.5 text-sm text-[#555555]">
-              {item ? "Atualize os dados do fornecedor no ciclo atual." : "Preencha os dados para cadastrar um novo fornecedor."}
-            </p>
-          </div>
-          <IconButton onClick={onCancel} title="Fechar"><X size={16} /></IconButton>
-        </div>
-
-        {/* Body */}
-        <div className="overflow-y-auto p-4 sm:p-5" style={{ maxHeight: "calc(100vh - 180px)" }}>
-
-          {/* Seção: Identificação */}
-          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Identificação</p>
-          <div className="grid gap-4 sm:grid-cols-2">
-
-            {/* Nome — autocomplete sobre Profissional (fonte espelhada de CadastroFornecedor pelo
-                Administrativo; ver PaymentModal acima para o fetch fresco anti-cache). Ao
-                selecionar, CNPJ/Razão social são preenchidos automaticamente (read-only abaixo). */}
-            <MField label="Nome" className="sm:col-span-2">
-              <div className="relative" ref={suggestionsRef}>
-                <input
-                  className="h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] hover:border-[#D1D5DB] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
-                  placeholder="Buscar fornecedor..."
-                  value={codigoQuery}
-                  onChange={(e) => {
-                    // codigoQuery (texto visível) e form.projetistaCodigo (valor realmente
-                    // enviado) eram dois estados desacoplados — digitar sem clicar numa sugestão
-                    // deixava projetistaCodigo vazio, e Documentos/Descontos adicionados depois
-                    // falhavam (codigo ausente) sem nenhum aviso. Mantém os dois sincronizados
-                    // para digitação livre também valer — resolveProjetistaCodigo() no backend
-                    // ainda revalida contra Profissional antes de gravar, nunca aceita texto puro.
-                    setCodigoQuery(e.target.value);
-                    update("projetistaCodigo", e.target.value);
-                    setShowSuggestions(true);
-                  }}
-                  onFocus={() => setShowSuggestions(true)}
-                  autoComplete="off"
-                />
-                {showSuggestions && suggestions.length > 0 && (
-                  <div className="absolute left-0 top-10 z-10 w-full overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white shadow-lg" style={{ maxHeight: "240px" }}>
-                    {suggestions.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        className="flex w-full flex-col px-3 py-2 text-left hover:bg-[#F5F5F5] border-b border-[#F3F4F6] last:border-0"
-                        onMouseDown={() => selectProfissional(p)}
-                      >
-                        {/* Nome em destaque (nunca o código/ID) — razão social/CNPJ como pista extra
-                            para distinguir homônimos, já que dois fornecedores podem ter o mesmo nome. */}
-                        <span className="text-sm font-semibold text-[#1A1A1A]">{p.nomeCompleto || p.nome}</span>
-                        {(p.razaoSocial || p.cnpj) && (
-                          <span className="text-xs text-[#555555]">{p.razaoSocial}{p.razaoSocial && p.cnpj ? " · " : ""}{p.cnpj}</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </MField>
-
-            {/* CNPJ — somente leitura: fonte única é o cadastro administrativo (CadastroFornecedor/
-                Profissional), preenchido ao selecionar o Nome. Editar CNPJ é responsabilidade do
-                Painel Administrativo, nunca deste formulário (evita duas fontes de verdade). */}
-            <MField label="CNPJ">
-              <Input
-                value={form.cpfCnpj}
-                readOnly
-                placeholder="Preenchido automaticamente"
-                className="cursor-not-allowed bg-[#F9FAFB] text-[#555555]"
-              />
-            </MField>
-
-            {/* Razão social — mesma regra: somente leitura, vem do cadastro administrativo. */}
-            <MField label="Razão social">
-              <Input
-                value={form.razaoSocial}
-                readOnly
-                placeholder="Preenchida automaticamente"
-                className="cursor-not-allowed bg-[#F9FAFB] text-[#555555]"
-              />
-            </MField>
-          </div>
-
-          {/* Seção: Participação por contrato — calculada automaticamente a partir dos Documentos Medidos (CTO + Valor Medido), não é mais editável manualmente. */}
-          <p className="mb-3 mt-6 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Participação por contrato</p>
-          {item && contratos.length > 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {contratos.map((c) => {
-                const percentual = item.participacaoContratos[c.id];
-                return (
-                  <div key={c.id} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2">
-                    <p className="text-xs font-semibold text-[#555555]">{c.nome}</p>
-                    <p className="mt-0.5 text-sm font-bold text-[#1A1A1A]">{formatParticipacao(percentual)}</p>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-xs text-[#9CA3AF]">
-              {item ? "Nenhum contrato identificado no ciclo." : "Calculado automaticamente após salvar e vincular documentos medidos."}
-            </p>
-          )}
-          {item && item.documentosPendentesContrato > 0 && (
-            <p className="mt-2 flex items-center gap-1.5 text-xs text-[#B45309]">
-              <AlertTriangle size={13} />
-              {item.documentosPendentesContrato} documento(s) medido(s) sem contrato (CTO) válido — {money(item.valorNaoClassificadoContrato)} ({percent.format(item.percentualNaoClassificadoContrato / 100)} do total) ainda não classificado. Os percentuais acima já refletem essa pendência (não somam 100%).
-            </p>
-          )}
-
-          {/* Seção: Condições fixas — simplificada: só "Valor fixo mensal/contratual" permanece
-              editável aqui (mesmo campo de sempre, form.valorFixo / rawPayload.condicoesFixas.valorFixo
-              — nenhuma propriedade nova). Tipo de contratação, Adicionais fixos e Observações de
-              contrato deixaram de ter input nesta tela, mas continuam existindo no estado (carregados
-              de condicoesFixas/import quando já preenchidos) e são enviados sem alteração no payload —
-              nunca zerados só por não terem mais campo visível. O "Valor previsto líquido" que reunia
-              esses três não faz mais sentido como card cheio para um valor só; a Seção Pagamento
-              (Horas contabilizadas/Valor previsto/Revisão) foi removida por completo por ficar vazia
-              — esses três continuam em form.horas/form.valor/form.rev e são enviados inalterados. */}
-          <div className="mt-6 rounded-xl border border-[#E5E7EB] bg-[#FAFAFA] p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Condições fixas</p>
-              {totalCondicoesFixas > 0 && (
-                <span className="rounded-full bg-[#EFF6FF] px-3 py-1 text-xs font-bold text-[#2563EB] ring-1 ring-[#BFDBFE]">
-                  Base: {currency.format(totalCondicoesFixas)}
-                </span>
-              )}
-            </div>
-            <MField label="Valor fixo mensal/contratual" className="max-w-xs">
-              <Input
-                inputMode="decimal"
-                value={form.valorFixo}
-                onChange={(e) => update("valorFixo", e.target.value)}
-                onBlur={(e) => update("valorFixo", currencyInputValue(parseCurrencyNumber(e.target.value)))}
-                placeholder="R$ 0,00"
-              />
-            </MField>
-          </div>
-
-          {/* Seção: Descontos */}
-          <div className="mt-6 rounded-xl border border-[#E5E7EB] bg-[#FAFAFA] p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Descontos</p>
-                <p className="mt-1 text-xs text-[#6B7280]">Inclua deduções que devem abater o valor previsto e o total medido.</p>
-              </div>
+        <header className="border-b border-[var(--border)] px-5 py-4 sm:px-6">
+          <div className="flex items-center justify-between gap-3">
+            {onBack ? (
               <button
                 type="button"
-                className="flex h-8 items-center gap-1.5 rounded-md border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#374151] transition hover:border-[#D1D5DB] hover:bg-[#F5F5F5]"
-                onClick={() => setDocs((cur) => [...cur, newDiscountLine()])}
+                onClick={onBack}
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] font-semibold text-[var(--muted-foreground)] hover:bg-[#F7F7F5] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/30"
               >
-                <Plus size={13} /> Adicionar desconto
+                <ArrowLeft size={14} />
+                Voltar ao fornecedor
               </button>
-            </div>
-
-            {descontos.length === 0 ? (
-              <p className="mt-3 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-xs text-[#6B7280]">
-                Nenhum desconto aplicado.
-              </p>
-            ) : (
-              <div className="mt-3 grid gap-2">
-                {descontos.map((desconto) => {
-                  const isDeleting = desconto.id ? deletingDocIds.has(desconto.id) : false;
-                  return (
-                    <div key={desconto._key} className="grid gap-2 rounded-lg border border-[#FECACA] bg-white p-3 sm:grid-cols-[1fr_180px_auto] sm:items-end">
-                      <label className="grid gap-1 text-xs font-semibold text-[#7F1D1D]">
-                        Descrição do desconto
-                        <Input
-                          value={desconto.obs}
-                          onChange={(e) => updateDiscount(desconto._key, "obs", e.target.value)}
-                          placeholder="Ex: retenção, ajuste, abatimento..."
-                          className="border-[#FECACA] focus:border-[#DC2626] focus:ring-[#DC2626]/20"
-                        />
-                      </label>
-                      <label className="grid gap-1 text-xs font-semibold text-[#7F1D1D]">
-                        Valor do desconto
-                        <Input
-                          inputMode="decimal"
-                          value={desconto.condicao}
-                          onChange={(e) => updateDiscount(desconto._key, "condicao", e.target.value)}
-                          onBlur={(e) => updateDiscount(desconto._key, "condicao", currencyInputValue(Math.abs(parseCurrencyNumber(e.target.value))))}
-                          placeholder="R$ 0,00"
-                          className="border-[#FECACA] font-semibold text-[#DC2626] focus:border-[#DC2626] focus:ring-[#DC2626]/20"
-                        />
-                      </label>
-                      <div className="flex gap-1 sm:justify-end">
-                        <button
-                          type="button"
-                          disabled={docsSaving}
-                          className="rounded-lg border border-[#FECACA] px-3 py-2 text-xs font-semibold text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-40"
-                          onClick={() => saveDocLine(desconto)}
-                        >
-                          Salvar
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isDeleting}
-                          className="rounded-lg border border-[#FECACA] p-2 text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-40"
-                          onClick={() => deleteDocLine(desconto)}
-                          title="Excluir desconto"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {totalDescontos > 0 && (
-              <div className="mt-3 flex flex-wrap items-center justify-end gap-3 text-xs">
-                <span className="font-semibold text-[#6B7280]">Total de descontos</span>
-                <span className="font-bold text-[#DC2626]">- {currency.format(totalDescontos)}</span>
-              </div>
-            )}
+            ) : <span />}
+            <IconButton onClick={onClose ?? onCancel} title="Fechar"><X size={16} /></IconButton>
           </div>
+          <div className="mt-2 min-w-0">
+            <h2 id="pagamento-editor-titulo" className="text-eyebrow text-[var(--primary)]">{tituloPainel}</h2>
+            <p className="text-section-title mt-1 break-words text-[var(--foreground)]">
+              {nomeContexto || (item ? "Fornecedor" : "Selecione o fornecedor")}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-[var(--muted-foreground)]">
+              {contexto?.statusLabel && <Badge variant={contexto.statusBadge ?? "neutral"} className="whitespace-nowrap">{contexto.statusLabel}</Badge>}
+              <span>{contexto?.cicloLabel ?? ciclo}</span>
+              {ciclo !== "GERAL" && <span className="font-technical text-[11px]">{ciclo}</span>}
+              {form.projetistaCodigo && <span className="font-technical text-[11px]">· {form.projetistaCodigo}</span>}
+            </div>
+          </div>
+        </header>
 
-          {/* Seção: Divergências da medição (conferência do fornecedor) */}
-          {!divergenciasLoading && divergencias.length > 0 && (
-            <div className="mt-6 rounded-xl border border-[#FCA5A5] bg-[#FEF2F2] p-4">
+        {/* Body */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+
+          {/* Resumo — mesmos valores de sempre (item.valor salvo e os totais já calculados neste formulário). */}
+          <section className="grid grid-cols-2 gap-2 border-b border-[var(--border)] bg-[#FAFAF8] px-5 py-4 sm:grid-cols-3 sm:px-6 lg:grid-cols-5" aria-label="Resumo do pagamento">
+            {resumo.map((r) => (
+              <div key={r.label} className={`min-w-0 rounded-lg border border-[var(--border)] bg-white px-3 py-2 ${r.tom === "strong" ? "col-span-2 sm:col-span-1" : ""}`}>
+                <p className="truncate text-[11px] text-[var(--muted-foreground)]">{r.label}</p>
+                <p className={`mt-0.5 truncate text-sm tabular-nums ${r.tom === "danger" ? "font-semibold text-[#DC2626]" : r.tom === "strong" ? "font-bold text-[var(--foreground)]" : "font-semibold text-[var(--foreground)]"}`}>
+                  <BlurValue>{r.valor}</BlurValue>
+                </p>
+              </div>
+            ))}
+          </section>
+
+          <div className="divide-y divide-[var(--border)]">
+
+            {/* Identificação */}
+            <section className="grid gap-4 px-5 py-5 sm:px-6">
+              <h3 className={secaoTitulo}>Identificação</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Nome — autocomplete sobre Profissional (fetch fresco anti-cache acima). Ao selecionar,
+                    CNPJ/Razão social são preenchidos automaticamente (somente leitura abaixo). */}
+                <MField label="Nome" className="md:col-span-2">
+                  <div className="relative" ref={suggestionsRef}>
+                    <input
+                      className="h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] hover:border-[#D1D5DB] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/15"
+                      placeholder="Buscar fornecedor..."
+                      value={codigoQuery}
+                      onChange={(e) => {
+                        // codigoQuery (texto visível) e form.projetistaCodigo (valor enviado) sempre
+                        // sincronizados — resolveProjetistaCodigo() no backend revalida antes de gravar.
+                        setCodigoQuery(e.target.value);
+                        update("projetistaCodigo", e.target.value);
+                        setShowSuggestions(true);
+                      }}
+                      onFocus={() => setShowSuggestions(true)}
+                      autoComplete="off"
+                    />
+                    {showSuggestions && suggestions.length > 0 && (
+                      <div className="absolute left-0 top-10 z-10 w-full overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white shadow-lg" style={{ maxHeight: "240px" }}>
+                        {suggestions.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className="flex w-full flex-col border-b border-[#F3F4F6] px-3 py-2 text-left last:border-0 hover:bg-[#F5F5F5]"
+                            onMouseDown={() => selectProfissional(p)}
+                          >
+                            {/* Nome em destaque; razão social/CNPJ distinguem homônimos. */}
+                            <span className="text-sm font-semibold text-[#1A1A1A]">{p.nomeCompleto || p.nome}</span>
+                            {(p.razaoSocial || p.cnpj) && (
+                              <span className="text-xs text-[#555555]">{p.razaoSocial}{p.razaoSocial && p.cnpj ? " · " : ""}{p.cnpj}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </MField>
+
+                {/* CNPJ e Razão social — somente leitura: fonte única é o cadastro administrativo. */}
+                <MField label="CNPJ">
+                  <Input value={form.cpfCnpj} readOnly placeholder="Preenchido automaticamente" className="cursor-not-allowed bg-[#F9FAFB] font-technical text-[#555555]" />
+                </MField>
+                <MField label="Razão social">
+                  <Input value={form.razaoSocial} readOnly placeholder="Preenchida automaticamente" className="cursor-not-allowed bg-[#F9FAFB] text-[#555555]" />
+                </MField>
+              </div>
+            </section>
+
+            {/* Participação por contrato — somente leitura, calculada a partir dos Documentos Medidos. */}
+            <section className="grid gap-3 px-5 py-5 sm:px-6">
+              <h3 className={secaoTitulo}>Participação por contrato</h3>
+              {item && contratos.length > 0 ? (
+                <ul className={`grid gap-x-6 rounded-lg border border-[var(--border)] px-3 ${contratos.length > 1 ? "sm:grid-cols-2" : ""}`}>
+                  {contratos.map((c) => (
+                    <li key={c.id} className="flex items-center justify-between gap-3 border-b border-[#EFEFED] py-2 text-sm last:border-0 sm:[&:nth-last-child(2):nth-child(odd)]:border-0">
+                      <span className="min-w-0 truncate text-[var(--foreground)]">{c.nome}</span>
+                      <span className="shrink-0 tabular-nums font-semibold text-[var(--foreground)]">{formatParticipacao(item.participacaoContratos[c.id])}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  {item ? "Nenhum contrato identificado no ciclo." : "Calculado automaticamente após salvar e vincular documentos medidos."}
+                </p>
+              )}
+              {item && item.documentosPendentesContrato > 0 && (
+                <p className="flex items-start gap-1.5 text-xs text-[#B45309]">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  {item.documentosPendentesContrato} documento(s) medido(s) sem contrato (CTO) válido — {money(item.valorNaoClassificadoContrato)} ({percent.format(item.percentualNaoClassificadoContrato / 100)} do total) ainda não classificado. Os percentuais acima já refletem essa pendência (não somam 100%).
+                </p>
+              )}
+            </section>
+
+            {/* Condição fixa — mesmo campo de sempre (form.valorFixo). Tipo de contratação, adicionais e
+                observações continuam no estado e seguem no payload sem alteração. */}
+            <section className="grid gap-3 px-5 py-5 sm:px-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Divergências da Medição</p>
-                {(() => {
-                  const pendentes = divergencias.filter((d) => d.status === "PENDENTE").length;
-                  const resolvidas = divergencias.length - pendentes;
-                  return (
-                    <span className="text-xs text-[#7F1D1D]">
-                      {divergencias.length} divergência{divergencias.length !== 1 ? "s" : ""} encontrada{divergencias.length !== 1 ? "s" : ""} — {pendentes} pendente{pendentes !== 1 ? "s" : ""}, {resolvidas} resolvida{resolvidas !== 1 ? "s" : ""}
-                    </span>
-                  );
-                })()}
+                <h3 className={secaoTitulo}>Condição fixa</h3>
+                {totalCondicoesFixas > 0 && (
+                  <span className="text-[12px] text-[var(--muted-foreground)]">Base: <span className="font-semibold text-[var(--foreground)]">{currency.format(totalCondicoesFixas)}</span></span>
+                )}
+              </div>
+              <MField label="Valor fixo mensal/contratual" className="max-w-xs">
+                <Input
+                  inputMode="decimal"
+                  value={valorFixoExibido}
+                  onFocus={() => { if (valorFixoExibido !== form.valorFixo) update("valorFixo", valorFixoExibido); }}
+                  onChange={(e) => update("valorFixo", e.target.value)}
+                  onBlur={(e) => update("valorFixo", currencyInputValue(parseCurrencyNumber(e.target.value)))}
+                  placeholder="R$ 0,00"
+                />
+              </MField>
+              {condicaoCondicional && (
+                <p className="text-[12px] leading-relaxed text-[var(--muted-foreground)]" data-testid="condicao-condicional">
+                  Condicional à produção (cadastro do fornecedor): com produção{" "}
+                  <span className="font-semibold text-[var(--foreground)]">{condicaoCondicional.comProducao == null ? "–" : currency.format(condicaoCondicional.comProducao)}</span>
+                  {" · "}sem produção{" "}
+                  <span className="font-semibold text-[var(--foreground)]">{condicaoCondicional.semProducao == null ? "–" : currency.format(condicaoCondicional.semProducao)}</span>
+                  {" — aplicado: "}<span className="font-semibold text-[var(--foreground)]">{totalDocsValorBruto > 0 ? "com produção" : "sem produção"}</span>.
+                </p>
+              )}
+            </section>
+
+            {/* Descontos */}
+            <section className="grid gap-3 px-5 py-5 sm:px-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className={secaoTitulo}>Descontos</h3>
+                  <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">Deduções que abatem o valor previsto e o total medido.</p>
+                </div>
+                <Button variant="secondary" className="h-8 gap-1.5 px-3 text-xs" onClick={() => setDocs((cur) => [...cur, newDiscountLine()])}>
+                  <Plus size={13} /> Adicionar desconto
+                </Button>
               </div>
 
-              <div className="mt-3 grid gap-3">
-                {divergencias.map((d) => {
-                  const emResolucao = resolvendoDivergenciaId === d.id;
-                  const observacaoAtual = observacoesDivergencia[d.id] ?? "";
-                  const podeDescartar = observacaoAtual.trim().length > 0;
-                  const campos: Array<{ label: string; equipe: string; fornecedor: string; divergente: boolean }> = [
-                    { label: "Formato", equipe: d.equipe.formato ?? "–", fornecedor: d.fornecedor.formato, divergente: d.formatoDivergente },
-                    { label: "A1eq/HH", equipe: d.equipe.a1eqHh === null ? "–" : String(d.equipe.a1eqHh), fornecedor: String(d.fornecedor.a1eqHh), divergente: d.a1eqDivergente },
-                    { label: "% Emissão", equipe: d.equipe.percentualEmissao === null ? "–" : percent.format(d.equipe.percentualEmissao), fornecedor: percent.format(d.fornecedor.percentualEmissao), divergente: d.emissaoDivergente },
-                    { label: "Tipo", equipe: d.equipe.tipo ?? "–", fornecedor: d.fornecedor.tipo, divergente: d.tipoDivergente },
-                  ];
+              {descontos.length === 0 ? (
+                <p className="text-xs text-[var(--muted-foreground)]">Nenhum desconto aplicado.</p>
+              ) : (
+                <div className="rounded-lg border border-[var(--border)]">
+                  {descontos.map((desconto) => {
+                    const isDeleting = desconto.id ? deletingDocIds.has(desconto.id) : false;
+                    return (
+                      <div key={desconto._key} className="grid gap-2 border-b border-[#EFEFED] p-3 last:border-0 sm:grid-cols-[1fr_170px_auto] sm:items-end">
+                        <label className="grid gap-1 text-[11px] text-[var(--muted-foreground)]">
+                          Descrição do desconto
+                          <Input value={desconto.obs} onChange={(e) => updateDiscount(desconto._key, "obs", e.target.value)} placeholder="Ex: retenção, ajuste, abatimento..." />
+                        </label>
+                        <label className="grid gap-1 text-[11px] text-[var(--muted-foreground)]">
+                          Valor do desconto
+                          <Input
+                            inputMode="decimal"
+                            value={desconto.condicao}
+                            onChange={(e) => updateDiscount(desconto._key, "condicao", e.target.value)}
+                            onBlur={(e) => updateDiscount(desconto._key, "condicao", currencyInputValue(Math.abs(parseCurrencyNumber(e.target.value))))}
+                            placeholder="R$ 0,00"
+                            className="font-semibold text-[#DC2626]"
+                          />
+                        </label>
+                        <div className="flex gap-1 sm:justify-end">
+                          <Button variant="secondary" className="h-9 px-3 text-xs" disabled={docsSaving} onClick={() => saveDocLine(desconto)}>Salvar</Button>
+                          <IconButton className="h-9 w-9 hover:border-[#DC2626] hover:text-[#DC2626]" disabled={isDeleting} onClick={() => deleteDocLine(desconto)} title="Excluir desconto">
+                            <Trash2 size={14} />
+                          </IconButton>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {totalDescontos > 0 && (
+                <p className="flex justify-end gap-3 text-xs">
+                  <span className="text-[var(--muted-foreground)]">Total de descontos</span>
+                  <span className="font-bold text-[#DC2626]">- {currency.format(totalDescontos)}</span>
+                </p>
+              )}
+            </section>
 
-                  return (
-                    <div key={d.id} className="rounded-lg border border-[#FECACA] bg-white p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
+            {/* Divergências da medição (conferência do fornecedor) — mesmas ações Incluir/Descartar. */}
+            {!divergenciasLoading && divergencias.length > 0 && (
+              <section className="grid gap-3 px-5 py-5 sm:px-6">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className={secaoTitulo}>Divergências da Medição</h3>
+                  {(() => {
+                    const pendentes = divergencias.filter((d) => d.status === "PENDENTE").length;
+                    const resolvidas = divergencias.length - pendentes;
+                    return (
+                      <span className="text-xs text-[#7F1D1D]">
+                        {divergencias.length} divergência{divergencias.length !== 1 ? "s" : ""} encontrada{divergencias.length !== 1 ? "s" : ""} — {pendentes} pendente{pendentes !== 1 ? "s" : ""}, {resolvidas} resolvida{resolvidas !== 1 ? "s" : ""}
+                      </span>
+                    );
+                  })()}
+                </div>
+
+                <div className="grid gap-3">
+                  {divergencias.map((d) => {
+                    const emResolucao = resolvendoDivergenciaId === d.id;
+                    const observacaoAtual = observacoesDivergencia[d.id] ?? "";
+                    const podeDescartar = observacaoAtual.trim().length > 0;
+                    const campos: Array<{ label: string; equipe: string; fornecedor: string; divergente: boolean }> = [
+                      { label: "Formato", equipe: d.equipe.formato ?? "–", fornecedor: d.fornecedor.formato, divergente: d.formatoDivergente },
+                      { label: "A1eq/HH", equipe: d.equipe.a1eqHh === null ? "–" : String(d.equipe.a1eqHh), fornecedor: String(d.fornecedor.a1eqHh), divergente: d.a1eqDivergente },
+                      { label: "% Emissão", equipe: d.equipe.percentualEmissao === null ? "–" : percent.format(d.equipe.percentualEmissao), fornecedor: percent.format(d.fornecedor.percentualEmissao), divergente: d.emissaoDivergente },
+                      { label: "Tipo", equipe: d.equipe.tipo ?? "–", fornecedor: d.fornecedor.tipo, divergente: d.tipoDivergente },
+                    ];
+
+                    return (
+                      <div key={d.id} className="rounded-lg border border-[#FECACA] bg-[#FFFBFB] p-3">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="font-technical text-sm font-bold text-[#1A1A1A]">{d.nrVale}</span>
                           {d.documentoNaoMapeado && <Badge variant="warning">Não mapeado pela Equipe</Badge>}
                           {d.comparacaoAmbigua && <Badge variant="danger">NR VALE duplicado — ambíguo</Badge>}
                           {d.status === "INCLUIDA" && <Badge variant="success">Incluída</Badge>}
                           {d.status === "DESCARTADA" && <Badge variant="neutral">Descartada</Badge>}
                         </div>
-                      </div>
 
-                      {d.status === "PENDENTE" && !d.comparacaoAmbigua && (
-                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                          {campos.filter((c) => c.divergente || d.documentoNaoMapeado).map((c) => (
-                            <div key={c.label} className="rounded-md bg-[#FEF2F2] px-2.5 py-1.5 text-xs">
-                              <p className="font-semibold text-[#7F1D1D]">{c.label}</p>
-                              <p className="text-[#555555]">Equipe: <span className="font-technical">{c.equipe}</span></p>
-                              <p className="text-[#555555]">Fornecedor: <span className="font-technical">{c.fornecedor}</span></p>
+                        {d.status === "PENDENTE" && !d.comparacaoAmbigua && (
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            {campos.filter((c) => c.divergente || d.documentoNaoMapeado).map((c) => (
+                              <div key={c.label} className="rounded-md bg-[#FEF2F2] px-2.5 py-1.5 text-xs">
+                                <p className="font-semibold text-[#7F1D1D]">{c.label}</p>
+                                <p className="text-[#555555]">Equipe: <span className="font-technical">{c.equipe}</span></p>
+                                <p className="text-[#555555]">Fornecedor: <span className="font-technical">{c.fornecedor}</span></p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {d.status === "PENDENTE" ? (
+                          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                            <Textarea
+                              className="min-h-[38px] bg-white text-xs"
+                              placeholder="Informe uma observação sobre esta divergência..."
+                              value={observacaoAtual}
+                              onChange={(e) => setObservacoesDivergencia((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                            />
+                            <div className="flex items-center gap-2 self-end">
+                              <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!podeDescartar || emResolucao} onClick={() => resolverDivergencia(d.id, "descartar")}>
+                                {emResolucao ? "Descartando..." : "Descartar"}
+                              </Button>
+                              <Button variant="success" className="h-8 px-3 text-xs" disabled={emResolucao} onClick={() => resolverDivergencia(d.id, "incluir")}>
+                                {emResolucao ? "Incluindo..." : "Incluir"}
+                              </Button>
                             </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {d.status === "PENDENTE" ? (
-                        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-                          <Textarea
-                            className="min-h-[38px] bg-white text-xs"
-                            placeholder="Informe uma observação sobre esta divergência..."
-                            value={observacaoAtual}
-                            onChange={(e) => setObservacoesDivergencia((prev) => ({ ...prev, [d.id]: e.target.value }))}
-                          />
-                          <div className="flex items-center gap-2 self-end">
-                            <Button
-                              variant="secondary"
-                              className="h-8 px-3 text-xs"
-                              disabled={!podeDescartar || emResolucao}
-                              onClick={() => resolverDivergencia(d.id, "descartar")}
-                            >
-                              {emResolucao ? "Descartando..." : "Descartar"}
-                            </Button>
-                            <Button
-                              variant="success"
-                              className="h-8 px-3 text-xs"
-                              disabled={emResolucao}
-                              onClick={() => resolverDivergencia(d.id, "incluir")}
-                            >
-                              {emResolucao ? "Incluindo..." : "Incluir"}
-                            </Button>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="mt-2 text-xs text-[#555555]">
-                          <p><span className="font-semibold">{d.status === "INCLUIDA" ? "Incluído" : "Motivo"}:</span> {d.observacao || "—"}</p>
-                          <p className="mt-0.5 text-[#9CA3AF]">Resolvido por {d.resolvidoPorNome ?? "—"}{d.resolvidoEm ? ` em ${new Date(d.resolvidoEm).toLocaleString("pt-BR")}` : ""}</p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Seção: Documentos medidos */}
-          <div className="mt-6 flex items-center justify-between">
-            <p className="text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Documentos medidos</p>
-            <div className="flex items-center gap-3">
-              {(valorPrevistoBase > 0 || totalDescontos > 0) && (
-                <button
-                  type="button"
-                  className="rounded-md border border-[#2563EB]/30 bg-[#EFF6FF] px-3 py-1 text-xs font-semibold text-[#2563EB] hover:bg-[#DBEAFE]"
-                  onClick={() => update("valor", formatCurrencyInput(String(valorPrevistoLiquido)))}
-                >
-                  Usar total ({currency.format(valorPrevistoLiquido)})
-                </button>
-              )}
-              <button
-                type="button"
-                className="flex items-center gap-1.5 rounded-md border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-[#1A1A1A] hover:bg-[#F5F5F5]"
-                onClick={() => setDocs((cur) => [...cur, newDocLine()])}
-              >
-                <Plus size={13} /> Adicionar linha
-              </button>
-            </div>
-          </div>
-
-          {docsLoading ? (
-            <p className="mt-3 text-center text-xs text-[#9CA3AF]">Carregando documentos…</p>
-          ) : docs.length === 0 && totalCondicoesFixas <= 0 ? (
-            <p className="mt-3 text-center text-xs text-[#9CA3AF]">Nenhum documento. Clique em "Adicionar linha" para inserir.</p>
-          ) : (
-            <div className="mt-3 grid gap-4 pb-6">
-              <div className="overflow-x-auto rounded-xl border border-[#E5E7EB] pb-2">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB]">
-                      {["SE", "CTO", "NR VALE", "Formato", "A1eq/HH", "% Emissão", "TIPO DG/DOC/HH", "Preço Unit.", "Valor Medido", "Observação", ""].map((h) => (
-                        <th key={h} className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[#555555]">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                  {totalCondicoesFixas > 0 && (
-                    <tr className="border-b border-[#DBEAFE] bg-[#EFF6FF]/70 text-[#1D4ED8]">
-                      <td className="px-2 py-2">
-                        <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-[#2563EB] ring-1 ring-[#BFDBFE]">
-                          Fixo
-                        </span>
-                      </td>
-                      <td className="px-2 py-2 font-semibold text-[#2563EB]">
-                        {form.tipoContratacao || "FIXO (PJ)"}
-                      </td>
-                      <td className="px-2 py-2 text-[#2563EB]" colSpan={6}>
-                        Provento base contratual{adicionaisFixos > 0 ? " + adicionais fixos" : ""}
-                      </td>
-                      <td className="px-2 py-2 text-right font-bold text-[#1D4ED8]">
-                        {currency.format(totalCondicoesFixas)}
-                      </td>
-                      <td className="px-2 py-2 text-[#2563EB]">Base fixa</td>
-                      <td className="px-2 py-2" />
-                    </tr>
-                  )}
-                  {docs.map((doc) => {
-                    const valorMedido = docValorMedido(doc);
-                    const desconto = isDiscountDoc(doc);
-                    const isDeleting = doc.id ? deletingDocIds.has(doc.id) : false;
-                    if (desconto) {
-                      return (
-                        <tr key={doc._key} className="border-b border-[#FEE2E2] bg-white text-[#DC2626] last:border-0">
-                          <td className="px-2 py-2">
-                            <span className="rounded-full bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-bold uppercase text-[#DC2626] ring-1 ring-[#FECACA]">
-                              Desconto
-                            </span>
-                          </td>
-                          <td className="px-2 py-2 text-[#DC2626]" colSpan={7}>
-                            <span className="font-semibold">{doc.obs || "Desconto aplicado"}</span>
-                          </td>
-                          <td className="px-2 py-2 text-right font-bold text-[#DC2626]">
-                            - {currency.format(Math.abs(valorMedido))}
-                          </td>
-                          <td className="px-2 py-2 text-[#DC2626]">Dedução</td>
-                          <td className="px-2 py-2" />
-                        </tr>
-                      );
-                    }
-                    return (
-                      <tr key={doc._key} className="border-b border-[#F3F4F6] last:border-0 hover:bg-[#FAFAFA]">
-                        <td className="px-2 py-1.5">
-                          <input className="h-7 w-20 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[#2563EB] focus:outline-none" value={doc.se} onChange={(e) => updateDoc(doc._key, "se", e.target.value)} placeholder="SE-001" />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <input className="h-7 w-24 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[#2563EB] focus:outline-none" value={doc.contrato} onChange={(e) => updateDoc(doc._key, "contrato", e.target.value)} placeholder="CTO-X" />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <input className="h-7 w-24 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[#2563EB] focus:outline-none" value={doc.numeroDocumento} onChange={(e) => updateDoc(doc._key, "numeroDocumento", e.target.value)} placeholder="NR-0001" />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <input className="h-7 w-16 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[#2563EB] focus:outline-none" value={doc.formato} onChange={(e) => updateDoc(doc._key, "formato", e.target.value)} placeholder="A1" />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <input className="h-7 w-16 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[#2563EB] focus:outline-none" value={doc.equivalenteA1Horas} onChange={(e) => updateDoc(doc._key, "equivalenteA1Horas", e.target.value)} placeholder="0" inputMode="decimal" />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <div className="relative">
-                            <input className="h-7 w-16 rounded border border-[#E5E7EB] px-2 pr-5 text-xs focus:border-[#2563EB] focus:outline-none" value={doc.percentualEmissao} onChange={(e) => updateDoc(doc._key, "percentualEmissao", e.target.value)} placeholder="100" inputMode="decimal" />
-                            <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-[#9CA3AF]">%</span>
+                        ) : (
+                          <div className="mt-2 text-xs text-[#555555]">
+                            <p><span className="font-semibold">{d.status === "INCLUIDA" ? "Incluído" : "Motivo"}:</span> {d.observacao || "—"}</p>
+                            <p className="mt-0.5 text-[#9CA3AF]">Resolvido por {d.resolvidoPorNome ?? "—"}{d.resolvidoEm ? ` em ${new Date(d.resolvidoEm).toLocaleString("pt-BR")}` : ""}</p>
                           </div>
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <input className="h-7 w-28 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[#2563EB] focus:outline-none" value={doc.tipo2} onChange={(e) => updateDoc(doc._key, "tipo2", e.target.value)} placeholder="Tipo" />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <div className="relative">
-                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-[#9CA3AF]">R$</span>
-                            <input className="h-7 w-24 rounded border border-[#E5E7EB] pl-7 pr-2 text-xs focus:border-[#2563EB] focus:outline-none" value={doc.condicao} onChange={(e) => updateDoc(doc._key, "condicao", e.target.value)} placeholder="0" inputMode="decimal" />
-                          </div>
-                        </td>
-                        <td className="px-2 py-1.5 text-right font-semibold text-[#1A1A1A]">
-                          {currency.format(valorMedido)}
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <input
-                            className={`h-7 w-40 rounded border px-2 text-xs focus:outline-none focus:ring-1 ${doc._dirty ? "border-[#F59E0B]/60 bg-[#FFFBEB] placeholder:text-[#D97706]/60 focus:border-[#F59E0B] focus:ring-[#F59E0B]/30" : "border-[#E5E7EB] bg-white placeholder:text-[#D1D5DB] focus:border-[#2563EB] focus:ring-[#2563EB]/20"}`}
-                            value={doc.obs}
-                            onChange={(e) => updateDoc(doc._key, "obs", e.target.value)}
-                            placeholder="Observação…"
-                          />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <div className="flex gap-1">
-                            <button
-                              type="button"
-                              disabled={docsSaving}
-                              className="rounded p-1 text-[#2563EB] hover:bg-[#EFF6FF] disabled:opacity-40"
-                              onClick={() => saveDocLine(doc)}
-                              title="Salvar linha"
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isDeleting}
-                              className="rounded p-1 text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-40"
-                              onClick={() => deleteDocLine(doc)}
-                              title="Excluir linha"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                        )}
+                      </div>
                     );
                   })}
-                  </tbody>
-                </table>
-              </div>
+                </div>
+              </section>
+            )}
 
-              <div className="flex justify-end">
-                <div className="grid w-80 min-w-[280px] gap-1.5 rounded-xl border border-[#E5E7EB] bg-white px-4 py-3 text-xs shadow-sm">
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-6 text-[#475569]">
-                    <span>Condições fixas</span>
-                    <span className="whitespace-nowrap text-right font-semibold text-[#1F2937]">{currency.format(totalCondicoesFixas)}</span>
-                  </div>
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-6 text-[#475569]">
-                    <span>Documentos medidos</span>
-                    <span className="whitespace-nowrap text-right font-semibold text-[#1F2937]">{currency.format(totalDocsValorBruto)}</span>
-                  </div>
-                  <div className="grid grid-cols-[1fr_auto] items-center gap-6 text-[#475569]">
-                    <span>Descontos</span>
-                    <span className={`whitespace-nowrap text-right font-semibold ${totalDescontos > 0 ? "text-[#DC2626]" : "text-[#1F2937]"}`}>
-                      - {currency.format(totalDescontos)}
-                    </span>
-                  </div>
-                  <div className="mt-1 grid grid-cols-[1fr_auto] items-center gap-6 border-t border-[#E5E7EB] pt-2 text-sm">
-                    <span className="font-bold text-[#111827]">Total medido líquido</span>
-                    <span className="whitespace-nowrap text-right font-bold text-[#111827]">{currency.format(valorPrevistoLiquido)}</span>
-                  </div>
+            {/* Documentos medidos — mesma tabela editável (rolagem horizontal só dentro dela). */}
+            <section className="grid gap-3 px-5 py-5 sm:px-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className={secaoTitulo}>Documentos medidos</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  {(valorPrevistoBase > 0 || totalDescontos > 0) && (
+                    <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => update("valor", formatCurrencyInput(String(valorPrevistoLiquido)))}>
+                      Usar total ({currency.format(valorPrevistoLiquido)})
+                    </Button>
+                  )}
+                  <Button variant="secondary" className="h-8 gap-1.5 px-3 text-xs" onClick={() => setDocs((cur) => [...cur, newDocLine()])}>
+                    <Plus size={13} /> Adicionar linha
+                  </Button>
                 </div>
               </div>
-            </div>
-          )}
+
+              {docsLoading ? (
+                <p className="text-center text-xs text-[var(--muted-foreground)]">Carregando documentos…</p>
+              ) : docs.length === 0 && totalCondicoesFixas <= 0 ? (
+                <p className="text-xs text-[var(--muted-foreground)]">Nenhum documento. Clique em &quot;Adicionar linha&quot; para inserir.</p>
+              ) : (
+                <div className="max-w-full overflow-x-auto rounded-lg border border-[var(--border)]">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-[#E5E7EB] bg-[#FAFAF8]">
+                        {["SE", "CTO", "NR VALE", "Formato", "A1eq/HH", "% Emissão", "TIPO DG/DOC/HH", "Preço Unit.", "Valor Medido", "Observação", ""].map((h) => (
+                          <th key={h} className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[#555555]">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {totalCondicoesFixas > 0 && (
+                        <tr className="border-b border-[#EFEFED] bg-[#FAFAF8]">
+                          <td className="px-2 py-2">
+                            <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--foreground)] ring-1 ring-[var(--border)]">Fixo</span>
+                          </td>
+                          <td className="px-2 py-2 font-semibold text-[var(--foreground)]">{form.tipoContratacao || "FIXO (PJ)"}</td>
+                          <td className="px-2 py-2 text-[var(--muted-foreground)]" colSpan={6}>
+                            Provento base contratual{adicionaisFixos > 0 ? " + adicionais fixos" : ""}
+                          </td>
+                          <td className="px-2 py-2 text-right font-bold text-[var(--foreground)]">{currency.format(totalCondicoesFixas)}</td>
+                          <td className="px-2 py-2 text-[var(--muted-foreground)]">Base fixa</td>
+                          <td className="px-2 py-2" />
+                        </tr>
+                      )}
+                      {docs.map((doc) => {
+                        const valorMedido = docValorMedido(doc);
+                        const desconto = isDiscountDoc(doc);
+                        const isDeleting = doc.id ? deletingDocIds.has(doc.id) : false;
+                        if (desconto) {
+                          return (
+                            <tr key={doc._key} className="border-b border-[#FEE2E2] bg-white text-[#DC2626] last:border-0">
+                              <td className="px-2 py-2">
+                                <span className="rounded-full bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-bold uppercase text-[#DC2626] ring-1 ring-[#FECACA]">Desconto</span>
+                              </td>
+                              <td className="px-2 py-2" colSpan={7}><span className="font-semibold">{doc.obs || "Desconto aplicado"}</span></td>
+                              <td className="px-2 py-2 text-right font-bold">- {currency.format(Math.abs(valorMedido))}</td>
+                              <td className="px-2 py-2">Dedução</td>
+                              <td className="px-2 py-2" />
+                            </tr>
+                          );
+                        }
+                        return (
+                          <tr key={doc._key} className="border-b border-[#F3F4F6] last:border-0 hover:bg-[#FAFAFA]">
+                            <td className="px-2 py-1.5">
+                              <input className="h-7 w-20 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.se} onChange={(e) => updateDoc(doc._key, "se", e.target.value)} placeholder="SE-001" />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <input className="h-7 w-24 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.contrato} onChange={(e) => updateDoc(doc._key, "contrato", e.target.value)} placeholder="CTO-X" />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <input className="h-7 w-24 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.numeroDocumento} onChange={(e) => updateDoc(doc._key, "numeroDocumento", e.target.value)} placeholder="NR-0001" />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <input className="h-7 w-16 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.formato} onChange={(e) => updateDoc(doc._key, "formato", e.target.value)} placeholder="A1" />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <input className="h-7 w-16 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.equivalenteA1Horas} onChange={(e) => updateDoc(doc._key, "equivalenteA1Horas", e.target.value)} placeholder="0" inputMode="decimal" />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <div className="relative">
+                                <input className="h-7 w-16 rounded border border-[#E5E7EB] px-2 pr-5 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.percentualEmissao} onChange={(e) => updateDoc(doc._key, "percentualEmissao", e.target.value)} placeholder="100" inputMode="decimal" />
+                                <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-[#9CA3AF]">%</span>
+                              </div>
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <input className="h-7 w-28 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.tipo2} onChange={(e) => updateDoc(doc._key, "tipo2", e.target.value)} placeholder="Tipo" />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <div className="relative">
+                                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-[#9CA3AF]">R$</span>
+                                <input className="h-7 w-24 rounded border border-[#E5E7EB] pl-7 pr-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.condicao} onChange={(e) => updateDoc(doc._key, "condicao", e.target.value)} placeholder="0" inputMode="decimal" />
+                              </div>
+                            </td>
+                            <td className="px-2 py-1.5 text-right font-semibold text-[#1A1A1A]">{currency.format(valorMedido)}</td>
+                            <td className="px-2 py-1.5">
+                              <input
+                                className={`h-7 w-40 rounded border px-2 text-xs focus:outline-none focus:ring-1 ${doc._dirty ? "border-[#F59E0B]/60 bg-[#FFFBEB] placeholder:text-[#D97706]/60 focus:border-[#F59E0B] focus:ring-[#F59E0B]/30" : "border-[#E5E7EB] bg-white placeholder:text-[#D1D5DB] focus:border-[var(--primary)] focus:ring-[var(--primary)]/15"}`}
+                                value={doc.obs}
+                                onChange={(e) => updateDoc(doc._key, "obs", e.target.value)}
+                                placeholder="Observação…"
+                              />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <div className="flex gap-1">
+                                <button type="button" disabled={docsSaving} className="rounded p-1 text-[var(--foreground)] hover:bg-[#F4F4F2] disabled:opacity-40" onClick={() => saveDocLine(doc)} title="Salvar linha">
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                                </button>
+                                <button type="button" disabled={isDeleting} className="rounded p-1 text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-40" onClick={() => deleteDocLine(doc)} title="Excluir linha">
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="border-t border-[#E5E7EB] px-6 py-4">
+        {/* Footer fixo no fim do painel — ações sempre visíveis durante a rolagem. */}
+        <footer className="border-t border-[var(--border)] bg-[var(--surface)] px-5 py-3 sm:px-6">
           {savePaymentError && (
-            <div className="mb-3 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] px-3 py-2 text-sm font-semibold text-[#AF1B1B]">
+            <div role="alert" className="mb-2 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] px-3 py-2 text-sm font-semibold text-[#AF1B1B]">
               {savePaymentError}
             </div>
           )}
-          <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={onCancel} disabled={saving || savingPayment}>Cancelar</Button>
-            <Button onClick={handleSavePayment} disabled={saving || savingPayment || docsSaving}>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+            <Button variant="secondary" className="w-full sm:w-auto" onClick={onCancel} disabled={saving || savingPayment}>Cancelar</Button>
+            <Button className="w-full sm:w-auto" onClick={handleSavePayment} disabled={saving || savingPayment || docsSaving}>
               {saving || savingPayment || docsSaving
                 ? (item ? "Salvando…" : "Cadastrando…")
                 : (item ? "Salvar alterações" : "Cadastrar")}
             </Button>
           </div>
-        </div>
-      </div>
+        </footer>
+      </aside>
     </div>
   );
 }

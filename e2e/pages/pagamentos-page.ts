@@ -26,6 +26,8 @@ export class PagamentosPage {
 
   /** Abre (ou reaproveita) o detalhe do fornecedor; fecha antes o de outro fornecedor, se houver. */
   async abrirDetalhe(fornecedorNome: string) {
+    // Salvar/Cancelar no editor de pagamento volta ao detalhe — espera o editor sair antes de decidir.
+    await expect(this.page.getByRole("dialog", { name: /^(Editar|Novo) pagamento$/ })).toHaveCount(0);
     const detalhe = this.page.getByRole("dialog", { name: `Detalhe de ${fornecedorNome}` });
     if (await detalhe.isVisible()) return detalhe;
     const outroDetalhe = this.page.getByRole("dialog", { name: /^Detalhe de / });
