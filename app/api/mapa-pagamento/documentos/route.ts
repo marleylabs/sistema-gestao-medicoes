@@ -5,6 +5,7 @@ import { requireAdmin } from "@/lib/admin";
 import { calcularValorMedido } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
 import { getDocumentosMedidos } from "@/lib/documentos-medidos";
+import { FORNECEDOR_INATIVO_MENSAGEM, isFornecedorInativo } from "@/lib/fornecedor-inativo";
 
 function serialize(d: {
   id: string; numeroDocumento: string | null; formato: string | null; obs: string | null;
@@ -66,6 +67,11 @@ export async function POST(request: NextRequest) {
   });
   if (!profissional) {
     return NextResponse.json({ error: "Fornecedor não encontrado." }, { status: 404 });
+  }
+  // Decidido pela identidade canônica do Profissional resolvido (o request pode trazer nome), antes
+  // de qualquer escrita — inclusive o upsert de Projeto, que atualiza o contrato de uma SE existente.
+  if (await isFornecedorInativo(prisma, profissional)) {
+    return NextResponse.json({ error: FORNECEDOR_INATIVO_MENSAGEM }, { status: 409 });
   }
 
   const codigoProjeto = (se as string | undefined)?.trim() || `MANUAL-${ciclo}-${Date.now()}`;

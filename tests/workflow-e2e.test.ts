@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test, { before } from "node:test";
 import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
 import { getEmailCcForEvent } from "../lib/email/cc-policy";
+import { WORKFLOW_TEST_CYCLES, WORKFLOW_TEST_CYCLE_VALUES, type WorkflowFixtureLabel } from "./fixtures/workflow-cycles";
 
 before(assertConnectedToE2eDatabase);
 
@@ -21,7 +22,7 @@ before(assertConnectedToE2eDatabase);
  * fisicamente separado do banco da aplicação — nunca mais a mesma instância. O guard forte vive
  * em lib/prisma-test.ts (`assertConnectedToE2eDatabase`, chamado em `before()` abaixo): confirma
  * via `SELECT current_database()` real que a conexão é exatamente o banco de teste esperado antes
- * de qualquer fixture ser criada. Os prefixos `TESTE-E2E-*` + cleanup em `finally` continuam como
+ * de qualquer fixture ser criada. Ciclos YYMM reservados + cleanup em `finally` continuam como
  * segunda camada de defesa, mas a isolação real agora é o próprio banco.
  */
 
@@ -72,9 +73,9 @@ type Fixture = {
   profissionalBId: string;
 };
 
-async function seedFixture(label: string): Promise<Fixture> {
+async function seedFixture(label: WorkflowFixtureLabel): Promise<Fixture> {
   const suffix = `TESTE-E2E-${label}-${Date.now()}`;
-  const ciclo = `TESTE-${suffix}`;
+  const ciclo = WORKFLOW_TEST_CYCLES[label];
   const codigoA = `${suffix}-FORN-A`;
   const codigoB = `${suffix}-FORN-B`;
   const cnpjCompartilhado = "11222333000181"; // mesmo CNPJ para os dois — cobre item 25 (isolamento apesar de CNPJ igual)
@@ -124,8 +125,8 @@ async function cleanupFixture(fx: Fixture) {
   await prisma.mapaPagamentoItem.deleteMany({ where: { ciclo: fx.ciclo } });
   await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: [fx.codigoA, fx.codigoB] } } });
   await prisma.profissional.deleteMany({ where: { id: { in: [fx.profissionalAId, fx.profissionalBId] } } });
-  await prisma.projeto.delete({ where: { id: fx.projetoId } }).catch(() => undefined);
-  await prisma.mapaPagamentoContexto.delete({ where: { ciclo: fx.ciclo } }).catch(() => undefined);
+  await prisma.projeto.delete({ where: { id: fx.projetoId } });
+  await prisma.mapaPagamentoContexto.delete({ where: { ciclo: fx.ciclo } });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -370,8 +371,7 @@ test("OWNERSHIP + CNPJ COMPARTILHADO: workflow, documentos, NF e pagamento de A 
 
 test("ISOLAMENTO DE CICLO: mesmo colaboradorCodigo em dois ciclos diferentes tem workflows e documentos totalmente independentes", async () => {
   const fx1 = await seedFixture("ciclo1");
-  const suffix2 = `TESTE-E2E-ciclo2-${Date.now()}`;
-  const ciclo2 = `TESTE-${suffix2}`;
+  const ciclo2 = WORKFLOW_TEST_CYCLES.ciclo2;
   await prisma.mapaPagamentoContexto.create({ data: { ciclo: ciclo2 } });
 
   try {
@@ -394,7 +394,7 @@ test("ISOLAMENTO DE CICLO: mesmo colaboradorCodigo em dois ciclos diferentes tem
     await prisma.sgcAprovacaoMedicao.deleteMany({ where: { id: { in: [sgcCiclo1.id, sgcCiclo2.id] } } });
   } finally {
     await cleanupFixture(fx1);
-    await prisma.mapaPagamentoContexto.delete({ where: { ciclo: ciclo2 } }).catch(() => undefined);
+    await prisma.mapaPagamentoContexto.delete({ where: { ciclo: ciclo2 } });
   }
 });
 
@@ -476,4 +476,14 @@ test("POLÍTICA DE CC do workflow completo: BM_* usa EMAIL_BM_CC, PAYMENT_* usa 
     if (originalBm === undefined) delete process.env.EMAIL_BM_CC; else process.env.EMAIL_BM_CC = originalBm;
     if (originalFinance === undefined) delete process.env.EMAIL_FINANCE_CC; else process.env.EMAIL_FINANCE_CC = originalFinance;
   }
+});
+
+test("REGRESSÃO: fixtures do workflow não deixam ciclos residuais para o Playwright", async () => {
+  const residuos = await prisma.mapaPagamentoContexto.findMany({
+    where: { ciclo: { in: [...WORKFLOW_TEST_CYCLE_VALUES] } },
+    select: { ciclo: true },
+    orderBy: { ciclo: "asc" },
+  });
+
+  assert.deepEqual(residuos, []);
 });

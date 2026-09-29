@@ -5,11 +5,12 @@ import { prisma } from "@/lib/prisma";
 
 const MAX_SIZE = 15 * 1024 * 1024;
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const auth = await requireAdministrativo();
   if (auth.response) return auth.response;
 
   const cadastros = await prisma.cadastroFornecedor.findMany({
+    where: request.nextUrl.searchParams.get("includeInactive") === "true" ? undefined : { ativo: true },
     orderBy: [{ responsavel: "asc" }],
   });
 
@@ -41,7 +42,11 @@ export async function POST(request: NextRequest) {
     if (buffer.readUInt16LE(0) !== 0x4b50) {
       return NextResponse.json({ error: "Arquivo Excel inválido." }, { status: 400 });
     }
-    const result = await importCadastrosFornecedores(buffer);
+    const result = await importCadastrosFornecedores(buffer, {
+      id: auth.user!.id,
+      usuario: auth.user!.usuario,
+      nome: auth.user!.nome,
+    });
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(

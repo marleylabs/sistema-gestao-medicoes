@@ -37,6 +37,28 @@ def main():
                     assert "IMPORTACAO_BLOQUEADA" in str(error)
                 else:
                     raise AssertionError("ETL aceitou identidade excluída")
+
+            # Estado canônico atual prevalece sobre hashes históricos: a auditoria permanece,
+            # mas um Profissional ativo com o mesmo código torna a identidade legítima.
+            active_id = str(uuid.uuid4())
+            active_code = f"TESTE-REATIVADO-{uid}"
+            active_name = f"Nome Reativado ETL {uid}"
+            conn.execute(text("insert into profissionais (id,nome,codigo,status_colaborador) values (:id,:nome,:codigo,'ATO')"), {"id": active_id, "nome": active_code, "codigo": active_code})
+            conn.execute(text("insert into admin_audit_logs (action,admin_id,admin_usuario,admin_nome,target_type,target_id,target_codigo,metadata) values ('FORNECEDOR_EXCLUSAO_DEFINITIVA',:id,'TESTE-ETL','Teste','Profissional',:id,:codigo,cast(:metadata as jsonb))"), {"id": active_id, "codigo": active_code, "metadata": json.dumps({"identityNameHashes": [deleted_identity_hash(active_name)]})})
+            conn.execute(text("insert into cadastros_fornecedores (id,cnpj_normalizado,colaborador_codigo,responsavel,razao_social,ativo,raw_payload) values (:id,'11111111000199',:codigo,:nome,:nome,false,'{}'::jsonb)"), {"id": str(uuid.uuid4()), "codigo": active_code, "nome": active_name})
+            assert_import_identities_active(conn, {active_code, active_name})
+
+            # Cadastro ativo sem Profissional não é ignorado nem reparado escondido pelo ETL.
+            missing_id = str(uuid.uuid4())
+            missing_code = f"TESTE-AUSENTE-{uid}"
+            missing_name = f"Nome Ausente ETL {uid}"
+            conn.execute(text("insert into cadastros_fornecedores (id,cnpj_normalizado,colaborador_codigo,responsavel,razao_social,ativo,raw_payload) values (:id,'22222222000199',:codigo,:nome,:nome,true,'{}'::jsonb)"), {"id": missing_id, "codigo": missing_code, "nome": missing_name})
+            try:
+                assert_import_identities_active(conn, {missing_name})
+            except ValueError as error:
+                assert "IDENTIDADE_INCONSISTENTE" in str(error)
+            else:
+                raise AssertionError("ETL ignorou CadastroFornecedor ativo sem Profissional")
             # Constraint REAL: EXCLUIDO continua proibido em status_colaborador.
             nested = conn.begin_nested()
             try:
@@ -46,7 +68,7 @@ def main():
             else:
                 nested.rollback()
                 raise AssertionError("CHECK de status_colaborador ausente")
-            print("PASS: ETL bloqueia código/alias excluído e respeita CHECK real; fixtures revertidas.")
+            print("PASS: ETL respeita tombstone, precedência canônica, inativo histórico e inconsistência; fixtures revertidas.")
         finally:
             transaction.rollback()
     engine.dispose()

@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
+import { deleteOrphanProfessionalsAfterCycleRemoval } from "@/lib/ciclo-cleanup";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -135,30 +136,7 @@ export async function DELETE(request: NextRequest) {
       )
     `;
 
-    const profissionaisOrfaos = await tx.$executeRaw`
-      delete from profissionais p
-      where p.deleted_at is null
-      and not exists (
-        select 1 from medicoes m
-        where m.id_profissional = p.id or m.id_coordenador = p.id
-      )
-      and not exists (
-        select 1 from mapa_pagamento_itens mpi
-        where mpi.projetista_codigo = p.codigo
-      )
-      and not exists (
-        select 1 from bm_aux_medicoes bm
-        where bm.responsavel_codigo = p.codigo
-      )
-      and not exists (
-        select 1 from sgc_aprovacoes_medicao sgc
-        where sgc.colaborador_codigo = p.codigo
-      )
-      and not exists (
-        select 1 from sgc_logs logs
-        where logs.colaborador_codigo = p.codigo
-      )
-    `;
+    const profissionaisOrfaos = await deleteOrphanProfessionalsAfterCycleRemoval(tx);
 
     return {
       ciclos: ciclos.count,

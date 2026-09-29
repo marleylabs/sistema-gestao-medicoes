@@ -28,11 +28,18 @@ export async function resolveFornecedorEmail(colaboradorCodigo: string, nomeFall
   if (profissional?.deletedAt) {
     return { email: null, nome: nomeFallback || colaboradorCodigo, missing: true };
   }
-  const cadastro = await prisma.cadastroFornecedor.findFirst({
+  const cadastros = await prisma.cadastroFornecedor.findMany({
     where: { colaboradorCodigo },
     orderBy: { updatedAt: "desc" },
-    select: { email: true, responsavel: true },
+    select: { ativo: true, email: true, responsavel: true },
   });
+  const cadastro = cadastros.find((item) => item.ativo);
+  // A ausência de cadastro ativo só caracteriza legado quando não existe cadastro administrativo.
+  // Se a identidade possui cadastro e todos estão inativos, a decisão administrativa prevalece e
+  // não pode ser contornada pelo e-mail histórico preservado em Profissional.
+  if (cadastros.length > 0 && !cadastro) {
+    return { email: null, nome: nomeFallback || profissional?.nomeCompleto || profissional?.nome || colaboradorCodigo, missing: true };
+  }
   const cadastroEmail = decryptSensitive(cadastro?.email);
   if (cadastroEmail) {
     return { email: cadastroEmail, nome: cadastro?.responsavel || nomeFallback || colaboradorCodigo, missing: false };

@@ -335,22 +335,59 @@ def deleted_identity_hash(value: str | None) -> str:
 
 
 def assert_import_identities_active(conn, identities: set[str]) -> None:
-    """Fail closed ANTES de full_refresh: nunca apaga histórico nem recria um excluído."""
+    """Fail closed antes do full_refresh, com estado canônico atual acima do histórico."""
     hashes = {deleted_identity_hash(value) for value in identities if clean_text(value)}
-    deleted = conn.execute(text(
-        "select codigo, nome, nome_completo from profissionais where deleted_at is not null"
+    profissionais = conn.execute(text(
+        "select codigo, nome, nome_completo, deleted_at from profissionais"
     )).mappings().all()
+    active = [row for row in profissionais if row.get("deleted_at") is None]
+    active_codes = {normalize_for_compare(row.get("codigo")) for row in active if row.get("codigo")}
+    deleted = [row for row in profissionais if row.get("deleted_at") is not None]
     blocked_hashes = {
         deleted_identity_hash(value)
         for row in deleted for value in (row.get("codigo"), row.get("nome"), row.get("nome_completo"))
         if value
     }
     audit = conn.execute(text(
-        "select metadata from admin_audit_logs where action = 'FORNECEDOR_EXCLUSAO_DEFINITIVA'"
+        "select target_codigo, metadata from admin_audit_logs where action = 'FORNECEDOR_EXCLUSAO_DEFINITIVA'"
     )).mappings().all()
     for row in audit:
+        # Uma identidade canônica ativa com o mesmo código supera o evento histórico. Isso permite
+        # a reativação legítima sem apagar a trilha de auditoria.
+        if normalize_for_compare(row.get("target_codigo")) in active_codes:
+            continue
         metadata = row.get("metadata") or {}
         blocked_hashes.update(metadata.get("identityNameHashes", []))
+    # Cadastro ativo sem exatamente um Profissional canônico é inconsistência administrativa. O
+    # ETL só detecta e interrompe; a correção pertence ao serviço administrativo explícito.
+    active_cadastros = conn.execute(text(
+        """
+        select id, colaborador_codigo, responsavel
+        from cadastros_fornecedores
+        where ativo = true and colaborador_codigo is not null
+        """
+    )).mappings().all()
+    inconsistent_hashes: set[str] = set()
+    inconsistent_labels_by_hash: dict[str, str] = {}
+    for cadastro in active_cadastros:
+        code = normalize_for_compare(cadastro.get("colaborador_codigo"))
+        matching = [row for row in active if normalize_for_compare(row.get("codigo")) == code]
+        if len(matching) != 1:
+            label = str(cadastro.get("colaborador_codigo") or cadastro.get("responsavel") or cadastro.get("id"))
+            for value in (cadastro.get("colaborador_codigo"), cadastro.get("responsavel")):
+                if not value:
+                    continue
+                value_hash = deleted_identity_hash(value)
+                inconsistent_hashes.add(value_hash)
+                inconsistent_labels_by_hash[value_hash] = label
+    matched_inconsistencies = hashes & inconsistent_hashes
+    if matched_inconsistencies:
+        labels = sorted({inconsistent_labels_by_hash[value_hash] for value_hash in matched_inconsistencies})
+        raise ValueError(
+            "IDENTIDADE_INCONSISTENTE: CadastroFornecedor ativo não resolve para exatamente um Profissional canônico: "
+            + ", ".join(labels)
+            + ". Reconcilie no Administrativo antes da importação. Nenhum dado foi alterado."
+        )
     if hashes & blocked_hashes:
         raise ValueError("IMPORTACAO_BLOQUEADA: a planilha contém identidade excluída definitivamente. Nenhum dado foi alterado.")
 

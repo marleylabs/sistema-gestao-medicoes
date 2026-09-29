@@ -66,6 +66,15 @@ export async function resolveProjetistaCodigo(rawValue: unknown): Promise<{ codi
       error: `Mais de um fornecedor corresponde a "${raw}". Selecione o fornecedor correto na lista de sugestões.`,
     };
   }
+  const cadastros = await prisma.cadastroFornecedor.findMany({
+    where: { colaboradorCodigo: { equals: codigosDistintos[0], mode: "insensitive" } },
+    select: { ativo: true },
+  });
+  // Profissional legado sem cadastro administrativo continua aceito. Quando o cadastro existe,
+  // porém, a situação administrativa governa novas associações operacionais.
+  if (cadastros.length > 0 && !cadastros.some((cadastro) => cadastro.ativo)) {
+    return { codigo: null, error: `Fornecedor "${raw}" está inativo e não pode receber um novo pagamento.` };
+  }
   // Sempre a grafia canônica armazenada no Profissional — nunca o texto exatamente como digitado.
   return { codigo: codigosDistintos[0] };
 }

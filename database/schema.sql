@@ -182,11 +182,15 @@ create table if not exists cadastros_fornecedores (
     primeiro_aditivo      text,
     segundo_aditivo       text,
     raw_payload           jsonb       not null default '{}'::jsonb,
+    ativo                 boolean     not null default true,
+    inativado_at          timestamptz,
     created_at            timestamptz not null default now(),
     updated_at            timestamptz not null default now()
 );
 
 alter table cadastros_fornecedores drop constraint if exists cadastros_fornecedores_cnpj_normalizado_key;
+alter table cadastros_fornecedores add column if not exists ativo boolean not null default true;
+alter table cadastros_fornecedores add column if not exists inativado_at timestamptz;
 drop index if exists cadastros_fornecedores_cnpj_normalizado_key;
 create index if not exists idx_cadastros_fornecedores_colaborador_codigo on cadastros_fornecedores(colaborador_codigo);
 create index if not exists idx_cadastros_fornecedores_cnpj_normalizado on cadastros_fornecedores(cnpj_normalizado);

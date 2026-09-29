@@ -45,6 +45,7 @@ export async function GET() {
     ? await prisma.cadastroFornecedor.findMany({
         where: { colaboradorCodigo: { in: codigos } },
         select: {
+          ativo: true,
           colaboradorCodigo: true,
           valorCondicaoFixa: true,
           tipoContrato: true,
@@ -75,7 +76,7 @@ export async function GET() {
   };
   const condicaoPorCodigo = new Map<string, Condicao>();
   for (const c of cadastros) {
-    if (!c.colaboradorCodigo || condicaoPorCodigo.has(c.colaboradorCodigo)) continue;
+    if (!c.ativo || !c.colaboradorCodigo || condicaoPorCodigo.has(c.colaboradorCodigo)) continue;
     condicaoPorCodigo.set(c.colaboradorCodigo, {
       valorCondicaoFixa: toNumberOrNull(c.valorCondicaoFixa),
       tipoContrato: c.tipoContrato,
@@ -85,8 +86,14 @@ export async function GET() {
     });
   }
 
+  const codigosComCadastro = new Set(cadastros.map((c) => c.colaboradorCodigo).filter((c): c is string => !!c));
+  const codigosComCadastroAtivo = new Set(cadastros.filter((c) => c.ativo).map((c) => c.colaboradorCodigo).filter((c): c is string => !!c));
+  // Fornecedor explicitamente inativo sai de novas operações. Profissional legado sem nenhum
+  // CadastroFornecedor continua visível para não quebrar identidades operacionais antigas.
+  const profissionaisOperacionais = profissionais.filter((p) => !p.codigo || !codigosComCadastro.has(p.codigo) || codigosComCadastroAtivo.has(p.codigo));
+
   return NextResponse.json(
-    profissionais.map((p) => ({
+    profissionaisOperacionais.map((p) => ({
       ...serializeProfessional(p),
       ...(p.codigo ? condicaoPorCodigo.get(p.codigo) ?? condicaoVazia : condicaoVazia),
     })),

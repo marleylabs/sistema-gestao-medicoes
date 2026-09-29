@@ -1,9 +1,11 @@
 import crypto from "crypto";
+import type { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { logBmAction } from "@/lib/bm-log";
 import { liberarConferenciaSeCompleta } from "@/lib/conferencia-resolucao";
+import { FORNECEDOR_INATIVO_MENSAGEM, isFornecedorInativo } from "@/lib/fornecedor-inativo";
 
 const PRECO_POR_TIPO: Record<string, "valorHora" | "valorDocumento" | "valorA1Equivalente"> = {
   HH: "valorHora",
@@ -11,11 +13,13 @@ const PRECO_POR_TIPO: Record<string, "valorHora" | "valorDocumento" | "valorA1Eq
   DG: "valorA1Equivalente",
 };
 
-async function localizarPreco(colaboradorCodigo: string, tipo: string | null) {
+type CadastroTx = Pick<Prisma.TransactionClient, "cadastroFornecedor">;
+
+async function localizarPreco(tx: CadastroTx, colaboradorCodigo: string, tipo: string | null) {
   const campo = tipo ? PRECO_POR_TIPO[tipo.trim().toUpperCase()] : undefined;
   if (!campo) return null;
-  const cadastro = await prisma.cadastroFornecedor.findFirst({
-    where: { OR: [{ colaboradorCodigo }, { responsavel: colaboradorCodigo }] },
+  const cadastro = await tx.cadastroFornecedor.findFirst({
+    where: { ativo: true, OR: [{ colaboradorCodigo }, { responsavel: colaboradorCodigo }] },
     select: { valorHora: true, valorDocumento: true, valorA1Equivalente: true },
     orderBy: { updatedAt: "desc" },
   });
@@ -64,6 +68,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           },
         });
         if (!profissional) throw new Error("FORNECEDOR_NAO_ENCONTRADO");
+        // A situação administrativa é decidida pela identidade canônica do Profissional resolvido
+        // (a divergência pode trazer nome/nomeCompleto), dentro da transação e antes de qualquer escrita.
+        if (await isFornecedorInativo(tx, profissional)) throw new Error("FORNECEDOR_INATIVO");
 
         const codigoProjeto = `MANUAL-${divergencia.ciclo}-${Date.now()}`;
         const projeto = await tx.projeto.upsert({
@@ -72,7 +79,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           update: {},
         });
 
-        const preco = await localizarPreco(divergencia.colaboradorCodigo, divergencia.fornecedorTipo);
+        const preco = await localizarPreco(tx, divergencia.colaboradorCodigo, divergencia.fornecedorTipo);
         const hash = crypto.randomUUID();
         await tx.medicao.create({
           data: {
@@ -107,6 +114,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       await liberarConferenciaSeCompleta(tx, divergencia.sgcId);
     });
   } catch (err) {
+    if (err instanceof Error && err.message === "FORNECEDOR_INATIVO") {
+      return NextResponse.json({ error: FORNECEDOR_INATIVO_MENSAGEM }, { status: 409 });
+    }
     if (err instanceof Error && err.message === "FORNECEDOR_NAO_ENCONTRADO") {
       return NextResponse.json({ error: "Fornecedor não encontrado para incluir este documento." }, { status: 409 });
     }
