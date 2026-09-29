@@ -11,6 +11,7 @@
 import { randomBytes, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
 import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
+import { WORKFLOW_TEST_CYCLE_VALUES } from "../tests/fixtures/workflow-cycles";
 
 const scrypt = promisify(scryptCallback);
 
@@ -55,6 +56,42 @@ async function main() {
   // CadastroFornecedor nem MapaPagamentoItem prévios, para o cenário nascer limpo a cada rodada.
   const codigoNovoPagamento = "E2E-NP-001";
   const codigos = [codigoA, codigoB, codigoC, codigoD, codigoNovoPagamento];
+  // Rede de segurança para execuções interrompidas de tests/workflow-e2e.test.ts. Os ciclos
+  // reservados são YYMM válidos e exclusivos do banco E2E; limpar pela lista explícita evita
+  // transformar nomes/prefixos de fixtures em regra de negócio da aplicação.
+  const workflowMedicoes = await prisma.medicao.findMany({
+    where: { ciclo: { in: [...WORKFLOW_TEST_CYCLE_VALUES] } },
+    select: { idProjeto: true, idProfissional: true },
+  });
+  const workflowItens = await prisma.mapaPagamentoItem.findMany({
+    where: { ciclo: { in: [...WORKFLOW_TEST_CYCLE_VALUES] } },
+    select: { projetistaCodigo: true },
+  });
+  const workflowProjetoIds = [...new Set(workflowMedicoes.map((item) => item.idProjeto))];
+  const workflowProfissionalIds = [
+    ...new Set(workflowMedicoes.map((item) => item.idProfissional).filter((id): id is string => Boolean(id))),
+  ];
+  const workflowCodigos = [
+    ...new Set(workflowItens.map((item) => item.projetistaCodigo).filter((codigo): codigo is string => Boolean(codigo))),
+  ];
+
+  await prisma.divergenciaMedicao.deleteMany({ where: { ciclo: { in: [...WORKFLOW_TEST_CYCLE_VALUES] } } });
+  await prisma.sgcLog.deleteMany({ where: { ciclo: { in: [...WORKFLOW_TEST_CYCLE_VALUES] } } });
+  await prisma.sgcAprovacaoMedicao.deleteMany({ where: { ciclo: { in: [...WORKFLOW_TEST_CYCLE_VALUES] } } });
+  await prisma.bmAuxMedicao.deleteMany({ where: { ciclo: { in: [...WORKFLOW_TEST_CYCLE_VALUES] } } });
+  await prisma.medicao.deleteMany({ where: { ciclo: { in: [...WORKFLOW_TEST_CYCLE_VALUES] } } });
+  await prisma.mapaPagamentoItem.deleteMany({ where: { ciclo: { in: [...WORKFLOW_TEST_CYCLE_VALUES] } } });
+  await prisma.etlExecucao.deleteMany({ where: { ciclo: { in: [...WORKFLOW_TEST_CYCLE_VALUES] } } });
+  if (workflowCodigos.length > 0) {
+    await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: workflowCodigos } } });
+  }
+  if (workflowProfissionalIds.length > 0) {
+    await prisma.profissional.deleteMany({ where: { id: { in: workflowProfissionalIds } } });
+  }
+  if (workflowProjetoIds.length > 0) {
+    await prisma.projeto.deleteMany({ where: { id: { in: workflowProjetoIds } } });
+  }
+  await prisma.mapaPagamentoContexto.deleteMany({ where: { ciclo: { in: [...WORKFLOW_TEST_CYCLE_VALUES] } } });
   // Por Projeto (não por ciclo/profissional): Medicao.idProjeto tem onDelete: Restrict — o Postgres
   // recusa apagar um Projeto enquanto QUALQUER Medicao o referenciar, mesmo de ciclo/profissional
   // já removidos em execução anterior (causa raiz de uma violação de FK encontrada nesta auditoria).
