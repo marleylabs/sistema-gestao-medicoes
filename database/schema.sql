@@ -156,6 +156,26 @@ create unique index if not exists idx_profissionais_codigo_unique
 
 create index if not exists idx_profissionais_deleted_at on profissionais(deleted_at);
 
+-- ─── profissional_aliases ────────────────────────────────────
+-- Aliases operacionais (ex.: "RONALD LEAL" na máscara → Profissional canônico "RONALD RAFAEL SILVA LEAL").
+-- Só por decisão explícita; alias_normalizado = normalizePersonName (TS) / normalize_person_name (ETL).
+-- Sem unique global: o mesmo alias em 2+ Profissionais é ambiguidade real e bloqueia a resolução.
+create table if not exists profissional_aliases (
+    id                uuid        primary key default gen_random_uuid(),
+    profissional_id   uuid        not null references profissionais(id) on delete cascade on update cascade,
+    alias             text        not null,
+    alias_normalizado text        not null,
+    origem            text        not null,
+    ativo             boolean     not null default true,
+    metadata          jsonb       not null default '{}',
+    created_by_id     uuid,
+    created_by_nome   text,
+    created_at        timestamptz not null default now(),
+    updated_at        timestamptz not null default now()
+);
+create unique index if not exists profissional_aliases_profissional_alias_key on profissional_aliases(profissional_id, alias_normalizado);
+create index if not exists profissional_aliases_alias_normalizado_idx on profissional_aliases(alias_normalizado);
+
 -- ─── cadastros administrativos de fornecedores ───────────────
 create table if not exists cadastros_fornecedores (
     id                   uuid        primary key default gen_random_uuid(),

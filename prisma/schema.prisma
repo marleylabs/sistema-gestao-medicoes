@@ -218,11 +218,37 @@ model Profissional {
   deletedReason            String?   @map("deleted_reason")
   medicoesComoCoordenador  Medicao[] @relation("MedicoesCoordenador")
   medicoesComoProfissional Medicao[] @relation("MedicoesProfissional")
+  aliases                  ProfissionalAlias[]
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
   @@index([deletedAt])
   @@map("profissionais")
+}
+
+/// Forma pela qual uma identidade operacional aparece em fontes externas (ex.: "RONALD LEAL" na
+/// máscara de medição para o Profissional canônico "RONALD RAFAEL SILVA LEAL"). Só existe por decisão
+/// explícita (nunca criado por semelhança de nome/CNPJ). `aliasNormalizado` = normalizePersonName
+/// (lib/cadastro-fornecedor.ts), espelhado no ETL. Sem unique global: o mesmo alias em 2+ Profissionais
+/// é ambiguidade real e a resolução bloqueia (lib/profissional-identidade.ts).
+model ProfissionalAlias {
+  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profissionalId   String       @map("profissional_id") @db.Uuid
+  profissional     Profissional @relation(fields: [profissionalId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  alias            String
+  aliasNormalizado String       @map("alias_normalizado")
+  /// MANUAL | MIGRACAO_DEV | DOCUMENTOS | DOCUMENTOS_AUXILIARES | MAPA_PAGAMENTO
+  origem           String
+  ativo            Boolean      @default(true)
+  metadata         Json         @default("{}")
+  createdById      String?      @map("created_by_id") @db.Uuid
+  createdByNome    String?      @map("created_by_nome")
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime     @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@unique([profissionalId, aliasNormalizado], map: "profissional_aliases_profissional_alias_key")
+  @@index([aliasNormalizado])
+  @@map("profissional_aliases")
 }
 
 model CadastroFornecedor {
