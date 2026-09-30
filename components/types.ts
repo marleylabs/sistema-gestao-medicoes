@@ -26,6 +26,8 @@ export type Profissional = {
   tipoCondicaoFixa: string | null;
   valorCondicaoFixaComProducao: number | null;
   valorCondicaoFixaSemProducao: number | null;
+  /** Identidade com CadastroFornecedor ativo (apresentação no seletor). Ausente/false = legado. */
+  cadastroAdministrativo?: boolean;
 };
 
 export type ContratoResumo = {

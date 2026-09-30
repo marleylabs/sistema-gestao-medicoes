@@ -243,4 +243,73 @@ test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silê
     }
     await page.request.post("/api/auth/logout");
   });
+  test("AUTOCOMPLETE: identidades distintas nunca são fundidas (nome parecido/CNPJ compartilhado); origem diferenciada; seleção não herda dados; cabeçalho só com a escolha", async ({ page }) => {
+    const S = randomUUID().slice(0, 5).toUpperCase();
+    const CNPJ = "55591066000195";
+    const legado = await prisma.profissional.create({ data: { nome: `RONALD LEAL ${S}` } }); // codigo NULL, sem cadastro
+    const adminCodigo = `RONALD RAFAEL SILVA LEAL ${S}`;
+    const admin = await prisma.profissional.create({ data: { nome: adminCodigo, codigo: adminCodigo, nomeCompleto: adminCodigo, razaoSocial: `RR LEAL ENGENHARIA ${S} LTDA`, cnpj: CNPJ } });
+    const ramosCodigo = `RONALDO RAMOS ${S}`;
+    const ramos = await prisma.profissional.create({ data: { nome: ramosCodigo, codigo: ramosCodigo, nomeCompleto: ramosCodigo, razaoSocial: `RAMOS ${S} LTDA`, cnpj: CNPJ } });
+    const inativoCodigo = `RONALD INATIVO ${S}`;
+    const inativo = await prisma.profissional.create({ data: { nome: inativoCodigo, codigo: inativoCodigo, nomeCompleto: inativoCodigo } });
+    const cadastros = await Promise.all([
+      prisma.cadastroFornecedor.create({ data: { cnpjNormalizado: CNPJ, cnpj: CNPJ, colaboradorCodigo: adminCodigo, responsavel: adminCodigo, razaoSocial: `RR LEAL ENGENHARIA ${S} LTDA`, rawPayload: {} } }),
+      prisma.cadastroFornecedor.create({ data: { cnpjNormalizado: CNPJ, cnpj: CNPJ, colaboradorCodigo: ramosCodigo, responsavel: ramosCodigo, razaoSocial: `RAMOS ${S} LTDA`, rawPayload: {} } }),
+      prisma.cadastroFornecedor.create({ data: { cnpjNormalizado: "11111111000111", colaboradorCodigo: inativoCodigo, responsavel: inativoCodigo, razaoSocial: "Inativo LTDA", ativo: false, inativadoAt: new Date(), rawPayload: {} } }),
+    ]);
+    try {
+      await abrirNovoPagamento(page);
+      const painel = painelNovo(page);
+      const nome = painel.getByRole("textbox", { name: "Nome", exact: true });
+      await nome.fill(S);
+      const sugestoes = painel.locator("button").filter({ has: page.getByTestId("sugestao-origem") });
+
+      // A/F/G: três identidades distintas → três sugestões (nome parecido e CNPJ compartilhado não fundem);
+      // inativo continua fora de novas operações (regra atual do /api/profissionais).
+      await expect(sugestoes).toHaveCount(3);
+      await expect(sugestoes.filter({ hasText: inativoCodigo })).toHaveCount(0);
+
+      // B: identidade administrativa mostra nome, empresa e CNPJ + marca "Cadastro administrativo".
+      const sAdmin = sugestoes.filter({ hasText: adminCodigo });
+      await expect(sAdmin).toContainText(`RR LEAL ENGENHARIA ${S} LTDA · 55.591.066/0001-95`);
+      await expect(sAdmin).toContainText("Cadastro administrativo");
+      // C: legado marcado, sem empresa/CNPJ inventados.
+      const sLegado = sugestoes.filter({ hasText: `RONALD LEAL ${S}` }).filter({ hasNotText: "RAFAEL" });
+      await expect(sLegado).toContainText("Legado · sem cadastro administrativo");
+      await expect(sLegado).not.toContainText("55.591.066");
+      await expect(sugestoes.filter({ hasText: ramosCodigo })).toContainText("Cadastro administrativo");
+
+      // H (antes da seleção): cabeçalho nunca mostra o texto digitado.
+      await expect(painel.getByText("Novo fornecedor no ciclo")).toBeVisible();
+
+      // D: selecionar a identidade administrativa preenche os dados dela.
+      await sAdmin.click();
+      await expect(nome).toHaveValue(adminCodigo);
+      await expect(painel.getByRole("textbox", { name: "CNPJ" })).toHaveValue("55.591.066/0001-95");
+      await expect(painel.getByRole("textbox", { name: "Razão social" })).toHaveValue(`RR LEAL ENGENHARIA ${S} LTDA`);
+      await expect(painel.getByText(adminCodigo, { exact: true }).first()).toBeVisible();
+      await expect(painel.getByTestId("aviso-sem-cadastro")).toHaveCount(0);
+
+      // E: trocar para o legado NÃO herda CNPJ/Razão social da identidade anterior; aviso discreto.
+      await nome.fill(S);
+      await sugestoes.filter({ hasText: `RONALD LEAL ${S}` }).filter({ hasNotText: "RAFAEL" }).click();
+      await expect(nome).toHaveValue(`RONALD LEAL ${S}`);
+      await expect(painel.getByRole("textbox", { name: "CNPJ" })).toHaveValue("");
+      await expect(painel.getByRole("textbox", { name: "Razão social" })).toHaveValue("");
+      await expect(painel.getByTestId("aviso-sem-cadastro")).toHaveText("Sem cadastro administrativo vinculado.");
+      // H: cabeçalho mostra só a identidade escolhida (legado) e a marca de legado.
+      await expect(painel.getByText(`RONALD LEAL ${S}`, { exact: true }).first()).toBeVisible();
+      await expect(painel.getByText(/Legado · sem cadastro administrativo/).first()).toBeVisible();
+      await expect(painel.getByText(adminCodigo, { exact: true })).toHaveCount(0);
+
+      await painel.getByRole("button", { name: "Cancelar", exact: true }).click();
+      await expect(painel).toHaveCount(0);
+      expect(await prisma.mapaPagamentoItem.count({ where: { projetistaCodigo: { in: [`RONALD LEAL ${S}`, adminCodigo, ramosCodigo] } } })).toBe(0);
+    } finally {
+      await prisma.cadastroFornecedor.deleteMany({ where: { id: { in: cadastros.map((c) => c.id) } } });
+      await prisma.profissional.deleteMany({ where: { id: { in: [legado.id, admin.id, ramos.id, inativo.id] } } });
+    }
+    await page.request.post("/api/auth/logout");
+  });
 });

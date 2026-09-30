@@ -239,6 +239,8 @@ function PaymentModal({
   const [form, setForm] = useState<PaymentForm>(() => paymentForm(item));
   const [codigoQuery, setCodigoQuery] = useState(item?.projetistaCodigo ?? "");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  // Identidade efetivamente escolhida na lista (nunca o texto em digitação) — só para apresentação.
+  const [selecionado, setSelecionado] = useState<{ cadastroAdministrativo: boolean } | null>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
   // Correção da causa raiz de "fornecedor cadastrado não aparece no Nome": a lista de
@@ -517,21 +519,28 @@ function PaymentModal({
     // conforme documentos são carregados/adicionados/removidos.
     const valorResolvido = resolveCondicaoFixa(toCondicaoFixaConfig(p), totalDocsValorBruto > 0);
     setCodigoQuery(identidade);
-    setForm((cur) => ({
+    setSelecionado({ cadastroAdministrativo: !!p.cadastroAdministrativo });
+    setForm((cur) => {
+      // Troca de identidade nunca herda CNPJ/Razão social da anterior (ex.: legado sem cadastro
+      // selecionado depois de uma identidade administrativa parecida). Mesma identidade re-selecionada
+      // mantém o que já estava preenchido quando o Profissional não traz o dado.
+      const mesmaIdentidade = normalizeText(cur.projetistaCodigo) === normalizeText(identidade);
+      return {
       ...cur,
       projetistaCodigo: identidade,
       responsavel: p.nomeCompleto || p.nome || "",
       // Esta tela trabalha só com CNPJ (CPF nunca é a identidade de fornecedor aqui) — nunca usar
       // p.cpf, mesmo que preenchido.
-      cpfCnpj: maskCpfCnpj(p.cnpj || cur.cpfCnpj),
-      razaoSocial: p.razaoSocial || cur.razaoSocial,
+      cpfCnpj: p.cnpj ? maskCpfCnpj(p.cnpj) : mesmaIdentidade ? cur.cpfCnpj : "",
+      razaoSocial: p.razaoSocial || (mesmaIdentidade ? cur.razaoSocial : ""),
       // Selecionar um fornecedor é uma troca EXPLÍCITA de identidade — nunca herda o valor do
       // fornecedor anterior (bug real: selecionar Mauricio, 8.640, depois trocar para alguém sem
       // condição fixa mantinha 8.640 na tela). Sempre reflete o fornecedor recém-selecionado:
       // valor real quando existe, "" quando não existe (nunca um resquício de state antigo).
       valorFixo: valorResolvido != null ? currencyInputValue(valorResolvido) : "",
       tipoContratacao: p.tipoContrato || "",
-    }));
+      };
+    });
     setShowSuggestions(false);
   }
 
@@ -639,7 +648,7 @@ function PaymentModal({
 
   const tituloPainel = item ? "Editar pagamento" : "Novo pagamento";
   // Edição: fornecedor do contexto. Cadastro: só o fornecedor efetivamente selecionado (nunca o texto em digitação).
-  const nomeContexto = item ? (contexto?.nome || form.responsavel || codigoQuery || null) : (form.responsavel || null);
+  const nomeContexto = item ? (contexto?.nome || form.responsavel || codigoQuery || null) : (selecionado ? form.responsavel || null : null);
   // Resumo só com contexto suficiente — no cadastro, depois de selecionar o fornecedor ou incluir documentos.
   const mostrarResumo = !!item || !!form.responsavel || docs.length > 0;
   const valorFixoExibido = form.valorFixo && !form.valorFixo.includes("R$")
@@ -685,6 +694,9 @@ function PaymentModal({
               <span>{contexto?.cicloLabel ?? ciclo}</span>
               {ciclo !== "GERAL" && <span className="font-technical text-[11px]">{ciclo}</span>}
               {form.projetistaCodigo && <span className="font-technical text-[11px]">· {form.projetistaCodigo}</span>}
+              {!item && selecionado && !selecionado.cadastroAdministrativo && (
+                <span className="text-[#92400E]">· Legado · sem cadastro administrativo</span>
+              )}
             </div>
           </div>
         </header>
@@ -723,6 +735,7 @@ function PaymentModal({
                         // sincronizados — resolveProjetistaCodigo() no backend revalida antes de gravar.
                         setCodigoQuery(e.target.value);
                         update("projetistaCodigo", e.target.value);
+                        setSelecionado(null);
                         setShowSuggestions(true);
                       }}
                       onFocus={() => setShowSuggestions(true)}
@@ -740,8 +753,17 @@ function PaymentModal({
                             {/* Nome em destaque; razão social/CNPJ distinguem homônimos. */}
                             <span className="text-sm font-semibold text-[#1A1A1A]">{p.nomeCompleto || p.nome}</span>
                             {(p.razaoSocial || p.cnpj) && (
-                              <span className="text-xs text-[#555555]">{p.razaoSocial}{p.razaoSocial && p.cnpj ? " · " : ""}{p.cnpj}</span>
+                              <span className="text-xs text-[#555555]">{[p.razaoSocial, p.cnpj ? maskCpfCnpj(p.cnpj) : null].filter(Boolean).join(" · ")}</span>
                             )}
+                            {/* Origem da identidade (sem afirmar duplicidade): identidades distintas nunca são fundidas aqui. */}
+                            <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]" data-testid="sugestao-origem">
+                              {p.cadastroAdministrativo ? (
+                                <span className="rounded border border-[#cde9d5] bg-[var(--success-soft)] px-1.5 py-0.5 font-semibold text-[var(--success)]">Cadastro administrativo</span>
+                              ) : (
+                                <span className="rounded border border-[#f2dbb7] bg-[var(--warning-soft)] px-1.5 py-0.5 font-semibold text-[#92400E]">Legado · sem cadastro administrativo</span>
+                              )}
+                              <span className="font-technical text-[#71717A]">{p.codigo || p.nome}</span>
+                            </span>
                           </button>
                         ))}
                       </div>
@@ -753,6 +775,9 @@ function PaymentModal({
                 <MField label="CNPJ">
                   <Input value={form.cpfCnpj} readOnly placeholder="Preenchido automaticamente" className="cursor-not-allowed bg-[#F9FAFB] font-technical text-[#555555]" />
                 </MField>
+                {!item && selecionado && !selecionado.cadastroAdministrativo && (
+                  <p className="text-[12px] text-[#92400E] md:col-span-2" data-testid="aviso-sem-cadastro">Sem cadastro administrativo vinculado.</p>
+                )}
                 <MField label="Razão social">
                   <Input value={form.razaoSocial} readOnly placeholder="Preenchida automaticamente" className="cursor-not-allowed bg-[#F9FAFB] text-[#555555]" />
                 </MField>

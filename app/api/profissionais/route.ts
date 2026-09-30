@@ -96,6 +96,9 @@ export async function GET() {
     profissionaisOperacionais.map((p) => ({
       ...serializeProfessional(p),
       ...(p.codigo ? condicaoPorCodigo.get(p.codigo) ?? condicaoVazia : condicaoVazia),
+      // Só apresentação no seletor: identidade com CadastroFornecedor ativo (join por código,
+      // nunca por nome/CNPJ). `false` = Profissional legado sem cadastro administrativo.
+      cadastroAdministrativo: !!p.codigo && codigosComCadastroAtivo.has(p.codigo),
     })),
   );
 }
