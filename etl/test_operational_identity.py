@@ -1,0 +1,166 @@
+"""Resolução de identidade operacional no ETL: paridade de normalização com o TS, resolver
+(código → alias → legado), preflight que bloqueia ANTES de qualquer escrita, cadastro do mapa
+gerado só por igualdade (aproximado vira sugestão) e carga real do resolver no Postgres E2E
+(transação com rollback)."""
+from __future__ import annotations
+
+import json
+import os
+import uuid
+from pathlib import Path
+
+import pandas as pd
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+
+import server
+from ingest_medicoes import (
+    OperationalIdentityResolver,
+    UnresolvedIdentityError,
+    assert_operational_identities_resolved,
+    find_cadastro_for_generated_payment,
+    normalize_person_name,
+)
+from test_negative_measurement_validation import normal_row
+
+ROOT = Path(__file__).resolve().parent.parent
+
+CANONICO = {"id": "p-ronald", "codigo": "RONALD RAFAEL SILVA LEAL", "nome": "RONALD RAFAEL SILVA LEAL"}
+OUTRO = {"id": "p-ramos", "codigo": "RONALDO RAMOS", "nome": "RONALDO RAMOS"}
+LEGADO = {"id": "p-legado", "codigo": None, "nome": "ALAN FARIAS"}
+ALIASES = [
+    {"profissional_id": "p-ronald", "alias": "RONALD LEAL", "alias_normalizado": "RONALD LEAL"},
+    {"profissional_id": "p-ronald", "alias": "AMBIGUO", "alias_normalizado": "AMBIGUO"},
+    {"profissional_id": "p-ramos", "alias": "AMBIGUO", "alias_normalizado": "AMBIGUO"},
+]
+
+
+def resolver() -> OperationalIdentityResolver:
+    return OperationalIdentityResolver([CANONICO, OUTRO, LEGADO], ALIASES)
+
+
+def test_normalization_parity_with_typescript() -> None:
+    fixture = json.loads((ROOT / "tests" / "fixtures" / "normalizacao-alias.json").read_text(encoding="utf-8"))
+    for case in fixture:
+        assert normalize_person_name(case["entrada"]) == case["esperado"], case
+
+
+def test_resolver_order_and_outcomes() -> None:
+    r = resolver()
+    assert r.resolve("ronald rafael silva leal ") == {"status": "RESOLVIDO", "via": "CODIGO", "id": "p-ronald", "codigo": "RONALD RAFAEL SILVA LEAL"}
+    assert r.resolve("Rónald. Leal") == {"status": "RESOLVIDO", "via": "ALIAS", "id": "p-ronald", "codigo": "RONALD RAFAEL SILVA LEAL"}
+    ambiguo = r.resolve("AMBIGUO")
+    assert ambiguo["status"] == "AMBIGUO" and sorted(ambiguo["candidatos"]) == ["RONALD RAFAEL SILVA LEAL", "RONALDO RAMOS"]
+    assert r.resolve("alan farias") == {"status": "RESOLVIDO", "via": "NOME_LEGADO", "id": "p-legado", "codigo": "ALAN FARIAS"}
+    assert r.resolve("PAULO SOUZA")["status"] == "NAO_RESOLVIDO"
+    assert r.resolve("RONALD R LEAL")["status"] == "NAO_RESOLVIDO"  # parecido nunca resolve
+    r.declare("NOVO DA BASE")
+    assert r.resolve("NOVO DA BASE")["via"] == "DECLARADO_PLANILHA"
+    r.register("p-novo", "NOVO DA BASE", "NOVO DA BASE")
+    assert r.require_id("novo da base") == "p-novo"
+
+
+def test_aliases_merge_into_canonical_codes() -> None:
+    merged = resolver().apply_to_canonical_codes({"ronaldleal": "RONALD LEAL", "outro": "RONALDO RAMOS"})
+    assert merged["ronaldleal"] == "RONALD RAFAEL SILVA LEAL"  # valor que era alias vira o código canônico
+    assert merged["outro"] == "RONALDO RAMOS"
+    assert "ambiguo" not in merged  # alias ambíguo nunca entra no mapa
+
+
+def preflight(rows: list[pd.Series], r: OperationalIdentityResolver, cadastros=None, base_df=None):
+    df = pd.DataFrame(rows)
+    return assert_operational_identities_resolved(
+        df, base_df if base_df is not None else pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), set(), {}, {},
+        "2608", r, cadastros or {}, "Documentos", "Base", None, None,
+    )
+
+
+def test_preflight_resolves_alias_and_legacy() -> None:
+    summary = preflight([normal_row(PROJETISTA="RONALD LEAL"), normal_row(PROJETISTA="ALAN FARIAS"), normal_row(PROJETISTA="RONALD LEAL")], resolver())
+    assert summary["identidades_resolvidas"] == 2
+    assert summary["identidades_por_via"] == {"ALIAS": 1, "NOME_LEGADO": 1}
+    assert summary["aliases_utilizados"] == ["RONALD LEAL -> RONALD RAFAEL SILVA LEAL"]
+
+
+def test_preflight_blocks_unresolved_and_ambiguous_with_details() -> None:
+    cadastros = {"x": {"colaborador_codigo": "PAULO ROBERTO SOUZA", "responsavel": "PAULO ROBERTO SOUZA"}}
+    rows = [normal_row(PROJETISTA="PAULO SOUZA"), normal_row(PROJETISTA="PAULO SOUZA"), normal_row(PROJETISTA="AMBIGUO"), normal_row(PROJETISTA="RONALD LEAL")]
+    try:
+        preflight(rows, resolver(), cadastros)
+    except UnresolvedIdentityError as error:
+        by_name = {d["valor"]: d for d in error.details}
+        assert set(by_name) == {"PAULO SOUZA", "AMBIGUO"}
+        assert by_name["PAULO SOUZA"]["status"] == "NAO_RESOLVIDO"
+        assert by_name["PAULO SOUZA"]["ocorrencias"] == 2 and by_name["PAULO SOUZA"]["linhas"] == [2, 3]
+        assert by_name["PAULO SOUZA"]["origem"] == "Documentos" and by_name["PAULO SOUZA"]["ciclo"] == "2608"
+        assert by_name["PAULO SOUZA"]["sugestoesCadastro"] == ["PAULO ROBERTO SOUZA"]  # só informativa
+        assert by_name["AMBIGUO"]["status"] == "AMBIGUO"
+        assert error.to_dict()["code"] == "UNRESOLVED_OPERATIONAL_IDENTITIES"
+        assert "Nenhum dado foi alterado" in str(error)
+    else:
+        raise AssertionError("Preflight deveria bloquear PAULO SOUZA e o alias ambíguo.")
+
+
+def test_preflight_blocks_base_code_that_is_alias_of_other_identity() -> None:
+    base_df = pd.DataFrame([{"Código": "RONALD LEAL", "Nome Completo": "RONALD LEAL"}])
+    try:
+        preflight([normal_row(PROJETISTA="RONALD RAFAEL SILVA LEAL")], resolver(), base_df=base_df)
+    except UnresolvedIdentityError as error:
+        assert [d["status"] for d in error.details] == ["CONFLITO_ALIAS"]
+    else:
+        raise AssertionError("Código da Base que é alias de outra identidade deveria bloquear.")
+
+
+def test_generated_map_never_applies_approximate_cadastro() -> None:
+    cadastros = {"diogo aguiar diniz": {"colaborador_codigo": "DIOGO AGUIAR DINIZ", "responsavel": "DIOGO AGUIAR DINIZ", "razao_social": "DAD LTDA"}}
+    sugestoes: list[dict] = []
+    item = {"codigo": "DIOGO DINIZ", "nome": "DIOGO DINIZ", "nome_completo": None}
+    assert find_cadastro_for_generated_payment(cadastros, item, sugestoes) is None
+    assert sugestoes == [{"codigo": "DIOGO DINIZ", "cadastroSugerido": "DIOGO AGUIAR DINIZ", "colaboradorCodigoSugerido": "DIOGO AGUIAR DINIZ"}]
+    direto = {"codigo": "DIOGO AGUIAR DINIZ", "nome": "DIOGO AGUIAR DINIZ", "nome_completo": None}
+    assert find_cadastro_for_generated_payment(cadastros, direto, []) is cadastros["diogo aguiar diniz"]
+
+
+def test_server_exposes_identity_details() -> None:
+    original = server.ingest
+
+    def reject(**_kwargs):
+        raise UnresolvedIdentityError([{"valor": "PAULO SOUZA", "origem": "Documentos", "status": "NAO_RESOLVIDO", "ocorrencias": 1, "linhas": [5]}])
+
+    try:
+        server.ingest = reject
+        server.run_etl(b"fixture", "2608")
+        assert server._last_error_type == "validation"
+        assert server._last_error_details[0]["valor"] == "PAULO SOUZA"
+        assert "PAULO SOUZA" in server._last_error
+    finally:
+        server.ingest = original
+
+
+def test_resolver_loads_from_e2e_database() -> None:
+    url_text = os.environ.get("ETL_DATABASE_URL") or os.environ.get("DATABASE_URL_TEST")
+    if not url_text:
+        print("SKIP: sem ETL_DATABASE_URL/DATABASE_URL_TEST")
+        return
+    url = make_url(url_text).difference_update_query(["schema"])
+    assert url.host in ("localhost", "127.0.0.1") and "e2e" in (url.database or "")
+    engine = create_engine(url)
+    with engine.connect() as conn:
+        tx = conn.begin()
+        try:
+            s = uuid.uuid4().hex[:6].upper()
+            pid = str(uuid.uuid4())
+            conn.execute(text("insert into profissionais (id, nome, codigo) values (:id, :c, :c)"), {"id": pid, "c": f"CANONICO ETL {s}"})
+            conn.execute(text("insert into profissional_aliases (profissional_id, alias, alias_normalizado, origem) values (:id, :a, :n, 'MANUAL')"),
+                         {"id": pid, "a": f"Alias Etl {s}", "n": normalize_person_name(f"Alias Etl {s}")})
+            r = OperationalIdentityResolver.load(conn)
+            assert r.resolve(f"alias etl {s}") == {"status": "RESOLVIDO", "via": "ALIAS", "id": pid, "codigo": f"CANONICO ETL {s}"}
+        finally:
+            tx.rollback()
+
+
+if __name__ == "__main__":
+    for name, fn in list(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            fn()
+    print("OK: identidade operacional no ETL (paridade, resolver, preflight, mapa gerado sem cadastro aproximado, servidor, E2E).")
