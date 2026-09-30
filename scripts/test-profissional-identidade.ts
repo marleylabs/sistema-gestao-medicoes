@@ -69,10 +69,10 @@ async function main() {
     const d = await resolverIdentidadeOperacional(legado.toLowerCase());
     assert.deepEqual(d, { status: "RESOLVIDO", via: "NOME_LEGADO", profissionalId: pLegado.id, codigoCanonico: legado });
     // E — nome nunca visto → NAO_RESOLVIDO (nada é criado)
-    const antes = await prismaTest.profissional.count();
     assert.equal((await resolverIdentidadeOperacional(`PAULO SOUZA ${S}`)).status, "NAO_RESOLVIDO");
     assert.equal((await resolverIdentidadeOperacional("   ")).status, "NAO_RESOLVIDO");
-    assert.equal(await prismaTest.profissional.count(), antes);
+    // Nada criado para o nome não resolvido (escopo do próprio teste: outros arquivos rodam em paralelo no mesmo banco).
+    assert.equal(await prismaTest.profissional.count({ where: { nome: { contains: `PAULO SOUZA ${S}`, mode: "insensitive" } } }), 0);
     // F — identidade excluída definitivamente nunca resolve (nem por código, nem por alias)
     assert.equal((await resolverIdentidadeOperacional(excluido)).status, "NAO_RESOLVIDO");
     assert.equal((await resolverIdentidadeOperacional(`ALIAS DO EXCLUIDO ${S}`)).status, "NAO_RESOLVIDO");
