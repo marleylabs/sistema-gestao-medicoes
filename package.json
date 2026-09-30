@@ -17,7 +17,9 @@
     "test:all": "npm run test:targeted && npm run test:e2e",
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
-    "identities:reconcile": "tsx scripts/audit-active-cadastro-identities.ts"
+    "identities:reconcile": "tsx scripts/audit-active-cadastro-identities.ts",
+    "identities:aliases": "tsx scripts/dev-profissional-aliases.ts",
+    "dev:reset-operational": "tsx scripts/dev-reset-operational-data.ts"
   },
   "dependencies": {
     "@heroui/react": "^3.2.0",

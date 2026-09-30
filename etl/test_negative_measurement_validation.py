@@ -189,6 +189,8 @@ def test_invalid_rows_stop_before_transaction_begin() -> None:
         "read_measurements_sheet": lambda *_args, **_kwargs: invalid_df,
         "read_bm_aux_sheet": lambda *_args, **_kwargs: pd.DataFrame(),
         "latest_fonte_medicao_by_collaborator": lambda _conn: {},
+        "load_operational_identity_resolver": lambda _conn: ingest_module.OperationalIdentityResolver([], []),
+        "latest_cadastros_by_collaborator": lambda _conn: {},
         "reflect_tables": lambda _engine: (None, None, None, None, None, None),
         "build_generated_payment_context": lambda *_args, **_kwargs: {
             "ciclo": "2608",

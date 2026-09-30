@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
 import { parseDecimal, toNumber } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { resolverIdentidadeOperacional } from "@/lib/profissional-identidade";
 
 /**
  * Resolve `projetistaCodigo` para a grafia CANÔNICA de um Profissional real antes de gravar
@@ -36,7 +37,18 @@ export async function resolveProjetistaCodigo(rawValue: unknown): Promise<{ codi
   // `deletedAt: null` — resolução usada para ASSOCIAR um projetista a um pagamento NOVO/editado
   // (POST /api/mapa-pagamento, PATCH .../[id] quando o código muda); uma identidade excluída
   // definitivamente pelo ADMIN nunca pode receber uma associação operacional nova.
-  const candidatos = await prisma.profissional.findMany({
+  // Resolver central primeiro (lib/profissional-identidade.ts): código canônico e ALIAS operacional
+  // formal ("RONALD LEAL" → "RONALD RAFAEL SILVA LEAL"). Alias ambíguo nunca escolhe.
+  const identidade = await resolverIdentidadeOperacional(raw);
+  if (identidade.status === "AMBIGUO") {
+    return {
+      codigo: null,
+      error: `Mais de um fornecedor corresponde a "${raw}". Selecione o fornecedor correto na lista de sugestões.`,
+    };
+  }
+  const candidatos = identidade.status === "RESOLVIDO" && identidade.via !== "NOME_LEGADO"
+    ? [{ codigo: identidade.codigoCanonico, nome: identidade.codigoCanonico }]
+    : await prisma.profissional.findMany({
     where: {
       deletedAt: null,
       OR: [

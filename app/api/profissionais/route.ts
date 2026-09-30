@@ -30,6 +30,7 @@ export async function GET() {
       email: true,
       statusColaborador: true,
       funcao: true,
+      aliases: { where: { ativo: true }, select: { alias: true }, orderBy: { alias: "asc" } },
     },
   });
 
@@ -93,8 +94,10 @@ export async function GET() {
   const profissionaisOperacionais = profissionais.filter((p) => !p.codigo || !codigosComCadastro.has(p.codigo) || codigosComCadastroAtivo.has(p.codigo));
 
   return NextResponse.json(
-    profissionaisOperacionais.map((p) => ({
+    profissionaisOperacionais.map(({ aliases, ...p }) => ({
       ...serializeProfessional(p),
+      // Aliases operacionais formais: só BUSCA/apresentação — a seleção grava sempre o código canônico.
+      aliases: aliases.map((a) => a.alias),
       ...(p.codigo ? condicaoPorCodigo.get(p.codigo) ?? condicaoVazia : condicaoVazia),
       // Só apresentação no seletor: identidade com CadastroFornecedor ativo (join por código,
       // nunca por nome/CNPJ). `false` = Profissional legado sem cadastro administrativo.

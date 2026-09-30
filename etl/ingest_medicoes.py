@@ -326,12 +326,19 @@ def normalize_for_compare(value: str | None) -> str:
     return " ".join(normalized.casefold().strip().split())
 
 
-def deleted_identity_hash(value: str | None) -> str:
-    """Mesmo SHA-256/normalização de normalizePersonName no serviço administrativo."""
+def normalize_person_name(value: str | None) -> str:
+    """Espelho de normalizePersonName (lib/cadastro-fornecedor.ts): sem acento, pontuação vira
+    espaço, espaços colapsados, maiúsculas. Normalização ÚNICA de ProfissionalAlias.alias_normalizado
+    (paridade coberta por tests/fixtures/normalizacao-alias.json em TS e Python)."""
     value = unicodedata.normalize("NFD", str(value or ""))
     value = "".join(c for c in value if not ("\u0300" <= c <= "\u036f"))
     value = "".join(c if c.isalnum() or c.isspace() else " " for c in value)
-    return hashlib.sha256(" ".join(value.strip().split()).upper().encode("utf-8")).hexdigest()
+    return " ".join(value.strip().split()).upper()
+
+
+def deleted_identity_hash(value: str | None) -> str:
+    """Mesmo SHA-256/normalização de normalizePersonName no serviço administrativo."""
+    return hashlib.sha256(normalize_person_name(value).encode("utf-8")).hexdigest()
 
 
 def assert_import_identities_active(conn, identities: set[str]) -> None:
@@ -1743,25 +1750,38 @@ def latest_cadastros_by_collaborator(conn) -> dict[str, dict[str, Any]]:
     return cadastros
 
 
-def find_cadastro_for_generated_payment(cadastros: dict[str, dict[str, Any]], item: dict[str, Any]) -> dict[str, Any] | None:
+def find_cadastro_for_generated_payment(
+    cadastros: dict[str, dict[str, Any]],
+    item: dict[str, Any],
+    sugestoes: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """Cadastro do item do mapa gerado — SOMENTE por igualdade (código canônico / nome normalizado).
+    Nome apenas parecido nunca aplica cadastro (responsável, razão social, CNPJ, condição fixa):
+    vira sugestão informativa em `sugestoes`, para decisão humana (ex.: criar um alias)."""
     candidates = [item.get("codigo"), item.get("nome"), item.get("nome_completo")]
     for candidate in candidates:
         direct = cadastros.get(normalize_for_compare(candidate))
         if direct:
             return direct
 
-    for cadastro in cadastros.values():
-        for candidate in candidates:
-            if (
+    if sugestoes is not None:
+        for cadastro in cadastros.values():
+            if any(
                 same_person_name(candidate, cadastro.get("colaborador_codigo"))
                 or same_person_name(candidate, cadastro.get("responsavel"))
                 or same_person_name(candidate, cadastro.get("razao_social"))
+                for candidate in candidates
             ):
-                return cadastro
+                sugestoes.append({
+                    "codigo": item.get("codigo"),
+                    "cadastroSugerido": clean_text(cadastro.get("responsavel")) or clean_text(cadastro.get("colaborador_codigo")),
+                    "colaboradorCodigoSugerido": clean_text(cadastro.get("colaborador_codigo")),
+                })
+                break
     return None
 
 
-def generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo: str) -> int:
+def generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo: str, sugestoes: list[dict[str, Any]] | None = None) -> int:
     rows = conn.execute(
         text(
             """
@@ -1823,7 +1843,7 @@ def generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo: st
     cadastros = latest_cadastros_by_collaborator(conn)
     loaded = 0
     for ordem, item in enumerate(grouped.values(), start=1):
-        cadastro = find_cadastro_for_generated_payment(cadastros, item)
+        cadastro = find_cadastro_for_generated_payment(cadastros, item, sugestoes)
         # CORREÇÃO ESTRUTURAL: existia uma tabela hardcoded por nome (FIXED_CONDITION_REFERENCE,
         # removida) usada via `max(cadastro_valor_fixo, referencia_valor_fixo)` — sempre que o valor
         # hardcoded fosse MAIOR que o cadastro real (ex.: depois de uma renegociação contratual que
@@ -2243,6 +2263,257 @@ def build_discount_only_base_measurement(row: pd.Series, ciclo: str) -> dict[str
     return payload
 
 
+class UnresolvedIdentityError(ValueError):
+    """Identidades operacionais da planilha que não resolvem para exatamente um Profissional
+    canônico. Levantado ANTES de qualquer escrita — nada é criado nem alterado."""
+
+    code = "UNRESOLVED_OPERATIONAL_IDENTITIES"
+
+    def __init__(self, details: list[dict[str, Any]]):
+        self.details = details
+        nomes = ", ".join(f'"{d["valor"]}"' for d in details[:12])
+        extra = f" (+{len(details) - 12})" if len(details) > 12 else ""
+        super().__init__(
+            "Importação bloqueada. Identidade operacional não resolvida: "
+            f"{nomes}{extra}. Vincule cada nome a um Profissional existente (alias) ou confirme-o como novo "
+            "profissional antes de reimportar. Nenhum dado foi alterado."
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"code": self.code, "message": str(self), "details": self.details}
+
+
+class OperationalIdentityResolver:
+    """Espelho de lib/profissional-identidade.ts::resolverIdentidadeOperacional (mesma ordem):
+    1) Profissional.codigo (case-insensitive); 2) alias ativo (normalize_person_name) — 1 distinto
+    resolve, 2+ é ambíguo; 3) Profissional SEM código com o mesmo nome (legado); 4) não resolvido.
+    Nunca cria Profissional, nunca usa CNPJ/razão social, nunca compara nomes "parecidos"."""
+
+    def __init__(self, profissionais: list[dict[str, Any]], aliases: list[dict[str, Any]]):
+        self.by_id = {str(p["id"]): p for p in profissionais}
+        self.by_code: dict[str, list[str]] = {}
+        self.legacy_by_name: dict[str, list[str]] = {}
+        for p in profissionais:
+            pid = str(p["id"])
+            if p.get("codigo"):
+                self.by_code.setdefault(str(p["codigo"]).casefold(), []).append(pid)
+            else:
+                self.legacy_by_name.setdefault(str(p["nome"]).casefold(), []).append(pid)
+        self.by_alias: dict[str, set[str]] = {}
+        self.alias_label: dict[str, str] = {}
+        for a in aliases:
+            if str(a["profissional_id"]) in self.by_id:
+                self.by_alias.setdefault(a["alias_normalizado"], set()).add(str(a["profissional_id"]))
+                self.alias_label.setdefault(a["alias_normalizado"], a["alias"])
+        self.declared: set[str] = set()
+
+    @classmethod
+    def load(cls, conn) -> "OperationalIdentityResolver":
+        profissionais = [dict(r) for r in conn.execute(text(
+            "select id, codigo, nome from profissionais where deleted_at is null"
+        )).mappings().all()]
+        has_aliases = conn.execute(text("select to_regclass('public.profissional_aliases') is not null")).scalar()
+        aliases = [dict(r) for r in conn.execute(text(
+            "select profissional_id, alias, alias_normalizado from profissional_aliases where ativo"
+        )).mappings().all()] if has_aliases else []
+        return cls(profissionais, aliases)
+
+    def declare(self, codigo: Any) -> None:
+        """Código canônico declarado pela planilha (aba Base / status do MAPA PAGTO): o próprio
+        upsert dessas abas cria/atualiza o Profissional COM código antes dos demais loops."""
+        valor = clean_text(codigo)
+        if valor:
+            self.declared.add(valor.casefold())
+
+    def register(self, pid: Any, codigo: Any, nome: Any) -> None:
+        """Registra o id devolvido pelo upsert de uma identidade declarada (dentro da transação)."""
+        pid = str(pid)
+        self.by_id[pid] = {"id": pid, "codigo": clean_text(codigo), "nome": clean_text(nome)}
+        if clean_text(codigo):
+            ids = self.by_code.setdefault(clean_text(codigo).casefold(), [])
+            if pid not in ids:
+                ids.append(pid)
+
+    def require_id(self, value: Any) -> str:
+        """Id do Profissional canônico para gravação. O preflight já garantiu a resolução; se ainda
+        assim não houver id, aborta a transação (nunca grava sem identidade, nunca cria)."""
+        resultado = self.resolve(value)
+        if resultado["status"] != "RESOLVIDO" or not resultado.get("id"):
+            raise RuntimeError(f"Identidade operacional sem Profissional após a pré-validação: {value!r}")
+        return resultado["id"]
+
+    def canonical_code(self, pid: str) -> str:
+        p = self.by_id[pid]
+        return p.get("codigo") or p["nome"]
+
+    def resolve(self, value: Any) -> dict[str, Any]:
+        valor = clean_text(value) or ""
+        if not valor:
+            return {"status": "NAO_RESOLVIDO", "valor": valor}
+        por_codigo = self.by_code.get(valor.casefold(), [])
+        if len(por_codigo) == 1:
+            return {"status": "RESOLVIDO", "via": "CODIGO", "id": por_codigo[0], "codigo": self.canonical_code(por_codigo[0])}
+        if len(por_codigo) > 1:
+            return {"status": "AMBIGUO", "valor": valor, "candidatos": [self.canonical_code(i) for i in por_codigo]}
+        por_alias = sorted(self.by_alias.get(normalize_person_name(valor), set()))
+        if len(por_alias) == 1:
+            return {"status": "RESOLVIDO", "via": "ALIAS", "id": por_alias[0], "codigo": self.canonical_code(por_alias[0])}
+        if len(por_alias) > 1:
+            return {"status": "AMBIGUO", "valor": valor, "candidatos": [self.canonical_code(i) for i in por_alias]}
+        legados = self.legacy_by_name.get(valor.casefold(), [])
+        if len(legados) == 1:
+            return {"status": "RESOLVIDO", "via": "NOME_LEGADO", "id": legados[0], "codigo": self.canonical_code(legados[0])}
+        if len(legados) > 1:
+            return {"status": "AMBIGUO", "valor": valor, "candidatos": [self.canonical_code(i) for i in legados]}
+        if valor.casefold() in self.declared:
+            return {"status": "RESOLVIDO", "via": "DECLARADO_PLANILHA", "id": None, "codigo": valor}
+        return {"status": "NAO_RESOLVIDO", "valor": valor}
+
+    def apply_to_canonical_codes(self, canonical_codes: dict[str, str]) -> dict[str, str]:
+        """Aliases entram no mapa de códigos canônicos já usado por mapa/BM AUX/fonte_medicao — e todo
+        valor que seja ele próprio um alias passa a apontar para o código canônico do alvo."""
+        merged = dict(canonical_codes)
+        for alias_norm, ids in self.by_alias.items():
+            if len(ids) == 1:
+                merged[normalize_for_compare(self.alias_label[alias_norm])] = self.canonical_code(next(iter(ids)))
+        for key, value in list(merged.items()):
+            resolved = self.resolve(value)
+            if resolved["status"] == "RESOLVIDO" and resolved["via"] == "ALIAS":
+                merged[key] = resolved["codigo"]
+        return merged
+
+
+def load_operational_identity_resolver(conn) -> OperationalIdentityResolver:
+    return OperationalIdentityResolver.load(conn)
+
+
+def cadastro_suggestions(cadastros: dict[str, dict[str, Any]], valor: str, limit: int = 3) -> list[str]:
+    """Sugestão INFORMATIVA (nunca aplicada): cadastros com nome parecido, para decisão humana."""
+    vistos: list[str] = []
+    for cadastro in cadastros.values():
+        rotulo = clean_text(cadastro.get("responsavel")) or clean_text(cadastro.get("colaborador_codigo"))
+        if rotulo and rotulo not in vistos and (
+            same_person_name(valor, cadastro.get("responsavel")) or same_person_name(valor, cadastro.get("colaborador_codigo"))
+        ):
+            vistos.append(rotulo)
+            if len(vistos) >= limit:
+                break
+    return vistos
+
+
+def assert_operational_identities_resolved(
+    df: pd.DataFrame,
+    base_df: pd.DataFrame,
+    bm_aux_df: pd.DataFrame,
+    payment_map_items_df: pd.DataFrame,
+    positive_payment_codes: set[str],
+    canonical_codes: dict[str, str],
+    fonte_medicao_map: dict[str, str],
+    ciclo: str,
+    resolver: OperationalIdentityResolver,
+    cadastros: dict[str, dict[str, Any]],
+    sheet_name: str,
+    base_sheet_name: str | None,
+    bm_aux_sheet_name: str | None,
+    payment_map_sheet_name: str | None,
+) -> dict[str, Any]:
+    """Preflight sem escrita: toda identidade de fornecedor que a carga vai gravar (PROJETISTA em
+    Documentos, pessoas do BM AUX, projetista do MAPA PAGTO) precisa resolver para exatamente um
+    Profissional. Coordenadores seguem o comportamento anterior (não são fornecedores)."""
+    ocorrencias: dict[tuple[str, str], dict[str, Any]] = {}
+    resolvidas: dict[str, dict[str, Any]] = {}
+
+    for index, row in base_df.iterrows():
+        base = build_base_professional(row)
+        if not base:
+            continue
+        declarado = resolver.resolve(base["codigo"])
+        if declarado["status"] == "RESOLVIDO" and declarado["via"] == "ALIAS":
+            # A aba Base criaria um Profissional paralelo com o código de um alias de outra pessoa.
+            chave = (normalize_person_name(base["codigo"]), base_sheet_name or "Base")
+            ocorrencias[chave] = {"valor": base["codigo"], "origem": base_sheet_name or "Base", "ciclo": ciclo,
+                                  "status": "CONFLITO_ALIAS", "candidatos": [declarado["codigo"]],
+                                  "ocorrencias": 1, "linhas": [int(index) + 2]}
+        else:
+            resolver.declare(base["codigo"])
+    for _, row in payment_map_items_df.iterrows():
+        status = build_payment_map_status(row, positive_payment_codes, canonical_codes)
+        if status and resolver.resolve(status["codigo"])["status"] != "RESOLVIDO":
+            resolver.declare(status["codigo"])
+
+    def registrar(valor: Any, origem: str, linha: int) -> None:
+        nome = clean_text(valor)
+        if not nome or is_expense_professional_name(nome):
+            return
+        resultado = resolver.resolve(nome)
+        if resultado["status"] == "RESOLVIDO":
+            resolvidas.setdefault(normalize_person_name(nome), {"valor": nome, "via": resultado["via"], "codigo": resultado["codigo"]})
+            return
+        chave = (normalize_person_name(nome), origem)
+        item = ocorrencias.setdefault(chave, {"valor": nome, "origem": origem, "ciclo": ciclo, "status": resultado["status"],
+                                              "candidatos": resultado.get("candidatos", []), "ocorrencias": 0, "linhas": []})
+        item["ocorrencias"] += 1
+        if len(item["linhas"]) < 10:
+            item["linhas"].append(linha)
+
+    excel_rows = df.attrs.get("excel_row_numbers", [])
+    for position, (index, row) in enumerate(df.iterrows()):
+        project_raw = extract(row, PROJECT_COLUMNS)
+        numero_medicao = clean_text(first_value(row, MEASUREMENT_COLUMNS["numero_medicao"]))
+        valid_measurement = is_valid_measurement_key(numero_medicao, clean_text(project_raw["codigo_projeto"]))
+        discount_only = not valid_measurement and has_discount_data(row)
+        if not valid_measurement and not discount_only:
+            continue
+        professional_raw = extract(row, PROFESSIONAL_COLUMNS)
+        if uses_documentos_auxiliares(professional_raw["nome"], canonical_codes, fonte_medicao_map) and not discount_only:
+            continue
+        # Linha real do Excel (mesma fonte da pré-validação de negativos); fallback índice + cabeçalho.
+        linha = excel_rows[position] if position < len(excel_rows) else int(index) + 2
+        registrar(professional_raw["nome"], sheet_name, linha)
+
+    for index, row in bm_aux_df.iterrows():
+        raw = extract(row, BM_AUX_COLUMNS)
+        row_cycle = normalize_cycle(raw["ciclo"])
+        if row_cycle and row_cycle != ciclo:
+            continue
+        # Registra o nome COMO ESCRITO na planilha (não o código já remapeado por canonical_codes),
+        # para que a via reportada seja a real (ex.: "CRISTIANO JEFERSON" → ALIAS, não CODIGO).
+        codigos_bm_aux = {codigo for _papel, codigo in bm_aux_people(raw, canonical_codes, fonte_medicao_map)}
+        for chave in ("responsavel", "auxiliar"):
+            nome = clean_text(raw[chave])
+            if nome and canonical_codes.get(normalize_for_compare(nome), nome) in codigos_bm_aux:
+                registrar(nome, bm_aux_sheet_name or "Documentos Auxiliares", int(index) + 2)
+
+    for index, row in payment_map_items_df.iterrows():
+        item = build_payment_map_item(row, index + 1, canonical_codes, ciclo=ciclo)
+        if item:
+            registrar(item["projetista_codigo"], payment_map_sheet_name or "MAPA PAGTO", int(index) + 2)
+
+    if ocorrencias:
+        details = []
+        for item in sorted(ocorrencias.values(), key=lambda d: (-d["ocorrencias"], d["valor"])):
+            sugestoes = cadastro_suggestions(cadastros, item["valor"])
+            details.append({**item, "sugestoesCadastro": sugestoes})
+        raise UnresolvedIdentityError(details)
+
+    via_count: dict[str, int] = {}
+    for info in resolvidas.values():
+        via_count[info["via"]] = via_count.get(info["via"], 0) + 1
+    return {
+        "identidades_resolvidas": len(resolvidas),
+        "identidades_por_via": via_count,
+        "aliases_utilizados": sorted(f'{i["valor"]} -> {i["codigo"]}' for i in resolvidas.values() if i["via"] == "ALIAS"),
+    }
+
+
+def update_professional_funcao(conn, profissional_id: str, funcao: Any) -> None:
+    """Mesmo efeito que o upsert antigo tinha sobre `funcao` (coalesce(existente, planilha)) — sem
+    tocar em identidade/cadastro do Profissional canônico."""
+    valor = clean_text(funcao)
+    if valor:
+        conn.execute(text("update profissionais set funcao = coalesce(funcao, :f) where id = :id"), {"f": valor, "id": profissional_id})
+
+
 def ingest(
     excel_path: Path,
     sheet_name: str,
@@ -2253,7 +2524,7 @@ def ingest(
     create_schema: bool,
     full_refresh: bool,
     ciclo: str | None = None,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     engine = create_engine(database_url, future=True)
     if create_schema:
         load_schema(engine, Path(__file__).resolve().parents[1] / "database" / "schema.sql")
@@ -2289,6 +2560,11 @@ def ingest(
     # cadastral real (CadastroFornecedor.fonte_medicao), lido antes da transação principal.
     with engine.connect() as fonte_medicao_conn:
         fonte_medicao_map = latest_fonte_medicao_by_collaborator(fonte_medicao_conn)
+        # Resolução central de identidade (código canônico → alias → legado) e cadastros usados só
+        # como SUGESTÃO para nomes não resolvidos. Lidos antes de qualquer escrita.
+        identity_resolver = load_operational_identity_resolver(fonte_medicao_conn)
+        cadastros_sugestao = latest_cadastros_by_collaborator(fonte_medicao_conn)
+    canonical_codes = identity_resolver.apply_to_canonical_codes(canonical_codes)
 
     projetos, profissionais, medicoes, mapa_pagamento_contexto, mapa_pagamento_itens, bm_aux_medicoes = reflect_tables(engine)
     payment_context = (
@@ -2307,6 +2583,13 @@ def ingest(
         ciclo_efetivo,
         canonical_codes,
         fonte_medicao_map,
+    )
+    # Mesmo ponto (sem escrita): fornecedor que não resolve para exatamente um Profissional canônico
+    # bloqueia a carga — o ETL nunca mais inventa uma identidade nova silenciosamente.
+    identity_summary = assert_operational_identities_resolved(
+        df, base_df, bm_aux_df, payment_map_items_df, positive_payment_codes, canonical_codes, fonte_medicao_map,
+        ciclo_efetivo, identity_resolver, cadastros_sugestao, sheet_name, base_sheet_name, bm_aux_sheet_name,
+        payment_map_sheet_name,
     )
 
     base_loaded = 0
@@ -2343,7 +2626,8 @@ def ingest(
             base_professional = build_base_professional(row)
             if not base_professional:
                 continue
-            upsert_base_professional(conn, profissionais, base_professional)
+            base_id = upsert_base_professional(conn, profissionais, base_professional)
+            identity_resolver.register(base_id, base_professional["codigo"], base_professional["nome"])
             base_loaded += 1
 
         if not payment_map_df.empty:
@@ -2351,7 +2635,17 @@ def ingest(
                 payment_status = build_payment_map_status(row, positive_payment_codes, canonical_codes)
                 if not payment_status:
                     continue
-                upsert_payment_map_status(conn, profissionais, payment_status)
+                status_identity = identity_resolver.resolve(payment_status.get("codigo") or payment_status.get("nome"))
+                if status_identity["status"] == "RESOLVIDO" and status_identity["via"] in ("CODIGO", "ALIAS"):
+                    conn.execute(
+                        text("update profissionais set status_colaborador = :s, nome_completo = coalesce(:nc, nome_completo), updated_at = now() where id = :id"),
+                        {"s": payment_status.get("status_colaborador"), "nc": payment_status.get("nome_completo"), "id": status_identity["id"]},
+                    )
+                else:
+                    # Legado (mesmo nome, sem código) ou código declarado por esta aba: comportamento
+                    # anterior (upsert por nome) e o id entra no resolver.
+                    status_id = upsert_payment_map_status(conn, profissionais, payment_status)
+                    identity_resolver.register(status_id, payment_status["codigo"], payment_status["nome"])
                 payment_status_loaded += 1
 
             for index, row in payment_map_items_df.iterrows():
@@ -2360,9 +2654,12 @@ def ingest(
                     continue
                 upsert_payment_map_item(conn, mapa_pagamento_itens, payment_item)
                 payment_items_loaded += 1
-                backfill_professional_codigo(
-                    conn, profissionais, payment_item["projetista_codigo"], payment_item["projetista_codigo"],
-                )
+                # Só o legado (sem código) ganha o código do mapa, como antes; identidade canônica
+                # resolvida por código/alias nunca recebe um INSERT paralelo.
+                if identity_resolver.resolve(payment_item["projetista_codigo"]).get("via") == "NOME_LEGADO":
+                    backfill_professional_codigo(
+                        conn, profissionais, payment_item["projetista_codigo"], payment_item["projetista_codigo"],
+                    )
 
         for index, row in bm_aux_df.iterrows():
             raw = extract(row, BM_AUX_COLUMNS)
@@ -2382,11 +2679,8 @@ def ingest(
 
                 measurement, project = built
                 id_projeto = upsert_project(conn, projetos, project)
-                id_profissional = upsert_professional(
-                    conn,
-                    profissionais,
-                    {"nome": codigo, "codigo": codigo, "funcao": None},
-                )
+                # Preflight garantiu a resolução — nunca cria Profissional a partir do BM AUX.
+                id_profissional = identity_resolver.require_id(codigo)
                 measurement.update(
                     {
                         "id_projeto": id_projeto,
@@ -2446,7 +2740,14 @@ def ingest(
                 },
             )
 
-            id_profissional = upsert_professional(conn, profissionais, professional_raw)
+            # Fornecedor: SEMPRE o Profissional canônico resolvido no preflight (código/alias/legado) —
+            # nunca um INSERT por nome. Coordenador segue o comportamento anterior.
+            nome_profissional = clean_text(professional_raw["nome"])
+            if nome_profissional and not is_expense_professional_name(nome_profissional):
+                id_profissional = identity_resolver.require_id(nome_profissional)
+                update_professional_funcao(conn, id_profissional, professional_raw.get("funcao"))
+            else:
+                id_profissional = None
             id_coordenador = upsert_professional(conn, profissionais, extract(row, COORDINATOR_COLUMNS))
             if discount_only:
                 measurement = build_discount_only_base_measurement(row, ciclo_efetivo)
@@ -2514,11 +2815,14 @@ def ingest(
                 conn.execute(discount_stmt)
                 inserted_or_updated += 1
 
+        cadastro_sugestoes: list[dict[str, Any]] = []
         if payment_map_df.empty:
-            payment_items_loaded = generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo_efetivo)
+            payment_items_loaded = generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo_efetivo, cadastro_sugestoes)
             payment_status_loaded = payment_items_loaded
 
     return {
+        **identity_summary,
+        "sugestoes_cadastro_nao_aplicadas": cadastro_sugestoes,
         "rows_read": len(df),
         "base_sheet_found": 1 if base_sheet_name else 0,
         "base_rows_read": len(base_df),

@@ -312,4 +312,32 @@ test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silê
     }
     await page.request.post("/api/auth/logout");
   });
+  test("ALIAS: buscar pelo alias operacional mostra só a identidade canônica (Encontrado por) e a seleção grava o código canônico", async ({ page }) => {
+    const S = randomUUID().slice(0, 5).toUpperCase();
+    const canonico = `RONALD RAFAEL SILVA LEAL ${S}`;
+    const alias = `RONALD LEAL ${S}`;
+    const p = await prisma.profissional.create({ data: { nome: canonico, codigo: canonico, nomeCompleto: canonico, razaoSocial: `RR LEAL ${S} LTDA`, cnpj: "55591066000195" } });
+    const cadastro = await prisma.cadastroFornecedor.create({ data: { cnpjNormalizado: "55591066000195", cnpj: "55591066000195", colaboradorCodigo: canonico, responsavel: canonico, razaoSocial: `RR LEAL ${S} LTDA`, rawPayload: {} } });
+    await prisma.profissionalAlias.create({ data: { profissionalId: p.id, alias, aliasNormalizado: alias, origem: "MANUAL" } });
+    try {
+      await abrirNovoPagamento(page);
+      const painel = painelNovo(page);
+      const nome = painel.getByRole("textbox", { name: "Nome", exact: true });
+      await nome.fill(alias);
+      const sugestoes = painel.locator("button").filter({ has: page.getByTestId("sugestao-origem") });
+      await expect(sugestoes).toHaveCount(1);
+      await expect(sugestoes.first()).toContainText(canonico);
+      await expect(sugestoes.first()).toContainText("Cadastro administrativo");
+      await expect(sugestoes.first().getByTestId("sugestao-alias")).toHaveText(`· Encontrado por: ${alias}`);
+      await sugestoes.first().click();
+      await expect(nome).toHaveValue(canonico);
+      await expect(painel.getByRole("textbox", { name: "CNPJ" })).toHaveValue("55.591.066/0001-95");
+      await painel.getByRole("button", { name: "Cancelar", exact: true }).click();
+      await expect(painel).toHaveCount(0);
+    } finally {
+      await prisma.cadastroFornecedor.delete({ where: { id: cadastro.id } });
+      await prisma.profissional.delete({ where: { id: p.id } }); // alias em cascata
+    }
+    await page.request.post("/api/auth/logout");
+  });
 });

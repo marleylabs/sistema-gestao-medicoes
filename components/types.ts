@@ -28,6 +28,8 @@ export type Profissional = {
   valorCondicaoFixaSemProducao: number | null;
   /** Identidade com CadastroFornecedor ativo (apresentação no seletor). Ausente/false = legado. */
   cadastroAdministrativo?: boolean;
+  /** Aliases operacionais formais (ProfissionalAlias ativo) — só busca/apresentação no seletor. */
+  aliases?: string[];
 };
 
 export type ContratoResumo = {

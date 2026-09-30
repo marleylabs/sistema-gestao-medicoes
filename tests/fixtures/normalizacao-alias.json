@@ -1,0 +1,12 @@
+[
+  { "entrada": "RONALD LEAL", "esperado": "RONALD LEAL" },
+  { "entrada": "  ronald   leal ", "esperado": "RONALD LEAL" },
+  { "entrada": "Raony Serrão", "esperado": "RAONY SERRAO" },
+  { "entrada": "EMERSON PÁDUA", "esperado": "EMERSON PADUA" },
+  { "entrada": "José Éverton-Silva.", "esperado": "JOSE EVERTON SILVA" },
+  { "entrada": "GH ENGENHARIA LTDA.", "esperado": "GH ENGENHARIA LTDA" },
+  { "entrada": "Açaí/Ç", "esperado": "ACAI C" },
+  { "entrada": "BRUNO MOTA 2607", "esperado": "BRUNO MOTA 2607" },
+  { "entrada": "2010SA-S-70216", "esperado": "2010SA S 70216" },
+  { "entrada": "", "esperado": "" }
+]
