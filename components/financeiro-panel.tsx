@@ -214,7 +214,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
           {/* Tabela — Card com min-w-0/max-w-full (HeroUI Card é flex-col) + overflow-x-auto no wrapper direto da tabela. */}
           <Card className="w-full min-w-0 max-w-full overflow-hidden">
             <div className="flex flex-col gap-3 border-b border-[var(--border)] px-5 py-3 xl:flex-row xl:items-center xl:justify-between">
-              <div role="tablist" aria-label="Status" className="-mx-5 flex gap-x-5 overflow-x-auto whitespace-nowrap px-5 xl:mx-0 xl:px-0">
+              <div role="tablist" aria-label="Status" className="-mx-5 flex gap-x-5 overflow-x-auto whitespace-nowrap px-5 xl:mx-0 xl:overflow-visible xl:px-0">
                 {(["todos", ...STATUS_FINANCEIROS] as string[]).map((valor) => {
                   const ativo = filterStatus === valor;
                   const count = valor === "todos" ? items.length : porStatus[valor]?.n ?? 0;
