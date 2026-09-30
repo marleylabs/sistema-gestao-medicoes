@@ -51,7 +51,9 @@ async function main() {
         data: { ativo: false, inativadoAt: new Date() },
       });
 
-      const removed = await deleteOrphanProfessionalsAfterCycleRemoval(tx);
+      // A limpeza só considera candidatos do ciclo excluído; aqui, todos os fixtures são candidatos.
+      const candidatos = (await tx.profissional.findMany({ where: { codigo: { contains: suffix } }, select: { id: true } })).map((p) => p.id);
+      const removed = await deleteOrphanProfessionalsAfterCycleRemoval(tx, candidatos);
 
       for (const codigo of protectedNames) {
         assert.ok(await tx.profissional.findUnique({ where: { codigo } }), `${codigo} deve ser protegido pelo cadastro ativo`);

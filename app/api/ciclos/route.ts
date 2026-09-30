@@ -3,7 +3,7 @@ import { requireAdmin } from "@/lib/admin";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
-import { deleteOrphanProfessionalsAfterCycleRemoval } from "@/lib/ciclo-cleanup";
+import { coletarCandidatosLimpezaCiclo, deleteOrphanProfessionalsAfterCycleRemoval, deleteOrphanProjectsAfterCycleRemoval } from "@/lib/ciclo-cleanup";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -109,16 +109,27 @@ export async function DELETE(request: NextRequest) {
   const sgcOrigins = sgcLogs.map((log) => `sgc:${log.id}`);
 
   const removed = await prisma.$transaction(async (tx) => {
+    // Escopo da limpeza: coletado ANTES de apagar os dados do ciclo. Depois, só esses candidatos
+    // podem ser removidos como órfãos — nunca uma coleta de lixo global do banco.
+    const candidatos = await coletarCandidatosLimpezaCiclo(tx, ciclosAlvo);
+    const conversasDasMensagens = sgcOrigins.length
+      ? (await tx.chatMensagem.findMany({ where: { origem: { in: sgcOrigins } }, select: { conversaId: true } })).map((m) => m.conversaId)
+      : [];
+
     const chatMensagens = sgcOrigins.length
       ? await tx.chatMensagem.deleteMany({ where: { origem: { in: sgcOrigins } } })
       : { count: 0 };
 
-    const chatConversasVazias = await tx.chatConversa.deleteMany({
-      where: {
-        mensagens: { none: {} },
-        participantes: { none: {} },
-      },
-    });
+    // Só as conversas que ficaram vazias por causa das mensagens removidas deste ciclo.
+    const chatConversasVazias = conversasDasMensagens.length
+      ? await tx.chatConversa.deleteMany({
+          where: {
+            id: { in: Array.from(new Set(conversasDasMensagens)) },
+            mensagens: { none: {} },
+            participantes: { none: {} },
+          },
+        })
+      : { count: 0 };
 
     const sgcLogs = await tx.sgcLog.deleteMany({ where: { ciclo: { in: ciclosAlvo } } });
     const sgcAprovacoes = await tx.sgcAprovacaoMedicao.deleteMany({ where: { ciclo: { in: ciclosAlvo } } });
@@ -128,15 +139,8 @@ export async function DELETE(request: NextRequest) {
     const etlExecucoes = await tx.etlExecucao.deleteMany({ where: { ciclo: { in: ciclosAlvo } } });
     const ciclos = await tx.mapaPagamentoContexto.deleteMany({ where: { ciclo: { in: ciclosAlvo } } });
 
-    const projetosOrfaos = await tx.$executeRaw`
-      delete from projetos p
-      where not exists (
-        select 1 from medicoes m
-        where m.id_projeto = p.id
-      )
-    `;
-
-    const profissionaisOrfaos = await deleteOrphanProfessionalsAfterCycleRemoval(tx);
+    const projetosOrfaos = await deleteOrphanProjectsAfterCycleRemoval(tx, candidatos.projetoIds);
+    const profissionaisOrfaos = await deleteOrphanProfessionalsAfterCycleRemoval(tx, candidatos.profissionalIds);
 
     return {
       ciclos: ciclos.count,
