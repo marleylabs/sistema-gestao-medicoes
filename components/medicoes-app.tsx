@@ -29,6 +29,7 @@ import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { AdministrativoPanel } from "@/components/administrativo-panel";
 import { HistoricoWorkspace } from "@/components/historico/historico-workspace";
 import { EvidenciasWorkspace } from "@/components/evidencias/evidencias-workspace";
+import { useViewportAlign } from "@/components/use-viewport-align";
 import { Badge, Button, Card, FilterButton, FilterChip, IconButton, PageContainer, PageHeader, Select } from "@/components/ui";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
@@ -81,6 +82,8 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
   const [novoCicloOpen, setNovoCicloOpen]   = useState(false);
   const [filtrosDashboardOpen, setFiltrosDashboardOpen] = useState(false);
   const filtrosDashboardRef                 = useRef<HTMLDivElement>(null);
+  const filtrosDashboardPainelRef           = useRef<HTMLDivElement>(null);
+  const filtrosDashboardPosicao             = useViewportAlign(filtrosDashboardRef, filtrosDashboardPainelRef, filtrosDashboardOpen);
   const cicloInicializadoRef                = useRef(false);
   const alertasBaselineRef                  = useRef(false);
   const previousAlertIdsRef                 = useRef<Set<string>>(new Set());
@@ -606,7 +609,14 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
         <div className="relative" ref={filtrosDashboardRef}>
           <FilterButton count={chips.length} onClick={() => setFiltrosDashboardOpen((v) => !v)} />
           {filtrosDashboardOpen && (
-            <div className="absolute left-0 top-10 z-40 w-[340px] max-w-[90vw] rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-xl">
+            // Largura limitada à viewport e posição com detecção de colisão (useViewportAlign): no
+            // desktop o botão fica na borda direita do cabeçalho e o painel é deslocado para dentro.
+            <div
+              ref={filtrosDashboardPainelRef}
+              data-testid="dashboard-filtros"
+              style={filtrosDashboardPosicao}
+              className="absolute left-0 top-10 z-40 w-[min(340px,calc(100vw-2rem))] rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-xl"
+            >
               <p className="mb-3 text-sm font-bold text-[#1A1A1A]">Filtros</p>
 
               <div className="grid gap-3">
@@ -665,10 +675,10 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
                   <>
                     <div className="grid gap-1.5">
                       <span className="text-label text-[var(--muted-foreground)]">Produção</span>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <input
                           type="date"
-                          className="h-9 min-w-0 flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20"
+                          className="h-9 min-w-[8.5rem] flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20"
                           defaultValue={producaoInicio}
                           key={producaoInicio}
                           onBlur={(e) => { if (e.target.value && e.target.value !== producaoInicio) saveContextDates(e.target.value, producaoFim); }}
@@ -676,7 +686,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
                         <span className="text-xs text-[#9CA3AF]">a</span>
                         <input
                           type="date"
-                          className="h-9 min-w-0 flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20"
+                          className="h-9 min-w-[8.5rem] flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20"
                           defaultValue={producaoFim}
                           key={producaoFim}
                           onBlur={(e) => { if (e.target.value && e.target.value !== producaoFim) saveContextDates(producaoInicio, e.target.value); }}
@@ -686,10 +696,10 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
 
                     <div className="grid gap-1.5">
                       <span className="text-label text-[var(--muted-foreground)]">ATO</span>
-                      <div className="flex items-center gap-1.5">
-                        <div className="flex h-9 flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A]">{fmtDate(atoInicio)}</div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="flex h-9 min-w-[8.5rem] flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A]">{fmtDate(atoInicio)}</div>
                         <span className="text-xs text-[#9CA3AF]">a</span>
-                        <div className="flex h-9 flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A]">{fmtDate(atoFim)}</div>
+                        <div className="flex h-9 min-w-[8.5rem] flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A]">{fmtDate(atoFim)}</div>
                       </div>
                     </div>
                   </>

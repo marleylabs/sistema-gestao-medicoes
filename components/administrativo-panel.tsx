@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, Copy, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, RefreshCw, Search, Send, Trash2, X } from "lucide-react";
 import { Button, Card, FilterButton, FilterChip, IconButton, Input, PageContainer, PageHeader, Select } from "@/components/ui";
+import { useViewportAlign } from "@/components/use-viewport-align";
 import { normalizeTipoCondicaoFixa } from "@/lib/condicao-fixa";
 import { normalizeFonteMedicao } from "@/lib/fonte-medicao";
 import { INTERNAL_PERFIL_OPTIONS, PERFIL_LABEL_LOOSE as PERFIL_LABEL, PERFIL_OPTIONS } from "@/lib/perfis";
@@ -772,6 +773,8 @@ function FiltrosPopover({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const painelRef = useRef<HTMLDivElement>(null);
+  const posicao = useViewportAlign(ref, painelRef, open, "right");
 
   useEffect(() => {
     function handle(e: MouseEvent) {
@@ -785,7 +788,7 @@ function FiltrosPopover({
     <div className="relative shrink-0" ref={ref}>
       <FilterButton count={activeCount} onClick={() => setOpen((v) => !v)} />
       {open && (
-        <div className="absolute right-0 top-10 z-40 grid w-[300px] max-w-[88vw] gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
+        <div ref={painelRef} style={posicao} className="absolute right-0 top-10 z-40 grid w-[300px] max-w-[88vw] gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
           <div className="flex items-center justify-between">
             <p className="text-label text-[var(--muted-foreground)]">Filtros</p>
             <button type="button" onClick={() => setOpen(false)} title="Fechar" className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[#94A3B8] transition hover:bg-[#F1F5F9] hover:text-[#374151]">

@@ -60,7 +60,9 @@ export function DashboardEvolutionChart({ data }: { data: DashboardData["porCicl
       {pontos.length ? (
         <BlurValue className="block h-[250px] w-full">
           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 720, height: 250 }}>
-            <AreaChart data={pontos} margin={{ top: 24, right: 16, left: -12, bottom: 0 }}>
+            {/* left ≥ 0: margem negativa empurrava o início do eixo Y para fora do SVG e cortava os rótulos
+                longos ("R$ 800,0 mil"). O eixo mede a própria largura pelos rótulos (width="auto"). */}
+            <AreaChart data={pontos} margin={{ top: 24, right: 16, left: 4, bottom: 0 }}>
               <defs>
                 <linearGradient id="dashboardMeasurementFill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#AF1B1B" stopOpacity={0.18} />
@@ -77,7 +79,7 @@ export function DashboardEvolutionChart({ data }: { data: DashboardData["porCicl
                 padding={{ left: 36, right: 36 }}
                 dy={8}
               />
-              <YAxis axisLine={false} tickLine={false} tick={{ fill: "#71717A", fontSize: 10 }} tickFormatter={(value) => compactCurrency.format(Number(value))} width={72} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: "#71717A", fontSize: 10 }} tickFormatter={(value) => compactCurrency.format(Number(value))} width="auto" tickMargin={6} />
               <Tooltip
                 cursor={{ stroke: "#D4D4D0", strokeDasharray: "3 3" }}
                 contentStyle={{ border: "1px solid #E4E4E7", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.08)", fontSize: 11 }}

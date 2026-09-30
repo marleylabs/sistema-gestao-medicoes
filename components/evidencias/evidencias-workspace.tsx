@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, Clock3, FileCheck2, RefreshCw, Search, X } from "lucide-react";
 import { Badge, BlurValue, Card, FilterButton, FilterChip, IconButton, Input, PageHeader, Select } from "@/components/ui";
+import { useViewportAlign } from "@/components/use-viewport-align";
 import { DashboardKpiCard } from "@/components/dashboard-pilot/dashboard-kpi-card";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { getMapaPagamentoDisplayStatus } from "@/lib/sgc-display-status";
@@ -40,6 +41,8 @@ export function EvidenciasWorkspace({
   const [fornecedorQuery, setFornecedorQuery] = useState("");
   const [sugestoesAbertas, setSugestoesAbertas] = useState(false);
   const filtrosRef = useRef<HTMLDivElement>(null);
+  const filtrosPainelRef = useRef<HTMLDivElement>(null);
+  const filtrosPosicao = useViewportAlign(filtrosRef, filtrosPainelRef, filtrosAbertos, "right");
   const [aberta, setAberta] = useState<Evidencia | null>(null);
   const [bm, setBm] = useState<{ data: BmData | null; erro: string | null; loading: boolean } | null>(null);
 
@@ -125,7 +128,7 @@ export function EvidenciasWorkspace({
             <div className="relative shrink-0" ref={filtrosRef}>
               <FilterButton count={chips.length} onClick={() => setFiltrosAbertos((v) => !v)} />
               {filtrosAbertos && (
-                <div className="absolute right-0 top-10 z-40 grid w-[300px] max-w-[88vw] gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
+                <div ref={filtrosPainelRef} style={filtrosPosicao} className="absolute right-0 top-10 z-40 grid w-[300px] max-w-[88vw] gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
                   <div className="flex items-center justify-between">
                     <p className="text-label text-[var(--muted-foreground)]">Filtros</p>
                     <button type="button" onClick={() => setFiltrosAbertos(false)} title="Fechar" className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#374151]"><X size={12} /></button>
