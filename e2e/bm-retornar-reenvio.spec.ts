@@ -54,10 +54,10 @@ test.describe.serial("Auditoria — idempotência do BM_AVAILABLE em Enviar BM /
     await login.goto();
     await login.login(e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
     await page.goto("/?section=administrativo");
-    await expect(page.getByRole("heading", { name: "Painel Administrativo" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Administrativo", exact: true, level: 1 })).toBeVisible();
     await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Cadastro", exact: true }).click();
+    await page.getByRole("button", { name: "Novo fornecedor" }).click();
     await page.getByLabel("Nome / Responsável").fill(responsavel);
     await page.getByLabel("CNPJ", { exact: true }).fill("88.222.444/0001-90");
     await page.getByLabel("Razão social").fill(`${responsavel} LTDA`);
@@ -175,7 +175,7 @@ test.describe.serial("Auditoria — idempotência do BM_AVAILABLE em Enviar BM /
     await login.login(e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
     await page.goto("/?section=administrativo");
     await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
-    await page.getByRole("button", { name: "Cadastro", exact: true }).click();
+    await page.getByRole("button", { name: "Novo fornecedor" }).click();
     await page.getByLabel("Nome / Responsável").fill(resp);
     await page.getByLabel("CNPJ", { exact: true }).fill("11.222.333/0001-01");
     await page.getByLabel("Razão social").fill(`${resp} LTDA`);

@@ -25,7 +25,7 @@ async function loginAdministrativo(page: import("@playwright/test").Page) {
   await login.goto();
   await login.login(e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
   await page.goto("/?section=administrativo");
-  await expect(page.getByRole("heading", { name: "Painel Administrativo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Administrativo", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
 }
 
@@ -36,7 +36,7 @@ async function loginAdmin(page: import("@playwright/test").Page) {
   await login.goto();
   await login.login(e2eUsers.admin.usuario, e2eUsers.admin.senha);
   await page.goto("/?section=administrativo");
-  await expect(page.getByRole("heading", { name: "Painel Administrativo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Administrativo", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
 }
 
@@ -44,18 +44,25 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// O card exibe o nome via `displayText()` (title-case, ex.: "E2E" vira "E2e") — nunca compara com
-// a string crua. O `<h3>` do card é a única ocorrência do nome como heading (a razão social, que
-// costuma conter o mesmo nome, é um `<p>` sem role de heading) — evita ambiguidade de strict mode.
+// Cada cadastro é UMA linha da tabela administrativa, com nome acessível "Abrir cadastro de <nome>"
+// (a razão social, que costuma conter o mesmo nome, fica dentro da mesma linha) — contagem por linha
+// equivale à antiga contagem por card.
 function fornecedorHeading(page: import("@playwright/test").Page, nome: string) {
-  return page.getByRole("heading", { name: new RegExp(escapeRegExp(nome), "i") });
+  return page.getByTestId("administrativo-tabela").getByRole("row", { name: new RegExp(`Abrir cadastro de .*${escapeRegExp(nome)}`, "i") });
 }
 
+// A importação da Consulta PJ vive no painel lateral "Importar Consulta PJ": abre, importa, espera a
+// resposta e fecha o painel (a lista por trás já foi recarregada pelo componente).
 async function importWorkbook(page: import("@playwright/test").Page, buffer: Buffer, filename: string) {
-  await page.locator('input[type="file"]').setInputFiles({ name: filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer });
+  const painel = page.getByTestId("administrativo-importar");
+  if (!(await painel.isVisible())) await page.getByRole("button", { name: "Importar Consulta PJ" }).click();
+  await painel.locator('input[type="file"]').setInputFiles({ name: filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer });
   const importResponse = page.waitForResponse((r) => r.url().endsWith("/api/admin/administrativo/fornecedores") && r.request().method() === "POST");
-  await page.getByRole("button", { name: "Importar cadastros" }).click();
+  await painel.getByRole("button", { name: "Importar cadastros" }).click();
   const res = await importResponse;
+  await expect(painel.getByRole("button", { name: "Importar cadastros" })).toBeDisabled();
+  await painel.getByRole("button", { name: "Fechar" }).first().click();
+  await expect(painel).toHaveCount(0);
   return res;
 }
 
@@ -716,7 +723,7 @@ test.describe.serial("Validação direcionada — restrição de perfil e efeito
     await login.login(e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
     await page.goto("/?section=administrativo");
     await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
-    await page.getByRole("button", { name: "Cadastro", exact: true }).click();
+    await page.getByRole("button", { name: "Novo fornecedor" }).click();
     await page.getByLabel("Nome / Responsável").fill(responsavel);
     await page.getByLabel("CNPJ", { exact: true }).fill("85.000.000/0001-85");
     await page.getByLabel("Razão social").fill(`${responsavel} LTDA`);

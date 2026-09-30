@@ -185,6 +185,7 @@ test("PermissoesExtrasModal deriva os checkboxes do registry (PERMISSAO_OPTIONS)
 });
 
 test("FuncionarioCard exibe múltiplas permissões extras compactamente (join por vírgula), sem lógica nova por permissão", () => {
-  const source = readSource("components/administrativo-panel.tsx");
+  // Redesign do Administrativo: a lista de acessos adicionais vive no detalhe lateral do funcionário.
+  const source = readSource("components/administrativo/detalhes.tsx");
   assert.match(source, /item\.permissoesExtras\.map\(\(p\) => PERMISSAO_LABEL_LOOSE\[p\] \?\? p\)\.join\(", "\)/);
 });

@@ -128,10 +128,13 @@ test("FIRST_ACCESS não está nas categorias BM/FINANCE de CC (getEmailCcForEven
 });
 
 test("botão 'Enviar primeiro acesso' no card nunca aparece para perfil ADMIN (checagem por perfil, nunca por nome/código específico)", () => {
-  const source = readRoute("components/administrativo-panel.tsx");
-  assert.match(source, /item\.perfil !== "ADMIN" && item\.primeiroLogin/, "FuncionarioCard precisa checar perfil !== ADMIN antes de mostrar o botão");
-  assert.match(source, /item\.acesso\.perfil !== "ADMIN" && item\.acesso\.primeiroLogin/, "CadastroCard precisa checar perfil !== ADMIN antes de mostrar o botão");
-  assert.doesNotMatch(source, /usuario === "P0000001"/, "nunca esconder o botão por código/nome específico — sempre por perfil");
+  // Redesign do Administrativo: as ações de acesso vivem no detalhe lateral (components/administrativo/detalhes.tsx).
+  const source = readRoute("components/administrativo/detalhes.tsx");
+  assert.match(source, /item\.perfil !== "ADMIN" && item\.primeiroLogin/, "Detalhe do funcionário precisa checar perfil !== ADMIN antes de mostrar o botão");
+  assert.match(source, /item\.acesso\.perfil !== "ADMIN" && item\.acesso\.primeiroLogin/, "Detalhe do fornecedor precisa checar perfil !== ADMIN antes de mostrar o botão");
+  for (const file of ["components/administrativo/detalhes.tsx", "components/administrativo-panel.tsx"]) {
+    assert.doesNotMatch(readRoute(file), /usuario === "P0000001"/, "nunca esconder o botão por código/nome específico — sempre por perfil");
+  }
 });
 
 test("frontend gera requestId (crypto.randomUUID()) ao abrir a confirmação e o envia no PATCH", () => {

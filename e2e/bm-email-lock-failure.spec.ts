@@ -47,7 +47,7 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
     await login.login(e2eUsers.admin.usuario, e2eUsers.admin.senha);
     await page.goto("/?section=administrativo");
     await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
-    await page.getByRole("button", { name: "Cadastro", exact: true }).click();
+    await page.getByRole("button", { name: "Novo fornecedor" }).click();
     await page.getByLabel("Nome / Responsável").fill(resp);
     await page.getByLabel("CNPJ", { exact: true }).fill("22.333.444/0001-02");
     await page.getByLabel("Razão social").fill(`${resp} LTDA`);
@@ -99,7 +99,7 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
     await login.login(e2eUsers.admin.usuario, e2eUsers.admin.senha);
     await page.goto("/?section=administrativo");
     await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
-    await page.getByRole("button", { name: "Cadastro", exact: true }).click();
+    await page.getByRole("button", { name: "Novo fornecedor" }).click();
     await page.getByLabel("Nome / Responsável").fill(resp);
     await page.getByLabel("CNPJ", { exact: true }).fill("33.444.555/0001-03");
     await page.getByLabel("Razão social").fill(`${resp} LTDA`);
@@ -142,7 +142,7 @@ test.describe.serial("Auditoria — falha da trava de idempotência NUNCA cai pa
     await login.login(e2eUsers.admin.usuario, e2eUsers.admin.senha);
     await page.goto("/?section=administrativo");
     await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
-    await page.getByRole("button", { name: "Cadastro", exact: true }).click();
+    await page.getByRole("button", { name: "Novo fornecedor" }).click();
     await page.getByLabel("Nome / Responsável").fill(resp);
     await page.getByLabel("CNPJ", { exact: true }).fill("44.555.666/0001-04");
     await page.getByLabel("Razão social").fill(`${resp} LTDA`);

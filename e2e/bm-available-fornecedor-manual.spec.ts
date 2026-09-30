@@ -34,10 +34,10 @@ async function criarFornecedorManual(page: import("@playwright/test").Page, opts
   await login.goto();
   await login.login(e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
   await page.goto("/?section=administrativo");
-  await expect(page.getByRole("heading", { name: "Painel Administrativo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Administrativo", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Cadastro", exact: true }).click();
+  await page.getByRole("button", { name: "Novo fornecedor" }).click();
   await page.getByLabel("Nome / Responsável").fill(opts.responsavel);
   await page.getByLabel("CNPJ", { exact: true }).fill(opts.cnpj);
   await page.getByLabel("Razão social").fill(`${opts.responsavel} LTDA`);

@@ -47,7 +47,7 @@ const TITLES: Record<Section, string> = {
   importar: "Importar Planilha",
   evidencias: "Evidências de Medição",
   financeiro: "Painel Financeiro",
-  administrativo: "Painel Administrativo",
+  administrativo: "Administrativo",
 };
 
 const CICLO_GERAL = "GERAL";

@@ -1,110 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Copy, Download, Edit3, EllipsisVertical, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, RefreshCw, Save, Send, ShieldCheck, ShieldOff, SlidersHorizontal, Trash2, Upload, UserCog, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AlertTriangle, Copy, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, RefreshCw, Search, Send, Trash2, X } from "lucide-react";
 import { Button, Card, FilterButton, FilterChip, IconButton, Input, PageContainer, PageHeader, Select } from "@/components/ui";
 import { normalizeTipoCondicaoFixa } from "@/lib/condicao-fixa";
 import { normalizeFonteMedicao } from "@/lib/fonte-medicao";
 import { INTERNAL_PERFIL_OPTIONS, PERFIL_LABEL_LOOSE as PERFIL_LABEL, PERFIL_OPTIONS } from "@/lib/perfis";
-import { PERMISSAO_OPTIONS, PERMISSAO_LABEL_LOOSE, isElegivelParaPermissaoExtra, PERMISSOES_BASE_POR_PERFIL } from "@/lib/permissoes";
-
-type AcessoInfo = {
-  id: string;
-  usuario: string;
-  perfil: string;
-  ativo: boolean;
-  email: string | null;
-  primeiroLogin: boolean;
-  senhaTemporaria: string | null;
-};
-
-type Funcionario = {
-  id: string;
-  usuario: string;
-  nome: string;
-  perfil: string;
-  ativo: boolean;
-  primeiroLogin: boolean;
-  senhaTemporaria: string | null;
-  email: string | null;
-  permissoesExtras: string[];
-};
-
-type CadastroFornecedor = {
-  id: string;
-  cnpjNormalizado: string;
-  colaboradorCodigo: string | null;
-  responsavel: string;
-  razaoSocial: string;
-  statusContrato: string | null;
-  objetoContrato: string | null;
-  cargo: string | null;
-  cpf: string | null;
-  cnpj: string | null;
-  email: string | null;
-  telefone: string | null;
-  tipoCt: string | null;
-  tipoContrato: string | null;
-  valorHora: number | null;
-  valorA1Equivalente: number | null;
-  valorDocumento: number | null;
-  valorCondicaoFixa: number | null;
-  tipoCondicaoFixa: string | null;
-  valorCondicaoFixaComProducao: number | null;
-  valorCondicaoFixaSemProducao: number | null;
-  fonteMedicao: string | null;
-  inicio: string | null;
-  final: string | null;
-  statusCadastro: string | null;
-  primeiroAditivo: string | null;
-  segundoAditivo: string | null;
-  ativo: boolean;
-  inativadoAt: string | null;
-  diasAteVencimento: number | null;
-  validadeLabel: string;
-  validadeTone: "danger" | "warning" | "notice" | "success" | "neutral";
-  pendencias: string[];
-  updatedAt: string | null;
-  acesso: AcessoInfo | null;
-};
-
-type PessoaItem =
-  | { tipo: "FORNECEDOR"; nome: string; data: CadastroFornecedor }
-  | { tipo: "FUNCIONARIO"; nome: string; data: Funcionario };
-
-type TipoFilter = "todos" | "fornecedores" | "funcionarios";
-
-const TIPO_FILTER_LABELS: Record<TipoFilter, string> = {
-  todos: "Todos",
-  fornecedores: "Fornecedores",
-  funcionarios: "Funcionários",
-};
-
-type ImportLinha = {
-  responsavel: string;
-  cnpj: string;
-  cnpjNormalizado: string;
-  razaoSocial: string;
-  statusContrato: string | null;
-  objetoContrato: string | null;
-  cargo: string | null;
-  cpf: string | null;
-  email: string | null;
-  telefone: string | null;
-  tipoCt: string | null;
-  tipoContrato: string | null;
-  valorHora: number | null;
-  valorA1Equivalente: number | null;
-  valorDocumento: number | null;
-  valorCondicaoFixa: number | null;
-  inicio: string | null;
-  final: string | null;
-  statusCadastro: string | null;
-  primeiroAditivo: string | null;
-  segundoAditivo: string | null;
-};
-
-type ImportAtencaoDetalhe = { responsavel: string; cnpj: string; motivo: string; candidateCodigos?: string[]; linha?: ImportLinha };
+import { PERMISSAO_OPTIONS, PERMISSAO_LABEL_LOOSE, PERMISSOES_BASE_POR_PERFIL } from "@/lib/permissoes";
+import { compactId, digitsOnly, displayText, type CadastroFornecedor, type Funcionario } from "@/components/administrativo/shared";
+import { FornecedorEditor, FuncionarioCreatePanel } from "@/components/administrativo/fornecedor-editor";
+import { FornecedorDetalhe, FuncionarioDetalhe } from "@/components/administrativo/detalhes";
+import { AdministrativoKpis, FornecedoresCadastroTable, FuncionariosTable } from "@/components/administrativo/listagem";
+import { ImportarConsultaPanel, type ImportAtencaoDetalhe, type ImportResult } from "@/components/administrativo/importar-panel";
 
 type IdentityCandidateSummary = {
   codigo: string;
@@ -120,22 +27,6 @@ type IdentityCandidateSummary = {
   usuarioLogin: string | null;
   usuarioStatus: "ATIVO" | "EXCLUIDO" | "INEXISTENTE";
   historico: { sgc: number; mapaPagamento: number; medicao: number; divergencias: number };
-};
-
-type ImportResult = {
-  total: number;
-  criados: number;
-  recriados: number;
-  atualizados: number;
-  usuariosCriados: number;
-  usuariosReativados: number;
-  conflitos: number;
-  conflitosDetalhe: ImportAtencaoDetalhe[];
-  bloqueados: number;
-  bloqueadosDetalhe: ImportAtencaoDetalhe[];
-  revisao: number;
-  revisaoDetalhe: ImportAtencaoDetalhe[];
-  senhasTemporarias: { usuario: string; nome: string; senha: string; email: string | null }[];
 };
 
 type AcessoOpcao = "ativo" | "inativo";
@@ -159,664 +50,6 @@ type AdminDeletionResult = {
   measurementHistoryPreserved: number;
   errors: { id: string; error: string }[];
 };
-
-function dateInputValue(value: string | null) {
-  if (!value) return "";
-  return value.slice(0, 10);
-}
-
-function fmtDate(value: string | null) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat("pt-BR").format(new Date(value));
-}
-
-const toneClass: Record<CadastroFornecedor["validadeTone"], string> = {
-  danger: "bg-[#FFF1F1] text-[#DC3545] ring-[#DC3545]/30",
-  warning: "bg-[#FFF8E1] text-[#B77900] ring-[#FFC107]/70",
-  notice: "bg-[#EAF3FF] text-[#007BFF] ring-[#007BFF]/30",
-  success: "bg-[#EAF7ED] text-[#28A745] ring-[#28A745]/30",
-  neutral: "bg-[#F3F4F6] text-[#6B7280] ring-[#E5E7EB]",
-};
-
-function digitsOnly(value: string | null | undefined) {
-  return String(value ?? "").replace(/\D/g, "");
-}
-
-function maskCnpj(value: string | null | undefined) {
-  const digits = digitsOnly(value).slice(0, 14);
-  return digits
-    .replace(/^(\d{2})(\d)/, "$1.$2")
-    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/\.(\d{3})(\d)/, ".$1/$2")
-    .replace(/(\d{4})(\d)/, "$1-$2");
-}
-
-function maskCpf(value: string | null | undefined) {
-  const digits = digitsOnly(value).slice(0, 11);
-  return digits
-    .replace(/^(\d{3})(\d)/, "$1.$2")
-    .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/(\d{3})(\d)/, "$1-$2");
-}
-
-function maskPhone(value: string | null | undefined) {
-  const digits = digitsOnly(value).slice(0, 11);
-  if (digits.length <= 2) return digits.replace(/^(\d{0,2})/, (_, ddd) => (ddd ? `(${ddd}` : ""));
-  if (digits.length <= 6) return digits.replace(/^(\d{2})(\d{0,4})/, "($1) $2");
-  if (digits.length <= 10) return digits.replace(/^(\d{2})(\d{0,4})(\d{0,4})/, "($1) $2-$3");
-  return digits.replace(/^(\d{2})(\d{0,5})(\d{0,4})/, "($1) $2-$3");
-}
-
-function normalizeEmail(value: string | null | undefined) {
-  return String(value ?? "").trim().toLowerCase();
-}
-
-function displayText(value: string | null | undefined) {
-  const text = String(value ?? "").trim();
-  if (!text) return "-";
-  return text
-    .toLocaleLowerCase("pt-BR")
-    .replace(/(^|[\s./&()-])([\p{L}])/gu, (_, prefix: string, letter: string) => `${prefix}${letter.toLocaleUpperCase("pt-BR")}`)
-    .replace(/\b(Ltda|Me|Epp|Sa|S\/A)\b/g, (match) => match.toLocaleUpperCase("pt-BR"))
-    .replace(/\b(E|Da|Das|De|Do|Dos)\b/g, (match) => match.toLocaleLowerCase("pt-BR"));
-}
-
-function compactId(value: string) {
-  if (!value) return "-";
-  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
-}
-
-function vigenciaLabel(inicio: string | null, final: string | null) {
-  // Bug corrigido: mostrava "31/08/2026 a -" (conector errado + traço solto). Sem nenhuma data,
-  // mostra só "-"; com Início e sem Fim, "31/08/2026 → -" (nunca corta o texto).
-  if (!inicio && !final) return "-";
-  return `${fmtDate(inicio)} → ${fmtDate(final)}`;
-}
-
-function formatCadastroInput(field: string, value: string) {
-  if (field === "cnpj") return maskCnpj(value);
-  if (field === "cpf") return maskCpf(value);
-  if (field === "telefone") return maskPhone(value);
-  if (field === "email") return value.trimStart();
-  return value;
-}
-
-function cadastroFormFromItem(item: CadastroFornecedor) {
-  return {
-    responsavel: item.responsavel,
-    razaoSocial: item.razaoSocial,
-    cnpj: maskCnpj(item.cnpj ?? item.cnpjNormalizado),
-    cpf: maskCpf(item.cpf ?? ""),
-    email: item.email ?? "",
-    telefone: maskPhone(item.telefone ?? ""),
-    cargo: item.cargo ?? "",
-    statusContrato: item.statusContrato ?? "",
-    statusCadastro: item.statusCadastro ?? "",
-    inicio: dateInputValue(item.inicio),
-    final: dateInputValue(item.final),
-    objetoContrato: item.objetoContrato ?? "",
-    tipoCt: item.tipoCt ?? "",
-    tipoContrato: item.tipoContrato ?? "",
-    valorHora: item.valorHora?.toString() ?? "",
-    valorA1Equivalente: item.valorA1Equivalente?.toString() ?? "",
-    valorDocumento: item.valorDocumento?.toString() ?? "",
-    valorCondicaoFixa: item.valorCondicaoFixa?.toString() ?? "",
-    tipoCondicaoFixa: normalizeTipoCondicaoFixa(item.tipoCondicaoFixa),
-    valorCondicaoFixaComProducao: item.valorCondicaoFixaComProducao?.toString() ?? "",
-    valorCondicaoFixaSemProducao: item.valorCondicaoFixaSemProducao?.toString() ?? "",
-    fonteMedicao: normalizeFonteMedicao(item.fonteMedicao),
-    primeiroAditivo: item.primeiroAditivo ?? "",
-    segundoAditivo: item.segundoAditivo ?? "",
-  };
-}
-
-const CADASTRO_FIELDS: [keyof ReturnType<typeof cadastroFormFromItem>, string][] = [
-  ["responsavel", "Responsável"],
-  ["razaoSocial", "Razão social"],
-  ["cnpj", "CNPJ"],
-  ["cpf", "CPF"],
-  ["email", "E-mail"],
-  ["telefone", "Telefone"],
-  ["cargo", "Cargo"],
-  ["statusContrato", "Status CT"],
-  ["objetoContrato", "Objeto do contrato"],
-  ["tipoCt", "Tipo CT"],
-  ["tipoContrato", "Tipo contrato"],
-  ["valorHora", "Hora"],
-  ["valorA1Equivalente", "A1 equivalente"],
-  ["valorDocumento", "Documento"],
-  ["primeiroAditivo", "1º Adi"],
-  ["segundoAditivo", "2º Ad"],
-];
-
-function FornecedorEditModal({
-  item,
-  onClose,
-  onSuccess,
-  onError,
-}: {
-  item: CadastroFornecedor;
-  onClose: () => void;
-  onSuccess: () => void;
-  onError: (message: string) => void;
-}) {
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState(() => cadastroFormFromItem(item));
-
-  // Recarrega o formulário sempre que o fornecedor selecionado mudar (troca ou reabertura) —
-  // nunca deixa resíduo do fornecedor anterior.
-  useEffect(() => {
-    setForm(cadastroFormFromItem(item));
-  }, [item]);
-
-  useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = previous; };
-  }, []);
-
-  useEffect(() => {
-    function handler(e: KeyboardEvent) {
-      if (e.key === "Escape" && !saving) onClose();
-    }
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [saving, onClose]);
-
-  function update(field: keyof typeof form, value: string) {
-    setForm((prev) => ({ ...prev, [field]: formatCadastroInput(field, value) }));
-  }
-
-  async function save() {
-    setSaving(true);
-    const res = await fetch(`/api/admin/administrativo/fornecedores/${item.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    const payload = await res.json().catch(() => ({}));
-    setSaving(false);
-    if (!res.ok) {
-      onError(payload.error ?? "Não foi possível salvar o cadastro.");
-      return;
-    }
-    onSuccess();
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog flex max-h-[calc(100vh-16px)] w-full flex-col overflow-hidden sm:max-h-[85vh] sm:w-[820px] sm:max-w-[90vw]">
-        {/* Header — fixo */}
-        <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-sm font-bold text-[#1A1A1A]">{displayText(item.responsavel)}</h2>
-              <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ${toneClass[item.validadeTone]}`}>
-                {item.validadeLabel}
-              </span>
-            </div>
-            <p className="mt-0.5 truncate text-xs text-[#6B7280]">{displayText(item.razaoSocial)}</p>
-          </div>
-          <IconButton onClick={onClose} title="Fechar" disabled={saving}><X size={16} /></IconButton>
-        </div>
-
-        {/* Body — scroll interno */}
-        <div className="grid flex-1 gap-3 overflow-y-auto p-5 sm:grid-cols-2">
-          {CADASTRO_FIELDS.map(([field, label]) => (
-            <label key={field} className="text-label grid gap-1 text-[var(--muted-foreground)]">
-              {label}
-              <Input
-                type={field === "email" ? "email" : "text"}
-                inputMode={field === "email" ? "email" : ["cnpj", "cpf", "telefone"].includes(field) ? "numeric" : undefined}
-                value={form[field]}
-                onChange={(e) => update(field, e.target.value)}
-                onBlur={(e) => {
-                  if (field === "email") update(field, normalizeEmail(e.target.value));
-                }}
-                placeholder={
-                  field === "cnpj" ? "00.000.000/0000-00" :
-                  field === "cpf" ? "000.000.000-00" :
-                  field === "telefone" ? "(00) 00000-0000" :
-                  field === "email" ? "nome@empresa.com.br" :
-                  undefined
-                }
-              />
-            </label>
-          ))}
-          <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
-            Início
-            <Input type="date" value={form.inicio} onChange={(e) => update("inicio", e.target.value)} />
-          </label>
-          <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
-            Fim
-            <Input type="date" value={form.final} onChange={(e) => update("final", e.target.value)} />
-          </label>
-          <div className="sm:col-span-2">
-            <CondicaoFixaFields
-              tipo={form.tipoCondicaoFixa}
-              valorFixo={form.valorCondicaoFixa}
-              valorComProducao={form.valorCondicaoFixaComProducao}
-              valorSemProducao={form.valorCondicaoFixaSemProducao}
-              onChange={update}
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <FonteMedicaoField value={form.fonteMedicao} onChange={update} />
-          </div>
-        </div>
-
-        {/* Footer — fixo */}
-        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
-          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
-          <Button onClick={save} disabled={saving}>
-            <Save size={14} />
-            {saving ? "Salvando..." : "Salvar alterações"}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const NOVO_FORNECEDOR_FORM_INICIAL = {
-  responsavel: "",
-  razaoSocial: "",
-  cnpj: "",
-  email: "",
-  telefone: "",
-  cargo: "",
-  inicio: "",
-  final: "",
-  tipoContrato: "",
-  valorHora: "",
-  valorA1Equivalente: "",
-  valorDocumento: "",
-  valorCondicaoFixa: "",
-  tipoCondicaoFixa: "FIXA",
-  valorCondicaoFixaComProducao: "",
-  valorCondicaoFixaSemProducao: "",
-  fonteMedicao: "DOCUMENTOS",
-};
-
-type NovoFornecedorForm = typeof NOVO_FORNECEDOR_FORM_INICIAL;
-
-const FORNECEDOR_SECTIONS: { title: string; columns?: 2 | 3; fields: [keyof NovoFornecedorForm, string, { type?: string; placeholder?: string; inputMode?: "numeric" | "email" }?][] }[] = [
-  {
-    title: "Identificação",
-    fields: [
-      ["responsavel", "Nome / Responsável"],
-      ["cnpj", "CNPJ", { placeholder: "00.000.000/0000-00", inputMode: "numeric" }],
-      ["razaoSocial", "Razão social"],
-      ["cargo", "Função"],
-    ],
-  },
-  {
-    title: "Contato",
-    fields: [
-      ["email", "E-mail", { type: "email", placeholder: "nome@empresa.com.br", inputMode: "email" }],
-      ["telefone", "Telefone", { placeholder: "(00) 00000-0000", inputMode: "numeric" }],
-    ],
-  },
-  {
-    title: "Contrato",
-    // Status deixou de ser digitado manualmente — passa a depender exclusivamente do cálculo
-    // automático por vigência (lib/cadastro-fornecedor.ts:cadastroStatusVisual, com base em
-    // Início/Fim), o mesmo que já alimenta os cards e indicadores. 3 colunas porque a seção
-    // ficou com 3 campos (Tipo contrato, Início, Fim) — evita célula vazia no grid de 2 colunas.
-    columns: 3,
-    fields: [
-      ["tipoContrato", "Tipo contrato"],
-      ["inicio", "Início", { type: "date" }],
-      ["final", "Fim", { type: "date" }],
-    ],
-  },
-  {
-    title: "Precificação",
-    fields: [
-      ["valorHora", "Hora", { inputMode: "numeric" }],
-      ["valorDocumento", "Documento", { inputMode: "numeric" }],
-      ["valorA1Equivalente", "A1 equivalente", { inputMode: "numeric" }],
-    ],
-  },
-];
-
-/**
- * "Condição Fixa" — seção discreta reaproveitada pelo cadastro (`FornecedorForm`) e pela edição
- * (`FornecedorEditModal`). Tipo FIXA (padrão) mostra só "Valor fixo mensal/contratual"
- * (`valorCondicaoFixa`, mesmo campo de sempre — Mauricio/Ronald continuam funcionando sem
- * alteração). CONDICIONAL_PRODUCAO substitui a antiga exceção hardcoded do Cristiano Jeferson por
- * dado cadastral real: mostra "Valor com produção"/"Valor sem produção", resolvidos
- * automaticamente em Novo Pagamento/ETL conforme existem documentos medidos no ciclo
- * (`lib/condicao-fixa.ts::resolveCondicaoFixa`).
- */
-function CondicaoFixaFields({
-  tipo, valorFixo, valorComProducao, valorSemProducao, onChange,
-}: {
-  tipo: string;
-  valorFixo: string;
-  valorComProducao: string;
-  valorSemProducao: string;
-  onChange: (field: "tipoCondicaoFixa" | "valorCondicaoFixa" | "valorCondicaoFixaComProducao" | "valorCondicaoFixaSemProducao", value: string) => void;
-}) {
-  const condicional = tipo === "CONDICIONAL_PRODUCAO";
-  return (
-    <div>
-      <p className="mb-3 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Condição Fixa</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
-          Tipo
-          <Select value={tipo} onChange={(e) => onChange("tipoCondicaoFixa", e.target.value)}>
-            <option value="FIXA">Fixa</option>
-            <option value="CONDICIONAL_PRODUCAO">Condicional por produção</option>
-          </Select>
-        </label>
-        {!condicional && (
-          <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
-            Valor fixo mensal/contratual
-            <Input inputMode="numeric" value={valorFixo} onChange={(e) => onChange("valorCondicaoFixa", e.target.value)} />
-          </label>
-        )}
-        {condicional && (
-          <>
-            <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
-              Valor com produção
-              <Input inputMode="numeric" value={valorComProducao} onChange={(e) => onChange("valorCondicaoFixaComProducao", e.target.value)} />
-            </label>
-            <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
-              Valor sem produção
-              <Input inputMode="numeric" value={valorSemProducao} onChange={(e) => onChange("valorCondicaoFixaSemProducao", e.target.value)} />
-            </label>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * "Fonte da medição" — seção discreta, mesmo padrão de `CondicaoFixaFields` (reaproveitada por
- * cadastro e edição). Substitui a antiga whitelist hardcoded por nome do ETL
- * (BM_AUX_ALLOWED_COLLABORATORS) por dado cadastral real: define qual aba da planilha
- * ("Documentos" ou "Documentos Auxiliares") o ETL considera como produção deste fornecedor. Regra
- * independente de Condição Fixa — nenhuma inferência a partir dela.
- */
-function FonteMedicaoField({ value, onChange }: { value: string; onChange: (field: "fonteMedicao", value: string) => void }) {
-  const auxiliares = value === "DOCUMENTOS_AUXILIARES";
-  return (
-    <div>
-      <p className="mb-3 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">Fonte da medição</p>
-      <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
-        <Select value={value} onChange={(e) => onChange("fonteMedicao", e.target.value)}>
-          <option value="DOCUMENTOS">Documentos</option>
-          <option value="DOCUMENTOS_AUXILIARES">Documentos Auxiliares (BM AUX)</option>
-        </Select>
-        <span className="text-[11px] font-normal normal-case text-[#9CA3AF]">
-          Define qual aba da planilha será considerada para a produção deste fornecedor.
-          {auxiliares && " As medições de produção serão consideradas pela aba Documentos Auxiliares."}
-        </span>
-      </label>
-    </div>
-  );
-}
-
-/**
- * Formulário de fornecedor — fonte única, reaproveitada dentro da aba "Fornecedor" do modal
- * unificado "Cadastro" (ver `CadastroModal`, abaixo). Puramente apresentacional: estado e envio
- * ficam no componente pai, para sobreviver à troca de aba sem perder o que o usuário digitou.
- */
-function FornecedorForm({ form, onChange }: { form: NovoFornecedorForm; onChange: (field: keyof NovoFornecedorForm, value: string) => void }) {
-  let firstFieldAssigned = false;
-  return (
-    <div className="grid gap-6">
-      {FORNECEDOR_SECTIONS.map((section) => (
-        <div key={section.title}>
-          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-[#AF1B1B]">{section.title}</p>
-          <div className={`grid gap-3 ${section.columns === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-            {section.fields.map(([field, label, opts]) => {
-              const isFirst = !firstFieldAssigned;
-              if (isFirst) firstFieldAssigned = true;
-              return (
-                <label key={field} className="text-label grid gap-1 text-[var(--muted-foreground)]">
-                  {label}
-                  <Input
-                    autoFocus={isFirst}
-                    type={opts?.type ?? "text"}
-                    inputMode={opts?.inputMode}
-                    value={form[field]}
-                    onChange={(e) => onChange(field, e.target.value)}
-                    onBlur={(e) => { if (field === "email") onChange(field, normalizeEmail(e.target.value)); }}
-                    placeholder={opts?.placeholder}
-                  />
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-      <CondicaoFixaFields
-        tipo={normalizeTipoCondicaoFixa(form.tipoCondicaoFixa)}
-        valorFixo={form.valorCondicaoFixa}
-        valorComProducao={form.valorCondicaoFixaComProducao}
-        valorSemProducao={form.valorCondicaoFixaSemProducao}
-        onChange={onChange}
-      />
-      <FonteMedicaoField value={normalizeFonteMedicao(form.fonteMedicao)} onChange={onChange} />
-    </div>
-  );
-}
-
-const NOVO_FUNCIONARIO_FORM_INICIAL: { nome: string; perfil: string; email: string } = {
-  nome: "",
-  perfil: INTERNAL_PERFIL_OPTIONS[0]?.value ?? "ADMINISTRATIVO",
-  email: "",
-};
-type NovoFuncionarioForm = typeof NOVO_FUNCIONARIO_FORM_INICIAL;
-
-/** Formulário de funcionário — fonte única, reaproveitada na aba "Funcionário" do `CadastroModal`. */
-function FuncionarioForm({ form, onChange }: { form: NovoFuncionarioForm; onChange: (field: keyof NovoFuncionarioForm, value: string) => void }) {
-  return (
-    <div className="grid max-w-sm gap-3">
-      <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
-        Nome
-        <Input autoFocus value={form.nome} onChange={(e) => onChange("nome", e.target.value)} />
-      </label>
-      <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
-        Perfil
-        <select
-          value={form.perfil}
-          onChange={(e) => onChange("perfil", e.target.value)}
-          className="h-9 rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#1A1A1A] outline-none transition hover:border-[#D1D5DB] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
-        >
-          {INTERNAL_PERFIL_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-      </label>
-      <label className="text-label grid gap-1 text-[var(--muted-foreground)]">
-        E-mail
-        <Input
-          type="email"
-          placeholder="nome@empresa.com.br"
-          value={form.email}
-          onChange={(e) => onChange("email", e.target.value)}
-          onBlur={(e) => onChange("email", normalizeEmail(e.target.value))}
-        />
-      </label>
-    </div>
-  );
-}
-
-type CadastroAba = "FORNECEDOR" | "FUNCIONARIO";
-
-/**
- * Modal único "Cadastro" — substitui os antigos "Novo fornecedor"/"Novo funcionário" (dois botões
- * no cabeçalho) por abas dentro do mesmo modal. Formulários reaproveitados de `FornecedorForm`/
- * `FuncionarioForm` (única fonte de verdade); cada aba mantém seu próprio estado no componente pai
- * para não perder o que já foi digitado ao alternar — só reseta quando o modal fecha por completo.
- */
-function CadastroModal({
-  isAdmin,
-  onClose,
-  onFornecedorSuccess,
-  onFuncionarioSuccess,
-  onError,
-}: {
-  isAdmin: boolean;
-  onClose: () => void;
-  onFornecedorSuccess: (usuarioCriado: { usuario: string; nome: string; senha: string; email: string | null } | null) => void;
-  onFuncionarioSuccess: (usuario: Funcionario) => void;
-  onError: (message: string) => void;
-}) {
-  const [aba, setAba] = useState<CadastroAba>("FORNECEDOR");
-  const [fornecedorForm, setFornecedorForm] = useState<NovoFornecedorForm>(NOVO_FORNECEDOR_FORM_INICIAL);
-  const [funcionarioForm, setFuncionarioForm] = useState<NovoFuncionarioForm>(NOVO_FUNCIONARIO_FORM_INICIAL);
-  const [savingFornecedor, setSavingFornecedor] = useState(false);
-  const [savingFuncionario, setSavingFuncionario] = useState(false);
-  const saving = aba === "FORNECEDOR" ? savingFornecedor : savingFuncionario;
-
-  useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = previous; };
-  }, []);
-
-  useEffect(() => {
-    function handler(e: KeyboardEvent) {
-      if (e.key === "Escape" && !saving) onClose();
-    }
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [saving, onClose]);
-
-  function updateFornecedor(field: keyof NovoFornecedorForm, value: string) {
-    setFornecedorForm((prev) => ({ ...prev, [field]: formatCadastroInput(field, value) }));
-  }
-
-  function updateFuncionario(field: keyof NovoFuncionarioForm, value: string) {
-    setFuncionarioForm((prev) => ({ ...prev, [field]: value }));
-  }
-
-  async function saveFornecedor() {
-    // Duplo clique/duplo submit não pode criar dois cadastros — ignora enquanto já está salvando.
-    if (savingFornecedor) return;
-    setSavingFornecedor(true);
-    try {
-      const res = await fetch("/api/admin/administrativo/fornecedores/manual", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fornecedorForm),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        onError(payload.error ?? "Não foi possível cadastrar o fornecedor.");
-        return;
-      }
-      onFornecedorSuccess(payload.usuarioCriado ?? null);
-    } finally {
-      setSavingFornecedor(false);
-    }
-  }
-
-  async function saveFuncionario() {
-    if (savingFuncionario) return;
-    setSavingFuncionario(true);
-    try {
-      const res = await fetch("/api/admin/administrativo/funcionarios", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(funcionarioForm),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        onError(payload.error ?? "Não foi possível cadastrar o funcionário.");
-        return;
-      }
-      onFuncionarioSuccess(payload as Funcionario);
-    } finally {
-      setSavingFuncionario(false);
-    }
-  }
-
-  // Funcionário é ação sensível (perfil interno + senha automática) — mesmo gate que já existia
-  // no botão "Novo funcionário" anterior. Não amplia permissão nenhuma, só reorganiza a UI.
-  const TABS: { value: CadastroAba; label: string }[] = isAdmin
-    ? [
-        { value: "FORNECEDOR", label: "Fornecedor" },
-        { value: "FUNCIONARIO", label: "Funcionário" },
-      ]
-    : [{ value: "FORNECEDOR", label: "Fornecedor" }];
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog flex max-h-[calc(100vh-16px)] w-full flex-col overflow-hidden sm:max-h-[85vh] sm:w-[820px] sm:max-w-[90vw]">
-        {/* Header — fixo */}
-        <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
-          <div className="min-w-0">
-            <h2 className="text-sm font-bold text-[#1A1A1A]">Cadastro</h2>
-            <p className="mt-0.5 text-xs text-[#6B7280]">Cadastre fornecedores ou funcionários da plataforma.</p>
-          </div>
-          <IconButton onClick={onClose} title="Fechar" disabled={saving}><X size={16} /></IconButton>
-        </div>
-
-        {/* Abas — genuínas (texto + linha inferior), não botões grandes. Some sozinha quando só
-            resta uma opção (perfil sem permissão para cadastrar funcionário). */}
-        {TABS.length > 1 && (
-        <div role="tablist" aria-label="Tipo de cadastro" className="flex gap-5 border-b border-[#E5E7EB] px-5">
-          {TABS.map((tab) => {
-            const active = aba === tab.value;
-            return (
-              <button
-                key={tab.value}
-                type="button"
-                role="tab"
-                id={`cadastro-tab-${tab.value}`}
-                aria-selected={active}
-                aria-controls={`cadastro-panel-${tab.value}`}
-                onClick={() => setAba(tab.value)}
-                disabled={saving}
-                className={`-mb-px border-b-2 px-1 py-3 text-sm transition ${
-                  active
-                    ? "border-[#AF1B1B] font-bold text-[#AF1B1B]"
-                    : "border-transparent font-medium text-[#6B7280] hover:text-[#374151]"
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-        )}
-
-        {/* Body — scroll interno; só a aba ativa é renderizada, mas o estado vive no pai (não se
-            perde ao trocar de aba). */}
-        <div className="flex-1 overflow-y-auto p-5">
-          <div id="cadastro-panel-FORNECEDOR" role="tabpanel" aria-labelledby="cadastro-tab-FORNECEDOR" hidden={aba !== "FORNECEDOR"}>
-            {aba === "FORNECEDOR" && <FornecedorForm form={fornecedorForm} onChange={updateFornecedor} />}
-          </div>
-          <div id="cadastro-panel-FUNCIONARIO" role="tabpanel" aria-labelledby="cadastro-tab-FUNCIONARIO" hidden={aba !== "FUNCIONARIO"}>
-            {aba === "FUNCIONARIO" && <FuncionarioForm form={funcionarioForm} onChange={updateFuncionario} />}
-          </div>
-        </div>
-
-        {/* Footer — fixo; acompanha a aba ativa. */}
-        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
-          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
-          {aba === "FORNECEDOR" ? (
-            <Button onClick={saveFornecedor} disabled={saving}>
-              <Save size={14} />
-              {savingFornecedor ? "Cadastrando..." : "Cadastrar fornecedor"}
-            </Button>
-          ) : (
-            <Button onClick={saveFuncionario} disabled={saving}>
-              <Plus size={14} />
-              {savingFuncionario ? "Cadastrando..." : "Cadastrar funcionário"}
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function AlterarPerfilModal({
   target,
@@ -1097,39 +330,6 @@ function ConfirmResetSenhaModal({
   );
 }
 
-function ResetSenhaButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex h-7 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2.5 text-[11px] font-semibold text-[#555555] transition hover:border-[#2563EB] hover:text-[#2563EB]"
-    >
-      <KeyRound size={12} />
-      Redefinir senha
-    </button>
-  );
-}
-
-/**
- * Só aparece enquanto `primeiroLogin` está pendente (mesma flag que já controla o fluxo de troca
- * obrigatória em `/api/auth/alterar-senha`) — depois que a pessoa troca a senha, a ação deixa de
- * fazer sentido e só "Redefinir senha" continua visível (item 26 do pedido).
- */
-function PrimeiroAcessoButton({ onClick, disabled, tooltip }: { onClick: () => void; disabled: boolean; tooltip?: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={disabled ? tooltip : undefined}
-      className="inline-flex h-7 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2.5 text-[11px] font-semibold text-[#555555] transition hover:border-[#2563EB] hover:text-[#2563EB] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#E5E7EB] disabled:hover:text-[#555555]"
-    >
-      <Send size={12} />
-      Enviar primeiro acesso
-    </button>
-  );
-}
-
 function ConfirmPrimeiroAcessoModal({
   nome,
   email,
@@ -1180,322 +380,6 @@ function ConfirmPrimeiroAcessoModal({
         </div>
       </div>
     </div>
-  );
-}
-
-type MenuAction = { label: string; icon: React.ReactNode; onClick: () => void; tone?: "danger" };
-
-/**
- * Menu de ações "..." compacto — mesmo padrão de painel flutuante já usado no arquivo
- * (ref + listener de `mousedown` para fechar ao clicar fora, ver `FiltrosDropdown`). Agrupa ações
- * secundárias (Alterar perfil, Ativar/Desativar acesso, Excluir) para reduzir a altura do card,
- * mantendo Editar/Redefinir senha sempre visíveis fora do menu.
- */
-function ActionsMenu({ actions }: { actions: MenuAction[] }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handle(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, []);
-
-  if (actions.length === 0) return null;
-
-  return (
-    <div className="relative shrink-0" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label="Mais ações"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[#E5E7EB] bg-white text-[#94A3B8] transition hover:border-[#D1D5DB] hover:text-[#374151]"
-      >
-        <EllipsisVertical size={14} />
-      </button>
-      {open && (
-        <div role="menu" className="absolute right-0 top-8 z-30 w-48 overflow-hidden rounded-xl border border-[#E5E7EB] bg-white p-1.5 shadow-xl">
-          {actions.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              role="menuitem"
-              onClick={() => { setOpen(false); action.onClick(); }}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold transition hover:bg-[#F9FAFB] ${
-                action.tone === "danger" ? "text-[#B91C1C] hover:bg-[#FEF2F2]" : "text-[#374151]"
-              }`}
-            >
-              {action.icon}
-              {action.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CadastroCard({
-  item,
-  onEdit,
-  onDelete,
-  isAdmin,
-  selected,
-  onToggleSelected,
-  onResetSenha,
-  onSetCadastroAtivo,
-  onEnviarPrimeiroAcesso,
-}: {
-  item: CadastroFornecedor;
-  onEdit: (item: CadastroFornecedor) => void;
-  onDelete: (item: CadastroFornecedor) => void;
-  isAdmin: boolean;
-  selected: boolean;
-  onToggleSelected: (id: string) => void;
-  onResetSenha: (usuarioId: string, nome: string, email: string | null) => void;
-  onSetCadastroAtivo: (item: CadastroFornecedor) => void;
-  onEnviarPrimeiroAcesso: (usuarioId: string, nome: string, email: string | null, usuario: string) => void;
-}) {
-  const menuActions: MenuAction[] = [];
-  if (isAdmin) {
-    menuActions.push({
-      label: item.ativo ? "Inativar fornecedor" : "Reativar fornecedor",
-      icon: item.ativo ? <ShieldOff size={13} /> : <ShieldCheck size={13} />,
-      onClick: () => onSetCadastroAtivo(item),
-    });
-  }
-  if (isAdmin) {
-    menuActions.push({ label: "Excluir definitivamente", icon: <Trash2 size={13} />, tone: "danger", onClick: () => onDelete(item) });
-  }
-
-  return (
-    <Card className={`overflow-hidden ${item.pendencias.length ? "border-[#FCA5A5]" : ""} ${selected ? "ring-2 ring-[#AF1B1B]/40" : ""}`}>
-      <div className="flex items-start justify-between gap-2 px-4 py-2.5">
-        <div className="flex min-w-0 items-start gap-2">
-          {/* Checkbox de seleção em massa só faz sentido para quem pode excluir (só ADMIN). */}
-          {isAdmin && (
-            <input
-              type="checkbox"
-              checked={selected}
-              onChange={() => onToggleSelected(item.id)}
-              aria-label={`Selecionar ${item.responsavel}`}
-              className="mt-1 h-3.5 w-3.5 shrink-0 cursor-pointer accent-[#AF1B1B]"
-            />
-          )}
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <h3 className="truncate text-sm font-bold text-[#1A1A1A]">{displayText(item.responsavel)}</h3>
-              <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ring-1 bg-[#EFF6FF] text-[#2563EB] ring-[#BFDBFE]">
-                Fornecedor
-              </span>
-              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ring-1 ${toneClass[item.validadeTone]}`}>
-                {item.validadeLabel}
-              </span>
-              <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${item.ativo ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#F3F4F6] text-[#6B7280]"}`}>
-                {item.ativo ? "Ativo" : "Inativo"}
-              </span>
-              {item.acesso?.primeiroLogin && (
-                <span className="shrink-0 rounded-full bg-[#FEF3C7] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[#92400E]">
-                  Primeiro acesso pendente
-                </span>
-              )}
-            </div>
-            <p className="truncate text-[11px] text-[#6B7280]">{displayText(item.razaoSocial)}</p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => onEdit(item)}
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-[#E5E7EB] bg-white px-2 text-[11px] font-semibold text-[#555555] transition hover:border-[#2563EB] hover:text-[#2563EB]"
-          >
-            <Edit3 size={12} />
-            Editar
-          </button>
-          <ActionsMenu actions={menuActions} />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-[#E5E7EB] px-4 py-2.5 text-xs sm:grid-cols-4">
-        <div className="min-w-0">
-          <span className="text-[#94A3B8]">CNPJ</span>
-          <p className="font-technical mt-0.5 truncate font-semibold text-[#1F2937]">{item.cnpj ?? "-"}</p>
-        </div>
-        {/* Código P0 real = login do Usuario (perfil COLABORADOR) vinculado a este fornecedor —
-            o mesmo tipo de valor que o card de Funcionário já exibe (Usuario.usuario). NÃO é
-            `colaboradorCodigo`/`Profissional.codigo`: esse é a identidade de negócio usada na
-            resolução do Mapa de Pagamento/importação e, na ausência de um código herdado, cai
-            para o próprio nome (ex.: "ANDERSON MARLEY") — daí o bug de mostrar nome no lugar do
-            P0. Sem `acesso` vinculado (fornecedor sem Usuario ainda resolvido), mostra "-", nunca
-            inventado. */}
-        <div className="min-w-0">
-          <span className="text-[#94A3B8]">Código</span>
-          <p className="font-technical mt-0.5 truncate font-semibold text-[#1F2937]">{item.acesso?.usuario || "-"}</p>
-        </div>
-        <div className="min-w-0">
-          <span className="text-[#94A3B8]">E-mail</span>
-          <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{normalizeEmail(item.email) || "-"}</p>
-        </div>
-        <div className="min-w-0">
-          <span className="text-[#94A3B8]">Telefone</span>
-          <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{maskPhone(item.telefone) || "-"}</p>
-        </div>
-        <div className="min-w-0">
-          <span className="text-[#94A3B8]">Função</span>
-          <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{item.cargo || "-"}</p>
-        </div>
-        <div className="min-w-0">
-          <span className="text-[#94A3B8]">Perfil</span>
-          <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{item.acesso ? (PERFIL_LABEL[item.acesso.perfil] ?? item.acesso.perfil) : "-"}</p>
-        </div>
-        {/* Vigência precisa de espaço para nunca cortar o texto — quebra linha se precisar em vez
-            de truncar (bug anterior: "31/08/2026 a -" comprimido num pill de largura fixa). Por
-            último e span-2 no mobile: preenche a grade em linhas completas (sem lacuna) mesmo com
-            o novo campo Código somando 7 itens no total. */}
-        <div className="col-span-2 min-w-0 sm:col-span-1">
-          <span className="text-[#94A3B8]">Vigência</span>
-          <p className="mt-0.5 whitespace-normal break-words font-semibold text-[#1F2937]">
-            {vigenciaLabel(item.inicio, item.final)}
-          </p>
-        </div>
-      </div>
-
-      {item.pendencias.length > 0 && (
-        <div className="border-t border-[#FECACA] bg-[#FEF2F2] px-4 py-1.5 text-[11px] text-[#B91C1C]">
-          Pendência: {item.pendencias.join(", ")}
-        </div>
-      )}
-
-      {isAdmin && item.acesso && (
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-[#E5E7EB] px-4 py-2">
-          <ResetSenhaButton onClick={() => onResetSenha(item.acesso!.id, item.responsavel, item.acesso!.email)} />
-          {/* perfil !== "ADMIN" é regra genérica (item 2 do pedido) — na prática o acesso de um
-              fornecedor é sempre COLABORADOR, mas a checagem nunca depende de nome/código. */}
-          {item.acesso.perfil !== "ADMIN" && item.acesso.primeiroLogin && (
-            <PrimeiroAcessoButton
-              disabled={!item.acesso.email}
-              // item.email é o e-mail CADASTRAL (CadastroFornecedor, exibido no card) — diferente
-              // de item.acesso.email (Usuario, o que FIRST_ACCESS de fato usa). Quando o cadastral
-              // existe mas o de acesso ainda não foi sincronizado, o aviso é específico (e a
-              // reimportação da Consulta PJ resolve, sem precisar editar nada aqui).
-              tooltip={item.email ? "E-mail de acesso ainda não sincronizado. Reimporte a Consulta PJ para sincronizar." : "Este usuário não possui e-mail cadastrado."}
-              onClick={() => onEnviarPrimeiroAcesso(item.acesso!.id, item.responsavel, item.acesso!.email, item.acesso!.usuario)}
-            />
-          )}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function FuncionarioCard({
-  item,
-  isAdmin,
-  onResetSenha,
-  onToggleAtivo,
-  onSetPerfil,
-  onExcluir,
-  onEnviarPrimeiroAcesso,
-  onGerenciarPermissoes,
-}: {
-  item: Funcionario;
-  isAdmin: boolean;
-  onResetSenha: (usuarioId: string, nome: string, email: string | null) => void;
-  onToggleAtivo: (usuarioId: string, ativoAtual: boolean) => void;
-  onSetPerfil: (usuarioId: string, nome: string, perfilAtual: string) => void;
-  onExcluir: (usuarioId: string, nome: string) => void;
-  onEnviarPrimeiroAcesso: (usuarioId: string, nome: string, email: string | null, usuario: string) => void;
-  onGerenciarPermissoes: (usuarioId: string, nome: string, perfil: string, permissoesAtuais: string[]) => void;
-}) {
-  const menuActions: MenuAction[] = isAdmin
-    ? [
-        { label: "Alterar perfil", icon: <UserCog size={13} />, onClick: () => onSetPerfil(item.id, item.nome, item.perfil) },
-        // Conceder/remover permissão extra é ação de segurança — só ADMIN literal (isAdmin aqui
-        // é sempre isFullAdmin, nunca a permissão extra em si). Nunca oferecido para perfil ADMIN
-        // (não precisa, item 9 do pedido) — mas Funcionario nunca é perfil ADMIN excluído desta
-        // lista? na prática ADMIN também aparece como "funcionário" na listagem; escondemos aqui.
-        ...(item.perfil !== "ADMIN" && isElegivelParaPermissaoExtra(item.perfil)
-          ? [{ label: "Acessos adicionais", icon: <SlidersHorizontal size={13} />, onClick: () => onGerenciarPermissoes(item.id, item.nome, item.perfil, item.permissoesExtras) }]
-          : []),
-        {
-          label: item.ativo ? "Desativar acesso" : "Ativar acesso",
-          icon: item.ativo ? <ShieldOff size={13} /> : <ShieldCheck size={13} />,
-          onClick: () => onToggleAtivo(item.id, item.ativo),
-        },
-        { label: "Excluir", icon: <Trash2 size={13} />, tone: "danger", onClick: () => onExcluir(item.id, item.nome) },
-      ]
-    : [];
-
-  return (
-    <Card className="overflow-hidden">
-      <div className="flex items-start justify-between gap-2 px-4 py-2.5">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <h3 className="truncate text-sm font-bold text-[#1A1A1A]">{displayText(item.nome)}</h3>
-            <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ring-1 bg-[#FEF2F2] text-[#AF1B1B] ring-[#FECACA]">
-              Funcionário
-            </span>
-            <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${item.ativo ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#F3F4F6] text-[#6B7280]"}`}>
-              {item.ativo ? "Ativo" : "Inativo"}
-            </span>
-            {item.primeiroLogin && (
-              <span className="shrink-0 rounded-full bg-[#FEF3C7] px-1.5 py-0.5 text-[9px] font-bold uppercase text-[#92400E]">
-                Primeiro acesso pendente
-              </span>
-            )}
-          </div>
-          <p className="truncate text-[11px] text-[#6B7280]">{item.email ?? "Sem e-mail cadastrado"}</p>
-        </div>
-        <ActionsMenu actions={menuActions} />
-      </div>
-
-      <div className="grid grid-cols-3 gap-x-4 gap-y-2 border-t border-[#E5E7EB] px-4 py-2.5 text-xs">
-        {/* Funcionário não tem Profissional/colaboradorCodigo (esse cadastro nunca existe para
-            perfil interno) — o código canônico dele é o próprio login (`Usuario.usuario`, formato
-            P0xxxxxx, já gerado por generateUniqueInternalAccessCode). Nunca "-" aqui: todo Usuario
-            sempre tem `usuario` preenchido. */}
-        <div className="min-w-0">
-          <span className="text-[#94A3B8]">Código</span>
-          <p className="font-technical mt-0.5 truncate font-semibold text-[#1F2937]">{item.usuario}</p>
-        </div>
-        <div className="min-w-0">
-          <span className="text-[#94A3B8]">Perfil</span>
-          <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{PERFIL_LABEL[item.perfil] ?? item.perfil}</p>
-        </div>
-        <div className="min-w-0">
-          <span className="text-[#94A3B8]">Acesso</span>
-          <p className="mt-0.5 truncate font-semibold text-[#1F2937]">{item.ativo ? "Ativo" : "Inativo"}</p>
-        </div>
-      </div>
-
-      {isElegivelParaPermissaoExtra(item.perfil) && (
-        <div className="border-t border-[#F3F4F6] px-4 py-2 text-xs">
-          <span className="text-[#94A3B8]">Acessos adicionais: </span>
-          <span className="font-semibold text-[#1F2937]">
-            {item.permissoesExtras.length ? item.permissoesExtras.map((p) => PERMISSAO_LABEL_LOOSE[p] ?? p).join(", ") : "—"}
-          </span>
-        </div>
-      )}
-
-      {isAdmin && (
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-[#E5E7EB] px-4 py-2">
-          <ResetSenhaButton onClick={() => onResetSenha(item.id, item.nome, item.email)} />
-          {/* item 2 do pedido: nunca aparece para perfil ADMIN — vale para P0000001 e qualquer
-              ADMIN futuro, checado só pelo campo perfil. */}
-          {item.perfil !== "ADMIN" && item.primeiroLogin && (
-            <PrimeiroAcessoButton
-              disabled={!item.email}
-              tooltip="Este usuário não possui e-mail cadastrado."
-              onClick={() => onEnviarPrimeiroAcesso(item.id, item.nome, item.email, item.usuario)}
-            />
-          )}
-        </div>
-      )}
-    </Card>
   );
 }
 
@@ -1558,7 +442,7 @@ function DeleteConfirmModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
       <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[90vw]">
         <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
           <h2 className="text-sm font-bold text-[#1A1A1A]">
@@ -1690,7 +574,7 @@ function ResolverIdentidadeModal({
   const podeConfirmarNenhuma = selecionado?.tipo !== "NENHUMA_IDENTIDADE" || confirmText.trim().toUpperCase() === confirmPhraseNenhuma;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
       <div className="ds-dialog flex max-h-[90vh] w-full flex-col overflow-hidden sm:w-[640px] sm:max-w-[92vw]">
         <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
           <div>
@@ -1808,32 +692,86 @@ function ResolverIdentidadeModal({
  * components/mapa-pagamento-table.tsx). Dois grupos lógicos: USUÁRIOS (Tipo/Perfil/Acesso, valem
  * para fornecedor e funcionário) e FORNECEDORES (Situação cadastral, só fornecedor).
  */
-function FiltrosDropdown({
-  tipoFiltro,
-  onTipoChange,
-  perfilFiltro,
-  onPerfilChange,
-  acessoFiltro,
-  onToggleAcesso,
-  situacaoFiltro,
-  onToggleSituacao,
-  onClear,
-  activeCount,
+
+/**
+ * Confirmação curta no próprio app (substitui o `window.confirm` do navegador) — mesmo padrão
+ * visual dos demais modais de confirmação deste arquivo.
+ */
+function ConfirmAcaoModal({
+  titulo,
+  mensagem,
+  confirmar,
+  tone,
+  confirming,
+  onCancel,
+  onConfirm,
 }: {
-  tipoFiltro: TipoFilter;
-  onTipoChange: (value: TipoFilter) => void;
-  perfilFiltro: string;
-  onPerfilChange: (value: string) => void;
-  acessoFiltro: Set<AcessoOpcao>;
-  onToggleAcesso: (value: AcessoOpcao) => void;
-  situacaoFiltro: Set<SituacaoOpcao>;
+  titulo: string;
+  mensagem: ReactNode;
+  confirmar: string;
+  tone?: "danger";
+  confirming: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !confirming) onCancel(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [confirming, onCancel]);
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
+      <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]" role="alertdialog" aria-modal="true" aria-label={titulo}>
+        <div className="border-b border-[var(--border)] px-5 py-4">
+          <h2 className="text-sm font-bold text-[var(--foreground)]">{titulo}</h2>
+          <div className="mt-1 text-xs text-[var(--muted-foreground)]">{mensagem}</div>
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4">
+          <Button variant="secondary" onClick={onCancel} disabled={confirming}>Cancelar</Button>
+          <Button variant={tone === "danger" ? "danger" : "primary"} onClick={onConfirm} disabled={confirming}>
+            {confirming ? "Aguarde..." : confirmar}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type Aba = "fornecedores" | "funcionarios";
+type StatusFiltro = "ativos" | "inativos" | "todos";
+
+/** Filtros secundários (popover discreto) — a toolbar fica só com busca + status. */
+function FiltrosPopover({
+  aba,
+  fonte,
+  onFonte,
+  condicao,
+  onCondicao,
+  situacao,
+  onToggleSituacao,
+  acesso,
+  onToggleAcesso,
+  perfil,
+  onPerfil,
+  activeCount,
+  onClear,
+}: {
+  aba: Aba;
+  fonte: string;
+  onFonte: (value: string) => void;
+  condicao: string;
+  onCondicao: (value: string) => void;
+  situacao: Set<SituacaoOpcao>;
   onToggleSituacao: (value: SituacaoOpcao) => void;
-  onClear: () => void;
+  acesso: Set<AcessoOpcao>;
+  onToggleAcesso: (value: AcessoOpcao) => void;
+  perfil: string;
+  onPerfil: (value: string) => void;
   activeCount: number;
+  onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const situacaoDisabled = tipoFiltro === "funcionarios";
 
   useEffect(() => {
     function handle(e: MouseEvent) {
@@ -1846,103 +784,69 @@ function FiltrosDropdown({
   return (
     <div className="relative shrink-0" ref={ref}>
       <FilterButton count={activeCount} onClick={() => setOpen((v) => !v)} />
-
       {open && (
-        <div className="absolute right-0 top-10 z-40 w-[300px] max-w-[90vw] rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-xl">
+        <div className="absolute right-0 top-10 z-40 grid w-[300px] max-w-[88vw] gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[#AF1B1B]">Usuários</p>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              title="Fechar"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[#94A3B8] transition hover:bg-[#F1F5F9] hover:text-[#374151]"
-            >
+            <p className="text-label text-[var(--muted-foreground)]">Filtros</p>
+            <button type="button" onClick={() => setOpen(false)} title="Fechar" className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[#94A3B8] transition hover:bg-[#F1F5F9] hover:text-[#374151]">
               <X size={12} />
             </button>
           </div>
-
-          <div className="mt-2 grid gap-3">
-            <div>
-              <p className="text-label mb-1 text-[var(--muted-foreground)]">Tipo</p>
-              <div className="grid gap-1.5">
-                {(["todos", "fornecedores", "funcionarios"] as TipoFilter[]).map((value) => (
-                  <label key={value} className="flex items-center gap-2 text-xs text-[#374151]">
-                    <input
-                      type="radio"
-                      name="administrativo-tipo-filtro"
-                      checked={tipoFiltro === value}
-                      onChange={() => onTipoChange(value)}
-                      className="accent-[#AF1B1B]"
-                    />
-                    {TIPO_FILTER_LABELS[value]}
-                  </label>
-                ))}
+          {aba === "fornecedores" ? (
+            <>
+              <label className="grid gap-1 text-xs text-[var(--foreground)]">
+                Fonte de medição
+                <Select value={fonte} onChange={(e) => onFonte(e.target.value)} aria-label="Fonte de medição">
+                  <option value="">Todas</option>
+                  <option value="DOCUMENTOS">Documentos</option>
+                  <option value="DOCUMENTOS_AUXILIARES">Documentos auxiliares</option>
+                </Select>
+              </label>
+              <label className="grid gap-1 text-xs text-[var(--foreground)]">
+                Tipo de condição
+                <Select value={condicao} onChange={(e) => onCondicao(e.target.value)} aria-label="Tipo de condição">
+                  <option value="">Todas</option>
+                  <option value="FIXA">Fixa</option>
+                  <option value="CONDICIONAL_PRODUCAO">Condicional por produção</option>
+                </Select>
+              </label>
+              <div>
+                <p className="mb-1 text-xs text-[var(--foreground)]">Vigência</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(["validos", "vencidos", "vencendo", "pendencias"] as SituacaoOpcao[]).map((value) => (
+                    <label key={value} className="flex items-center gap-2 text-xs text-[#374151]">
+                      <input type="checkbox" checked={situacao.has(value)} onChange={() => onToggleSituacao(value)} className="accent-[var(--primary)]" />
+                      {SITUACAO_LABELS[value]}
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
-
-            <label className="grid gap-1 text-xs text-[#374151]">
+              <div>
+                <p className="mb-1 text-xs text-[var(--foreground)]">Acesso ao portal</p>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {(["ativo", "inativo"] as AcessoOpcao[]).map((value) => (
+                    <label key={value} className="flex items-center gap-1.5 text-xs text-[#374151]">
+                      <input type="checkbox" checked={acesso.has(value)} onChange={() => onToggleAcesso(value)} className="accent-[var(--primary)]" />
+                      {ACESSO_LABELS[value]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <label className="grid gap-1 text-xs text-[var(--foreground)]">
               Perfil
-              <select
-                value={perfilFiltro}
-                onChange={(e) => onPerfilChange(e.target.value)}
-                className="h-8 rounded-lg border border-[#E5E7EB] bg-white px-2 text-xs text-[#1A1A1A] outline-none transition hover:border-[#D1D5DB] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
-              >
+              <Select value={perfil} onChange={(e) => onPerfil(e.target.value)} aria-label="Perfil">
                 <option value="todos">Todos os perfis</option>
                 {PERFIL_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
-              </select>
+              </Select>
             </label>
-
-            <div>
-              <p className="text-label mb-1 text-[var(--muted-foreground)]">Acesso</p>
-              <div className="flex flex-wrap gap-x-4 gap-y-1">
-                {(["ativo", "inativo"] as AcessoOpcao[]).map((value) => (
-                  <label key={value} className="flex items-center gap-1.5 text-xs text-[#374151]">
-                    <input
-                      type="checkbox"
-                      checked={acessoFiltro.has(value)}
-                      onChange={() => onToggleAcesso(value)}
-                      className="accent-[#AF1B1B]"
-                    />
-                    {ACESSO_LABELS[value]}
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="my-3 border-t border-[#E5E7EB]" />
-
-          <p className="text-[10px] font-bold uppercase tracking-wider text-[#AF1B1B]">Fornecedores</p>
-          <div className="mt-2">
-            <p className="text-label mb-1 text-[var(--muted-foreground)]">Situação cadastral</p>
-            <div className={`grid gap-1.5 ${situacaoDisabled ? "opacity-40" : ""}`}>
-              {(["validos", "vencidos", "vencendo", "pendencias"] as SituacaoOpcao[]).map((value) => (
-                <label key={value} className="flex items-center gap-2 text-xs text-[#374151]">
-                  <input
-                    type="checkbox"
-                    disabled={situacaoDisabled}
-                    checked={situacaoFiltro.has(value)}
-                    onChange={() => onToggleSituacao(value)}
-                    className="accent-[#AF1B1B]"
-                  />
-                  {SITUACAO_LABELS[value]}
-                </label>
-              ))}
-            </div>
-            {situacaoDisabled && (
-              <p className="mt-1 text-[10px] text-[#94A3B8]">Não se aplica a funcionários.</p>
-            )}
-          </div>
-
-          <div className="mt-4 flex justify-between border-t border-[#E5E7EB] pt-3">
-            <button type="button" onClick={onClear} className="text-xs font-semibold text-[#6B7280] transition hover:text-[#374151]">
-              Limpar filtros
-            </button>
-            <button type="button" onClick={() => setOpen(false)} className="text-xs font-bold text-[#AF1B1B]">
-              Concluído
-            </button>
+          )}
+          <div className="flex justify-between border-t border-[var(--border)] pt-3">
+            <button type="button" onClick={onClear} className="text-xs font-semibold text-[var(--muted-foreground)] transition hover:text-[var(--foreground)]">Limpar filtros</button>
+            <button type="button" onClick={() => setOpen(false)} className="text-xs font-bold text-[var(--primary)]">Concluído</button>
           </div>
         </div>
       )}
@@ -1950,28 +854,49 @@ function FiltrosDropdown({
   );
 }
 
+type Painel =
+  | { tipo: "fornecedor"; id: string; modo: "detalhe" | "edicao" }
+  | { tipo: "novo-fornecedor" }
+  | { tipo: "funcionario"; id: string }
+  | { tipo: "novo-funcionario" }
+  | { tipo: "importar" };
+
+type Confirmacao = { titulo: string; mensagem: ReactNode; confirmar: string; tone?: "danger"; acao: () => Promise<void> };
+
+/**
+ * Administrativo — cadastro mestre e configuração (a operação diária fica em /fornecedores).
+ * Listagem limpa (tabela; lista compacta no mobile) → linha abre o painel lateral de detalhe →
+ * Editar cadastro troca o MESMO painel para o formulário → Salvar volta ao detalhe. "Novo fornecedor"
+ * usa o mesmo editor em modo create. Endpoints, payloads, validações e permissões são os de antes:
+ * visualizar/editar/cadastrar fornecedor = quem acessa a tela; inativar/reativar, exclusão
+ * definitiva, ações de acesso e gestão de funcionários = ADMIN (isAdmin).
+ */
 export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) {
   const [items, setItems] = useState<CadastroFornecedor[]>([]);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const [resolverItem, setResolverItem] = useState<(ImportAtencaoDetalhe & { categoria: string }) | null>(null);
+
+  const [aba, setAba] = useState<Aba>("fornecedores");
   const [search, setSearch] = useState("");
-  const [tipoFiltro, setTipoFiltro] = useState<TipoFilter>("todos");
+  // Mesmo padrão de antes: inativos ocultos por padrão entre fornecedores; funcionários todos.
+  const [statusFornecedor, setStatusFornecedor] = useState<StatusFiltro>("ativos");
+  const [statusFuncionario, setStatusFuncionario] = useState<StatusFiltro>("todos");
+  const [fonteFiltro, setFonteFiltro] = useState("");
+  const [condicaoFiltro, setCondicaoFiltro] = useState("");
   const [perfilFiltro, setPerfilFiltro] = useState("todos");
   const [acessoFiltro, setAcessoFiltro] = useState<Set<AcessoOpcao>>(new Set());
   const [situacaoFiltro, setSituacaoFiltro] = useState<Set<SituacaoOpcao>>(new Set());
-  const [mostrarInativos, setMostrarInativos] = useState(false);
-  const [result, setResult] = useState<ImportResult | null>(null);
-  const [mostrarAtencao, setMostrarAtencao] = useState(false);
-  const [resolverItem, setResolverItem] = useState<(ImportAtencaoDetalhe & { categoria: string }) | null>(null);
-  const [error, setError] = useState("");
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const [selectedFornecedor, setSelectedFornecedor] = useState<CadastroFornecedor | null>(null);
-  const [creatingCadastro, setCreatingCadastro] = useState(false);
+
+  const [painel, setPainel] = useState<Painel | null>(null);
+  const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
   // Credencial (senha temporária) exibida SOMENTE logo após criar usuário ou redefinir senha —
-  // vive só neste estado em memória, nunca é persistida, e some ao fechar o modal (nunca reaparece
-  // num F5 ou reabrindo o card depois).
+  // vive só neste estado em memória, nunca é persistida, e some ao fechar o modal.
   const [credencial, setCredencial] = useState<{ titulo: string; nome: string; email: string | null; usuario?: string; senha: string } | null>(null);
   const [resetSenhaTarget, setResetSenhaTarget] = useState<{ usuarioId: string; nome: string; email: string | null } | null>(null);
   const [resettingSenha, setResettingSenha] = useState(false);
@@ -1981,8 +906,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
   const [permissoesTarget, setPermissoesTarget] = useState<{ usuarioId: string; nome: string; perfil: string; permissoesAtuais: string[] } | null>(null);
   const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  // Guarda tanto a exclusão individual (1 item, disparada pelo botão da lixeira no card) quanto a
-  // exclusão em massa (a seleção inteira) — o mesmo modal/endpoint atende os dois casos.
+  // Exclusão individual (Zona de risco do detalhe) e em massa (seleção) — mesmo modal/endpoint.
   const [deleteTargets, setDeleteTargets] = useState<CadastroFornecedor[] | null>(null);
 
   useEffect(() => {
@@ -2000,8 +924,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
     if (resFornecedores.ok) {
       const data: CadastroFornecedor[] = await resFornecedores.json();
       setItems(data);
-      // Nunca mantém selecionado um ID que não existe mais na listagem (ex.: excluído por outra
-      // sessão, ou por uma exclusão em massa recém-concluída).
+      // Nunca mantém selecionado um ID que não existe mais na listagem.
       const validIds = new Set(data.map((item) => item.id));
       setSelectedIds((prev) => new Set([...prev].filter((id) => validIds.has(id))));
     }
@@ -2011,13 +934,26 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
 
   useEffect(() => { load(); }, [load]);
 
+  const fornecedorAberto = painel?.tipo === "fornecedor" ? items.find((item) => item.id === painel.id) ?? null : null;
+  const funcionarioAberto = painel?.tipo === "funcionario" ? funcionarios.find((item) => item.id === painel.id) ?? null : null;
+
+  // Cadastro removido (exclusão, outra sessão) enquanto o detalhe estava aberto → fecha o painel.
+  useEffect(() => {
+    if (loading) return;
+    if ((painel?.tipo === "fornecedor" && !fornecedorAberto) || (painel?.tipo === "funcionario" && !funcionarioAberto)) setPainel(null);
+  }, [loading, painel, fornecedorAberto, funcionarioAberto]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const qDigits = digitsOnly(q);
     return items.filter((item) => {
-      if (!mostrarInativos && !item.ativo) return false;
-      const matchesSearch = !q || [item.responsavel, item.razaoSocial, item.cnpj, item.colaboradorCodigo, item.email]
-        .some((value) => value?.toLowerCase().includes(q));
-      const matchesPerfil = perfilFiltro === "todos" || item.acesso?.perfil === perfilFiltro;
+      if (statusFornecedor === "ativos" && !item.ativo) return false;
+      if (statusFornecedor === "inativos" && item.ativo) return false;
+      const matchesSearch = !q
+        || [item.responsavel, item.razaoSocial, item.cnpj, item.colaboradorCodigo, item.email].some((value) => value?.toLowerCase().includes(q))
+        || (qDigits.length >= 4 && item.cnpjNormalizado.includes(qDigits));
+      const matchesFonte = !fonteFiltro || normalizeFonteMedicao(item.fonteMedicao) === fonteFiltro;
+      const matchesCondicao = !condicaoFiltro || normalizeTipoCondicaoFixa(item.tipoCondicaoFixa) === condicaoFiltro;
       const matchesAcesso = acessoFiltro.size === 0
         ? true
         : item.acesso
@@ -2030,35 +966,20 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
         (situacaoFiltro.has("vencidos") && item.diasAteVencimento !== null && item.diasAteVencimento < 0) ||
         (situacaoFiltro.has("vencendo") && item.diasAteVencimento !== null && item.diasAteVencimento >= 0 && item.diasAteVencimento <= 30) ||
         (situacaoFiltro.has("pendencias") && item.pendencias.length > 0);
-      return matchesSearch && matchesPerfil && matchesAcesso && matchesSituacao;
-    });
-  }, [items, search, perfilFiltro, acessoFiltro, situacaoFiltro, mostrarInativos]);
+      return matchesSearch && matchesFonte && matchesCondicao && matchesAcesso && matchesSituacao;
+    }).sort((a, b) => a.responsavel.localeCompare(b.responsavel, "pt-BR"));
+  }, [items, search, statusFornecedor, fonteFiltro, condicaoFiltro, acessoFiltro, situacaoFiltro]);
 
   const filteredFuncionarios = useMemo(() => {
     const q = search.trim().toLowerCase();
     return funcionarios.filter((f) => {
+      if (statusFuncionario === "ativos" && !f.ativo) return false;
+      if (statusFuncionario === "inativos" && f.ativo) return false;
       const matchesSearch = !q || [f.nome, f.email, f.usuario].some((value) => value?.toLowerCase().includes(q));
       const matchesPerfil = perfilFiltro === "todos" || f.perfil === perfilFiltro;
-      const matchesAcesso = acessoFiltro.size === 0 || (acessoFiltro.has("ativo") && f.ativo) || (acessoFiltro.has("inativo") && !f.ativo);
-      // Situação cadastral é conceito de fornecedor (vigência) — funcionário nunca é classificado
-      // por ela; qualquer critério de situação ativo simplesmente não inclui funcionário na lista
-      // (nunca gera "vencido"/"pendente" indevido para quem não tem vigência).
-      const matchesSituacao = situacaoFiltro.size === 0;
-      return matchesSearch && matchesPerfil && matchesAcesso && matchesSituacao;
-    });
-  }, [funcionarios, search, perfilFiltro, acessoFiltro, situacaoFiltro]);
-
-  // Lista unificada exibida nos cards.
-  const visiblePessoas: PessoaItem[] = useMemo(() => {
-    const list: PessoaItem[] = [];
-    if (tipoFiltro !== "funcionarios") {
-      for (const item of filtered) list.push({ tipo: "FORNECEDOR", nome: item.responsavel, data: item });
-    }
-    if (tipoFiltro !== "fornecedores") {
-      for (const item of filteredFuncionarios) list.push({ tipo: "FUNCIONARIO", nome: item.nome, data: item });
-    }
-    return list.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  }, [filtered, filteredFuncionarios, tipoFiltro]);
+      return matchesSearch && matchesPerfil;
+    }).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [funcionarios, search, statusFuncionario, perfilFiltro]);
 
   function toggleAcessoFiltro(value: AcessoOpcao) {
     setAcessoFiltro((prev) => {
@@ -2079,28 +1000,34 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
   }
 
   function limparFiltros() {
-    setTipoFiltro("todos");
+    setFonteFiltro("");
+    setCondicaoFiltro("");
     setPerfilFiltro("todos");
     setAcessoFiltro(new Set());
     setSituacaoFiltro(new Set());
   }
 
-  // Chips compactos abaixo da busca — um por critério ativo ("Todos" nunca conta como filtro).
   const filtroChips = useMemo(() => {
     const chips: { key: string; label: string; onRemove: () => void }[] = [];
-    if (tipoFiltro !== "todos") chips.push({ key: "tipo", label: TIPO_FILTER_LABELS[tipoFiltro], onRemove: () => setTipoFiltro("todos") });
-    if (perfilFiltro !== "todos") chips.push({ key: "perfil", label: PERFIL_LABEL[perfilFiltro] ?? perfilFiltro, onRemove: () => setPerfilFiltro("todos") });
-    for (const value of acessoFiltro) chips.push({ key: `acesso-${value}`, label: `Acesso: ${ACESSO_LABELS[value]}`, onRemove: () => toggleAcessoFiltro(value) });
-    for (const value of situacaoFiltro) chips.push({ key: `situacao-${value}`, label: SITUACAO_LABELS[value], onRemove: () => toggleSituacaoFiltro(value) });
+    if (aba === "fornecedores") {
+      if (fonteFiltro) chips.push({ key: "fonte", label: fonteFiltro === "DOCUMENTOS_AUXILIARES" ? "Documentos auxiliares" : "Documentos", onRemove: () => setFonteFiltro("") });
+      if (condicaoFiltro) chips.push({ key: "condicao", label: condicaoFiltro === "CONDICIONAL_PRODUCAO" ? "Condicional" : "Fixa", onRemove: () => setCondicaoFiltro("") });
+      for (const value of situacaoFiltro) chips.push({ key: `situacao-${value}`, label: SITUACAO_LABELS[value], onRemove: () => toggleSituacaoFiltro(value) });
+      for (const value of acessoFiltro) chips.push({ key: `acesso-${value}`, label: `Acesso: ${ACESSO_LABELS[value]}`, onRemove: () => toggleAcessoFiltro(value) });
+    } else if (perfilFiltro !== "todos") {
+      chips.push({ key: "perfil", label: PERFIL_LABEL[perfilFiltro] ?? perfilFiltro, onRemove: () => setPerfilFiltro("todos") });
+    }
     return chips;
-  }, [tipoFiltro, perfilFiltro, acessoFiltro, situacaoFiltro]);
+  }, [aba, fonteFiltro, condicaoFiltro, situacaoFiltro, acessoFiltro, perfilFiltro]);
 
   const allFilteredSelected = filtered.length > 0 && filtered.every((item) => selectedIds.has(item.id));
-  // Selecionar/desmarcar "todos" respeita o conjunto atualmente filtrado/pesquisado (item
-  // explícito do pedido) — mas a seleção em si sobrevive à troca de filtro/busca (trocar o filtro
-  // não perde seleção por engano); a barra de ações em massa e o modal operam sobre TODA a
-  // seleção real, mesmo itens que saíram do filtro atual.
+  // A seleção sobrevive à troca de filtro/busca; ações em massa operam sobre TODA a seleção real.
   const selectedItems = items.filter((item) => selectedIds.has(item.id));
+  const pendencias = items.filter((item) => item.pendencias.length > 0);
+
+  const algumModalAberto = Boolean(
+    confirmacao || credencial || resetSenhaTarget || primeiroAcessoTarget || perfilTarget || permissoesTarget || deleteTargets || resolverItem,
+  );
 
   function pedirResetSenha(usuarioId: string, nome: string, email: string | null) {
     setResetSenhaTarget({ usuarioId, nome, email });
@@ -2122,9 +1049,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
         setToast({ tone: "error", message: payload.error ?? "Não foi possível redefinir a senha." });
         return;
       }
-      // A senha só existe nesta resposta — nunca fica persistida em texto puro além do hash já
-      // atualizado pelo backend. Mostrada no CredencialModal; se o admin fechar sem copiar, só
-      // resta redefinir de novo (mais seguro do que guardar a senha em algum lugar "por garantia").
+      // A senha só existe nesta resposta — mostrada no CredencialModal, nunca persistida.
       setResetSenhaTarget(null);
       setCredencial({ titulo: "Senha redefinida com sucesso", nome, email, senha: payload.senhaTemporaria });
       await load();
@@ -2138,10 +1063,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
       setToast({ tone: "error", message: "Este usuário não possui e-mail cadastrado." });
       return;
     }
-    // requestId gerado UMA VEZ aqui, ao abrir a confirmação — nunca recriado por um retry HTTP da
-    // mesma chamada em confirmarPrimeiroAcesso (o backend serializa por usuarioId+requestId). Uma
-    // NOVA chamada deste handler (novo clique, depois de cancelar/concluir) sempre gera um UUID
-    // novo, permitindo uma rotação legítima nova.
+    // requestId gerado UMA VEZ ao abrir a confirmação (o backend serializa por usuarioId+requestId).
     setPrimeiroAcessoTarget({ usuarioId, nome, email, usuario, requestId: crypto.randomUUID() });
   }
 
@@ -2158,8 +1080,6 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
       const payload = await res.json().catch(() => ({}));
       setPrimeiroAcessoTarget(null);
       if (!res.ok) {
-        // A senha pode já ter sido trocada mesmo com o e-mail falhando (ver rota) — recarrega para
-        // refletir o estado real (badge "Primeiro acesso pendente" continua correto).
         setToast({ tone: "error", message: payload.error ?? "Não foi possível enviar o primeiro acesso." });
         await load();
         return;
@@ -2186,33 +1106,60 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
     await load();
   }
 
-  async function setCadastroAtivo(item: CadastroFornecedor) {
+  function pedirSetCadastroAtivo(item: CadastroFornecedor) {
     const acao = item.ativo ? "inativar" : "reativar";
-    if (!window.confirm(`Deseja ${acao} o fornecedor "${item.responsavel}"?`)) return;
-    const res = await fetch("/api/admin/administrativo/fornecedores/status", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: [item.id], ativo: !item.ativo }),
+    setConfirmacao({
+      titulo: item.ativo ? "Inativar fornecedor" : "Reativar fornecedor",
+      mensagem: item.ativo
+        ? <>Deseja inativar <strong className="text-[var(--foreground)]">{item.responsavel}</strong>? O cadastro e o acesso ao portal ficam inativos; o histórico e a identidade operacional são preservados.</>
+        : <>Deseja reativar <strong className="text-[var(--foreground)]">{item.responsavel}</strong>? O cadastro e o acesso ao portal voltam a ficar ativos.</>,
+      confirmar: item.ativo ? "Inativar fornecedor" : "Reativar fornecedor",
+      acao: async () => {
+        const res = await fetch("/api/admin/administrativo/fornecedores/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: [item.id], ativo: !item.ativo }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setToast({ tone: "error", message: payload.error ?? `Não foi possível ${acao} o fornecedor.` });
+          return;
+        }
+        setToast({ tone: "success", message: item.ativo ? "Fornecedor inativado." : "Fornecedor reativado." });
+        await load();
+      },
     });
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setToast({ tone: "error", message: payload.error ?? `Não foi possível ${acao} o fornecedor.` });
-      return;
-    }
-    setToast({ tone: "success", message: item.ativo ? "Fornecedor inativado." : "Fornecedor reativado." });
-    await load();
   }
 
-  async function excluirFuncionario(usuarioId: string, nome: string) {
-    if (!window.confirm(`Excluir o funcionário "${nome}"? Ele perderá acesso, mas o histórico será preservado.`)) return;
-    const res = await fetch(`/api/admin/usuarios/${usuarioId}`, { method: "DELETE" });
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setToast({ tone: "error", message: payload.error ?? "Não foi possível excluir o funcionário." });
-      return;
+  function pedirExcluirFuncionario(usuarioId: string, nome: string) {
+    setConfirmacao({
+      titulo: "Excluir funcionário",
+      mensagem: <>Excluir o funcionário <strong className="text-[var(--foreground)]">{nome}</strong>? Ele perderá acesso, mas o histórico será preservado.</>,
+      confirmar: "Excluir funcionário",
+      tone: "danger",
+      acao: async () => {
+        const res = await fetch(`/api/admin/usuarios/${usuarioId}`, { method: "DELETE" });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setToast({ tone: "error", message: payload.error ?? "Não foi possível excluir o funcionário." });
+          return;
+        }
+        setToast({ tone: "success", message: "Funcionário excluído." });
+        setPainel(null);
+        await load();
+      },
+    });
+  }
+
+  async function executarConfirmacao() {
+    if (!confirmacao) return;
+    setConfirmando(true);
+    try {
+      await confirmacao.acao();
+    } finally {
+      setConfirmando(false);
+      setConfirmacao(null);
     }
-    setToast({ tone: "success", message: "Funcionário excluído." });
-    await load();
   }
 
   function toggleSelected(id: string) {
@@ -2226,13 +1173,11 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
 
   function toggleSelectAllFiltered() {
     setSelectedIds((prev) => {
-      if (allFilteredSelected) {
-        const next = new Set(prev);
-        for (const item of filtered) next.delete(item.id);
-        return next;
-      }
       const next = new Set(prev);
-      for (const item of filtered) next.add(item.id);
+      for (const item of filtered) {
+        if (allFilteredSelected) next.delete(item.id);
+        else next.add(item.id);
+      }
       return next;
     });
   }
@@ -2244,16 +1189,11 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
   function handleDeletionDone(resultado: AdminDeletionResult) {
     setDeleteTargets(null);
     clearSelection();
-    // Identidade histórica preservada NUNCA é apresentada como erro — é o resultado esperado e
-    // correto da política (ver lib/cadastro-fornecedor.ts:deleteFornecedoresDefinitivamente).
+    // Identidade histórica preservada NUNCA é apresentada como erro — é o resultado esperado.
     const partes: string[] = [];
-    if (resultado.administrativeDeleted > 0) {
-      partes.push(`${resultado.administrativeDeleted} cadastro(s) administrativo(s) removido(s)`);
-    }
+    if (resultado.administrativeDeleted > 0) partes.push(`${resultado.administrativeDeleted} cadastro(s) administrativo(s) removido(s)`);
     if (resultado.professionalsPreservedForHistory > 0) {
-      partes.push(
-        `${resultado.professionalsPreservedForHistory} identidade(s) histórica(s) preservada(s) por possuírem registros de medição`,
-      );
+      partes.push(`${resultado.professionalsPreservedForHistory} identidade(s) histórica(s) preservada(s) por possuírem registros de medição`);
     }
     if (resultado.errors.length > 0) partes.push(`${resultado.errors.length} falharam por erro técnico`);
     const mensagem = partes.length > 0 ? `${partes.join(". ")}.` : "Nenhum fornecedor foi excluído.";
@@ -2287,15 +1227,11 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
     load();
   }
 
-  // Usada só pelo banner "Fornecedores com pendências" abaixo do upload — independe dos filtros.
-  const pendencias = items.filter((item) => item.pendencias.length > 0);
-
   async function upload() {
     if (!file) return;
     setUploading(true);
     setError("");
     setResult(null);
-    setMostrarAtencao(false);
     const form = new FormData();
     form.append("file", file);
     const res = await fetch("/api/admin/administrativo/fornecedores", { method: "POST", body: form });
@@ -2310,258 +1246,172 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
     await load();
   }
 
-  return (
-    <PageContainer className="grid w-full gap-6">
-      <PageHeader
-        eyebrow="Administrativo"
-        title="Painel Administrativo"
-        description="Cadastros cadastrais dos fornecedores, vencimentos e bloqueios para envio de NF."
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            <a
-              href="/api/admin/templates/administrativo"
-              download
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#555555] shadow-sm transition hover:border-[#2563EB] hover:text-[#2563EB]"
-            >
-              <Download size={14} />
-              Baixar máscara
-            </a>
-            <Button variant="secondary" onClick={load} disabled={loading}>
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-              Atualizar
-            </Button>
-            <Button onClick={() => setCreatingCadastro(true)}>
-              <Plus size={14} />
-              Cadastro
-            </Button>
-          </div>
-        }
-      />
+  const criarFuncionario = aba === "funcionarios" && isAdmin;
+  const totalAba = aba === "fornecedores" ? items.length : funcionarios.length;
+  const visiveisAba = aba === "fornecedores" ? filtered.length : filteredFuncionarios.length;
+  const status = aba === "fornecedores" ? statusFornecedor : statusFuncionario;
+  const setStatus = aba === "fornecedores" ? setStatusFornecedor : setStatusFuncionario;
 
-      <Card className="overflow-hidden">
-        <div className="border-b border-[#E5E7EB] px-5 py-4">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB]"><FileSpreadsheet size={18} /></span>
-            <div>
-              <p className="text-sm font-bold text-[#1A1A1A]">Importar Consulta PJ</p>
-              <p className="text-xs text-[#6B7280]">A planilha atualiza os cadastros e cria usuários apenas quando ainda não existem.</p>
-            </div>
-          </div>
-        </div>
-        <div className="grid gap-4 p-5">
-          <input ref={fileRef} type="file" accept=".xlsx,.xlsm" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="flex min-h-28 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#D1D5DB] bg-[#FAFAFA] text-center transition hover:border-[#2563EB] hover:bg-[#EFF6FF]"
-          >
-            <Upload size={22} className="text-[#2563EB]" />
-            <span className="text-sm font-semibold text-[#1A1A1A]">{file ? file.name : "Clique para selecionar ou trocar a planilha"}</span>
-            <span className="text-xs text-[#6B7280]">.xlsx ou .xlsm</span>
-          </button>
-          {error && <div className="rounded-lg bg-[#FEF2F2] px-4 py-3 text-sm font-semibold text-[#B91C1C]">{error}</div>}
-          {result && (() => {
-            const atencaoTotal = result.conflitos + result.bloqueados + result.revisao;
-            const itensAtencao: (ImportAtencaoDetalhe & { categoria: string })[] = [
-              ...result.conflitosDetalhe.map((d) => ({ ...d, categoria: "Identidade ambígua" })),
-              ...result.bloqueadosDetalhe.map((d) => ({ ...d, categoria: "Bloqueado" })),
-              ...result.revisaoDetalhe.map((d) => ({ ...d, categoria: "Requer revisão" })),
-            ];
-            return (
-              <div className="grid gap-2">
-                <div className="rounded-lg bg-[#F0FDF4] px-4 py-3 text-sm text-[#15803D]">
-                  Importação concluída: {result.total} registro(s), {result.criados} novo(s)
-                  {result.recriados > 0 ? `, ${result.recriados} recriado(s)` : ""}, {result.atualizados} atualizado(s), {result.usuariosCriados} usuário(s) criado(s)
-                  {result.usuariosReativados > 0 ? `, ${result.usuariosReativados} usuário(s) reativado(s)` : ""}.
-                </div>
-                {atencaoTotal > 0 && (
-                  <div className="rounded-lg bg-[#FFFBEB] px-4 py-3 text-sm text-[#92400E]">
-                    <button
-                      type="button"
-                      onClick={() => setMostrarAtencao((v) => !v)}
-                      className="flex w-full items-center justify-between gap-2 text-left font-semibold"
-                    >
-                      <span>{atencaoTotal} registro(s) precisam de atenção</span>
-                      <span className="text-xs underline">{mostrarAtencao ? "Ocultar detalhes" : "Ver detalhes"}</span>
-                    </button>
-                    {mostrarAtencao && (
-                      <div className="mt-2 grid gap-1.5">
-                        {itensAtencao.map((item, idx) => (
-                          <div key={`${item.responsavel}-${idx}`} className="rounded-md border border-[#FDE68A] bg-white px-2.5 py-1.5 text-xs">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <strong>{item.responsavel}</strong>
-                              <span className="rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[10px] font-bold uppercase text-[#92400E]">{item.categoria}</span>
-                            </div>
-                            <p className="mt-0.5 text-[#78350F]">Motivo: {item.motivo}</p>
-                            {isAdmin && item.categoria !== "Bloqueado" && item.linha && (
-                              <div className="mt-1.5 flex justify-end">
-                                <Button variant="secondary" onClick={() => setResolverItem(item)}>Resolver</Button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-          {result?.senhasTemporarias?.length ? (
-            <div className="grid gap-2 rounded-lg bg-[#FFFBEB] p-3">
-              <p className="text-xs font-bold uppercase text-[#92400E]">
-                {result.senhasTemporarias.length} senha(s) temporária(s) — usuário(s) novo(s) ou reativado(s) sem senha anterior recuperável
-              </p>
-              <div className="grid gap-1.5">
-                {result.senhasTemporarias.map((entry) => (
-                  <div key={entry.usuario} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#FDE68A] bg-white px-2.5 py-1.5 text-xs">
-                    <span className="min-w-0 truncate text-[#92400E]">
-                      <strong>{entry.nome}</strong> {entry.email ? `· ${entry.email}` : ""} <span className="font-mono text-[10px] text-[#B45309]">({entry.usuario})</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="font-mono font-bold text-[#92400E]">{entry.senha}</span>
-                      <button
-                        type="button"
-                        onClick={() => navigator.clipboard?.writeText(entry.senha)}
-                        className="inline-flex h-6 items-center gap-1 rounded-md border border-[#FDE68A] bg-white px-1.5 text-[10px] font-semibold text-[#92400E] transition hover:bg-[#FFFBEB]"
-                      >
-                        <Copy size={10} />
-                        Copiar
-                      </button>
-                    </span>
-                  </div>
-                ))}
-              </div>
-              {/* Só existem nesta resposta de importação (nunca persistidas em texto puro) —
-                  atualizar a página ou reabrir o painel não as traz de volta. */}
-              <p className="flex items-start gap-1.5 text-[11px] text-[#92400E]">
-                <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-                Essas senhas serão exibidas somente nesta importação — copie agora antes de sair desta tela.
-              </p>
-            </div>
-          ) : null}
-          <Button onClick={upload} disabled={!file || uploading}>
-            <Upload size={14} />
-            {uploading ? "Importando..." : "Importar cadastros"}
+  return (
+    <PageContainer className="grid w-full gap-6 pb-24">
+      <div className="flex flex-col justify-between gap-4 border-b border-[var(--border)] pb-5 sm:flex-row sm:items-end">
+        <PageHeader eyebrow="Cadastro" title="Administrativo" description="Gerencie cadastros e configurações dos fornecedores." />
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <IconButton onClick={load} title="Atualizar" disabled={loading}>
+            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+          </IconButton>
+          <Button variant="secondary" onClick={() => setPainel({ tipo: "importar" })}>
+            <FileSpreadsheet size={15} />
+            Importar Consulta PJ
+          </Button>
+          <Button onClick={() => setPainel({ tipo: criarFuncionario ? "novo-funcionario" : "novo-fornecedor" })}>
+            <Plus size={15} />
+            {criarFuncionario ? "Novo funcionário" : "Novo fornecedor"}
           </Button>
         </div>
-      </Card>
+      </div>
+
+      <AdministrativoKpis items={items} loading={loading} />
 
       {pendencias.length > 0 && (
-        <Card className="overflow-hidden border-[#FCA5A5]">
-          <div className="border-b border-[#FECACA] bg-[#FEF2F2] px-5 py-4">
-            <div className="flex items-center gap-2 text-[#B91C1C]">
-              <AlertTriangle size={18} />
-              <p className="text-sm font-bold">Fornecedores com pendências</p>
-            </div>
-          </div>
-          <div className="grid gap-2 p-4 sm:grid-cols-2">
-            {pendencias.slice(0, 8).map((item) => (
-              <div key={item.id} className="rounded-lg border border-[#FECACA] bg-white px-3 py-2 text-xs">
-                <p className="font-bold text-[#1A1A1A]">{item.responsavel}</p>
-                <p className="mt-1 text-[#B91C1C]">{item.pendencias.join(", ")}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-[#f2dbb7] bg-[var(--warning-soft)] px-4 py-2.5 text-[13px] text-[#92400E]">
+          <span className="flex items-center gap-2">
+            <AlertTriangle size={15} className="shrink-0" />
+            {pendencias.length === 1 ? "1 fornecedor com pendência cadastral (bloqueia envio de NF)." : `${pendencias.length} fornecedores com pendências cadastrais (bloqueiam envio de NF).`}
+          </span>
+          <button
+            type="button"
+            onClick={() => { setAba("fornecedores"); setStatusFornecedor("todos"); setSituacaoFiltro(new Set(["pendencias"])); }}
+            className="text-[12px] font-semibold underline underline-offset-2"
+          >
+            Ver pendências
+          </button>
+        </div>
       )}
 
-      <Card className="grid gap-3 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            className="min-w-[220px] flex-1"
-            placeholder="Buscar por nome, e-mail, razão social ou CNPJ..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <FiltrosDropdown
-            tipoFiltro={tipoFiltro}
-            onTipoChange={setTipoFiltro}
-            perfilFiltro={perfilFiltro}
-            onPerfilChange={setPerfilFiltro}
-            acessoFiltro={acessoFiltro}
-            onToggleAcesso={toggleAcessoFiltro}
-            situacaoFiltro={situacaoFiltro}
-            onToggleSituacao={toggleSituacaoFiltro}
-            onClear={limparFiltros}
-            activeCount={filtroChips.length}
-          />
+      <Card className="min-w-0 overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-[var(--border)] px-5 py-3 xl:flex-row xl:items-center xl:justify-between">
+          <div role="tablist" aria-label="Tipo de cadastro" className="flex gap-5">
+            {([
+              ["fornecedores", "Fornecedores", items.length],
+              ["funcionarios", "Funcionários", funcionarios.length],
+            ] as const).map(([value, label, count]) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={aba === value}
+                onClick={() => { setAba(value); clearSelection(); }}
+                className={`border-b-2 pb-2.5 pt-1 text-sm transition xl:-mb-3 ${aba === value ? "border-[var(--primary)] font-semibold text-[var(--foreground)]" : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+              >
+                {label} <span className="font-technical text-[11px] text-[var(--muted-foreground)]">{count}</span>
+              </button>
+            ))}
+          </div>
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+            <span className="relative min-w-0 sm:w-[340px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#9CA3AF]" size={14} />
+              <Input
+                className="pl-8"
+                aria-label="Buscar cadastros"
+                placeholder={aba === "fornecedores" ? "Buscar por nome, e-mail, razão social ou CNPJ..." : "Buscar por nome, e-mail ou login..."}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </span>
+            <div className="flex items-center gap-2">
+              <div className="w-[130px] shrink-0">
+                <Select value={status} onChange={(e) => setStatus(e.target.value as StatusFiltro)} aria-label="Status">
+                  <option value="ativos">Ativos</option>
+                  <option value="inativos">Inativos</option>
+                  <option value="todos">Todos</option>
+                </Select>
+              </div>
+              <FiltrosPopover
+              aba={aba}
+              fonte={fonteFiltro}
+              onFonte={setFonteFiltro}
+              condicao={condicaoFiltro}
+              onCondicao={setCondicaoFiltro}
+              situacao={situacaoFiltro}
+              onToggleSituacao={toggleSituacaoFiltro}
+              acesso={acessoFiltro}
+              onToggleAcesso={toggleAcessoFiltro}
+              perfil={perfilFiltro}
+              onPerfil={setPerfilFiltro}
+              activeCount={filtroChips.length}
+              onClear={limparFiltros}
+            />
+            </div>
+          </div>
         </div>
 
         {filtroChips.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {filtroChips.map((chip) => (
-              <FilterChip key={chip.key} label={chip.label} onRemove={chip.onRemove} />
-            ))}
+          <div className="flex flex-wrap gap-1.5 border-b border-[var(--border)] px-5 py-2.5">
+            {filtroChips.map((chip) => <FilterChip key={chip.key} label={chip.label} onRemove={chip.onRemove} />)}
           </div>
         )}
 
-        <label className="flex w-fit items-center gap-2 text-xs font-semibold text-[#555555]">
-          <input
-            type="checkbox"
-            checked={mostrarInativos}
-            onChange={(event) => setMostrarInativos(event.target.checked)}
-            className="h-3.5 w-3.5 cursor-pointer accent-[#AF1B1B]"
+        {loading && totalAba === 0 ? (
+          <div className="px-6 py-14 text-center text-sm text-[var(--muted-foreground)]">Carregando cadastros...</div>
+        ) : totalAba === 0 ? (
+          <div className="grid justify-items-center gap-3 px-6 py-14 text-center">
+            <p className="text-sm text-[var(--muted-foreground)]">{aba === "fornecedores" ? "Nenhum fornecedor cadastrado." : "Nenhum funcionário cadastrado."}</p>
+            {(aba === "fornecedores" || isAdmin) && (
+              <Button onClick={() => setPainel({ tipo: aba === "fornecedores" ? "novo-fornecedor" : "novo-funcionario" })}>
+                <Plus size={15} />
+                {aba === "fornecedores" ? "Novo fornecedor" : "Novo funcionário"}
+              </Button>
+            )}
+          </div>
+        ) : visiveisAba === 0 ? (
+          <div className="px-6 py-14 text-center text-sm text-[var(--muted-foreground)]">Nenhum cadastro encontrado com os filtros aplicados.</div>
+        ) : aba === "fornecedores" ? (
+          <FornecedoresCadastroTable
+            itens={filtered}
+            isAdmin={isAdmin}
+            selectedIds={selectedIds}
+            allSelected={allFilteredSelected}
+            onToggleSelected={toggleSelected}
+            onToggleAll={toggleSelectAllFiltered}
+            onOpen={(item) => setPainel({ tipo: "fornecedor", id: item.id, modo: "detalhe" })}
           />
-          Mostrar fornecedores inativos
-        </label>
-
-        {isAdmin && filtered.length > 0 && (
-          <label className="flex w-fit items-center gap-2 text-xs font-semibold text-[#555555]">
-            <input
-              type="checkbox"
-              checked={allFilteredSelected}
-              onChange={toggleSelectAllFiltered}
-              className="h-3.5 w-3.5 cursor-pointer accent-[#AF1B1B]"
-            />
-            Selecionar todos {filtered.length !== items.length ? "(filtrados)" : ""}
-          </label>
+        ) : (
+          <FuncionariosTable itens={filteredFuncionarios} onOpen={(item) => setPainel({ tipo: "funcionario", id: item.id })} />
         )}
+
+        <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-3 text-[12px] text-[var(--muted-foreground)]">
+          <span>
+            {visiveisAba === totalAba ? `${totalAba} ${aba === "fornecedores" ? "fornecedores" : "funcionários"}` : `${visiveisAba} de ${totalAba} ${aba === "fornecedores" ? "fornecedores" : "funcionários"}`}
+          </span>
+          {loading && totalAba > 0 && <span>Atualizando…</span>}
+        </div>
       </Card>
 
-      {loading ? (
-        <Card className="p-6 text-sm text-[#6B7280]">Carregando cadastros...</Card>
-      ) : visiblePessoas.length === 0 ? (
-        <Card className="p-6 text-sm text-[#6B7280]">Nenhum cadastro encontrado.</Card>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {visiblePessoas.map((pessoa) =>
-            pessoa.tipo === "FORNECEDOR" ? (
-              <CadastroCard
-                key={pessoa.data.id}
-                item={pessoa.data}
-                onEdit={setSelectedFornecedor}
-                onDelete={(target) => setDeleteTargets([target])}
-                isAdmin={isAdmin}
-                selected={selectedIds.has(pessoa.data.id)}
-                onToggleSelected={toggleSelected}
-                onResetSenha={pedirResetSenha}
-                onSetCadastroAtivo={setCadastroAtivo}
-                onEnviarPrimeiroAcesso={pedirPrimeiroAcesso}
-              />
-            ) : (
-              <FuncionarioCard
-                key={pessoa.data.id}
-                item={pessoa.data}
-                isAdmin={isAdmin}
-                onResetSenha={pedirResetSenha}
-                onToggleAtivo={toggleAtivoUsuario}
-                onSetPerfil={(usuarioId, nome, perfilAtual) => setPerfilTarget({ usuarioId, nome, perfilAtual })}
-                onExcluir={excluirFuncionario}
-                onEnviarPrimeiroAcesso={pedirPrimeiroAcesso}
-                onGerenciarPermissoes={(usuarioId, nome, perfil, permissoesAtuais) => setPermissoesTarget({ usuarioId, nome, perfil, permissoesAtuais })}
-              />
-            ),
-          )}
-        </div>
+      {painel?.tipo === "fornecedor" && fornecedorAberto && painel.modo === "detalhe" && (
+        <FornecedorDetalhe
+          item={fornecedorAberto}
+          isAdmin={isAdmin}
+          escEnabled={!algumModalAberto}
+          onClose={() => setPainel(null)}
+          onEdit={() => setPainel({ tipo: "fornecedor", id: fornecedorAberto.id, modo: "edicao" })}
+          onToggleAtivo={() => pedirSetCadastroAtivo(fornecedorAberto)}
+          onDelete={() => setDeleteTargets([fornecedorAberto])}
+          onResetSenha={() => fornecedorAberto.acesso && pedirResetSenha(fornecedorAberto.acesso.id, fornecedorAberto.responsavel, fornecedorAberto.acesso.email)}
+          onPrimeiroAcesso={() => fornecedorAberto.acesso && pedirPrimeiroAcesso(fornecedorAberto.acesso.id, fornecedorAberto.responsavel, fornecedorAberto.acesso.email, fornecedorAberto.acesso.usuario)}
+        />
       )}
 
-      {selectedFornecedor && (
-        <FornecedorEditModal
-          item={selectedFornecedor}
-          onClose={() => setSelectedFornecedor(null)}
-          onSuccess={async () => {
-            setSelectedFornecedor(null);
+      {painel?.tipo === "fornecedor" && fornecedorAberto && painel.modo === "edicao" && (
+        <FornecedorEditor
+          key={fornecedorAberto.id}
+          mode="edit"
+          item={fornecedorAberto}
+          escEnabled={!algumModalAberto}
+          onClose={() => setPainel(null)}
+          onBack={() => setPainel({ tipo: "fornecedor", id: fornecedorAberto.id, modo: "detalhe" })}
+          onSaved={async () => {
+            setPainel({ tipo: "fornecedor", id: fornecedorAberto.id, modo: "detalhe" });
             setToast({ tone: "success", message: "Fornecedor atualizado com sucesso." });
             await load();
           }}
@@ -2569,44 +1419,81 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
         />
       )}
 
-      {creatingCadastro && (
-        <CadastroModal
-          isAdmin={isAdmin}
-          onClose={() => setCreatingCadastro(false)}
-          onFornecedorSuccess={async (usuarioCriado) => {
-            setCreatingCadastro(false);
+      {painel?.tipo === "novo-fornecedor" && (
+        <FornecedorEditor
+          mode="create"
+          escEnabled={!algumModalAberto}
+          onClose={() => setPainel(null)}
+          onCreated={async (usuarioCriado) => {
+            setPainel(null);
             if (usuarioCriado) {
-              // Usuario novo (COLABORADOR) criado junto do cadastro — mesma senha automática de
-              // sempre (generateTempPassword/hashPassword), só que agora efetivamente exibida.
-              setCredencial({
-                titulo: "Fornecedor cadastrado com sucesso",
-                nome: usuarioCriado.nome,
-                email: usuarioCriado.email,
-                usuario: usuarioCriado.usuario,
-                senha: usuarioCriado.senha,
-              });
+              // Usuario novo (COLABORADOR) criado junto do cadastro — senha automática exibida uma vez.
+              setCredencial({ titulo: "Fornecedor cadastrado com sucesso", nome: usuarioCriado.nome, email: usuarioCriado.email, usuario: usuarioCriado.usuario, senha: usuarioCriado.senha });
             } else {
-              // Fornecedor já tinha Usuario vinculado (reaproveitado) — nenhuma senha nova gerada.
               setToast({ tone: "success", message: "Fornecedor cadastrado com sucesso." });
             }
             await load();
           }}
-          onFuncionarioSuccess={async (usuario) => {
-            setCreatingCadastro(false);
+          onError={(message) => setToast({ tone: "error", message })}
+        />
+      )}
+
+      {painel?.tipo === "funcionario" && funcionarioAberto && (
+        <FuncionarioDetalhe
+          item={funcionarioAberto}
+          isAdmin={isAdmin}
+          escEnabled={!algumModalAberto}
+          onClose={() => setPainel(null)}
+          onResetSenha={() => pedirResetSenha(funcionarioAberto.id, funcionarioAberto.nome, funcionarioAberto.email)}
+          onPrimeiroAcesso={() => pedirPrimeiroAcesso(funcionarioAberto.id, funcionarioAberto.nome, funcionarioAberto.email, funcionarioAberto.usuario)}
+          onToggleAtivo={() => toggleAtivoUsuario(funcionarioAberto.id, funcionarioAberto.ativo)}
+          onSetPerfil={() => setPerfilTarget({ usuarioId: funcionarioAberto.id, nome: funcionarioAberto.nome, perfilAtual: funcionarioAberto.perfil })}
+          onGerenciarPermissoes={() => setPermissoesTarget({ usuarioId: funcionarioAberto.id, nome: funcionarioAberto.nome, perfil: funcionarioAberto.perfil, permissoesAtuais: funcionarioAberto.permissoesExtras })}
+          onExcluir={() => pedirExcluirFuncionario(funcionarioAberto.id, funcionarioAberto.nome)}
+        />
+      )}
+
+      {painel?.tipo === "novo-funcionario" && isAdmin && (
+        <FuncionarioCreatePanel
+          escEnabled={!algumModalAberto}
+          onClose={() => setPainel(null)}
+          onCreated={async (usuario) => {
+            setPainel(null);
             if (usuario.senhaTemporaria) {
-              setCredencial({
-                titulo: "Funcionário criado com sucesso",
-                nome: usuario.nome,
-                email: usuario.email,
-                usuario: usuario.usuario,
-                senha: usuario.senhaTemporaria,
-              });
+              setCredencial({ titulo: "Funcionário criado com sucesso", nome: usuario.nome, email: usuario.email, usuario: usuario.usuario, senha: usuario.senhaTemporaria });
             } else {
               setToast({ tone: "success", message: "Funcionário cadastrado com sucesso." });
             }
             await load();
           }}
           onError={(message) => setToast({ tone: "error", message })}
+        />
+      )}
+
+      {painel?.tipo === "importar" && (
+        <ImportarConsultaPanel
+          file={file}
+          onFileChange={setFile}
+          uploading={uploading}
+          error={error}
+          result={result}
+          isAdmin={isAdmin}
+          escEnabled={!algumModalAberto}
+          onUpload={upload}
+          onResolver={setResolverItem}
+          onClose={() => setPainel(null)}
+        />
+      )}
+
+      {confirmacao && (
+        <ConfirmAcaoModal
+          titulo={confirmacao.titulo}
+          mensagem={confirmacao.mensagem}
+          confirmar={confirmacao.confirmar}
+          tone={confirmacao.tone}
+          confirming={confirmando}
+          onCancel={() => setConfirmacao(null)}
+          onConfirm={executarConfirmacao}
         />
       )}
 
@@ -2622,12 +1509,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
       )}
 
       {resetSenhaTarget && (
-        <ConfirmResetSenhaModal
-          nome={resetSenhaTarget.nome}
-          confirming={resettingSenha}
-          onCancel={() => setResetSenhaTarget(null)}
-          onConfirm={confirmarResetSenha}
-        />
+        <ConfirmResetSenhaModal nome={resetSenhaTarget.nome} confirming={resettingSenha} onCancel={() => setResetSenhaTarget(null)} onConfirm={confirmarResetSenha} />
       )}
 
       {primeiroAcessoTarget && (
@@ -2668,50 +1550,24 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
       )}
 
       {isAdmin && selectedItems.length > 0 && (
-        <div className="fixed bottom-5 left-1/2 z-[55] flex -translate-x-1/2 items-center gap-3 rounded-xl border border-[#E5E7EB] bg-white px-4 py-3 shadow-lg">
-          <span className="text-xs font-bold text-[#1A1A1A]">
+        <div className="fixed bottom-5 left-1/2 z-[55] flex max-w-[calc(100vw-32px)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-xl border border-[var(--border)] bg-white px-4 py-3 shadow-lg">
+          <span className="text-xs font-bold text-[var(--foreground)]">
             {selectedItems.length} {selectedItems.length === 1 ? "fornecedor selecionado" : "fornecedores selecionados"}
           </span>
-          <button
-            type="button"
-            onClick={clearSelection}
-            className="inline-flex h-8 items-center rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#555555] transition hover:border-[#2563EB] hover:text-[#2563EB]"
-          >
-            Cancelar seleção
-          </button>
-          <button
-            type="button"
-            onClick={() => setDeleteTargets(selectedItems)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#DC2626] px-3 text-xs font-bold text-white transition hover:bg-[#B91C1C]"
-          >
+          <Button variant="secondary" onClick={clearSelection}>Cancelar seleção</Button>
+          <Button variant="danger" onClick={() => setDeleteTargets(selectedItems)}>
             <Trash2 size={13} />
             Excluir definitivamente
-          </button>
+          </Button>
         </div>
       )}
 
-      {deleteTargets && (
-        <DeleteConfirmModal
-          items={deleteTargets}
-          onClose={() => setDeleteTargets(null)}
-          onDone={handleDeletionDone}
-        />
-      )}
+      {deleteTargets && <DeleteConfirmModal items={deleteTargets} onClose={() => setDeleteTargets(null)} onDone={handleDeletionDone} />}
 
-      {resolverItem && (
-        <ResolverIdentidadeModal
-          item={resolverItem}
-          onClose={() => setResolverItem(null)}
-          onResolved={handleIdentidadeResolvida}
-        />
-      )}
+      {resolverItem && <ResolverIdentidadeModal item={resolverItem} onClose={() => setResolverItem(null)} onResolved={handleIdentidadeResolvida} />}
 
       {toast && (
-        <div
-          className={`fixed bottom-5 right-5 z-[60] rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg ${
-            toast.tone === "success" ? "bg-[#16A34A]" : "bg-[#DC2626]"
-          }`}
-        >
+        <div className={`fixed bottom-5 right-5 z-[80] rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg ${toast.tone === "success" ? "bg-[#16A34A]" : "bg-[#DC2626]"}`}>
           {toast.message}
         </div>
       )}

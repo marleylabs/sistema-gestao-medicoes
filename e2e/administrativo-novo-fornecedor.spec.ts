@@ -17,15 +17,15 @@ async function abrirAdministrativo(page: import("@playwright/test").Page) {
   await login.goto();
   await login.login(e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
   await page.goto("/?section=administrativo");
-  await expect(page.getByRole("heading", { name: "Painel Administrativo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Administrativo", exact: true, level: 1 })).toBeVisible();
   // Espera a listagem real terminar de carregar — antes disso o card "Total" mostra 0
   // momentaneamente (estado inicial dos itens antes do primeiro fetch resolver).
   await expect(page.getByText("Carregando cadastros...")).toHaveCount(0);
 }
 
 async function preencherNovoFornecedor(page: import("@playwright/test").Page, opts: { responsavel: string; cnpj: string; email?: string }) {
-  await page.getByRole("button", { name: "Cadastro", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Cadastro", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Novo fornecedor" }).click();
+  await expect(page.getByRole("heading", { name: "Novo fornecedor", exact: true })).toBeVisible();
   await page.getByLabel("Nome / Responsável").fill(opts.responsavel);
   await page.getByLabel("CNPJ", { exact: true }).fill(opts.cnpj);
   await page.getByLabel("Razão social").fill(`${opts.responsavel} LTDA`);
@@ -48,18 +48,20 @@ test.describe.serial("Administrativo — cadastro manual de fornecedor", () => {
 
     await expect(page.getByRole("heading", { name: "Fornecedor cadastrado com sucesso" })).toBeVisible();
     await page.getByRole("button", { name: "Concluir" }).click();
-    await expect(page.getByRole("heading", { name: "Cadastro", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Novo fornecedor", exact: true })).toHaveCount(0);
 
     await expect.poll(() => prisma.cadastroFornecedor.count()).toBe(totalAntes + 1);
 
     // Busca encontra o fornecedor recém-criado sem reload.
     await page.getByPlaceholder("Buscar por nome, e-mail, razão social ou CNPJ...").fill("E2E Fornecedor Manual A");
-    await expect(page.getByRole("heading", { name: /Fornecedor Manual A/i })).toBeVisible();
+    const linha = page.getByRole("row", { name: /Fornecedor Manual A/i });
+    await expect(linha).toBeVisible();
 
-    // Editar funciona normalmente — mesmo tipo de registro de um fornecedor importado.
-    // (displayText() title-caseia o nome exibido — "E2E" pode virar "E2e" — busca só por um
-    // trecho estável do nome, não pelo texto completo/caixa exata.)
-    await page.getByRole("button", { name: "Editar" }).click();
+    // Editar funciona normalmente — mesmo tipo de registro de um fornecedor importado: a linha
+    // abre o detalhe e "Editar cadastro" troca o MESMO painel para o formulário.
+    await linha.click();
+    await expect(page.getByTestId("administrativo-detalhe")).toBeVisible();
+    await page.getByRole("button", { name: "Editar cadastro" }).click();
     await expect(page.getByRole("heading", { name: /Fornecedor Manual A/i, level: 2 })).toBeVisible();
     await page.getByRole("button", { name: "Fechar" }).click();
 
@@ -83,7 +85,7 @@ test.describe.serial("Administrativo — cadastro manual de fornecedor", () => {
     expect((await criarB).status()).toBe(201);
     await expect(page.getByRole("heading", { name: "Fornecedor cadastrado com sucesso" })).toBeVisible();
     await page.getByRole("button", { name: "Concluir" }).click();
-    await expect(page.getByRole("heading", { name: "Cadastro", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Novo fornecedor", exact: true })).toHaveCount(0);
 
     await preencherNovoFornecedor(page, { responsavel: "E2E Fornecedor Manual C", cnpj: mesmoCnpj });
     const criarC = page.waitForResponse((r) => r.url().endsWith("/api/admin/administrativo/fornecedores/manual") && r.request().method() === "POST");
@@ -91,7 +93,7 @@ test.describe.serial("Administrativo — cadastro manual de fornecedor", () => {
     expect((await criarC).status()).toBe(201);
     await expect(page.getByRole("heading", { name: "Fornecedor cadastrado com sucesso" })).toBeVisible();
     await page.getByRole("button", { name: "Concluir" }).click();
-    await expect(page.getByRole("heading", { name: "Cadastro", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Novo fornecedor", exact: true })).toHaveCount(0);
 
     const cadastroB = await prisma.cadastroFornecedor.findFirstOrThrow({ where: { responsavel: "E2E Fornecedor Manual B" } });
     const cadastroC = await prisma.cadastroFornecedor.findFirstOrThrow({ where: { responsavel: "E2E Fornecedor Manual C" } });
@@ -107,7 +109,7 @@ test.describe.serial("Administrativo — cadastro manual de fornecedor", () => {
     await preencherNovoFornecedor(page, { responsavel: "E2E Fornecedor Manual Invalido", cnpj: "123" });
     await page.getByRole("button", { name: "Cadastrar fornecedor" }).click();
     await expect(page.getByText(/CNPJ inválido/i)).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Cadastro", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Novo fornecedor", exact: true })).toBeVisible();
 
     const count = await prisma.cadastroFornecedor.count({ where: { responsavel: "E2E Fornecedor Manual Invalido" } });
     expect(count).toBe(0);
