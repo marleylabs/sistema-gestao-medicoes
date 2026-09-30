@@ -10,10 +10,10 @@ function readSource(relativePath: string) {
 const PAGE = "components/medicoes-app.tsx";
 
 /**
- * Guarda de regressão para a correção de responsividade de "Histórico de Medições" — mesmo padrão
- * já aplicado em Evidências de Medição (tests/evidencias-medicao.test.ts): a tabela precisa estar
- * dentro de um wrapper com overflow-x-auto (scroll interno, nunca na página inteira), e os
- * containers ancestrais precisam poder encolher (min-w-0).
+ * Histórico = somente consulta. A manutenção de ciclos (Novo/Selecionar/Excluir) saiu daqui para
+ * Fornecedores → Gerenciar ciclos, e a publicação no portal para o controle "Ciclo publicado". Guardas:
+ * nenhuma ação operacional volta ao Histórico, containers continuam podendo encolher (min-w-0), e o
+ * painel de Fornecedores preserva as mesmas regras (formato YYMM, exclusão só ADMIN, sem window.confirm).
  */
 
 function historicoSectionBlock() {
@@ -35,53 +35,40 @@ test("HistoricoSection: raiz do componente tem min-w-0 (encolhe dentro do ancest
   assert.match(block.slice(rootDivIndex, rootDivEnd), /min-w-0/);
 });
 
-test("HistoricoSection: a tabela tem um wrapper DIRETO com overflow-x-auto (scroll interno, nunca global)", () => {
-  const block = historicoSectionBlock();
-  const tableIndex = block.indexOf("<table");
-  const before = block.slice(0, tableIndex);
-  const wrapperIndex = before.lastIndexOf("overflow-x-auto");
-  assert.ok(wrapperIndex > -1, "esperava um wrapper com overflow-x-auto ANTES da tabela");
-  const between = before.slice(wrapperIndex, tableIndex);
-  assert.equal((between.match(/<div/g) ?? []).length <= 1, true, "precisa ser o wrapper DIRETO da tabela, não um ancestral distante");
+test("Histórico não tem nenhuma ação de manutenção de ciclo (Novo/Abrir/Excluir/Publicar)", () => {
+  const sources = [
+    historicoSectionBlock(),
+    readSource("components/historico/historico-workspace.tsx"),
+    readSource("components/historico/drawers.tsx"),
+    readSource("components/historico/listas.tsx"),
+  ].join("\n");
+  assert.doesNotMatch(sources, /Novo ciclo|Excluir ciclo|Abrir ciclo|Gerenciar ciclos|Publicar ciclo|Ativar medição/);
+  assert.doesNotMatch(sources, /\/api\/ciclos|method:\s*"(POST|PATCH|DELETE|PUT)"/);
 });
 
-test("HistoricoSection: Card da tabela tem min-w-0/max-w-full (HeroUI Card é flex-col por padrão)", () => {
-  const block = historicoSectionBlock();
-  const cardIndex = block.indexOf("<Card");
-  const cardTagEnd = block.indexOf(">", cardIndex);
-  const cardTag = block.slice(cardIndex, cardTagEnd);
-  assert.match(cardTag, /min-w-0/);
-  assert.match(cardTag, /max-w-full/);
+test("Histórico carrega os dados numa chamada (GET /api/historico), sem uma requisição de mapa por ciclo", () => {
+  const dados = readSource("components/historico/dados.ts");
+  assert.match(dados, /fetch\("\/api\/historico"\)/);
+  assert.doesNotMatch(dados, /\/api\/mapa-pagamento/);
 });
 
-test("HistoricoSection: tabela tem min-width definido (não comprime colunas até ficarem ilegíveis)", () => {
-  const block = historicoSectionBlock();
-  assert.match(block, /<table className="[^"]*min-w-\[\d+px\]/);
-});
-
-test("HistoricoSection: input 'Ex: 2606' e botões Novo/Excluir ciclo são responsivos (full-width no mobile, auto no desktop)", () => {
-  const block = historicoSectionBlock();
-  const toolbarIndex = block.indexOf('placeholder="Ex: 2606"');
-  const inputTagStart = block.lastIndexOf("<input", toolbarIndex);
-  const inputTagEnd = block.indexOf(">", toolbarIndex);
-  const inputTag = block.slice(inputTagStart, inputTagEnd);
+test("Gerenciar ciclos (Fornecedores): input YYMM responsivo, mesma API, exclusão via modal (sem window.confirm)", () => {
+  const painel = readSource("components/fornecedores/gerenciar-ciclos.tsx");
+  const inputIndex = painel.indexOf('placeholder="Ex: 2606"');
+  const inputTag = painel.slice(painel.lastIndexOf("<input", inputIndex), painel.indexOf(">", inputIndex));
   assert.match(inputTag, /w-full/);
-  assert.match(inputTag, /sm:w-32|sm:w-auto/);
-
-  const novoCicloIndex = block.indexOf("Novo ciclo");
-  const buttonStart = block.lastIndexOf("<Button", novoCicloIndex);
-  const buttonTagEnd = block.indexOf(">", buttonStart);
-  assert.match(block.slice(buttonStart, buttonTagEnd), /w-full sm:w-auto/);
+  assert.match(inputTag, /sm:w-32/);
+  assert.ok(painel.includes("/^\\d{4}$/"), "mesma validação YYMM de antes");
+  assert.match(painel, /role="alertdialog"/);
+  assert.doesNotMatch(painel, /window\.confirm\(|fetch\(/, "o painel só chama callbacks — as requisições continuam as mesmas em medicoes-app.tsx");
 });
 
-test("HistoricoSection: coluna 'Última atualização' não quebra a data no meio (whitespace-nowrap)", () => {
-  const block = historicoSectionBlock();
-  const cellIndex = block.indexOf("{dateLabel(c.updatedAt)}");
-  const tdStart = block.lastIndexOf("<td", cellIndex);
-  assert.match(block.slice(tdStart, cellIndex), /whitespace-nowrap/);
-});
-
-test("HistoricoSection: nenhuma coluna foi escondida com hidden/table-cell (scroll interno preserva todas as colunas)", () => {
-  const block = historicoSectionBlock();
-  assert.doesNotMatch(block, /hidden\s+(sm|md|lg|xl):table-cell/);
+test("medicoes-app: Novo/Excluir ciclo continuam na mesma API (POST/DELETE /api/ciclos, payload de confirmação preservado)", () => {
+  const source = readSource(PAGE);
+  const criar = source.slice(source.indexOf("async function criarCicloApi("), source.indexOf("async function criarCiclo()"));
+  assert.match(criar, /fetch\("\/api\/ciclos", \{\s*method: "POST"/);
+  const excluir = source.slice(source.indexOf("async function excluirCiclo("), source.indexOf("function markSeen("));
+  assert.match(excluir, /method: "DELETE"/);
+  assert.match(excluir, /confirmacao: "RESETAR_CICLOS"/);
+  assert.doesNotMatch(excluir, /window\.confirm/);
 });

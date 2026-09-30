@@ -24,7 +24,7 @@ export const PERMISSAO_DESCRICAO: Record<Permissao, string> = {
   ADMINISTRATIVO:
     "Acesso operacional ao cadastro de fornecedores/funcionários e à importação da Consulta PJ. Ações sensíveis (redefinir senha, enviar primeiro acesso, excluir, alterar perfil, resolução de identidade) continuam exclusivas do ADMIN.",
   HISTORICO_MEDICOES:
-    "Permite consultar ciclos e o histórico operacional das medições. Ações de manutenção de ciclo (Novo ciclo, Ativar medição, Excluir ciclo) continuam restritas a quem já tem essa autorização hoje (perfil Medição/ADMIN, exclusão só ADMIN) — esta permissão nunca amplia isso.",
+    "Permite consultar o histórico de medições (por medição, fornecedor e contrato), somente leitura. Ações de manutenção de ciclo (Novo ciclo, Publicar ciclo, Excluir ciclo — em Fornecedores) continuam restritas a quem já tem essa autorização hoje (perfil Medição/ADMIN, exclusão só ADMIN) — esta permissão nunca amplia isso.",
 };
 
 export const PERMISSAO_OPTIONS = VALID_PERMISSOES.map((value) => ({ value, label: PERMISSAO_LABEL[value] }));

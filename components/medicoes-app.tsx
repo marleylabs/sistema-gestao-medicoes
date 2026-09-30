@@ -28,6 +28,7 @@ import { FornecedoresPage } from "@/components/fornecedores";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { AdministrativoPanel } from "@/components/administrativo-panel";
+import { HistoricoWorkspace } from "@/components/historico/historico-workspace";
 import { Badge, Button, Card, FilterButton, FilterChip, IconButton, Input, PageContainer, PageHeader, Select } from "@/components/ui";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
@@ -43,7 +44,7 @@ const FORNECEDORES_PATH = "/fornecedores";
 const TITLES: Record<Section, string> = {
   visao: "Dashboard",
   fornecedores: "Fornecedores",
-  historico: "Histórico de Medições",
+  historico: "Histórico",
   importar: "Importar Planilha",
   evidencias: "Evidências de Medição",
   financeiro: "Financeiro",
@@ -78,8 +79,6 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
   const [novoCiclo, setNovoCiclo]           = useState("");
   const [criandoCiclo, setCriandoCiclo]     = useState(false);
   const [novoCicloOpen, setNovoCicloOpen]   = useState(false);
-  const [ativandoMedicaoCiclo, setAtivandoMedicaoCiclo] = useState<string | null>(null);
-  const [resetandoCiclos, setResetandoCiclos] = useState(false);
   const [filtrosDashboardOpen, setFiltrosDashboardOpen] = useState(false);
   const filtrosDashboardRef                 = useRef<HTMLDivElement>(null);
   const cicloInicializadoRef                = useRef(false);
@@ -252,54 +251,43 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
     await Promise.all([refreshAll(), loadAlertas()]);
   }
 
-  async function ativarCicloMedicao(ciclo: string) {
-    setAtivandoMedicaoCiclo(ciclo);
-    try {
-      const res = await fetch("/api/ciclos", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "set_ativo_medicao", ciclo }),
-      });
-      if (!res.ok) {
-        const p = await res.json().catch(() => ({}));
-        alert(p.error ?? "Não foi possível ativar o ciclo para medição.");
-        return;
-      }
-      await loadCiclos();
-    } finally {
-      setAtivandoMedicaoCiclo(null);
+  /**
+   * Publica o ciclo no portal dos fornecedores — a MESMA ação de sempre (PATCH /api/ciclos,
+   * action "set_ativo_medicao", que marca `ativoMedicao` só neste ciclo; permissão Medição/ADMIN).
+   * Antes ficava no Histórico ("Ativar medição"); agora é acionada pelo controle "Ciclo publicado"
+   * em /fornecedores. Devolve a mensagem de erro (exibida na confirmação) ou null.
+   */
+  async function publicarCicloPortal(ciclo: string): Promise<string | null> {
+    const res = await fetch("/api/ciclos", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set_ativo_medicao", ciclo }),
+    });
+    if (!res.ok) {
+      const p = await res.json().catch(() => ({}));
+      return p.error ?? "Não foi possível publicar o ciclo no portal.";
     }
+    await loadCiclos();
+    return null;
   }
 
-  async function resetarCiclos(cicloAlvo?: string) {
-    const cicloParaResetar = (cicloAlvo?.trim() || (activeCiclo !== CICLO_GERAL ? activeCiclo : "")).trim();
-    if (!/^\d{4}$/.test(cicloParaResetar)) {
-      alert("Selecione ou digite um ciclo válido para excluir.");
-      return;
-    }
-    const confirmed = window.confirm(
-      `Excluir o ciclo ${cicloParaResetar}? Esta ação remove os dados vinculados ao ciclo, incluindo medições, pagamentos, aprovações, arquivos e histórico de revisão. Usuários cadastrados serão preservados.`,
-    );
-    if (!confirmed) return;
-
-    setResetandoCiclos(true);
+  // Excluir ciclo (DELETE /api/ciclos — somente ADMIN, mesmo payload de sempre). A confirmação é o
+  // modal do design system em Fornecedores → Gerenciar ciclos; devolve a mensagem de erro ou null.
+  async function excluirCiclo(cicloParaExcluir: string): Promise<string | null> {
+    if (!/^\d{4}$/.test(cicloParaExcluir)) return "Selecione um ciclo válido para excluir.";
     try {
       const res = await fetch("/api/ciclos", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirmacao: "RESETAR_CICLOS", ciclo: cicloParaResetar }),
+        body: JSON.stringify({ confirmacao: "RESETAR_CICLOS", ciclo: cicloParaExcluir }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        alert(data.error ?? "Não foi possível excluir o ciclo.");
-        return;
-      }
-      setActiveCiclo(CICLO_GERAL);
-      setCiclos([]);
+      if (!res.ok) return data.error ?? "Não foi possível excluir o ciclo.";
+      if (activeCiclo === cicloParaExcluir) handleCicloChange(CICLO_GERAL);
       await Promise.all([loadCiclos(), refreshAll(), loadAlertas()]);
-      alert(`${data.removed?.ciclos ?? 0} ciclo(s) excluído(s).`);
-    } finally {
-      setResetandoCiclos(false);
+      return null;
+    } catch {
+      return "Não foi possível excluir o ciclo.";
     }
   }
 
@@ -541,32 +529,40 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
     if (naRotaFornecedores) router.replace(value === CICLO_GERAL ? FORNECEDORES_PATH : `${FORNECEDORES_PATH}?ciclo=${value}`);
   }
 
-  async function criarCiclo() {
-    if (!novoCiclo.trim() || !/^\d{4}$/.test(novoCiclo.trim())) {
-      alert("Digite um ciclo válido no formato YYMM (ex: 2606).");
-      return;
-    }
+  // Novo ciclo (POST /api/ciclos — Medição/ADMIN, formato YYMM). Mesmo fluxo de sempre: depois de
+  // criar, recarrega a lista e passa a trabalhar no ciclo novo (sem publicá-lo no portal).
+  async function criarCicloApi(cicloValue: string): Promise<string | null> {
+    if (!/^\d{4}$/.test(cicloValue)) return "Digite um ciclo válido no formato YYMM (ex: 2606).";
     setCriandoCiclo(true);
     try {
       const res = await fetch("/api/ciclos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ciclo: novoCiclo.trim() }),
+        body: JSON.stringify({ ciclo: cicloValue }),
       });
       if (!res.ok) {
         const p = await res.json().catch(() => ({}));
-        alert(p.error ?? "Erro ao criar ciclo.");
-        return;
+        return p.error ?? "Erro ao criar ciclo.";
       }
-      const cicloValue = novoCiclo.trim();
-      setNovoCiclo("");
-      setNovoCicloOpen(false);
       const updated = await fetch("/api/ciclos");
       if (updated.ok) setCiclos(await updated.json());
-      setActiveCiclo(cicloValue);
+      handleCicloChange(cicloValue);
+      return null;
+    } catch {
+      return "Erro ao criar ciclo.";
     } finally {
       setCriandoCiclo(false);
     }
+  }
+
+  async function criarCiclo() {
+    const falha = await criarCicloApi(novoCiclo.trim());
+    if (falha) {
+      alert(falha);
+      return;
+    }
+    setNovoCiclo("");
+    setNovoCicloOpen(false);
   }
 
   const filtersBar = (() => {
@@ -800,33 +796,18 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
             onEnviarBm={enviarBm}
             onRetornarBm={retornarBm}
             onDivergenciaResolvida={loadAlertas}
+            ciclosPortal={ciclos}
+            onPublicarCiclo={publicarCicloPortal}
+            podeExcluirCiclos={isFullAdmin}
+            onCriarCiclo={criarCicloApi}
+            onExcluirCiclo={excluirCiclo}
           />
         </PageContainer>
       )}
 
       {section === "historico" && (
-        <PageContainer className="grid gap-6">
-          <PageHeader
-            eyebrow="Medições"
-            title="Histórico de Medições"
-            description="Consulte ciclos concluídos e seus registros operacionais."
-          />
-          {filtersBar}
-          <HistoricoSection
-            ciclos={ciclos}
-            activeCiclo={activeCiclo}
-            isAdmin={isAdmin}
-            novoCiclo={novoCiclo}
-            setNovoCiclo={setNovoCiclo}
-            criandoCiclo={criandoCiclo}
-            onCriarCiclo={criarCiclo}
-            onSelectCiclo={(c) => { setActiveCiclo(c); setSection("visao"); }}
-            ativandoMedicaoCiclo={ativandoMedicaoCiclo}
-            onAtivarMedicao={ativarCicloMedicao}
-            canResetCiclos={isFullAdmin}
-            resetandoCiclos={resetandoCiclos}
-            onResetCiclos={resetarCiclos}
-          />
+        <PageContainer className="grid gap-6 pb-24">
+          <HistoricoSection ciclos={ciclos} />
         </PageContainer>
       )}
 
@@ -904,147 +885,14 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
 
 // ─── HistoricoSection ─────────────────────────────────────────────────────────
 
-function HistoricoSection({
-  ciclos,
-  activeCiclo,
-  isAdmin,
-  novoCiclo,
-  setNovoCiclo,
-  criandoCiclo,
-  onCriarCiclo,
-  onSelectCiclo,
-  ativandoMedicaoCiclo,
-  onAtivarMedicao,
-  canResetCiclos,
-  resetandoCiclos,
-  onResetCiclos,
-}: {
-  ciclos: CicloEntry[];
-  activeCiclo: string;
-  isAdmin: boolean;
-  novoCiclo: string;
-  setNovoCiclo: (v: string) => void;
-  criandoCiclo: boolean;
-  onCriarCiclo: () => void;
-  onSelectCiclo: (ciclo: string) => void;
-  ativandoMedicaoCiclo: string | null;
-  onAtivarMedicao: (ciclo: string) => void;
-  canResetCiclos: boolean;
-  resetandoCiclos: boolean;
-  onResetCiclos: (ciclo?: string) => void;
-}) {
-  const dateLabel = (v: string) =>
-    new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(v));
-
+// Histórico = somente consulta/rastreabilidade. Nenhuma manutenção de ciclo aqui: Novo ciclo,
+// Selecionar, Excluir e Publicar ficam em /fornecedores (Gerenciar ciclos / Ciclo publicado). Os
+// dados vêm de GET /api/historico (Medição/ADMIN ou permissão extra HISTORICO_MEDICOES).
+function HistoricoSection({ ciclos }: { ciclos: CicloEntry[] }) {
   return (
-    // min-w-0: mesmo padrão já aplicado em EvidenciasSection — permite este container encolher
-    // dentro do ancestral flex/grid do AppShell em vez de a tabela abaixo empurrar a página.
+    // min-w-0: permite encolher dentro do ancestral flex/grid do AppShell (nunca empurra a página).
     <div className="grid min-w-0 max-w-full gap-6">
-      {isAdmin && (
-        <div className="flex w-full flex-wrap items-center justify-end gap-2">
-          <input
-            className="h-9 w-full min-w-0 flex-1 rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 sm:w-32 sm:flex-none"
-            placeholder="Ex: 2606"
-            maxLength={4}
-            value={novoCiclo}
-            onChange={(e) => setNovoCiclo(e.target.value.replace(/\D/g, ""))}
-            onKeyDown={(e) => e.key === "Enter" && onCriarCiclo()}
-          />
-          <Button className="w-full sm:w-auto" onClick={onCriarCiclo} disabled={criandoCiclo || !novoCiclo}>
-            <Plus size={14} />
-            Novo ciclo
-          </Button>
-          {canResetCiclos && (
-            <Button className="w-full sm:w-auto" variant="danger" onClick={() => onResetCiclos(novoCiclo)} disabled={resetandoCiclos || !/^\d{4}$/.test(novoCiclo)}>
-              <Trash2 size={14} />
-              {resetandoCiclos ? "Excluindo..." : "Excluir ciclo"}
-            </Button>
-          )}
-        </div>
-      )}
-
-      {/* w-full/min-w-0/max-w-full no Card (HeroUI é flex-col por padrão, ver correção já aplicada
-          em Evidências de Medição) + overflow-x-auto no wrapper DIRETO da tabela — o scroll
-          horizontal, quando necessário, fica contido aqui, nunca na página. */}
-      <Card className="w-full min-w-0 max-w-full overflow-hidden">
-        <div className="w-full max-w-full overflow-x-auto">
-        <table className="w-full min-w-[860px] border-collapse text-sm">
-          <thead>
-            <tr className="bg-[#F9FAFB]">
-              {["Ciclo", "Mês de referência", "Última atualização", ""].map((h, i) => (
-                <th
-                  key={i}
-                  className={`text-table-header border-b border-[#E5E7EB] px-4 py-3 text-[var(--muted-foreground)] ${i === 3 ? "text-right" : "text-left"}`}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ciclos.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-sm text-[#9CA3AF]">
-                  Nenhum ciclo cadastrado.
-                </td>
-              </tr>
-            )}
-            {ciclos.map((c) => {
-              const isActive = c.ciclo === activeCiclo;
-              const isMedicaoAtiva = !!c.ativoMedicao;
-              return (
-                <tr key={c.ciclo} className={`border-b border-[#F3F4F6] last:border-0 ${isActive ? "bg-[#EFF6FF]" : "hover:bg-[#FAFAFA]"}`}>
-                  <td className="px-4 py-3 font-semibold text-[#1A1A1A]">
-                    {c.ciclo}
-                    {isActive && (
-                      <span className="ml-2 inline-flex items-center rounded-md bg-[#EFF6FF] px-1.5 py-0.5 text-[10px] font-bold text-[#2563EB] ring-1 ring-[#BFDBFE]">
-                        VISUALIZANDO
-                      </span>
-                    )}
-                    {isMedicaoAtiva && (
-                      <span className="ml-2 inline-flex items-center rounded-md bg-[#F0FDF4] px-1.5 py-0.5 text-[10px] font-bold text-[#15803D] ring-1 ring-[#BBF7D0]">
-                        MEDIÇÃO ATIVA
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-[#555555]">{c.mesReferencia ?? "–"}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-[#555555]">{dateLabel(c.updatedAt)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
-                      {isAdmin && (
-                        <Button
-                          variant={isMedicaoAtiva ? "success" : "secondary"}
-                          disabled={isMedicaoAtiva || ativandoMedicaoCiclo === c.ciclo}
-                          onClick={() => onAtivarMedicao(c.ciclo)}
-                        >
-                          {isMedicaoAtiva ? "Ativo para medição" : ativandoMedicaoCiclo === c.ciclo ? "Ativando..." : "Ativar medição"}
-                        </Button>
-                      )}
-                      <Button
-                        variant={isActive ? "secondary" : "primary"}
-                        onClick={() => onSelectCiclo(c.ciclo)}
-                      >
-                        {isActive ? "Visualizando" : "Abrir ciclo"}
-                      </Button>
-                      {canResetCiclos && (
-                        <IconButton
-                          title={`Excluir ciclo ${c.ciclo}`}
-                          onClick={() => onResetCiclos(c.ciclo)}
-                          disabled={resetandoCiclos}
-                          className="border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C] hover:bg-[#FEE2E2] hover:text-[#991B1B]"
-                        >
-                          <Trash2 size={14} />
-                        </IconButton>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        </div>
-      </Card>
+      <HistoricoWorkspace ciclos={ciclos} />
     </div>
   );
 }

@@ -161,14 +161,30 @@ test("medicoes-app.tsx: temAcessoHistoricoExtra existe e gate 'historico' em VAL
   assert.ok(matches.length >= 3, `esperava pelo menos 3 usos de temAcessoHistoricoExtra gateando 'historico' (financeiro/administrativo/medicao), achou ${matches.length}`);
 });
 
-test("HistoricoSection continua recebendo isAdmin={isAdmin} e canResetCiclos={isFullAdmin} inalterados — HISTORICO_MEDICOES nunca libera Novo ciclo/Ativar medição/Excluir ciclo para quem não tem o perfil correto (item 10/11/25)", () => {
+test("Manutenção de ciclo fica em Fornecedores com as mesmas regras — HISTORICO_MEDICOES nunca libera Novo ciclo/Publicar/Excluir ciclo para quem não tem o perfil correto (item 10/11/25)", () => {
   const source = readSource("components/medicoes-app.tsx");
-  const historicoSectionCallIndex = source.indexOf("<HistoricoSection");
-  const callEnd = source.indexOf("/>", historicoSectionCallIndex);
-  const block = source.slice(historicoSectionCallIndex, callEnd);
-  assert.match(block, /isAdmin=\{isAdmin\}/);
-  assert.match(block, /canResetCiclos=\{isFullAdmin\}/);
-  assert.doesNotMatch(block, /temAcessoHistoricoExtra/, "a permissão de LEITURA do histórico nunca deve ser passada como isAdmin/canResetCiclos — essas continuam exclusivas do perfil Medição/ADMIN real");
+  const historicoCall = source.slice(source.indexOf("<HistoricoSection"), source.indexOf("/>", source.indexOf("<HistoricoSection")));
+  assert.doesNotMatch(historicoCall, /isAdmin|canResetCiclos|onCriarCiclo|onResetCiclos|temAcessoHistoricoExtra/, "o Histórico não recebe nenhuma ação de ciclo");
+
+  // /fornecedores só renderiza para Medição/ADMIN (isAdmin); excluir só para ADMIN literal.
+  const fornecedoresIndex = source.indexOf('section === "fornecedores" && isAdmin');
+  assert.ok(fornecedoresIndex > -1, "a seção Fornecedores continua restrita a isAdmin (Medição/ADMIN)");
+  const fornecedoresCall = source.slice(source.indexOf("<FornecedoresPage", fornecedoresIndex), source.indexOf("/>", source.indexOf("<FornecedoresPage", fornecedoresIndex)));
+  assert.match(fornecedoresCall, /podeExcluirCiclos=\{isFullAdmin\}/);
+  assert.doesNotMatch(fornecedoresCall, /temAcessoHistoricoExtra/, "a permissão de LEITURA do histórico nunca deve habilitar ações de ciclo");
+});
+
+test("GET /api/historico: somente leitura, guarda requireHistorico (ADMIN/MEDICAO ou HISTORICO_MEDICOES via hasPermissao)", () => {
+  const rota = readSource("app/api/historico/route.ts");
+  assert.match(rota, /export async function GET/);
+  assert.doesNotMatch(rota, /export async function (POST|PATCH|PUT|DELETE)/);
+  assert.match(rota, /requireHistorico\(\)/);
+  assert.doesNotMatch(rota, /\.(create|update|upsert|delete|createMany|updateMany|deleteMany)\(|\$executeRaw/, "a rota do Histórico nunca escreve");
+  assert.match(rota, /somenteLeitura: true/, "participação sem auto-registro de contratos");
+  const admin = readSource("lib/admin.ts");
+  const guarda = admin.slice(admin.indexOf("export async function requireHistorico"));
+  assert.match(guarda, /\["ADMIN", "MEDICAO"\]/);
+  assert.match(guarda, /hasPermissao\(user, "HISTORICO_MEDICOES"\)/);
 });
 
 test("/api/ciclos (leitura e ações críticas de manutenção de ciclo) não foi alterado por HISTORICO_MEDICOES — GET continua sem checagem de perfil (já era assim antes), POST/PATCH continuam requireAdmin(), DELETE continua ADMIN literal", () => {

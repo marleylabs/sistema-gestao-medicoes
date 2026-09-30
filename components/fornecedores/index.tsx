@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Plus, Search } from "lucide-react";
+import { ArrowRight, CalendarRange, Plus, Search } from "lucide-react";
 import { contractParticipation, MapaItemActions, MapaPagamentoEditor, type Revisao } from "@/components/mapa-pagamento-table";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
 import { formatCicloLabel } from "@/lib/ciclo";
+import { CicloPublicadoControl, type CicloPortalEntry } from "@/components/fornecedores/ciclo-publicado";
+import { GerenciarCiclosPanel, type CicloGestaoEntry } from "@/components/fornecedores/gerenciar-ciclos";
 import { getMapaPagamentoStatusMeta, getSgcDisplayStatusMeta, type SgcDisplayStatus, type SgcStatusEntry } from "@/lib/sgc-display-status";
 import { FornecedorDrawer } from "./fornecedor-drawer";
 import { displayStatusOf, FornecedoresKpis } from "./fornecedores-kpis";
@@ -44,6 +46,11 @@ export function FornecedoresPage({
   onEnviarBm,
   onRetornarBm,
   onDivergenciaResolvida,
+  ciclosPortal = [],
+  onPublicarCiclo,
+  podeExcluirCiclos = false,
+  onCriarCiclo,
+  onExcluirCiclo,
 }: {
   itens: MapaPagamentoItem[];
   contratos: ContratoResumo[];
@@ -61,7 +68,19 @@ export function FornecedoresPage({
   onEnviarBm: (colaboradorCodigo: string) => Promise<void>;
   onRetornarBm: (sgcId: string) => Promise<void>;
   onDivergenciaResolvida: () => void;
+  /** Ciclos com o flag do portal (GET /api/ciclos) — base do controle "Ciclo publicado". */
+  ciclosPortal?: (CicloPortalEntry & CicloGestaoEntry)[];
+  /** Publica o ciclo no portal (mesma ação de sempre); devolve a mensagem de erro ou null. */
+  onPublicarCiclo?: (ciclo: string) => Promise<string | null>;
+  /** Excluir ciclo — somente ADMIN (mesma regra do DELETE /api/ciclos). */
+  podeExcluirCiclos?: boolean;
+  /** Novo ciclo (POST /api/ciclos, Medição/ADMIN); devolve a mensagem de erro ou null. */
+  onCriarCiclo?: (ciclo: string) => Promise<string | null>;
+  /** Exclui o ciclo (DELETE /api/ciclos, ADMIN); devolve a mensagem de erro ou null. */
+  onExcluirCiclo?: (ciclo: string) => Promise<string | null>;
 }) {
+  const [gerenciandoCiclos, setGerenciandoCiclos] = useState(false);
+  const podeGerenciarCiclos = isAdmin && !!onCriarCiclo && !!onExcluirCiclo;
   const [search, setSearch] = useState("");
   const [statusFiltro, setStatusFiltro] = useState("");
   const [alocacaoFiltro, setAlocacaoFiltro] = useState("");
@@ -149,7 +168,28 @@ export function FornecedoresPage({
   return (
     <div className="grid gap-6 pb-24">
       <div className="flex flex-col justify-between gap-4 border-b border-[var(--border)] pb-5 sm:flex-row sm:items-end">
-        <PageHeader eyebrow="Operação" title="Fornecedores" description="Gestão operacional dos fornecedores e das medições do ciclo." />
+        <div className="grid min-w-0 gap-3">
+          <PageHeader eyebrow="Operação" title="Fornecedores" description="Gestão operacional dos fornecedores e das medições do ciclo." />
+          {/* Ciclo publicado no portal ≠ ciclo selecionado nesta tela (o seletor nunca publica). */}
+          {(ciclosPortal.length > 0 || podeGerenciarCiclos) && (
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              {ciclosPortal.length > 0 && (
+                <CicloPublicadoControl
+                  ciclos={ciclosPortal}
+                  cicloSelecionado={ciclo}
+                  podePublicar={isAdmin && !!onPublicarCiclo}
+                  onPublicar={onPublicarCiclo ?? (async () => "Ação indisponível.")}
+                />
+              )}
+              {podeGerenciarCiclos && (
+                <Button variant="ghost" onClick={() => setGerenciandoCiclos(true)}>
+                  <CalendarRange size={14} />
+                  Gerenciar ciclos
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
         {isAdmin && (
           // "GERAL" nunca é um ciclo real — mesma trava de sempre (o backend também rejeita).
           <div ref={adicionarRef} className="shrink-0" title={ciclo === CICLO_GERAL ? "Selecione um ciclo específico (não \"Geral\") para cadastrar um novo pagamento." : undefined}>
@@ -288,6 +328,18 @@ export function FornecedoresPage({
         <div className="fixed bottom-5 right-5 z-[60] rounded-lg bg-[#16A34A] px-4 py-3 text-sm font-semibold text-white shadow-lg">
           {toast}
         </div>
+      )}
+
+      {gerenciandoCiclos && podeGerenciarCiclos && (
+        <GerenciarCiclosPanel
+          ciclos={ciclosPortal}
+          cicloSelecionado={ciclo}
+          podeExcluir={podeExcluirCiclos}
+          onSelecionar={(c) => { onCicloChange(c); setGerenciandoCiclos(false); }}
+          onCriar={onCriarCiclo!}
+          onExcluir={onExcluirCiclo!}
+          onClose={() => setGerenciandoCiclos(false)}
+        />
       )}
     </div>
   );
