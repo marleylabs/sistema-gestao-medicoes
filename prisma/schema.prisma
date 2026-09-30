@@ -31,8 +31,10 @@ model Usuario {
   chatParticipantes ChatParticipante[]
   chatMensagens     ChatMensagem[]
   permissoesExtras  UsuarioPermissao[] @relation("PermissoesDoUsuario")
+  sgcLogs           SgcLog[]           @relation("SgcLogUsuario")
+  divergenciasResolvidas DivergenciaMedicao[] @relation("DivergenciaResolvidaPor")
 
-  @@index([ativo])
+  @@index([ativo], map: "idx_usuarios_ativo")
   @@map("usuarios")
 }
 
@@ -64,7 +66,7 @@ model ChatConversa {
   createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime           @default(now()) @map("updated_at") @db.Timestamptz
 
-  @@index([updatedAt(sort: Desc)])
+  @@index([updatedAt(sort: Desc)], map: "idx_chat_conversas_updated_at")
   @@map("chat_conversas")
 }
 
@@ -75,11 +77,11 @@ model ChatParticipante {
   ultimoLidoAt DateTime?   @map("ultimo_lido_at") @db.Timestamptz
   createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz
 
-  conversa ChatConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
-  usuario  Usuario      @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  conversa ChatConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usuario  Usuario      @relation(fields: [usuarioId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([conversaId, usuarioId])
-  @@index([usuarioId])
+  @@index([usuarioId], map: "idx_chat_participantes_usuario_id")
   @@map("chat_participantes")
 }
 
@@ -96,10 +98,10 @@ model ChatMensagem {
   origem         String?      @unique
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
 
-  conversa ChatConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
-  autor    Usuario      @relation(fields: [autorId], references: [id], onDelete: Cascade)
+  conversa ChatConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  autor    Usuario      @relation(fields: [autorId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([conversaId, createdAt])
+  @@index([conversaId, createdAt], map: "idx_chat_mensagens_conversa_created")
   @@map("chat_mensagens")
 }
 
@@ -134,10 +136,13 @@ model SgcAprovacaoMedicao {
   updatedAt               DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
   @@unique([colaboradorCodigo, ciclo], map: "sgc_aprovacoes_medicao_codigo_ciclo_key")
-  @@index([status])
-  @@index([ciclo])
-  @@index([revisaoSolicitadaAt])
-  @@index([statusConferencia])
+  @@index([status], map: "idx_sgc_aprovacoes_medicao_status")
+  @@index([ciclo], map: "idx_sgc_aprovacoes_medicao_ciclo")
+  @@index([revisaoSolicitadaAt], map: "idx_sgc_aprovacoes_medicao_revisao")
+  @@index([statusConferencia], map: "idx_sgc_aprovacoes_medicao_status_conf")
+  logs         SgcLog[]
+  divergencias DivergenciaMedicao[]
+
   @@map("sgc_aprovacoes_medicao")
 }
 
@@ -176,9 +181,13 @@ model DivergenciaMedicao {
   updatedAt                    DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
   @@unique([sgcId, nrVale], map: "divergencias_medicao_sgc_nrvale_key")
-  @@index([colaboradorCodigo, ciclo])
-  @@index([status])
-  @@index([sgcId])
+  @@index([colaboradorCodigo, ciclo], map: "idx_divergencias_medicao_colaborador")
+  @@index([status], map: "idx_divergencias_medicao_status")
+  @@index([sgcId], map: "idx_divergencias_medicao_sgc")
+  /// FKs físicas (database/schema.sql) — modeladas só para o schema refletir o banco real.
+  sgc          SgcAprovacaoMedicao @relation(fields: [sgcId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "divergencias_medicao_sgc_id_fkey")
+  resolvidoPor Usuario?            @relation("DivergenciaResolvidaPor", fields: [resolvidoPorUsuarioId], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "divergencias_medicao_resolvido_por_usuario_id_fkey")
+
   @@map("divergencias_medicao")
 }
 
@@ -222,7 +231,9 @@ model Profissional {
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
-  @@index([deletedAt])
+  @@index([deletedAt], map: "idx_profissionais_deleted_at")
+  @@index([codigo], map: "idx_profissionais_codigo")
+  @@index([statusColaborador], map: "idx_profissionais_status_colaborador")
   @@map("profissionais")
 }
 
@@ -290,9 +301,9 @@ model CadastroFornecedor {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
-  @@index([colaboradorCodigo])
-  @@index([cnpjNormalizado])
-  @@index([final])
+  @@index([colaboradorCodigo], map: "idx_cadastros_fornecedores_colaborador_codigo")
+  @@index([cnpjNormalizado], map: "idx_cadastros_fornecedores_cnpj_normalizado")
+  @@index([final], map: "idx_cadastros_fornecedores_final")
   @@map("cadastros_fornecedores")
 }
 
@@ -342,12 +353,12 @@ model Medicao {
   createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime      @default(now()) @map("updated_at") @db.Timestamptz
 
-  @@index([numeroMedicao])
-  @@index([dataCadastro])
-  @@index([idProjeto])
-  @@index([idCoordenador])
-  @@index([idProfissional])
-  @@index([ciclo])
+  @@index([numeroMedicao], map: "idx_medicoes_numero_medicao")
+  @@index([dataCadastro], map: "idx_medicoes_data_cadastro")
+  @@index([idProjeto], map: "idx_medicoes_id_projeto")
+  @@index([idCoordenador], map: "idx_medicoes_id_coordenador")
+  @@index([idProfissional], map: "idx_medicoes_id_profissional")
+  @@index([ciclo], map: "idx_medicoes_ciclo")
   @@map("medicoes")
 }
 
@@ -389,9 +400,9 @@ model MapaPagamentoItem {
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
-  @@index([ciclo])
-  @@index([projetistaCodigo])
-  @@index([ato])
+  @@index([ciclo], map: "idx_mapa_pagamento_itens_ciclo")
+  @@index([projetistaCodigo], map: "idx_mapa_pagamento_itens_projetista")
+  @@index([ato], map: "idx_mapa_pagamento_itens_ato")
   @@map("mapa_pagamento_itens")
 }
 
@@ -406,8 +417,8 @@ model BmAuxMedicao {
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt           DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
-  @@index([responsavelCodigo])
-  @@index([ciclo])
+  @@index([responsavelCodigo], map: "idx_bm_aux_medicoes_responsavel_codigo")
+  @@index([ciclo], map: "idx_bm_aux_medicoes_ciclo")
   @@map("bm_aux_medicoes")
 }
 
@@ -426,7 +437,7 @@ model Contrato {
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt  DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
-  @@index([ativo])
+  @@index([ativo], map: "idx_contratos_ativo")
   @@map("contratos")
 }
 
@@ -449,9 +460,13 @@ model SgcLog {
   lidoAt            DateTime? @map("lido_at") @db.Timestamptz
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
-  @@index([sgcId])
-  @@index([colaboradorCodigo, ciclo])
-  @@index([createdAt(sort: Desc)])
+  @@index([sgcId], map: "idx_sgc_logs_sgc_id")
+  @@index([colaboradorCodigo, ciclo], map: "idx_sgc_logs_colaborador_ciclo")
+  @@index([createdAt(sort: Desc)], map: "idx_sgc_logs_created_at")
+  /// FKs físicas (database/schema.sql) — modeladas só para o schema refletir o banco real.
+  sgc     SgcAprovacaoMedicao? @relation(fields: [sgcId], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "sgc_logs_sgc_id_fkey")
+  usuario Usuario?             @relation("SgcLogUsuario", fields: [usuarioId], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "sgc_logs_usuario_id_fkey")
+
   @@map("sgc_logs")
 }
 
@@ -471,9 +486,9 @@ model AdminAuditLog {
   metadata       Json?
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  @@index([action])
-  @@index([targetCodigo])
-  @@index([createdAt(sort: Desc)])
+  @@index([action], map: "idx_admin_audit_logs_action")
+  @@index([targetCodigo], map: "idx_admin_audit_logs_target_codigo")
+  @@index([createdAt(sort: Desc)], map: "idx_admin_audit_logs_created_at")
   @@map("admin_audit_logs")
 }
 
@@ -482,8 +497,8 @@ model EmailLog {
   event              String
   entityType         String?  @map("entity_type")
   entityId           String?  @map("entity_id")
-  intendedRecipients String[] @map("intended_recipients")
-  actualRecipients   String[] @map("actual_recipients")
+  intendedRecipients String[] @default([]) @map("intended_recipients")
+  actualRecipients   String[] @default([]) @map("actual_recipients")
   testMode           Boolean  @map("test_mode")
   subject            String
   provider           String   @default("resend")
@@ -510,6 +525,6 @@ model EtlExecucao {
   resultado     Json?
   erro          String?
 
-  @@index([ciclo])
+  @@index([ciclo], map: "idx_etl_execucoes_ciclo")
   @@map("etl_execucoes")
 }
