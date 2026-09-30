@@ -140,12 +140,37 @@ git push origin layout2.0 feature/figma-redesign
 - [ ] plano de rollback revisado
 - [ ] janela de deploy definida
 
-## 8. Depois das migrations: dados que não vêm de migration
+## 8. Depois das migrations: identidades e aliases
 
-- `profissional_aliases` nasce **vazia** em produção. No DEV existem 31 aliases aprovados (inclusive
-  CRISTIANO JEFERSON e MAURICIO SPINDOLA), cadastrados pelo `scripts/dev-profissional-aliases.ts`,
-  que é travado para o banco DEV local. Produção precisa de um procedimento próprio (dry-run, plano
-  aprovado, backup) antes da primeira importação que dependa de aliases — sem eles, a importação
-  bloqueia os nomes não resolvidos, como projetado.
-- Mapa de pagamento: produção soma R$ 724.320,67 e o DEV R$ 724.020,67 — diferença exata de
-  R$ 300,00, a mesma da pendência de negócio do Cristiano (R$ 8.640,00 × R$ 8.340,00).
+### Achado do dry-run na cópia de produção (2026-09-30)
+
+- Produção tem 48 CadastroFornecedor (código = nome completo, ex. `ADILSON EVERALDO GAIO`), mas
+  **nenhum Profissional canônico correspondente**: os 90 Profissionais são legados do ETL com o
+  nome curto da planilha (`ADILSON GAIO`), aos quais as medições históricas estão ligadas.
+- Causa provável: o `DELETE /api/ciclos` da versão em produção (`952f15e`) apaga Profissionais
+  "órfãos" sem a proteção de cadastro; os canônicos criados na importação dos cadastros (09/09) não
+  tinham medições e foram removidos numa exclusão de ciclo — o mesmo bug corrigido em `4446786`.
+- Consequência: `scripts/prod-profissional-aliases.ts` rejeita os 31 candidatos do DEV
+  ("código canônico não existe em produção") — corretamente, pois o procedimento nunca cria
+  Profissional. **Antes dos aliases é preciso restaurar os Profissionais canônicos** (decisão
+  pendente: reimportar a Consulta PJ na versão nova, que faz o upsert do canônico por cadastro, ou
+  um procedimento de reconciliação aprovado) — ensaiar na cópia de homologação primeiro.
+- Rótulos de produção que exigem atenção (seção A do dry-run): ENGEMELT e GH ENGENHARIA (empresariais),
+  JOSÉ EVERTON, LEANDRO ALEIXO e PAULO SOUZA (casos especiais); e registros que não são pessoas
+  (números de GRD/documentos e "HORAS DE ESTUDO…") gravados como Profissional pelo ETL antigo.
+
+### Procedimento (`npm run identities:aliases:prod`)
+
+- Dry-run (padrão): transação READ ONLY; lista rótulos operacionais, compara com Profissional
+  canônico, CadastroFornecedor e Usuario; classifica candidatos (APROVAR/REVISAR/REJEITAR) e gera
+  fingerprint dos APROVAR. Fuzzy é só sugestão; ambíguo, empresarial e casos especiais nunca são APROVAR.
+- APPLY: `ALLOW_PROD_ALIAS_APPLY=true`, `--confirm APLICAR_ALIASES_PRODUCAO`, `--alvo <host:porta/banco>`
+  igual à DATABASE_URL, `--fingerprint` do dry-run, `ALIAS_APPLY_ADMIN` ADMIN ativo, lista 100% APROVAR,
+  transação, idempotente, auditoria em `admin_audit_logs`, contagem antes/depois. Nunca cria/exclui Profissional.
+- Só roda depois das migrations, do backup, da restauração dos canônicos e da aprovação da lista,
+  em janela controlada.
+
+### Mapa de pagamento
+
+Produção soma R$ 724.320,67 e o DEV R$ 724.020,67 — diferença exata de R$ 300,00, a mesma da
+pendência de negócio do Cristiano (R$ 8.640,00 × R$ 8.340,00).
