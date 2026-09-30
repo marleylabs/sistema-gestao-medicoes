@@ -499,10 +499,18 @@ function PaymentModal({
       .filter((p) =>
         (p.codigo ?? "").toLowerCase().includes(q) ||
         (p.nome ?? "").toLowerCase().includes(q) ||
-        (p.nomeCompleto ?? "").toLowerCase().includes(q),
+        (p.nomeCompleto ?? "").toLowerCase().includes(q) ||
+        !!aliasEncontrado(p, q),
       )
       .slice(0, 8);
   }, [codigoQuery, profissionaisFrescos]);
+
+  /** Alias pelo qual a identidade foi encontrada — só quando nenhum campo próprio casou (apresentação). */
+  function aliasEncontrado(p: Profissional, q: string) {
+    if (!q) return null;
+    if ((p.codigo ?? "").toLowerCase().includes(q) || (p.nome ?? "").toLowerCase().includes(q) || (p.nomeCompleto ?? "").toLowerCase().includes(q)) return null;
+    return (p.aliases ?? []).find((a) => a.toLowerCase().includes(q)) ?? null;
+  }
 
   function selectProfissional(p: Profissional) {
     // CORREÇÃO CRÍTICA: fornecedores legados sem `Profissional.codigo` (import antigo nunca
@@ -763,6 +771,9 @@ function PaymentModal({
                                 <span className="rounded border border-[#f2dbb7] bg-[var(--warning-soft)] px-1.5 py-0.5 font-semibold text-[#92400E]">Legado · sem cadastro administrativo</span>
                               )}
                               <span className="font-technical text-[#71717A]">{p.codigo || p.nome}</span>
+                              {aliasEncontrado(p, codigoQuery.trim().toLowerCase()) && (
+                                <span className="text-[#71717A]" data-testid="sugestao-alias">· Encontrado por: {aliasEncontrado(p, codigoQuery.trim().toLowerCase())}</span>
+                              )}
                             </span>
                           </button>
                         ))}

@@ -52,9 +52,11 @@ export async function getColaboradorCodigoAliases(usuario: string | null | undef
   const profissional = codigo
     ? await prisma.profissional.findUnique({
         where: { codigo, deletedAt: null },
-        select: { codigo: true, nome: true, nomeCompleto: true, cnpj: true },
+        select: { codigo: true, nome: true, nomeCompleto: true, cnpj: true, aliases: { where: { ativo: true }, select: { alias: true } } },
       })
     : null;
+  // Aliases operacionais formais (ProfissionalAlias) — mesma identidade, grafias da origem externa.
+  profissional?.aliases.forEach((a) => codigos.add(a.alias));
   const profissionalCnpj = onlyDigits(decryptSensitive(profissional?.cnpj));
 
   const cadastroDireto = cadastroPorUsuario ?? (codigo

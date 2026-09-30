@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { decryptSensitive } from "@/lib/encryption";
 import { isDeletedFornecedorIdentityName } from "@/lib/cadastro-fornecedor";
+import { resolverIdentidadeOperacional } from "@/lib/profissional-identidade";
 
 export type ResolvedRecipient = {
   email: string | null;
@@ -20,10 +21,25 @@ export async function resolveFornecedorEmail(colaboradorCodigo: string, nomeFall
   if (await isDeletedFornecedorIdentityName(colaboradorCodigo)) {
     return { email: null, nome: nomeFallback || colaboradorCodigo, missing: true };
   }
-  const profissional = await prisma.profissional.findUnique({
+  let profissional = await prisma.profissional.findUnique({
     where: { codigo: colaboradorCodigo },
     select: { email: true, nome: true, nomeCompleto: true, deletedAt: true },
   });
+  if (!profissional) {
+    // Código recebido não é um código canônico: resolve pelo MESMO resolver central (alias
+    // operacional → identidade canônica; legado sem código → o próprio Profissional legado).
+    // Nunca por CNPJ, nunca por nome parecido.
+    const identidade = await resolverIdentidadeOperacional(colaboradorCodigo);
+    if (identidade.status === "RESOLVIDO" && identidade.via === "ALIAS" && identidade.codigoCanonico !== colaboradorCodigo) {
+      return resolveFornecedorEmail(identidade.codigoCanonico, nomeFallback);
+    }
+    if (identidade.status === "RESOLVIDO" && identidade.via === "NOME_LEGADO") {
+      profissional = await prisma.profissional.findUnique({
+        where: { id: identidade.profissionalId },
+        select: { email: true, nome: true, nomeCompleto: true, deletedAt: true },
+      });
+    }
+  }
   // O estado explícito prevalece inclusive sobre um cadastro legado ainda existente.
   if (profissional?.deletedAt) {
     return { email: null, nome: nomeFallback || colaboradorCodigo, missing: true };
