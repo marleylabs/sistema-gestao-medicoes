@@ -131,7 +131,7 @@ export function FornecedoresTable({
           const codigo = item.projetistaCodigo ?? "";
           return (
             <li key={item.id}>
-              <button type="button" onClick={() => onOpen(item)} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
+              <button type="button" onClick={() => onOpen(item)} aria-label={`Abrir detalhe de ${item.responsavel ?? codigo ?? "fornecedor"}`} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-[var(--foreground)]">{item.responsavel ?? codigo ?? "–"}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2">

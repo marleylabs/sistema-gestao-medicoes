@@ -34,10 +34,10 @@ function Linha({ label, onOpen, children }: { label: string; onOpen: () => void;
   );
 }
 
-function ItemMobile({ onOpen, titulo, subtitulo, meta, valor }: { onOpen: () => void; titulo: string; subtitulo?: ReactNode; meta?: ReactNode; valor?: ReactNode }) {
+function ItemMobile({ onOpen, label, titulo, subtitulo, meta, valor }: { onOpen: () => void; label: string; titulo: string; subtitulo?: ReactNode; meta?: ReactNode; valor?: ReactNode }) {
   return (
     <li>
-      <button type="button" onClick={onOpen} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
+      <button type="button" onClick={onOpen} aria-label={label} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-[var(--foreground)]">{titulo}</p>
           {subtitulo && <p className="truncate text-[12px] text-[var(--muted-foreground)]">{subtitulo}</p>}
@@ -103,6 +103,7 @@ export function MedicoesLista({ itens, nomesContrato, onOpen }: { itens: Medicao
           <ItemMobile
             key={m.key}
             onOpen={() => onOpen(m)}
+            label={`Abrir medição de ${m.nome} no ciclo ${m.ciclo}`}
             titulo={m.nome}
             subtitulo={<><span className="font-technical">{m.ciclo}</span> · {m.empresa ?? "–"}</>}
             meta={<Badge variant={m.status.badge}>{m.status.label}</Badge>}
@@ -151,6 +152,7 @@ export function FornecedoresLista({ itens, onOpen }: { itens: FornecedorHistoric
           <ItemMobile
             key={f.codigo}
             onOpen={() => onOpen(f)}
+            label={`Abrir histórico de ${f.nome}`}
             titulo={f.nome}
             subtitulo={f.empresa ?? "–"}
             meta={<span className="text-[11px] text-[var(--muted-foreground)]">{f.ciclos.length} ciclo(s) · última {f.ultimo}</span>}
@@ -196,6 +198,7 @@ export function ContratosLista({ itens, onOpen }: { itens: ContratoHistorico[]; 
           <ItemMobile
             key={c.id}
             onOpen={() => onOpen(c)}
+            label={`Abrir contrato ${c.nome}`}
             titulo={c.nome}
             meta={<span className="text-[11px] text-[var(--muted-foreground)]">{c.fornecedores.length} fornecedor(es) · {c.ciclos.length} ciclo(s)</span>}
             valor={<BlurValue>{brl.format(c.valorAtribuido)}</BlurValue>}

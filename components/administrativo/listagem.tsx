@@ -167,7 +167,7 @@ export function FornecedoresCadastroTable({
                 <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => onToggleSelected(item.id)} aria-label={`Selecionar ${item.responsavel}`} className="h-4 w-4 accent-[var(--primary)]" />
               </label>
             )}
-            <button type="button" onClick={() => onOpen(item)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
+            <button type="button" onClick={() => onOpen(item)} aria-label={`Abrir cadastro de ${item.responsavel}`} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-[var(--foreground)]">{item.responsavel}</p>
                 <p className="truncate text-[12px] text-[var(--muted-foreground)]">{item.razaoSocial || "–"}</p>
@@ -232,7 +232,7 @@ export function FuncionariosTable({ itens, onOpen }: { itens: Funcionario[]; onO
       <ul className="divide-y divide-[#EFEFED] md:hidden" data-testid="administrativo-funcionarios-lista-mobile">
         {itens.map((item) => (
           <li key={item.id}>
-            <button type="button" onClick={() => onOpen(item)} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
+            <button type="button" onClick={() => onOpen(item)} aria-label={`Abrir cadastro de ${item.nome}`} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-[var(--foreground)]">{item.nome}</p>
                 <p className="truncate text-[12px] text-[var(--muted-foreground)]">{PERFIL_LABEL[item.perfil] ?? item.perfil} · <span className="font-technical">{item.usuario}</span></p>

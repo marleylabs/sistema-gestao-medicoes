@@ -104,7 +104,7 @@ export function EvidenciasWorkspace({
       </div>
 
       {itens !== null && (
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4" data-testid="evidencias-kpis">
+        <div className="grid min-w-0 grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4" data-testid="evidencias-kpis">
           <DashboardKpiCard compact title="BMs disponíveis" value={kpis.total} detail="Enviados ao fornecedor neste recorte" icon={<FileCheck2 size={17} />} />
           <DashboardKpiCard compact title="Aguardando fornecedor" value={kpis.aguardando} detail="BM enviado, sem retorno ainda" icon={<Clock3 size={17} />} tone={kpis.aguardando ? "warning" : "neutral"} />
           <DashboardKpiCard compact title="Divergência ou revisão" value={kpis.divergencia + kpis.revisao} detail={`${kpis.divergencia} divergência(s) · ${kpis.revisao} revisão(ões)`} icon={<AlertTriangle size={17} />} tone={kpis.divergencia + kpis.revisao ? "danger" : "neutral"} />

@@ -100,7 +100,7 @@ export function FinanceiroTable({ itens, onOpen }: { itens: FinanceiroItem[]; on
           const status = statusInfo(item.status);
           return (
             <li key={item.id}>
-              <button type="button" onClick={() => onOpen(item)} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
+              <button type="button" onClick={() => onOpen(item)} aria-label={`Abrir pagamento de ${item.colaboradorNome}`} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-[var(--foreground)]">{item.colaboradorNome}</p>
                   <p className="truncate text-[12px] text-[var(--muted-foreground)]">{item.razaoSocial ?? item.colaboradorCodigo}</p>

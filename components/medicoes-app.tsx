@@ -620,9 +620,9 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
               <p className="mb-3 text-sm font-bold text-[#1A1A1A]">Filtros</p>
 
               <div className="grid gap-3">
-                {/* Ciclo ativo */}
+                {/* Ciclo de trabalho (contexto interno; o ciclo publicado no portal fica em /fornecedores) */}
                 <div className="grid gap-1.5">
-                  <span className="text-label text-[var(--muted-foreground)]">Ciclo ativo</span>
+                  <span className="text-label text-[var(--muted-foreground)]">Ciclo</span>
                   <div className="flex items-center gap-1.5">
                     <Select
                       className="flex-1"
