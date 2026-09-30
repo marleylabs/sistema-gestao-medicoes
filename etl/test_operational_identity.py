@@ -82,6 +82,37 @@ def test_preflight_resolves_alias_and_legacy() -> None:
     assert summary["aliases_utilizados"] == ["RONALD LEAL -> RONALD RAFAEL SILVA LEAL"]
 
 
+def test_bm_aux_alias_reports_alias_via_and_uses_canonical_cadastro() -> None:
+    """Fornecedor de Documentos Auxiliares escrito com o nome curto (ex.: CRISTIANO JEFERSON): o alias
+    leva ao código canônico, a fonte DOCUMENTOS_AUXILIARES é achada por igualdade (sem fuzzy), a via
+    reportada é ALIAS e o mapa gerado aplica a condição condicional do cadastro canônico."""
+    from decimal import Decimal
+    from ingest_medicoes import bm_aux_people, resolve_condicao_fixa, uses_documentos_auxiliares
+
+    canonico = {"id": "p-cris", "codigo": "CRISTIANO JEFERSON DA COSTA SILVA", "nome": "CRISTIANO JEFERSON DA COSTA SILVA"}
+    r = OperationalIdentityResolver([canonico], [{"profissional_id": "p-cris", "alias": "CRISTIANO JEFERSON", "alias_normalizado": "CRISTIANO JEFERSON"}])
+    codes = r.apply_to_canonical_codes({})
+    fonte = {"cristiano jeferson da costa silva": "DOCUMENTOS_AUXILIARES"}
+    assert codes["cristiano jeferson"] == "CRISTIANO JEFERSON DA COSTA SILVA"
+    assert uses_documentos_auxiliares("CRISTIANO JEFERSON", codes, fonte) is True
+    assert bm_aux_people({"responsavel": "CRISTIANO JEFERSON", "auxiliar": None}, codes, fonte) == [("RESPONSAVEL", "CRISTIANO JEFERSON DA COSTA SILVA")]
+
+    bm = pd.DataFrame([{"Responsavel": "CRISTIANO JEFERSON", "Ciclo": "2608"}])
+    summary = assert_operational_identities_resolved(pd.DataFrame(), pd.DataFrame(), bm, pd.DataFrame(), set(), codes, fonte, "2608", r, {},
+                                                     "Documentos", None, "Documentos Auxiliares", None)
+    assert summary["identidades_por_via"] == {"ALIAS": 1}
+    assert summary["aliases_utilizados"] == ["CRISTIANO JEFERSON -> CRISTIANO JEFERSON DA COSTA SILVA"]
+
+    cadastros = {"cristiano jeferson da costa silva": {"colaborador_codigo": "CRISTIANO JEFERSON DA COSTA SILVA", "tipo_condicao_fixa": "CONDICIONAL_PRODUCAO",
+                                                       "valor_condicao_fixa_com_producao": "8340", "valor_condicao_fixa_sem_producao": "12000"}}
+    cad = find_cadastro_for_generated_payment(cadastros, {"codigo": "CRISTIANO JEFERSON DA COSTA SILVA", "nome": "CRISTIANO JEFERSON DA COSTA SILVA"}, [])
+    assert cad is cadastros["cristiano jeferson da costa silva"]
+    assert resolve_condicao_fixa(cad, True) == Decimal("8340") and resolve_condicao_fixa(cad, False) == Decimal("12000")
+    # Sem o alias, o nome curto nunca recebe o cadastro (só sugestão).
+    sug: list = []
+    assert find_cadastro_for_generated_payment(cadastros, {"codigo": "CRISTIANO JEFERSON", "nome": "CRISTIANO JEFERSON"}, sug) is None
+
+
 def test_preflight_blocks_unresolved_and_ambiguous_with_details() -> None:
     cadastros = {"x": {"colaborador_codigo": "PAULO ROBERTO SOUZA", "responsavel": "PAULO ROBERTO SOUZA"}}
     rows = [normal_row(PROJETISTA="PAULO SOUZA"), normal_row(PROJETISTA="PAULO SOUZA"), normal_row(PROJETISTA="AMBIGUO"), normal_row(PROJETISTA="RONALD LEAL")]

@@ -97,6 +97,26 @@ async function main() {
     assert.match(amb.error ?? "", /Mais de um fornecedor/);
     assert.deepEqual(await resolveProjetistaCodigo(legado), { codigo: legado });
 
+    // Legado operacional artificial (artefato do ETL antigo: código = nome, sem dados/cadastro/usuário)
+    // é o ÚNICO Profissional com código que o utilitário de alias aceita substituir e o reset remove.
+    const { isLegadoOperacionalArtificial } = await import("./lib/legado-artificial");
+    const artificial = await prismaTest.profissional.create({ data: { nome: `ARTIFICIAL ${S}`, codigo: `ARTIFICIAL ${S}` } });
+    const comNomeCompleto = await prismaTest.profissional.create({ data: { nome: `COM NOME ${S}`, codigo: `COM NOME ${S}`, nomeCompleto: `COM NOME COMPLETO ${S}` } });
+    const codigoDiferente = await prismaTest.profissional.create({ data: { nome: `NOME X ${S}`, codigo: `CODIGO Y ${S}` } });
+    const comUsuario = await prismaTest.profissional.create({ data: { nome: `COM USUARIO ${S}`, codigo: `COM USUARIO ${S}` } });
+    ids.push(artificial.id, comNomeCompleto.id, codigoDiferente.id, comUsuario.id);
+    const usuario = await prismaTest.usuario.create({ data: { usuario: `P9${S}`.slice(0, 8), nome: `COM USUARIO ${S}`, senhaHash: "x", perfil: "COLABORADOR" } });
+    try {
+      assert.equal(await isLegadoOperacionalArtificial(prismaTest, artificial.id), true);
+      assert.equal(await isLegadoOperacionalArtificial(prismaTest, pCanonico.id), false); // canônico com cadastro, mesmo com código = nome
+      assert.equal(await isLegadoOperacionalArtificial(prismaTest, comNomeCompleto.id), false);
+      assert.equal(await isLegadoOperacionalArtificial(prismaTest, codigoDiferente.id), false);
+      assert.equal(await isLegadoOperacionalArtificial(prismaTest, comUsuario.id), false);
+      assert.equal(await isLegadoOperacionalArtificial(prismaTest, pExcluido.id), false);
+    } finally {
+      await prismaTest.usuario.delete({ where: { id: usuario.id } });
+    }
+
     console.log("PASS: resolver de identidade (código, alias, ambíguo, legado, não resolvido, excluído, inativo), paridade de normalização, e-mail e novo pagamento por alias.");
   } finally {
     await prismaTest.cadastroFornecedor.deleteMany({ where: { id: { in: cadastroIds } } });
