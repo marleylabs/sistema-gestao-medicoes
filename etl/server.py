@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-from ingest_medicoes import InvalidMeasurementRowError, ingest
+from ingest_medicoes import InvalidMeasurementRowError, UnresolvedIdentityError, ingest
 
 DATABASE_URL = os.environ.get("ETL_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
 PORT = int(os.environ.get("ETL_SERVER_PORT", "4000"))
@@ -66,6 +66,12 @@ def run_etl(file_bytes: bytes, ciclo: str | None) -> None:
         _last_error_details = error.invalid_rows
         _last_result = None
         print(json.dumps({"event": "etl_validation_rejected", **error.to_dict()}, ensure_ascii=False), flush=True)
+    except UnresolvedIdentityError as error:
+        _last_error = str(error)
+        _last_error_type = "validation"
+        _last_error_details = error.details
+        _last_result = None
+        print(json.dumps({"event": "etl_identity_rejected", **error.to_dict()}, ensure_ascii=False), flush=True)
     except ValueError as error:
         _last_error = str(error)
         _last_error_type = "validation"

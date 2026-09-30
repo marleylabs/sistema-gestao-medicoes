@@ -1241,12 +1241,34 @@ type EtlInvalidRow = {
   negativeFields: Record<string, string>;
 };
 
+/** Identidade operacional da planilha que não resolveu para um Profissional (etl UnresolvedIdentityError). */
+type EtlUnresolvedIdentity = {
+  valor: string;
+  origem: string;
+  ciclo?: string;
+  status: "NAO_RESOLVIDO" | "AMBIGUO" | "CONFLITO_ALIAS";
+  candidatos?: string[];
+  ocorrencias: number;
+  linhas: number[];
+  sugestoesCadastro?: string[];
+};
+
 type EtlStatus = {
   running: boolean;
-  lastResult: Record<string, number> | null;
+  lastResult: Record<string, unknown> | null;
   lastError: string | null;
   lastErrorType?: "validation" | "internal" | null;
-  lastErrorDetails?: EtlInvalidRow[];
+  lastErrorDetails?: Array<EtlInvalidRow | EtlUnresolvedIdentity>;
+};
+
+function isUnresolvedIdentity(row: EtlInvalidRow | EtlUnresolvedIdentity): row is EtlUnresolvedIdentity {
+  return "valor" in row && "ocorrencias" in row;
+}
+
+const identityStatusLabels: Record<EtlUnresolvedIdentity["status"], string> = {
+  NAO_RESOLVIDO: "não encontrado",
+  AMBIGUO: "ambíguo",
+  CONFLITO_ALIAS: "código já é alias de outro fornecedor",
 };
 
 const negativeMeasurementFieldLabels: Record<string, string> = {
@@ -1475,13 +1497,31 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
             {status.lastError ? (
               <div className="grid gap-3 rounded-lg bg-[#FEF2F2] p-3 text-xs text-[#B91C1C]">
                 <p className="whitespace-pre-line font-medium">
-                  {status.lastErrorDetails?.length
+                  {status.lastErrorDetails?.length && status.lastErrorDetails.every(isUnresolvedIdentity)
+                    ? `Importação bloqueada. ${status.lastErrorDetails.length} identidade(s) da planilha não correspondem a um fornecedor cadastrado. Vincule cada nome a um fornecedor existente (alias) ou confirme-o como novo antes de reimportar. Nenhum dado foi alterado.`
+                    : status.lastErrorDetails?.length
                     ? `Importação bloqueada. ${status.lastErrorDetails.length} medição(ões) com valores negativos foram encontradas. Revise as linhas abaixo. Nenhum dado foi alterado.`
                     : status.lastError}
                 </p>
-                {!!status.lastErrorDetails?.length && (
+                {!!status.lastErrorDetails?.length && status.lastErrorDetails.every(isUnresolvedIdentity) && (
+                  <ol className="grid list-decimal gap-2 pl-5" data-testid="etl-identidades-nao-resolvidas">
+                    {status.lastErrorDetails.map((row) => (
+                      <li key={`${row.origem}-${row.valor}`}>
+                        <span className="font-semibold">&quot;{row.valor}&quot; — {identityStatusLabels[row.status] ?? row.status}</span>
+                        <span className="block">
+                          {row.origem}, {row.ocorrencias} ocorrência(s){row.linhas.length ? ` — linha(s) ${row.linhas.join(", ")}${row.ocorrencias > row.linhas.length ? "…" : ""}` : ""}
+                        </span>
+                        {!!row.candidatos?.length && <span className="block">Candidatos: {row.candidatos.join("; ")}</span>}
+                        {!!row.sugestoesCadastro?.length && (
+                          <span className="block text-[#92400E]">Sugestão (não aplicada): {row.sugestoesCadastro.join("; ")}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                {!!status.lastErrorDetails?.length && !status.lastErrorDetails.every(isUnresolvedIdentity) && (
                   <ol className="grid list-decimal gap-2 pl-5">
-                    {status.lastErrorDetails.map((row, index) => (
+                    {status.lastErrorDetails.filter((row): row is EtlInvalidRow => !isUnresolvedIdentity(row)).map((row, index) => (
                       <li key={`${row.origin}-${row.excelRow ?? index}-${row.numeroDocumento ?? index}`}>
                         <span className="font-semibold">
                           {row.origin}{row.excelRow ? `, linha ${row.excelRow}` : ""} — {row.numeroDocumento ?? "Documento não informado"}
@@ -1497,13 +1537,34 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
                 )}
               </div>
             ) : status.lastResult ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {Object.entries(status.lastResult).map(([key, val]) => (
-                  <div key={key} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-[#9CA3AF]">{key.replace(/_/g, " ")}</p>
-                    <p className="mt-1 text-lg font-bold text-[#1A1A1A]">{val}</p>
+              <div className="grid gap-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {Object.entries(status.lastResult).filter(([, val]) => typeof val === "number").map(([key, val]) => (
+                    <div key={key} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-[#9CA3AF]">{key.replace(/_/g, " ")}</p>
+                      <p className="mt-1 text-lg font-bold text-[#1A1A1A]">{val as number}</p>
+                    </div>
+                  ))}
+                </div>
+                {Array.isArray(status.lastResult.aliases_utilizados) && status.lastResult.aliases_utilizados.length > 0 && (
+                  <div className="text-xs text-[#555555]" data-testid="etl-aliases-utilizados">
+                    <p className="font-semibold text-[#1A1A1A]">Nomes resolvidos por alias</p>
+                    <ul className="mt-1 grid gap-0.5">
+                      {(status.lastResult.aliases_utilizados as string[]).map((a) => <li key={a}>{a.replace(" -> ", " → ")}</li>)}
+                    </ul>
                   </div>
-                ))}
+                )}
+                {Array.isArray(status.lastResult.sugestoes_cadastro_nao_aplicadas) && status.lastResult.sugestoes_cadastro_nao_aplicadas.length > 0 && (
+                  <div className="rounded-lg bg-[var(--warning-soft)] p-3 text-xs text-[#92400E]" data-testid="etl-sugestoes-cadastro">
+                    <p className="font-semibold">Cadastros sugeridos por nome aproximado — não aplicados</p>
+                    <p>Se for a mesma pessoa, cadastre o nome como alias do fornecedor e reimporte.</p>
+                    <ul className="mt-1 grid gap-0.5">
+                      {(status.lastResult.sugestoes_cadastro_nao_aplicadas as Array<{ codigo: string; cadastroSugerido: string }>).map((s) => (
+                        <li key={s.codigo}>{s.codigo} → {s.cadastroSugerido}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
