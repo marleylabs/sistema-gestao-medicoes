@@ -1,7 +1,10 @@
 import { expect, type Page } from "@playwright/test";
 import path from "node:path";
 
-/** Painel Financeiro (components/financeiro-panel.tsx). */
+/**
+ * Painel Financeiro (components/financeiro-panel.tsx). A linha da tabela mostra o status; Ver BM,
+ * NF, comprovante e "Marcar pago" ficam no detalhe lateral aberto pela linha.
+ */
 export class FinanceiroPage {
   constructor(private readonly page: Page) {}
 
@@ -10,23 +13,33 @@ export class FinanceiroPage {
   }
 
   private rowFor(fornecedorNome: string) {
-    // Depois de "Marcar pago", uma segunda <tr> ("Confirmar pagamento — ...") também contém o
-    // nome do fornecedor — a linha de dados real é sempre a primeira no DOM.
-    return this.page.locator("tr", { hasText: fornecedorNome }).first();
+    return this.page.getByTestId("financeiro-tabela").locator("tbody tr", { hasText: fornecedorNome }).first();
+  }
+
+  private detalhe() {
+    return this.page.getByTestId("financeiro-detalhe");
+  }
+
+  async abrirDetalhe(fornecedorNome: string) {
+    const aberto = this.detalhe().getByRole("heading", { name: fornecedorNome, level: 2 });
+    if (await aberto.isVisible().catch(() => false)) return;
+    await this.rowFor(fornecedorNome).click();
+    await expect(aberto).toBeVisible();
   }
 
   async verBm(fornecedorNome: string) {
-    await this.rowFor(fornecedorNome).getByRole("button", { name: "Ver BM" }).click();
+    await this.abrirDetalhe(fornecedorNome);
+    await this.detalhe().getByRole("button", { name: "Ver BM" }).click();
   }
 
   async marcarPago(fornecedorNome: string, comprovanteFixture?: string) {
-    const row = this.rowFor(fornecedorNome);
-    await row.getByRole("button", { name: "Marcar pago" }).click();
+    await this.abrirDetalhe(fornecedorNome);
+    await this.detalhe().getByRole("button", { name: "Marcar pago" }).click();
     if (comprovanteFixture) {
       const filePath = path.join(process.cwd(), comprovanteFixture);
-      await this.page.locator('input[type="file"][accept=".pdf,.jpg,.jpeg,.png"]').setInputFiles(filePath);
+      await this.detalhe().locator('input[type="file"][accept=".pdf,.jpg,.jpeg,.png"]').setInputFiles(filePath);
     }
-    await this.page.getByRole("button", { name: "Confirmar pagamento" }).click();
+    await this.detalhe().getByRole("button", { name: "Confirmar pagamento" }).click();
   }
 
   async expectStatusBadge(fornecedorNome: string, label: string) {
@@ -34,6 +47,7 @@ export class FinanceiroPage {
   }
 
   async expectNoMarcarPagoButton(fornecedorNome: string) {
-    await expect(this.rowFor(fornecedorNome).getByRole("button", { name: "Marcar pago" })).toHaveCount(0);
+    await this.abrirDetalhe(fornecedorNome);
+    await expect(this.detalhe().getByRole("button", { name: "Marcar pago" })).toHaveCount(0);
   }
 }

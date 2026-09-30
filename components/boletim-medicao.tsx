@@ -110,28 +110,15 @@ function Td({ children, colSpan, rowSpan, className = "", bold = false }: {
   );
 }
 
-// ─── BoletimMedicao ───────────────────────────────────────────────────────────
-
-export function BoletimMedicao({ data }: { data: BmData }) {
-  const printRef = useRef<HTMLDivElement>(null);
-
-  const rev = `_Rev_${String(data.revisaoNumero).padStart(2, "0")}`;
-  const cpfCnpj = data.colaborador.cnpj || data.colaborador.cpf || data.pagamento?.cpfCnpj || "–";
-  const razaoSocial = data.colaborador.razaoSocial || data.pagamento?.razaoSocial || "–";
-  const funcao = data.colaborador.funcao || data.pagamento?.ato || "–";
-  const pagamento = data.pagamento;
-  const ctx = data.contexto;
-
-  // Datas derivadas automaticamente do ciclo como fallback
-  const datas = cicloToDates(data.ciclo);
-  const atoInicio      = datas.atoInicio;
-  const atoFim         = datas.atoFim;
-
+/**
+ * Resumo financeiro do BM — ÚNICA implementação, usada pelo boletim impresso e pelo detalhe do
+ * Financeiro (condições fixas, documentos medidos, descontos e total medido líquido). Mesma fórmula
+ * que antes vivia inline em BoletimMedicao; nenhuma regra nova.
+ */
+export function resumoBoletim(data: BmData) {
   const documentosProdutivos = data.documentos.filter((d) => (d.tipo2 ?? "").toUpperCase().trim() !== "DESCONTO");
-  const totalHorasDocs = documentosProdutivos.reduce((s, d) => s + d.equivalenteA1Horas, 0);
-  const totalHoras = totalHorasDocs || pagamento?.horas || 0;
-  const totalValor = pagamento?.valor ?? 0;
-  const totalRev   = pagamento?.rev ?? 0;
+  const totalValor = data.pagamento?.valor ?? 0;
+  const totalRev   = data.pagamento?.rev ?? 0;
   const totalMedicao = totalValor + totalRev;
 
   // Condições Comerciais: soma valorMedido por tipo2 (DG → Desenhos, DOC → DOC, HH → HH)
@@ -150,7 +137,7 @@ export function BoletimMedicao({ data }: { data: BmData }) {
 
   // Prioriza a condição fixa cadastrada no pagamento; a diferença fica como fallback para BMs antigos.
   const docBasedTotal = ccDesenhosMc + ccDoc + ccHhDocs + ccDescontosLiquido;
-  const fixedFromCadastro = parseCurrencyNumber(pagamento?.condicoesFixas?.valorFixo);
+  const fixedFromCadastro = parseCurrencyNumber(data.pagamento?.condicoesFixas?.valorFixo);
   const fixoAmount    = fixedFromCadastro > 0.01
     ? fixedFromCadastro
     : Math.round(Math.max(0, totalValor - docBasedTotal) * 100) / 100;
@@ -161,6 +148,41 @@ export function BoletimMedicao({ data }: { data: BmData }) {
   const ccGarPj       = 0;
   // HH: usa docs calculados; se não houver docs HH com preço, cai no pagamento.valor
   const ccHh          = ccHhDocs > 0 ? ccHhDocs : (fixoAmount <= 0.01 ? totalValor : 0);
+  const totalDocumentosMedidos = documentosProdutivos.reduce((s, d) => s + d.valorMedido, 0);
+  const totalMedidoLiquido = ccFixoClt + ccFixoPj + totalDocumentosMedidos - ccDescontos;
+  return {
+    documentosProdutivos, documentosDesconto, totalValor, totalRev, totalMedicao,
+    ccDesenhos, ccDoc, ccHhDocs, ccDesenhosMc, ccDescontosLiquido, ccDescontos,
+    fixoAmount, isPj, ccFixoPj, ccFixoClt, ccGarClt, ccGarPj, ccHh,
+    totalDocumentosMedidos, totalMedidoLiquido,
+  };
+}
+
+// ─── BoletimMedicao ───────────────────────────────────────────────────────────
+
+export function BoletimMedicao({ data }: { data: BmData }) {
+  const printRef = useRef<HTMLDivElement>(null);
+
+  const rev = `_Rev_${String(data.revisaoNumero).padStart(2, "0")}`;
+  const cpfCnpj = data.colaborador.cnpj || data.colaborador.cpf || data.pagamento?.cpfCnpj || "–";
+  const razaoSocial = data.colaborador.razaoSocial || data.pagamento?.razaoSocial || "–";
+  const funcao = data.colaborador.funcao || data.pagamento?.ato || "–";
+  const pagamento = data.pagamento;
+  const ctx = data.contexto;
+
+  // Datas derivadas automaticamente do ciclo como fallback
+  const datas = cicloToDates(data.ciclo);
+  const atoInicio      = datas.atoInicio;
+  const atoFim         = datas.atoFim;
+
+  const {
+    documentosProdutivos, documentosDesconto, totalMedicao,
+    ccDoc, ccDesenhosMc, ccDescontos,
+    ccFixoPj, ccFixoClt, ccGarClt, ccGarPj, ccHh,
+    totalDocumentosMedidos, totalMedidoLiquido,
+  } = resumoBoletim(data);
+  const totalHorasDocs = documentosProdutivos.reduce((s, d) => s + d.equivalenteA1Horas, 0);
+  const totalHoras = totalHorasDocs || pagamento?.horas || 0;
 
   // INICIAL: soma equivalenteA1Horas por tipo2 (DG vs DOC)
   function sumHrsByTipo(t: string) {
@@ -367,8 +389,6 @@ export function BoletimMedicao({ data }: { data: BmData }) {
 
             {/* ── Cabeçalho da tabela de documentos ── */}
             {(() => {
-              const totalDocumentosMedidos = documentosProdutivos.reduce((s, d) => s + d.valorMedido, 0);
-              const totalMedidoLiquido = ccFixoClt + ccFixoPj + totalDocumentosMedidos - ccDescontos;
               return (
                 <>
                   <tr>

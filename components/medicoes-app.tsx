@@ -46,7 +46,7 @@ const TITLES: Record<Section, string> = {
   historico: "Histórico de Medições",
   importar: "Importar Planilha",
   evidencias: "Evidências de Medição",
-  financeiro: "Painel Financeiro",
+  financeiro: "Financeiro",
   administrativo: "Administrativo",
 };
 

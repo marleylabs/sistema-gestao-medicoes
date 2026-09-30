@@ -1,118 +1,57 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight, CheckCircle2, Download, FileText, RefreshCw, X } from "lucide-react";
-import { Badge, BlurValue, Button, Card, FilterButton, FilterChip, Input, Select, PageContainer, PageHeader } from "@/components/ui";
-import { useBlur } from "@/components/providers";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Banknote, CircleCheckBig, Clock3, Download, FileClock, RefreshCw, Search, X } from "lucide-react";
+import { BlurValue, Button, Card, IconButton, Input, PageContainer, PageHeader, Select } from "@/components/ui";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
+import { DashboardKpiCard } from "@/components/dashboard-pilot/dashboard-kpi-card";
+import { FinanceiroDrawer } from "@/components/financeiro/financeiro-drawer";
+import { FinanceiroTable } from "@/components/financeiro/financeiro-table";
+import {
+  STATUS_FILTRO_LABEL,
+  STATUS_FINANCEIROS,
+  currency,
+  valorAPagar,
+  type CicloEntry,
+  type FinanceiroItem,
+} from "@/components/financeiro/shared";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
-type CicloEntry = { ciclo: string; mesReferencia: string | null; updatedAt: string };
 
-type FinanceiroItem = {
-  id: string;
-  colaboradorCodigo: string;
-  colaboradorNome: string;
-  status: string;
-  nfArquivoNome: string | null;
-  nfCarregadoAt: string | null;
-  pagoAt: string | null;
-  comprovanteArquivoNome: string | null;
-  comprovanteCarregadoAt: string | null;
-  valor: number;
-  rev: number;
-  cpfCnpj: string | null;
-  razaoSocial: string | null;
-};
+const number = new Intl.NumberFormat("pt-BR");
 
-const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-
-function fmtDate(iso: string | null) {
-  if (!iso) return "–";
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));
-}
-
-function statusInfo(status: string) {
-  if (status === "PAGO")         return { label: "Concluído",       badge: "success" as const, color: "text-[#16A34A]" };
-  if (status === "APROVADO")     return { label: "Aguardando pgto.", badge: "brand"   as const, color: "text-[#2563EB]" };
-  return                                { label: "Aguardando NF",   badge: "warning"  as const, color: "text-[#D97706]" };
-}
-
-// Mesmos rótulos já usados nas <option> do filtro de Status — reaproveitado só para o texto do chip.
-const STATUS_FILTRO_LABEL: Record<string, string> = {
-  AGUARDANDO_NF: "Aguardando NF",
-  APROVADO: "Aguardando pgto.",
-  PAGO: "Concluído",
-};
-
-function rowBg(status: string) {
-  if (status === "PAGO")     return "border-[#BBF7D0] bg-[#F0FDF4]";
-  if (status === "APROVADO") return "border-[#BFDBFE] bg-[#EFF6FF]";
-  return "border-[#FDE68A] bg-[#FFFBEB]";
-}
-
-// ─── Fluxo do processo ────────────────────────────────────────────────────────
-
-function ProcessFlow({ steps }: { steps: { label: string; desc: string; color: string; bg: string }[] }) {
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      {steps.map((s, i) => (
-        <div key={i} className="flex items-center gap-1">
-          <div className={`flex items-center gap-2 rounded-lg ${s.bg} px-3 py-2`}>
-            <span className={`text-xs font-bold ${s.color}`}>{s.label}</span>
-            <span className="hidden text-[10px] text-[#9CA3AF] sm:inline">{s.desc}</span>
-          </div>
-          {i < steps.length - 1 && <ArrowRight size={14} className="shrink-0 text-[#9CA3AF]" />}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-const FINANCEIRO_FLOW = [
-  { label: "Aguardando NF",   desc: "NF não enviada",       color: "text-[#D97706]", bg: "bg-[#FFFBEB]" },
-  { label: "Aguardando pgto.", desc: "NF recebida",          color: "text-[#2563EB]", bg: "bg-[#EFF6FF]" },
-  { label: "Concluído",       desc: "Pagamento realizado",   color: "text-[#16A34A]", bg: "bg-[#F0FDF4]" },
-];
-
-// ─── KPI cards ────────────────────────────────────────────────────────────────
-
-function KpiCard({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <Card className="min-w-0 p-4">
-      <p className="text-stat-label uppercase tracking-wide text-[var(--muted-foreground)]">{label}</p>
-      <p className={`text-stat-value mt-1 ${color}`}>{value}</p>
-    </Card>
-  );
-}
-
-// ─── FinanceiroPanel ─────────────────────────────────────────────────────────
-
+/**
+ * Financeiro — fechamento financeiro por ciclo (NF → pagamento). Resumo, tabela e detalhe usam a
+ * MESMA fonte (GET /api/admin/financeiro: status do SGC + valor/rev do mapa do ciclo). Nenhuma regra,
+ * status, transição, e-mail ou permissão mudou: "Marcar pago" continua só para APROVADO, com
+ * comprovante opcional, pelo mesmo PATCH (que registra o log e dispara PAYMENT_COMPLETED).
+ * ADMINISTRATIVO (exportOnly) continua vendo só o ciclo + exportação.
+ */
 export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloEntry[]; exportOnly?: boolean }) {
-  const { blur } = useBlur();
   const [selectedCiclo, setSelectedCiclo] = useState(ciclos[0]?.ciclo ?? "");
   const [items, setItems]                 = useState<FinanceiroItem[]>([]);
   const [loading, setLoading]             = useState(false);
+  const [carregado, setCarregado]         = useState(false);
   const [busca, setBusca]                 = useState("");
+  const [filterStatus, setFilterStatus]   = useState("todos");
+  const [detalheId, setDetalheId]         = useState<string | null>(null);
+  const [uploadFormId, setUploadFormId]   = useState<string | null>(null);
   const [uploadingId, setUploadingId]     = useState<string | null>(null);
   const [comprovanteFile, setComprovanteFile] = useState<File | null>(null);
   const [uploadError, setUploadError]     = useState<string | null>(null);
-  const [filterStatus, setFilterStatus]   = useState("todos");
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
-  const filtrosRef = useRef<HTMLDivElement>(null);
+  const [bmData, setBmData]               = useState<BmData | null>(null);
+  const [bmLoading, setBmLoading]         = useState(false);
+  const [bmError, setBmError]             = useState<string | null>(null);
+  const [toast, setToast]                 = useState<string | null>(null);
 
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (filtrosRef.current && !filtrosRef.current.contains(e.target as Node)) setFiltrosAbertos(false);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (!selectedCiclo && ciclos[0]?.ciclo) {
-      setSelectedCiclo(ciclos[0].ciclo);
-    }
+    if (!selectedCiclo && ciclos[0]?.ciclo) setSelectedCiclo(ciclos[0].ciclo);
   }, [ciclos, selectedCiclo]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!selectedCiclo || exportOnly) return;
@@ -120,15 +59,20 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
     const res = await fetch(`/api/admin/financeiro?ciclo=${encodeURIComponent(selectedCiclo)}`);
     if (res.ok) setItems(await res.json());
     if (!opts?.silent) setLoading(false);
+    setCarregado(true);
   }, [exportOnly, selectedCiclo]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Antes só recarregava ao trocar de ciclo/montar — se o Fornecedor enviasse a NF com o
-  // Financeiro já aberto em outra aba, só aparecia depois de F5. `silent` evita o piscar da lista
-  // (item 31) a cada tick.
+  // NF enviada pelo fornecedor com o Financeiro aberto aparece sem F5; `silent` evita piscar a lista.
   const loadSilent = useCallback(() => { load({ silent: true }); }, [load]);
   useLiveRefresh(loadSilent, { intervalMs: 8000, enabled: !exportOnly && !!selectedCiclo });
+
+  function fecharPagamento() {
+    setUploadFormId(null);
+    setComprovanteFile(null);
+    setUploadError(null);
+  }
 
   async function enviarComprovante(id: string) {
     setUploadingId(id);
@@ -140,17 +84,10 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
     const payload = await res.json().catch(() => ({}));
     setUploadingId(null);
     if (!res.ok) { setUploadError(payload.error ?? "Erro ao confirmar pagamento."); return; }
-    setComprovanteFile(null);
-    setUploadError(null);
-    // fechar o form de upload
-    setUploadFormId(null);
+    fecharPagamento();
+    setToast("Pagamento registrado.");
     load();
   }
-
-  const [uploadFormId, setUploadFormId]   = useState<string | null>(null);
-  const [bmData, setBmData]               = useState<BmData | null>(null);
-  const [bmLoading, setBmLoading]         = useState(false);
-  const [bmError, setBmError]             = useState<string | null>(null);
 
   async function openBm(item: FinanceiroItem) {
     setBmLoading(true);
@@ -160,8 +97,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
     if (res.ok) {
       setBmData(await res.json());
     } else {
-      // Antes, uma resposta não-ok era descartada em silêncio (nenhum estado mudava, o modal nunca
-      // abria) — o usuário clicava em "Ver BM" e nada parecia acontecer, sem nenhuma pista do porquê.
+      // Resposta não-ok nunca é descartada em silêncio — a pessoa vê o motivo.
       const payload = await res.json().catch(() => ({}));
       setBmError(payload.error ?? "Não foi possível carregar o boletim de medição.");
     }
@@ -173,7 +109,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
     window.open(`/api/admin/financeiro/exportar?ciclo=${encodeURIComponent(selectedCiclo)}`, "_blank", "noopener,noreferrer");
   }
 
-  const filtered = items.filter((item) => {
+  const filtered = useMemo(() => items.filter((item) => {
     if (filterStatus !== "todos" && item.status !== filterStatus) return false;
     if (busca) {
       const q = busca.toLowerCase();
@@ -184,137 +120,180 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
       );
     }
     return true;
-  });
+  }), [items, filterStatus, busca]);
 
-  const totalValor = filtered.reduce((s, i) => s + i.valor + i.rev, 0);
-  const nAguardandoNf = items.filter((i) => i.status === "AGUARDANDO_NF").length;
-  const nAguardandoPgto = items.filter((i) => i.status === "APROVADO").length;
-  const nConcluido = items.filter((i) => i.status === "PAGO").length;
+  // Resumo do ciclo — mesma fonte e mesma conta da tabela (valorAPagar = valor + rev).
+  const porStatus = useMemo(() => {
+    const base = Object.fromEntries(STATUS_FINANCEIROS.map((s) => [s, { n: 0, valor: 0 }])) as Record<string, { n: number; valor: number }>;
+    for (const item of items) {
+      const alvo = base[item.status] ?? (base[item.status] = { n: 0, valor: 0 });
+      alvo.n += 1;
+      alvo.valor += valorAPagar(item);
+    }
+    return base;
+  }, [items]);
+  const totalCiclo = items.reduce((soma, item) => soma + valorAPagar(item), 0);
+  const detalhe = detalheId ? items.find((item) => item.id === detalheId) ?? null : null;
+  const cicloAtual = ciclos.find((c) => c.ciclo === selectedCiclo);
+  const modalAberto = Boolean(bmData || bmLoading || bmError);
+
+  const cicloSelect = (
+    <label className="flex items-center gap-2 text-[12px] text-[var(--muted-foreground)]">
+      Ciclo
+      <div className="w-[120px]">
+        <Select value={selectedCiclo} onChange={(e) => { setSelectedCiclo(e.target.value); setDetalheId(null); fecharPagamento(); }} aria-label="Ciclo">
+          {ciclos.map((c) => <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>)}
+        </Select>
+      </div>
+    </label>
+  );
 
   return (
-    <PageContainer className="grid gap-6">
-      <PageHeader
-        eyebrow="Financeiro"
-        title="Painel Financeiro"
-        description="Acompanhe o fluxo de notas fiscais e pagamentos por ciclo."
-        action={!exportOnly ? (
-          <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto">
-            <Button className="w-full sm:w-auto" variant="secondary" onClick={exportarPagamentosConcluidos} disabled={!selectedCiclo || loading}>
-              <Download size={14} />
-              Exportar concluídos
-            </Button>
-            <Button className="w-full sm:w-auto" variant="secondary" onClick={() => load()} disabled={loading}>
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-              Atualizar
-            </Button>
-          </div>
-        ) : null}
-      />
+    <PageContainer className="grid gap-6 pb-24">
+      <div className="flex flex-col justify-between gap-4 border-b border-[var(--border)] pb-5 sm:flex-row sm:items-end">
+        <PageHeader
+          eyebrow="Fechamento"
+          title="Financeiro"
+          description="Notas fiscais e pagamentos dos BMs aprovados, por ciclo."
+        />
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+          {!exportOnly && (
+            <IconButton onClick={() => load()} title="Atualizar" disabled={loading}>
+              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+            </IconButton>
+          )}
+          <Button className="w-full sm:w-auto" variant="secondary" onClick={exportarPagamentosConcluidos} disabled={!selectedCiclo || loading}>
+            <Download size={14} />
+            Exportar concluídos
+          </Button>
+        </div>
+      </div>
 
-      {exportOnly && (
-        <Card className="p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="grid w-full gap-1.5 text-label text-[var(--muted-foreground)] sm:w-auto">
-              Ciclo
-              <Select value={selectedCiclo} onChange={(e) => setSelectedCiclo(e.target.value)} className="sm:min-w-[160px]">
-                {ciclos.map((c) => <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>)}
-              </Select>
-            </label>
-            <Button variant="secondary" onClick={exportarPagamentosConcluidos} disabled={!selectedCiclo}>
-              <Download size={14} />
-              Exportar concluídos
-            </Button>
-          </div>
+      {exportOnly ? (
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+          {cicloSelect}
+          <p className="text-[12px] text-[var(--muted-foreground)]">A exportação traz os pagamentos concluídos do ciclo selecionado.</p>
         </Card>
+      ) : (
+        <>
+          <div className="grid min-w-0 grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4" data-testid="financeiro-resumo">
+            <DashboardKpiCard
+              compact
+              title="Total do ciclo"
+              value={<BlurValue>{carregado ? currency.format(totalCiclo) : "–"}</BlurValue>}
+              detail={`${number.format(items.length)} BM(s) aprovado(s)${cicloAtual?.mesReferencia ? ` · ${cicloAtual.mesReferencia}` : ""}`}
+              icon={<Banknote size={17} />}
+              tone="brand"
+            />
+            <DashboardKpiCard
+              compact
+              title="Aguardando NF"
+              value={carregado ? number.format(porStatus.AGUARDANDO_NF.n) : "–"}
+              detail={carregado ? `${currency.format(porStatus.AGUARDANDO_NF.valor)} a receber NF` : "—"}
+              icon={<FileClock size={17} />}
+              tone={porStatus.AGUARDANDO_NF.n ? "warning" : "neutral"}
+            />
+            <DashboardKpiCard
+              compact
+              title="Aguardando pagamento"
+              value={carregado ? number.format(porStatus.APROVADO.n) : "–"}
+              detail={carregado ? `${currency.format(porStatus.APROVADO.valor)} com NF recebida` : "—"}
+              icon={<Clock3 size={17} />}
+              tone={porStatus.APROVADO.n ? "brand" : "neutral"}
+            />
+            <DashboardKpiCard
+              compact
+              title="Concluído"
+              value={carregado ? number.format(porStatus.PAGO.n) : "–"}
+              detail={carregado ? `${currency.format(porStatus.PAGO.valor)} pagos` : "—"}
+              icon={<CircleCheckBig size={17} />}
+              tone="success"
+            />
+          </div>
+
+          {/* Tabela — Card com min-w-0/max-w-full (HeroUI Card é flex-col) + overflow-x-auto no wrapper direto da tabela. */}
+          <Card className="w-full min-w-0 max-w-full overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-[var(--border)] px-5 py-3 xl:flex-row xl:items-center xl:justify-between">
+              <div role="tablist" aria-label="Status" className="-mx-5 flex gap-x-5 overflow-x-auto whitespace-nowrap px-5 xl:mx-0 xl:px-0">
+                {(["todos", ...STATUS_FINANCEIROS] as string[]).map((valor) => {
+                  const ativo = filterStatus === valor;
+                  const count = valor === "todos" ? items.length : porStatus[valor]?.n ?? 0;
+                  return (
+                    <button
+                      key={valor}
+                      type="button"
+                      role="tab"
+                      aria-selected={ativo}
+                      onClick={() => setFilterStatus(valor)}
+                      className={`border-b-2 pb-2.5 pt-1 text-sm transition xl:-mb-3 ${ativo ? "border-[var(--primary)] font-semibold text-[var(--foreground)]" : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+                    >
+                      {valor === "todos" ? "Todos" : STATUS_FILTRO_LABEL[valor]} <span className="font-technical text-[11px] text-[var(--muted-foreground)]">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                <span className="relative min-w-0 sm:w-[300px]">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#9CA3AF]" size={14} />
+                  <Input
+                    className="pl-8"
+                    aria-label="Buscar pagamentos"
+                    placeholder="Nome, ID ou empresa..."
+                    value={busca}
+                    onChange={(e) => setBusca(e.target.value)}
+                  />
+                </span>
+                {cicloSelect}
+              </div>
+            </div>
+
+            {loading && !carregado ? (
+              <div className="px-6 py-14 text-center text-sm text-[var(--muted-foreground)]">Carregando…</div>
+            ) : filtered.length === 0 ? (
+              <div className="px-6 py-14 text-center text-sm text-[var(--muted-foreground)]">Nenhum pagamento encontrado para este ciclo e filtro.</div>
+            ) : (
+              <FinanceiroTable itens={filtered} onOpen={(item) => { setDetalheId(item.id); fecharPagamento(); }} />
+            )}
+          </Card>
+        </>
       )}
 
-      {!exportOnly && (
-      <>
+      {!exportOnly && detalhe && (
+        <FinanceiroDrawer
+          item={detalhe}
+          ciclo={selectedCiclo}
+          podeRegistrarPagamento={!exportOnly}
+          escEnabled={!modalAberto}
+          confirmando={uploadFormId === detalhe.id}
+          enviando={uploadingId === detalhe.id}
+          erro={uploadFormId === detalhe.id ? uploadError : null}
+          onIniciarPagamento={() => { setUploadFormId(detalhe.id); setComprovanteFile(null); setUploadError(null); }}
+          onCancelarPagamento={fecharPagamento}
+          onArquivo={(file) => { setComprovanteFile(file); setUploadError(null); }}
+          onConfirmarPagamento={() => enviarComprovante(detalhe.id)}
+          onVerBm={() => openBm(detalhe)}
+          onClose={() => { setDetalheId(null); fecharPagamento(); }}
+        />
+      )}
 
-      {/* Fluxo do processo */}
-      <Card className="p-4">
-        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">Fluxo do processo financeiro</p>
-        <ProcessFlow steps={FINANCEIRO_FLOW} />
-      </Card>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <KpiCard label="Aguardando NF"    value={nAguardandoNf}    color="text-[#D97706]" />
-        <KpiCard label="Aguardando pgto." value={nAguardandoPgto}  color="text-[#2563EB]" />
-        <KpiCard label="Concluído"        value={nConcluido}        color="text-[#16A34A]" />
-      </div>
-
-      {/* Filtros — mesmo padrão de Evidências/Administrativo/Dashboard/Histórico: FilterButton +
-          popover + chips. Ciclo continua sempre exigido pela tela (não há "Todos os ciclos" aqui),
-          então não conta como filtro ativo nem vira chip removível — só Status é um filtro real
-          (Todos vs. específico). Buscar fica SEMPRE visível fora do popover (uso frequente). */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative shrink-0" ref={filtrosRef}>
-          <FilterButton count={filterStatus !== "todos" ? 1 : 0} onClick={() => setFiltrosAbertos((v) => !v)} />
-          {filtrosAbertos && (
-            <div className="absolute left-0 top-11 z-40 w-[280px] max-w-[90vw] rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
-              <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-[#9CA3AF]">Financeiro</p>
-              <label className="text-label grid gap-1.5 text-[var(--muted-foreground)]">
-                Ciclo
-                <Select value={selectedCiclo} onChange={(e) => setSelectedCiclo(e.target.value)}>
-                  {ciclos.map((c) => <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>)}
-                </Select>
-              </label>
-              <label className="text-label mt-3 grid gap-1.5 text-[var(--muted-foreground)]">
-                Status
-                <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-                  <option value="todos">Todos</option>
-                  <option value="AGUARDANDO_NF">Aguardando NF</option>
-                  <option value="APROVADO">Aguardando pgto.</option>
-                  <option value="PAGO">Concluído</option>
-                </Select>
-              </label>
-              <button
-                type="button"
-                onClick={() => setFilterStatus("todos")}
-                className="mt-4 text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-              >
-                Limpar filtros
-              </button>
-            </div>
-          )}
-        </div>
-
-        {filterStatus !== "todos" && (
-          <FilterChip label={`Status: ${STATUS_FILTRO_LABEL[filterStatus]}`} onRemove={() => setFilterStatus("todos")} />
-        )}
-
-        <div className="min-w-0 flex-1">
-          <Input
-            placeholder="Nome, ID ou empresa..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            className="w-full min-w-0"
-          />
-        </div>
-      </div>
-
-      {/* Modal BM */}
-      {(bmData || bmLoading || bmError) && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:p-4 sm:pt-10">
-          <div className="w-full max-w-5xl rounded-none bg-white shadow-2xl sm:rounded-xl min-h-screen sm:min-h-0">
-            <div className="flex items-center justify-between border-b border-[#E5E7EB] px-6 py-4">
-              <p className="text-sm font-semibold text-[#1A1A1A]">Boletim de Medição</p>
-              <button
-                onClick={() => { setBmData(null); setBmLoading(false); setBmError(null); }}
-                className="rounded-lg p-1.5 text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-[#1A1A1A]"
-              >
-                <X size={18} />
-              </button>
+      {/* Modal BM — boletim completo (mesmo componente/endpoint de sempre), acima do detalhe. */}
+      {modalAberto && (
+        <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:p-4 sm:pt-10">
+          <div className="min-h-screen w-full max-w-5xl rounded-none bg-white shadow-2xl sm:min-h-0 sm:rounded-xl">
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
+              <p className="text-sm font-semibold text-[var(--foreground)]">Boletim de Medição</p>
+              <IconButton onClick={() => { setBmData(null); setBmLoading(false); setBmError(null); }} title="Fechar boletim">
+                <X size={16} />
+              </IconButton>
             </div>
             <div className="p-4 sm:p-5">
               {bmLoading ? (
-                <div className="flex items-center gap-3 py-10 justify-center text-sm text-[#555555]">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#2563EB]" />
+                <div className="flex items-center justify-center gap-3 py-10 text-sm text-[var(--muted-foreground)]">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--primary)]" />
                   Carregando boletim…
                 </div>
               ) : bmError ? (
-                <div className="rounded-lg bg-[#FEF2F2] px-4 py-3 text-sm font-medium text-[#B91C1C]">{bmError}</div>
+                <div className="rounded-lg border border-[#efc6c6] bg-[var(--error-soft)] px-4 py-3 text-sm font-medium text-[var(--error)]">{bmError}</div>
               ) : bmData ? (
                 <BoletimMedicao data={bmData} />
               ) : null}
@@ -323,173 +302,8 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
         </div>
       )}
 
-      {/* Tabela — mesmo padrão já aplicado em Evidências/Histórico: Card com min-w-0/max-w-full
-          (HeroUI Card é flex-col por padrão) + overflow-x-auto no wrapper DIRETO da tabela. */}
-      <Card className="w-full min-w-0 max-w-full overflow-hidden">
-        {loading ? (
-          <div className="flex items-center gap-3 p-6 text-sm text-[#555555]">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#2563EB]" />
-            Carregando…
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="p-10 text-center text-sm text-[#9CA3AF]">
-            Nenhum fornecedor encontrado para este ciclo e filtro.
-          </div>
-        ) : (
-          <>
-            <div className="w-full max-w-full overflow-x-auto">
-              <table className="w-full min-w-[1050px] border-collapse">
-                <thead>
-                  <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB]">
-                    {["Fornecedor", "CNPJ / CPF", "Razão Social", "Valor", "Boletim", "Nota Fiscal", "Recebida em", "Pagamento em", "Status", ""].map((h, i) => (
-                      <th key={i} className={`text-table-header whitespace-nowrap px-3 py-2.5 text-[var(--muted-foreground)] ${i >= 3 ? "text-right" : "text-left"}`}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((item) => {
-                    const { label, badge } = statusInfo(item.status);
-                    const total = item.valor + item.rev;
-                    const showUploadForm = uploadFormId === item.id;
-                    return (
-                      <Fragment key={item.id}>
-                        <tr className={`transition-colors ${showUploadForm ? "" : "border-b last:border-0"} ${rowBg(item.status)}`}>
-                          <td className="px-3 py-2.5">
-                            <p className="font-semibold text-[#1A1A1A]">{item.colaboradorNome}</p>
-                            <p className="text-[10px] font-mono text-[#9CA3AF]">{item.colaboradorCodigo}</p>
-                          </td>
-                          <td className="font-technical whitespace-nowrap px-3 py-2.5 text-[#555555]">
-                            <BlurValue>{item.cpfCnpj ?? "–"}</BlurValue>
-                          </td>
-                          <td className="px-3 py-2.5 text-[#555555]">{item.razaoSocial ?? "–"}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-[#1A1A1A]">
-                            <BlurValue>{currency.format(total)}</BlurValue>
-                          </td>
-                          <td className="px-3 py-2.5 text-right">
-                            <button
-                              onClick={() => openBm(item)}
-                              className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-[#1F3864]/10 px-2 py-1 text-[10px] font-medium text-[#1F3864] hover:bg-[#1F3864]/20"
-                            >
-                              <FileText size={11} />
-                              Ver BM
-                            </button>
-                          </td>
-                          <td className="px-3 py-2.5 text-center">
-                            {item.nfArquivoNome ? (
-                              <a
-                                href={`/api/admin/nf/${item.id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                title={item.nfArquivoNome}
-                                className="inline-flex items-center justify-center rounded-lg bg-[#16A34A]/10 p-1.5 text-[#16A34A] hover:bg-[#16A34A]/20"
-                              >
-                                <FileText size={14} />
-                              </a>
-                            ) : (
-                              <span className="text-[10px] text-[#9CA3AF]">–</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-right text-[10px] text-[#555555]">{fmtDate(item.nfCarregadoAt)}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-right text-[10px] text-[#555555]">
-                            {item.status === "PAGO" ? fmtDate(item.pagoAt) : "–"}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-right">
-                            <Badge variant={badge}>{label}</Badge>
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-right">
-                            <div className="flex flex-col items-end gap-1.5">
-                              {item.status === "APROVADO" && !showUploadForm && (
-                                <Button
-                                  variant="success"
-                                  className="h-7 px-2.5 text-[10px]"
-                                  onClick={() => { setUploadFormId(item.id); setComprovanteFile(null); setUploadError(null); }}
-                                >
-                                  <CheckCircle2 size={12} />
-                                  Marcar pago
-                                </Button>
-                              )}
-                              {item.status === "PAGO" && (
-                                <>
-                                  {item.comprovanteArquivoNome && (
-                                    <a
-                                      href={`/api/colaborador/comprovante/${item.id}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 rounded-lg bg-[#2563EB]/10 px-2 py-1 text-[10px] font-medium text-[#2563EB] hover:bg-[#2563EB]/20"
-                                    >
-                                      <FileText size={11} />
-                                      Ver comprovante
-                                    </a>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                        {showUploadForm && (
-                          <tr className="border-b last:border-0 bg-[#F0FDF4]">
-                            <td colSpan={10} className="px-5 py-4">
-                              <div className="flex flex-wrap items-end gap-4 rounded-xl border border-[#BBF7D0] bg-white p-4">
-                                <div className="flex items-center gap-2 text-sm font-semibold text-[#15803D]">
-                                  <CheckCircle2 size={16} className="text-[#16A34A]" />
-                                  Confirmar pagamento — {item.colaboradorNome}
-                                </div>
-                                <div className="flex flex-1 flex-wrap items-center gap-3">
-                                  <div className="flex-1">
-                                    <p className="mb-1 text-label text-[var(--muted-foreground)]">Comprovante de pagamento opcional (PDF, JPG ou PNG)</p>
-                                    <input
-                                      type="file"
-                                      accept=".pdf,.jpg,.jpeg,.png"
-                                      className="block w-full text-sm text-[#555555] file:mr-3 file:rounded-lg file:border-0 file:bg-[#16A34A] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-[#15803D]"
-                                      onChange={(e) => { setComprovanteFile(e.target.files?.[0] ?? null); setUploadError(null); }}
-                                    />
-                                  </div>
-                                  <div className="flex shrink-0 gap-2">
-                                    <Button
-                                      variant="success"
-                                      className="h-9 px-4 text-xs"
-                                      disabled={uploadingId === item.id}
-                                      onClick={() => enviarComprovante(item.id)}
-                                    >
-                                      {uploadingId === item.id ? "Confirmando…" : "Confirmar pagamento"}
-                                    </Button>
-                                    <Button
-                                      variant="secondary"
-                                      className="h-9 px-3 text-xs"
-                                      onClick={() => { setUploadFormId(null); setComprovanteFile(null); setUploadError(null); }}
-                                    >
-                                      Cancelar
-                                    </Button>
-                                  </div>
-                                </div>
-                                {uploadError && <p className="w-full text-xs text-[#B91C1C]">{uploadError}</p>}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-[#E5E7EB] bg-[#F9FAFB]">
-                    <td colSpan={3} className="px-3 py-2.5 text-[10px] font-semibold text-[#555555]">
-                      {filtered.length} fornecedor(es)
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[11px] font-bold text-[#1A1A1A]">
-                      <BlurValue>{currency.format(totalValor)}</BlurValue>
-                    </td>
-                    <td colSpan={6} />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </>
-        )}
-      </Card>
-      </>
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-[80] rounded-lg bg-[#16A34A] px-4 py-3 text-sm font-semibold text-white shadow-lg">{toast}</div>
       )}
     </PageContainer>
   );
