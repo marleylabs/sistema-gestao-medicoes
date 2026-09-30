@@ -16,6 +16,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 import { prisma } from "../lib/prisma";
 import { argValue, assertDevDatabaseForWrite, assertLocalDatabase } from "./lib/dev-guard";
+import { isLegadoOperacionalArtificial } from "./lib/legado-artificial";
 
 // Mesma normalização de ProfissionalAlias.aliasNormalizado (lib/profissional-identidade.ts::normalizarAlias);
 // lib/cadastro-fornecedor declara "server-only", neutralizado aqui como nos demais scripts.
@@ -36,10 +37,16 @@ type Linha = {
   status: "OK" | "JA_EXISTE" | "BLOQUEADO";
   motivo: string;
   alvo: { id: string; codigo: string | null; nomeCompleto: string | null } | null;
-  cadastro: { ativo: boolean; responsavel: string | null; razaoSocial: string | null; cnpjFinal: string | null } | null;
+  cadastro: {
+    ativo: boolean; responsavel: string | null; razaoSocial: string | null; cnpjFinal: string | null;
+    fonteMedicao: string | null; tipoCondicaoFixa: string | null; valorCondicaoFixa: string | null;
+    valorComProducao: string | null; valorSemProducao: string | null;
+  } | null;
   usuarios: string[];
   medicoesAlvo: number;
   legado: { id: string; codigo: string | null } | null;
+  /** Legado com código próprio que é só artefato do ETL antigo (ver scripts/lib/legado-artificial.ts). */
+  legadoArtificial: boolean;
   historicoLegado: { medicoes: number; coordenador: number; mapa: number; bmAux: number; sgc: number; divergencias: number };
 };
 
@@ -53,7 +60,7 @@ async function analisar(par: Par): Promise<Linha> {
   const aliasNormalizado = normalizePersonName(alias).trim();
   const codigoCanonico = par.codigoCanonico.trim();
   const base: Linha = {
-    alias, aliasNormalizado, codigoCanonico, status: "OK", motivo: "", alvo: null, cadastro: null, usuarios: [], medicoesAlvo: 0, legado: null,
+    alias, aliasNormalizado, codigoCanonico, status: "OK", motivo: "", alvo: null, cadastro: null, usuarios: [], medicoesAlvo: 0, legado: null, legadoArtificial: false,
     historicoLegado: { medicoes: 0, coordenador: 0, mapa: 0, bmAux: 0, sgc: 0, divergencias: 0 },
   };
 
@@ -62,9 +69,19 @@ async function analisar(par: Par): Promise<Linha> {
   if (alvo) {
     const cadastro = await prisma.cadastroFornecedor.findFirst({
       where: { colaboradorCodigo: codigoCanonico }, orderBy: [{ ativo: "desc" }, { updatedAt: "desc" }],
-      select: { ativo: true, responsavel: true, razaoSocial: true, cnpjNormalizado: true },
+      select: {
+        ativo: true, responsavel: true, razaoSocial: true, cnpjNormalizado: true, fonteMedicao: true, tipoCondicaoFixa: true,
+        valorCondicaoFixa: true, valorCondicaoFixaComProducao: true, valorCondicaoFixaSemProducao: true,
+      },
     });
-    base.cadastro = cadastro && { ativo: cadastro.ativo, responsavel: cadastro.responsavel, razaoSocial: cadastro.razaoSocial, cnpjFinal: cadastro.cnpjNormalizado ? `…${cadastro.cnpjNormalizado.slice(-6)}` : null };
+    base.cadastro = cadastro && {
+      ativo: cadastro.ativo, responsavel: cadastro.responsavel, razaoSocial: cadastro.razaoSocial,
+      cnpjFinal: cadastro.cnpjNormalizado ? `…${cadastro.cnpjNormalizado.slice(-6)}` : null,
+      fonteMedicao: cadastro.fonteMedicao, tipoCondicaoFixa: cadastro.tipoCondicaoFixa,
+      valorCondicaoFixa: cadastro.valorCondicaoFixa?.toString() ?? null,
+      valorComProducao: cadastro.valorCondicaoFixaComProducao?.toString() ?? null,
+      valorSemProducao: cadastro.valorCondicaoFixaSemProducao?.toString() ?? null,
+    };
     if (cadastro?.responsavel) {
       const usuarios = await prisma.usuario.findMany({ where: { perfil: "COLABORADOR", excluidoAt: null, nome: { equals: cadastro.responsavel.trim(), mode: "insensitive" } }, select: { usuario: true, ativo: true } });
       base.usuarios = usuarios.map((u) => `${u.usuario}${u.ativo ? "" : " (inativo)"}`);
@@ -90,9 +107,17 @@ async function analisar(par: Par): Promise<Linha> {
   if (!base.cadastro.ativo) return bloquear("cadastro do alvo inativo");
   if (normalizePersonName(codigoCanonico) === aliasNormalizado) return bloquear("alias igual ao código canônico");
   // O alias não pode ser o código canônico de OUTRA identidade.
-  const outroCodigo = await prisma.profissional.findFirst({ where: { deletedAt: null, codigo: { equals: alias, mode: "insensitive" }, NOT: { id: alvo.id } }, select: { codigo: true } });
-  if (outroCodigo) return bloquear(`alias é o código canônico de outra identidade (${outroCodigo.codigo})`);
-  if (legado?.codigo) return bloquear(`já existe Profissional com esse nome e código próprio (${legado.codigo})`);
+  // O alias não pode ser o código de OUTRA identidade real. Única exceção: o legado operacional
+  // artificial com esse mesmo nome (artefato do ETL antigo), que o reset remove quando órfão.
+  const outroCodigo = await prisma.profissional.findFirst({ where: { deletedAt: null, codigo: { equals: alias, mode: "insensitive" }, NOT: { id: alvo.id } }, select: { id: true, codigo: true } });
+  if (outroCodigo || legado?.codigo) {
+    const conflitoId = outroCodigo?.id ?? legado!.id;
+    if (conflitoId !== legado?.id || !(await isLegadoOperacionalArtificial(prisma, conflitoId))) {
+      return bloquear(outroCodigo ? `alias é o código canônico de outra identidade (${outroCodigo.codigo})` : `já existe Profissional com esse nome e código próprio (${legado!.codigo})`);
+    }
+    base.legadoArtificial = true;
+    base.motivo = "substitui legado operacional artificial (código = nome, sem cadastro/usuário) — removido no reset se órfão";
+  }
   const existentes = tabelaAliasesExiste
     ? await prisma.profissionalAlias.findMany({ where: { aliasNormalizado, ativo: true }, select: { profissionalId: true } })
     : [];
@@ -109,6 +134,10 @@ function relatorio(linhas: Linha[], fingerprint: string) {
     out.push(`- Alvo: ${l.alvo ? `${l.alvo.id} · código ${l.alvo.codigo} · ${l.alvo.nomeCompleto ?? "—"} · ${l.medicoesAlvo} medição(ões)` : "—"}`);
     out.push(`- Cadastro: ${l.cadastro ? `${l.cadastro.ativo ? "ativo" : "INATIVO"} · ${l.cadastro.responsavel ?? "—"} · ${l.cadastro.razaoSocial ?? "—"} · CNPJ ${l.cadastro.cnpjFinal ?? "—"}` : "—"}`);
     out.push(`- Usuário(s): ${l.usuarios.join(", ") || "—"}`);
+    if (l.cadastro) {
+      const c = l.cadastro;
+      out.push(`- Fonte de medição: ${c.fonteMedicao ?? "—"} · condição ${c.tipoCondicaoFixa ?? "—"} · fixa ${c.valorCondicaoFixa ?? "—"} · com produção ${c.valorComProducao ?? "—"} · sem produção ${c.valorSemProducao ?? "—"}`);
+    }
     const h = l.historicoLegado;
     out.push(`- Legado "${l.alias}": ${l.legado ? `${l.legado.id}${l.legado.codigo ? ` (código ${l.legado.codigo})` : " (sem código)"}` : "não existe"} · medições ${h.medicoes} · coord ${h.coordenador} · mapa ${h.mapa} · BM AUX ${h.bmAux} · SGC ${h.sgc} · divergências ${h.divergencias}`);
     out.push(`- [ ] aprovar`, "");
@@ -135,7 +164,11 @@ async function main() {
   }
   const linhas: Linha[] = [];
   for (const par of pares) linhas.push(await analisar(par));
-  const plano = linhas.filter((l) => l.status === "OK").map((l) => ({ alias: l.aliasNormalizado, alvo: l.alvo!.id }));
+  const plano = linhas.filter((l) => l.status === "OK").map((l) => ({
+    alias: l.aliasNormalizado, alvo: l.alvo!.id,
+    // Só presente quando o alias substitui um legado artificial (planos anteriores mantêm a mesma hash).
+    ...(l.legadoArtificial ? { legadoArtificial: l.legado!.id } : {}),
+  }));
   const fingerprint = createHash("sha256").update(JSON.stringify(plano)).digest("hex");
   const texto = relatorio(linhas, fingerprint);
   const out = argValue("--out");

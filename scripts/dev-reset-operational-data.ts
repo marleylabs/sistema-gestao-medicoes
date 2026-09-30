@@ -20,6 +20,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 
 import { prisma } from "../lib/prisma";
 import { argValue, assertDevDatabaseForWrite, assertLocalDatabase } from "./lib/dev-guard";
+import { isLegadoOperacionalArtificial } from "./lib/legado-artificial";
 
 const OPERACIONAIS = [
   "divergencias_medicao",
@@ -54,11 +55,14 @@ async function legadosQueViraramAlias() {
   });
   const porAlias = new Map<string, Set<string>>();
   aliases.forEach((a) => porAlias.set(a.aliasNormalizado, (porAlias.get(a.aliasNormalizado) ?? new Set()).add(a.profissionalId)));
-  const legados = await prisma.profissional.findMany({ where: { codigo: null, deletedAt: null }, select: { id: true, nome: true } });
+  // Sem código, ou legado operacional artificial (código = nome, criado pelo ETL antigo) — o critério
+  // estrito é reconferido por isLegadoOperacionalArtificial abaixo.
+  const legados = await prisma.profissional.findMany({ where: { deletedAt: null, OR: [{ codigo: null }, { nomeCompleto: null, razaoSocial: null, cnpj: null }] }, select: { id: true, nome: true, codigo: true } });
   const out: Array<{ id: string; nome: string; alvoId: string }> = [];
   for (const l of legados) {
     const alvos = porAlias.get(normalizePersonName(l.nome).trim());
     if (!alvos || alvos.size !== 1 || alvos.has(l.id)) continue;
+    if (l.codigo && !(await isLegadoOperacionalArtificial(prisma, l.id))) continue;
     const [cadastro, usuario] = await Promise.all([
       prisma.cadastroFornecedor.count({ where: { colaboradorCodigo: { equals: l.nome.trim(), mode: "insensitive" } } }),
       prisma.usuario.count({ where: { nome: { equals: l.nome.trim(), mode: "insensitive" } } }),
@@ -111,7 +115,8 @@ async function main() {
     const ids = legados.map((l) => l.id);
     r.profissionais_legados_alias = ids.length
       ? await tx.$executeRawUnsafe(
-          `delete from profissionais p where p.id = any($1::uuid[]) and p.codigo is null
+          `delete from profissionais p where p.id = any($1::uuid[])
+             and (p.codigo is null or (upper(p.codigo) = upper(p.nome) and p.nome_completo is null and p.razao_social is null and p.cnpj is null and p.cpf is null and p.email is null))
              and not exists (select 1 from medicoes m where m.id_profissional = p.id or m.id_coordenador = p.id)`,
           ids,
         )
