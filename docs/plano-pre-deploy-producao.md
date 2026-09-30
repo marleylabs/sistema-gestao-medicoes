@@ -159,6 +159,32 @@ git push origin layout2.0 feature/figma-redesign
   JOSÉ EVERTON, LEANDRO ALEIXO e PAULO SOUZA (casos especiais); e registros que não são pessoas
   (números de GRD/documentos e "HORAS DE ESTUDO…") gravados como Profissional pelo ETL antigo.
 
+### Reconciliação de identidades (`npm run identities:reconcile:prod`) — pré-requisito dos aliases
+
+Referências a Profissional auditadas no schema e em todas as colunas de texto do banco: FK
+`medicoes.id_profissional` / `id_coordenador`; por código `mapa_pagamento_itens.projetista_codigo`,
+`bm_aux_medicoes.responsavel_codigo`, `sgc_aprovacoes_medicao.colaborador_codigo`,
+`sgc_logs.colaborador_codigo`, `divergencias_medicao.colaborador_codigo`. O procedimento cria o canônico
+a partir do CadastroFornecedor (nome = código administrativo, nome completo e razão social do
+cadastro; CPF/CNPJ/e-mail não copiados), move só essas referências (valores, ciclos, status, datas e
+hashes intactos), nunca apaga o legado, bloqueia colisões (SGC/mapa/BM AUX do canônico no mesmo
+ciclo) e roda numa única transação com auditoria `IDENTIDADE_RECONCILIADA`. Travas de APPLY:
+`ALLOW_PROD_IDENTITY_RECONCILIATION=true`, `--confirm RECONCILIAR_IDENTIDADES_PRODUCAO`, `--alvo`,
+`--fingerprint`, `--backup` + `--backup-sha256` conferido, `RECONCILIACAO_ADMIN` ADMIN ativo, lista 100% APROVAR.
+
+Dry-run na cópia migrada (2026-09-30): 48 cadastros, todos sem canônico; 90 Profissionais =
+31 legados com candidato claro, 35 sem cadastro, 19 não-pessoas, 3 empresariais, 2 "outros"
+(JOSÉ EVERTON e MARQUELLI REIS: sem código, nome = código de cadastro). Dos 31 pares candidatos do
+DEV: 29 APROVAR, 2 REVISAR (ALEXANDRE GILLI × GILII, GUSTAVO FIGUEIREDO × FIGUEREDO), 0 REJEITAR.
+
+**Ordem no deploy:** o RC resolve o portal pelo código do cadastro + aliases do canônico. O único BM
+ativo de produção (WESLLEY, 2608, AGUARDANDO_NF) está sob o código legado — reconciliação e aliases
+precisam rodar na mesma janela, antes da liberação aos usuários.
+
+Cristiano (somente identidade; nenhuma mudança financeira): cadastro de produção com produção
+R$ 8.640,00 (fixa R$ 5.310,00, sem produção R$ 12.000,00); o R$ 8.340,00 é valor do DEV. Item de mapa
+2608 em produção: R$ 15.360,00.
+
 ### Procedimento (`npm run identities:aliases:prod`)
 
 - Dry-run (padrão): transação READ ONLY; lista rótulos operacionais, compara com Profissional

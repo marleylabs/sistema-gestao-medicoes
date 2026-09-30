@@ -20,6 +20,7 @@
     "identities:reconcile": "tsx scripts/audit-active-cadastro-identities.ts",
     "identities:aliases": "tsx scripts/dev-profissional-aliases.ts",
     "identities:aliases:prod": "tsx scripts/prod-profissional-aliases.ts",
+    "identities:reconcile:prod": "tsx scripts/prod-reconciliar-identidades.ts",
     "dev:reset-operational": "tsx scripts/dev-reset-operational-data.ts"
   },
   "dependencies": {
