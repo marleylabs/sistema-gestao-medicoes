@@ -137,6 +137,61 @@ def test_server_exposes_identity_details() -> None:
         server.ingest = original
 
 
+def test_unresolved_identity_stops_before_transaction_begin() -> None:
+    """Nome inédito bloqueia ANTES de engine.begin(): nada de full_refresh/limpeza parcial do ciclo."""
+    import ingest_medicoes as ingest_module
+
+    df = pd.DataFrame([normal_row(PROJETISTA="NOME INEDITO SEM ALIAS")])
+    df.attrs["excel_row_numbers"] = [7]
+
+    class ReadOnlyConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class EngineWithoutWrites:
+        begin_called = False
+
+        def connect(self):
+            return ReadOnlyConnection()
+
+        def begin(self):
+            self.begin_called = True
+            raise AssertionError("engine.begin() não pode ser alcançado com identidade não resolvida")
+
+    engine = EngineWithoutWrites()
+    replacements = {
+        "create_engine": lambda *_a, **_k: engine,
+        "resolve_sheet_name": lambda _path, requested, _aliases=None: requested,
+        "resolve_optional_sheet_name": lambda *_a, **_k: None,
+        "read_measurements_sheet": lambda *_a, **_k: df,
+        "read_bm_aux_sheet": lambda *_a, **_k: pd.DataFrame(),
+        "latest_fonte_medicao_by_collaborator": lambda _conn: {},
+        "load_operational_identity_resolver": lambda _conn: resolver(),
+        "latest_cadastros_by_collaborator": lambda _conn: {},
+        "reflect_tables": lambda _engine: (None, None, None, None, None, None),
+        "build_generated_payment_context": lambda *_a, **_k: {"ciclo": "2608", "mes_referencia": None, "producao_label": "PRODUÇÃO", "producao_inicio": None,
+                                                               "producao_fim": None, "ato_label": "ATO", "ato_ciclo": "2608", "contratos": [], "rateio": []},
+        "collect_import_collaborator_codes": lambda *_a, **_k: set(),
+    }
+    originals = {name: getattr(ingest_module, name) for name in replacements}
+    try:
+        for name, replacement in replacements.items():
+            setattr(ingest_module, name, replacement)
+        try:
+            ingest_module.ingest(Path("fixture.xlsx"), "Documentos", "Base", "MAPA PAGTO", "Documentos Auxiliares", "postgresql://fixture", False, True, "2608")
+        except UnresolvedIdentityError as error:
+            assert error.details[0]["valor"] == "NOME INEDITO SEM ALIAS" and error.details[0]["linhas"] == [7]
+        else:
+            raise AssertionError("Identidade inédita deveria bloquear a importação.")
+        assert engine.begin_called is False
+    finally:
+        for name, original in originals.items():
+            setattr(ingest_module, name, original)
+
+
 def test_resolver_loads_from_e2e_database() -> None:
     url_text = os.environ.get("ETL_DATABASE_URL") or os.environ.get("DATABASE_URL_TEST")
     if not url_text:
