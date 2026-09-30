@@ -52,18 +52,39 @@ grep -c "TABLE DATA" "$BACKUP_DIR/toc.txt"   # deve listar as tabelas de dados
 Regra: registrar como aplicadas **somente** as migrations classificadas como APLICADA FISICAMENTE;
 qualquer INDETERMINADA bloqueia o processo até análise manual.
 
-1. Ensaiar tudo numa cópia restaurada do backup (seção 6), nunca direto em produção.
-2. Para cada migration APLICADA FISICAMENTE, em ordem:
-   `npx prisma migrate resolve --applied <nome>` (o primeiro `resolve` cria `_prisma_migrations`).
-3. A primeira migration realmente executada é a primeira NAO APLICADA — esperado:
-   `20260930090000_profissional_alias` (e possivelmente outras, conforme a auditoria).
-   `npx prisma migrate deploy` aplica só as pendentes.
-4. Atenção à migration 5 (`cadastro_fornecedor_inativacao`): se já estiver aplicada fisicamente, ela
-   **tem** de ser registrada com `resolve` (reexecutar falharia por coluna duplicada).
-5. Validação antes/depois: rodar o script de auditoria (todas APLICADA FISICAMENTE e registradas);
-   `npx prisma migrate status` = "Database schema is up to date"; e, na cópia,
-   `npx prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --exit-code`
-   sem diferenças (drift zero). Conferir contagens de medições/mapa/cadastros iguais às anteriores.
+### Auditoria real da produção (2026-09-30, somente leitura, exit 0)
+
+- `_prisma_migrations`: **não existe**.
+- APLICADA FISICAMENTE: `profissional_exclusao_definitiva` (5/5), `condicao_fixa_condicional` (3/3),
+  `fonte_medicao` (1/1), `usuario_permissao_extra` (2/2).
+- NAO APLICADA: `cadastro_fornecedor_inativacao` (0/2), `profissional_alias` (0/2). Nenhuma INDETERMINADA.
+- Volumes: 493 medições (R$ 689.269,33), 42 itens de mapa (R$ 724.320,67), 90 profissionais,
+  48 cadastros, 1 ciclo.
+
+### Sequência validada no ensaio (cópia restaurada do dump de produção)
+
+1. `migrate deploy` sem baseline → **P3005** (nada é alterado) — por isso o baseline é obrigatório.
+2. `migrate resolve --applied` das 4 migrations acima, em ordem → cria `_prisma_migrations` com 4 linhas.
+3. `migrate deploy` → aplica `cadastro_fornecedor_inativacao` e `profissional_alias` (6/6).
+4. `migrate status` = "Database schema is up to date!"; auditoria = 6/6 APLICADA FISICAMENTE.
+5. `migrate diff --from-url <banco> --to-schema-datamodel prisma/schema.prisma --exit-code` = 0
+   (**exige o `schema.prisma` alinhado ao banco real** — com o schema anterior o diff tem 49 diferenças,
+   e aplicá-las apagaria FKs protetoras).
+6. Dados preservados: mesmas contagens e somas; os 48 cadastros ficam `ativo = true`;
+   `profissional_aliases` nasce vazia (**os aliases de produção precisam ser cadastrados** — ver seção 8).
+
+Atenção à migration `cadastro_fornecedor_inativacao`: em produção ela está NAO APLICADA, então é
+executada pelo `deploy`. Se algum dia estiver aplicada fisicamente, **tem** de ser registrada com
+`resolve` (reexecutar falharia por coluna duplicada).
+
+### Limitação: não existe migration inicial
+
+`migrate deploy` funciona (não usa banco-sombra). Mas `prisma migrate dev` / `migrate diff
+--from-migrations` falham com **P3006** (a primeira migration altera `profissionais`, que nenhuma
+migration cria). Proposta de baseline formal, a decidir antes da próxima mudança de schema: criar uma
+migration-base datada antes de `20260903160000` com o schema legado anterior a ela (gerada a partir de
+`database/schema.sql`), marcada com `resolve --applied` em todos os ambientes existentes; assim o
+banco-sombra consegue reconstruir o histórico completo.
 6. Rollback:
    - baseline (só `resolve`): apagar as linhas inseridas em `_prisma_migrations` (ou a tabela, se foi
      criada agora) — o schema físico não muda;
@@ -118,3 +139,13 @@ git push origin layout2.0 feature/figma-redesign
 - [ ] homologação aprovada
 - [ ] plano de rollback revisado
 - [ ] janela de deploy definida
+
+## 8. Depois das migrations: dados que não vêm de migration
+
+- `profissional_aliases` nasce **vazia** em produção. No DEV existem 31 aliases aprovados (inclusive
+  CRISTIANO JEFERSON e MAURICIO SPINDOLA), cadastrados pelo `scripts/dev-profissional-aliases.ts`,
+  que é travado para o banco DEV local. Produção precisa de um procedimento próprio (dry-run, plano
+  aprovado, backup) antes da primeira importação que dependa de aliases — sem eles, a importação
+  bloqueia os nomes não resolvidos, como projetado.
+- Mapa de pagamento: produção soma R$ 724.320,67 e o DEV R$ 724.020,67 — diferença exata de
+  R$ 300,00, a mesma da pendência de negócio do Cristiano (R$ 8.640,00 × R$ 8.340,00).
