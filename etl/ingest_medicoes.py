@@ -2476,8 +2476,13 @@ def assert_operational_identities_resolved(
         row_cycle = normalize_cycle(raw["ciclo"])
         if row_cycle and row_cycle != ciclo:
             continue
-        for _papel, codigo in bm_aux_people(raw, canonical_codes, fonte_medicao_map):
-            registrar(codigo, bm_aux_sheet_name or "Documentos Auxiliares", int(index) + 2)
+        # Registra o nome COMO ESCRITO na planilha (não o código já remapeado por canonical_codes),
+        # para que a via reportada seja a real (ex.: "CRISTIANO JEFERSON" → ALIAS, não CODIGO).
+        codigos_bm_aux = {codigo for _papel, codigo in bm_aux_people(raw, canonical_codes, fonte_medicao_map)}
+        for chave in ("responsavel", "auxiliar"):
+            nome = clean_text(raw[chave])
+            if nome and canonical_codes.get(normalize_for_compare(nome), nome) in codigos_bm_aux:
+                registrar(nome, bm_aux_sheet_name or "Documentos Auxiliares", int(index) + 2)
 
     for index, row in payment_map_items_df.iterrows():
         item = build_payment_map_item(row, index + 1, canonical_codes, ciclo=ciclo)
