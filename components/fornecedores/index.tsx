@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Plus, Search } from "lucide-react";
 import { contractParticipation, MapaItemActions, MapaPagamentoEditor, type Revisao } from "@/components/mapa-pagamento-table";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
@@ -71,6 +71,8 @@ export function FornecedoresPage({
   const [toast, setToast] = useState<string | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const [detalheId, setDetalheId] = useState<string | null>(null);
+  const adicionarRef = useRef<HTMLDivElement>(null);
+  const focarAdicionar = () => requestAnimationFrame(() => adicionarRef.current?.querySelector("button")?.focus());
 
   useEffect(() => {
     if (!toast) return;
@@ -150,7 +152,7 @@ export function FornecedoresPage({
         <PageHeader eyebrow="Operação" title="Fornecedores" description="Gestão operacional dos fornecedores e das medições do ciclo." />
         {isAdmin && (
           // "GERAL" nunca é um ciclo real — mesma trava de sempre (o backend também rejeita).
-          <div className="shrink-0" title={ciclo === CICLO_GERAL ? "Selecione um ciclo específico (não \"Geral\") para cadastrar um novo pagamento." : undefined}>
+          <div ref={adicionarRef} className="shrink-0" title={ciclo === CICLO_GERAL ? "Selecione um ciclo específico (não \"Geral\") para cadastrar um novo pagamento." : undefined}>
             <Button onClick={() => setIsCreating(true)} disabled={ciclo === CICLO_GERAL}>
               <Plus size={15} />
               Adicionar
@@ -261,13 +263,22 @@ export function FornecedoresPage({
           contexto={editingItem ? contextoEditor(editingItem) : { cicloLabel: cicloOptionLabel(ciclo).split(" · ")[0] }}
           // Aberto pelo detalhe: Voltar/Cancelar/Esc retornam ao detalhe; o X fecha tudo.
           onBack={editandoDoDetalhe ? () => setEditingItem(null) : undefined}
-          onClose={() => { setIsCreating(false); setEditingItem(null); setDetalheId(null); }}
-          onSaved={async (mensagem) => {
-            // Editado a partir do detalhe: volta ao detalhe (atualizado por onChanged).
+          onClose={() => {
+            const eraCadastro = isCreating;
+            setIsCreating(false);
+            setEditingItem(null);
+            setDetalheId(null);
+            if (eraCadastro) focarAdicionar();
+          }}
+          onSaved={async (mensagem, id) => {
+            // Edição a partir do detalhe: volta ao detalhe (atualizado por onChanged).
+            // Cadastro: abre o detalhe do fornecedor recém-criado, já na lista atualizada.
+            const eraCadastro = isCreating;
             setIsCreating(false);
             setEditingItem(null);
             setToast(mensagem);
             await onChanged();
+            if (eraCadastro && id) setDetalheId(id);
           }}
           onDivergenciaResolvida={onDivergenciaResolvida}
         />

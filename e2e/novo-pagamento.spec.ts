@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { test, expect } from "./fixtures/test-with-error-guard";
+import type { Page } from "@playwright/test";
 import { LoginPage } from "./pages/login-page";
 import { e2eUsers, e2eCiclo } from "./fixtures";
 import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
@@ -20,13 +22,23 @@ const CODIGO = "E2E-NP-001";
 
 test.beforeAll(assertConnectedToE2eDatabase);
 
-async function abrirNovoPagamento(page: import("@playwright/test").Page) {
+async function abrirNovoPagamento(page: Page) {
   const login = new LoginPage(page);
   await login.goto();
   await login.login(e2eUsers.medicao.usuario, e2eUsers.medicao.senha);
   await page.goto("/fornecedores");
   await page.getByRole("button", { name: "Adicionar" }).click();
   await expect(page.getByRole("heading", { name: "Novo pagamento" })).toBeVisible();
+}
+
+/** Painel de cadastro — o MESMO editor lateral do "Editar pagamento" (diálogo nomeado pelo título). */
+function painelNovo(page: Page) {
+  return page.getByRole("dialog", { name: "Novo pagamento" });
+}
+
+async function kpiFornecedoresNoCiclo(page: Page) {
+  const texto = await page.getByTestId("fornecedores-kpis").locator(":scope > *").first().innerText();
+  return Number(texto.match(/\n\s*(\d+)\s*\n/)?.[1] ?? NaN);
 }
 
 test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silêncio", () => {
@@ -38,6 +50,11 @@ test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silê
     await page.getByRole("textbox", { name: "Nome", exact: true }).fill(CODIGO);
     await page.getByRole("button", { name: new RegExp(FORNECEDOR_NOME) }).click();
     await expect(page.getByRole("textbox", { name: "Nome", exact: true })).toHaveValue(CODIGO);
+    // Seleção preenche CNPJ e Razão social (somente leitura, vindos do cadastro) e o cabeçalho.
+    await expect(painelNovo(page).getByRole("textbox", { name: "CNPJ" })).not.toHaveValue("");
+    const profissionalSelecionado = await prisma.profissional.findUniqueOrThrow({ where: { codigo: CODIGO } });
+    await expect(painelNovo(page).getByRole("textbox", { name: "Razão social" })).toHaveValue(profissionalSelecionado.razaoSocial ?? "");
+    await expect(painelNovo(page).getByText(FORNECEDOR_NOME, { exact: true }).first()).toBeVisible();
 
     // Condição fixa: a UI atual mantém somente o valor mensal/contratual editável.
     await page.getByLabel("Valor fixo mensal/contratual").fill("5000");
@@ -69,6 +86,7 @@ test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silê
     await expect(page.getByText("Total medido líquido")).toBeVisible();
     await expect(page.getByText("R$ 9.900,00").last()).toBeVisible();
 
+    const kpiAntes = await kpiFornecedoresNoCiclo(page);
     const cadastrarBtn = page.getByRole("button", { name: "Cadastrar", exact: true });
     const criarResponse = page.waitForResponse((r) => r.url().endsWith("/api/mapa-pagamento") && r.request().method() === "POST");
     await cadastrarBtn.click();
@@ -81,6 +99,9 @@ test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silê
     await expect(page.getByRole("heading", { name: "Novo pagamento" })).toHaveCount(0);
     const pagamentosTable = page.getByTestId("fornecedores-tabela");
     await expect(pagamentosTable.locator("tr", { hasText: FORNECEDOR_NOME })).toContainText("R$ 9.900,00");
+    // Continuidade: o detalhe do fornecedor recém-criado abre, e o KPI reflete a nova linha.
+    await expect(page.getByRole("dialog", { name: `Detalhe de ${FORNECEDOR_NOME}` })).toBeVisible();
+    await expect.poll(() => kpiFornecedoresNoCiclo(page)).toBe(kpiAntes + 1);
 
     const item = await prisma.mapaPagamentoItem.findFirstOrThrow({ where: { ciclo: e2eCiclo(), projetistaCodigo: CODIGO } });
     expect(Number(item.valor)).toBe(9900);
@@ -126,6 +147,100 @@ test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silê
     expect(depoisCount).toBe(0);
 
     await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+    await page.request.post("/api/auth/logout");
+  });
+  test("PAINEL: Adicionar abre o painel lateral (não modal central), sem Voltar; Cancelar/Esc/X fecham sem criar e devolvem o foco", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await abrirNovoPagamento(page);
+    const painel = painelNovo(page);
+    await expect(painel).toBeVisible();
+    const caixa = await painel.locator("aside").boundingBox();
+    expect(Math.round(caixa!.x + caixa!.width)).toBe(1440);
+    expect(caixa!.width).toBeGreaterThanOrEqual(820);
+    expect(caixa!.width).toBeLessThanOrEqual(960);
+    await expect(painel.getByText("Novo fornecedor no ciclo")).toBeVisible();
+    await expect(painel.getByRole("button", { name: "Voltar ao fornecedor" })).toHaveCount(0);
+    // Sem fornecedor: resumo oculto e estados vazios informativos (nada fictício).
+    await expect(painel.getByLabel("Resumo do pagamento")).toHaveCount(0);
+    await expect(painel.getByText("Calculado automaticamente após salvar e vincular documentos medidos.")).toBeVisible();
+    await expect(painel.getByText("Nenhum desconto aplicado.")).toBeVisible();
+    await expect(painel.getByText(/Nenhum documento medido adicionado/)).toBeVisible();
+    await expect(painel.getByText("Divergências da Medição")).toHaveCount(0);
+    for (const secao of ["Identificação", "Participação por contrato", "Condição fixa", "Descontos", "Documentos medidos"]) {
+      await expect(painel.getByRole("heading", { name: secao, exact: true })).toBeVisible();
+    }
+    await painel.getByRole("button", { name: "Adicionar linha" }).click();
+    await expect(painel.getByPlaceholder("SE-001")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+    const antes = await prisma.mapaPagamentoItem.count({ where: { ciclo: e2eCiclo() } });
+    const adicionar = page.getByRole("button", { name: "Adicionar" });
+
+    await painel.getByRole("button", { name: "Cancelar", exact: true }).click();
+    await expect(painel).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: /^Detalhe de / })).toHaveCount(0);
+    await expect(adicionar).toBeFocused();
+
+    await adicionar.click();
+    await expect(painel).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(painel).toHaveCount(0);
+
+    await adicionar.click();
+    await painel.getByRole("button", { name: "Fechar" }).click();
+    await expect(painel).toHaveCount(0);
+    expect(await prisma.mapaPagamentoItem.count({ where: { ciclo: e2eCiclo() } })).toBe(antes);
+    await page.request.post("/api/auth/logout");
+  });
+
+  test("MOBILE: painel de cadastro em tela cheia, sem overflow, com Cancelar/Cadastrar acessíveis", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await abrirNovoPagamento(page);
+    const caixa = await painelNovo(page).locator("aside").boundingBox();
+    expect(Math.round(caixa!.width)).toBe(375);
+    await expect(painelNovo(page).getByRole("button", { name: "Cadastrar", exact: true })).toBeInViewport();
+    await expect(painelNovo(page).getByRole("button", { name: "Cancelar", exact: true })).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.request.post("/api/auth/logout");
+  });
+
+  test("CONDICIONAL_PRODUCAO: seleção mostra com/sem produção e aplica o valor conforme houver documentos (sem cadastrar)", async ({ page }) => {
+    const sufixo = randomUUID().slice(0, 6).toUpperCase();
+    const codigo = `E2E-COND-${sufixo}`;
+    const nome = `E2E Condicional ${sufixo}`;
+    const profissional = await prisma.profissional.create({ data: { nome: codigo, codigo, nomeCompleto: nome } });
+    const cadastro = await prisma.cadastroFornecedor.create({
+      data: {
+        cnpjNormalizado: "99888777000155", cnpj: "99888777000155", colaboradorCodigo: codigo, responsavel: nome, razaoSocial: `${nome} LTDA`,
+        tipoCondicaoFixa: "CONDICIONAL_PRODUCAO", valorCondicaoFixaComProducao: 1000, valorCondicaoFixaSemProducao: 400, rawPayload: {},
+      },
+    });
+    try {
+      await abrirNovoPagamento(page);
+      const painel = painelNovo(page);
+      await painel.getByRole("textbox", { name: "Nome", exact: true }).fill(codigo);
+      await painel.getByRole("button", { name: new RegExp(nome) }).click();
+      const info = painel.getByTestId("condicao-condicional");
+      await expect(info).toContainText("R$ 1.000,00");
+      await expect(info).toContainText("R$ 400,00");
+      await expect(info).toContainText("aplicado: sem produção");
+      await expect(painel.getByLabel("Valor fixo mensal/contratual")).toHaveValue(/^R\$\s400,00$/);
+
+      await painel.getByRole("button", { name: "Adicionar linha" }).click();
+      const docRow = painel.locator("tbody tr").filter({ has: page.getByPlaceholder("SE-001") });
+      await docRow.getByPlaceholder("0", { exact: true }).first().fill("1");
+      await docRow.getByPlaceholder("100").fill("100");
+      await docRow.getByPlaceholder("0", { exact: true }).last().fill("50");
+      await expect(info).toContainText("aplicado: com produção");
+      await expect(painel.getByLabel("Valor fixo mensal/contratual")).toHaveValue(/^R\$\s1\.000,00$/);
+
+      await painel.getByRole("button", { name: "Cancelar", exact: true }).click();
+      await expect(painel).toHaveCount(0);
+      expect(await prisma.mapaPagamentoItem.count({ where: { projetistaCodigo: codigo } })).toBe(0);
+    } finally {
+      await prisma.cadastroFornecedor.deleteMany({ where: { id: cadastro.id } });
+      await prisma.profissional.deleteMany({ where: { id: profissional.id } });
+    }
     await page.request.post("/api/auth/logout");
   });
 });
