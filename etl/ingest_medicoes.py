@@ -2456,7 +2456,8 @@ def assert_operational_identities_resolved(
         if len(item["linhas"]) < 10:
             item["linhas"].append(linha)
 
-    for index, row in df.iterrows():
+    excel_rows = df.attrs.get("excel_row_numbers", [])
+    for position, (index, row) in enumerate(df.iterrows()):
         project_raw = extract(row, PROJECT_COLUMNS)
         numero_medicao = clean_text(first_value(row, MEASUREMENT_COLUMNS["numero_medicao"]))
         valid_measurement = is_valid_measurement_key(numero_medicao, clean_text(project_raw["codigo_projeto"]))
@@ -2466,7 +2467,9 @@ def assert_operational_identities_resolved(
         professional_raw = extract(row, PROFESSIONAL_COLUMNS)
         if uses_documentos_auxiliares(professional_raw["nome"], canonical_codes, fonte_medicao_map) and not discount_only:
             continue
-        registrar(professional_raw["nome"], sheet_name, int(index) + 2)
+        # Linha real do Excel (mesma fonte da pré-validação de negativos); fallback índice + cabeçalho.
+        linha = excel_rows[position] if position < len(excel_rows) else int(index) + 2
+        registrar(professional_raw["nome"], sheet_name, linha)
 
     for index, row in bm_aux_df.iterrows():
         raw = extract(row, BM_AUX_COLUMNS)
