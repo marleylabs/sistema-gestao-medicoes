@@ -25,11 +25,11 @@ import { GeneralChatWidget } from "@/components/general-chat-widget";
 import { DashboardPilot } from "@/components/dashboard-pilot";
 import { ComentarioDropdown } from "@/components/mapa-pagamento-table";
 import { FornecedoresPage } from "@/components/fornecedores";
-import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { AdministrativoPanel } from "@/components/administrativo-panel";
 import { HistoricoWorkspace } from "@/components/historico/historico-workspace";
-import { Badge, Button, Card, FilterButton, FilterChip, IconButton, Input, PageContainer, PageHeader, Select } from "@/components/ui";
+import { EvidenciasWorkspace } from "@/components/evidencias/evidencias-workspace";
+import { Badge, Button, Card, FilterButton, FilterChip, IconButton, PageContainer, PageHeader, Select } from "@/components/ui";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "@/lib/presence";
@@ -46,7 +46,7 @@ const TITLES: Record<Section, string> = {
   fornecedores: "Fornecedores",
   historico: "Histórico",
   importar: "Importar Planilha",
-  evidencias: "Evidências de Medição",
+  evidencias: "Evidências",
   financeiro: "Financeiro",
   administrativo: "Administrativo",
 };
@@ -833,13 +833,8 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
       )}
 
       {section === "evidencias" && isAdmin && (
-        <PageContainer className="grid gap-6">
-          <PageHeader
-            eyebrow="Administrativo"
-            title="Evidências de Medição"
-            description="Visualize e imprima o Boletim de Medição de qualquer fornecedor por ciclo."
-          />
-          <EvidenciasSection ciclos={ciclos} />
+        <PageContainer className="grid gap-6 pb-24">
+          <EvidenciasWorkspace ciclos={ciclos} ciclo={activeCiclo} onCicloChange={handleCicloChange} />
         </PageContainer>
       )}
 
@@ -1436,258 +1431,6 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
           </Button>
         </div>
       </Card>
-    </div>
-  );
-}
-
-// ─── EvidenciasSection ────────────────────────────────────────────────────────
-
-type EvidenciaListItem = {
-  sgcId: string;
-  colaboradorCodigo: string;
-  colaboradorNome: string | null;
-  ciclo: string;
-  status: string;
-  revisaoNumero: number;
-  statusConferencia: string;
-  aprovadoAt: string | null;
-};
-
-// Evidências representa a EXISTÊNCIA do Boletim de Medição (qualquer status a partir do envio),
-// não um recorte transitório de "aguardando aprovação" — mas AGUARDANDO_ENVIO (BM ainda não
-// disponibilizado) e CANCELADO nunca contam como evidência real. Mesma regra que já existia antes
-// desta correção, só que aplicada de forma consistente à listagem inteira (nunca só ao ciclo mais
-// recente de cada fornecedor).
-function isEvidenciaVisivel(status: string) {
-  return status !== "AGUARDANDO_ENVIO" && status !== "CANCELADO";
-}
-
-// Mesmos rótulos já usados em components/colaborador-app.tsx (statusConfig) — mantém a mesma
-// linguagem de status em toda a aplicação, sem inventar status novos.
-function evidenciaStatusConfig(status: string) {
-  if (status === "PAGO")               return { label: "Medição concluída",      variant: "success" as const };
-  if (status === "APROVADO")           return { label: "Aguardando pagamento",   variant: "brand" as const };
-  if (status === "AGUARDANDO_NF")      return { label: "Aguardando envio da NF", variant: "warning" as const };
-  if (status === "REVISAO_SOLICITADA") return { label: "Revisão solicitada",     variant: "warning" as const };
-  return                                      { label: "Pendente de validação",  variant: "neutral" as const };
-}
-
-function EvidenciasSection({ ciclos }: { ciclos: CicloEntry[] }) {
-  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
-  const filtrosRef = useRef<HTMLDivElement>(null);
-
-  // null = "Todos" — nunca um valor mágico de string que possa colidir com um ciclo/código real.
-  const [selectedCiclo, setSelectedCiclo] = useState<string | null>(null);
-  const [selectedFornecedor, setSelectedFornecedor] = useState<{ codigo: string; nome: string } | null>(null);
-  const [fornecedorQuery, setFornecedorQuery] = useState("");
-  const [showFornecedorSuggestions, setShowFornecedorSuggestions] = useState(false);
-
-  // Lista completa de fornecedores com pelo menos uma evidência (qualquer ciclo) — carregada uma
-  // única vez, só para alimentar a busca do combobox (nome ou código P0). A identidade
-  // armazenada/selecionada é sempre colaboradorCodigo, nunca o texto digitado.
-  const [todosFornecedores, setTodosFornecedores] = useState<{ codigo: string; nome: string }[]>([]);
-
-  const [resultados, setResultados] = useState<EvidenciaListItem[] | null>(null);
-  const [loadingLista, setLoadingLista] = useState(false);
-
-  const [bm, setBm] = useState<BmData | null>(null);
-  const [bmContext, setBmContext] = useState<{ ciclo: string; nome: string } | null>(null);
-  const [loadingBm, setLoadingBm] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (filtrosRef.current && !filtrosRef.current.contains(e.target as Node)) setFiltrosAbertos(false);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    fetch("/api/sgc/status")
-      .then((r) => r.json() as Promise<EvidenciaListItem[]>)
-      .then((data) => {
-        const porCodigo = new Map<string, string>();
-        for (const item of data) {
-          if (!isEvidenciaVisivel(item.status)) continue;
-          if (!porCodigo.has(item.colaboradorCodigo)) porCodigo.set(item.colaboradorCodigo, item.colaboradorNome || item.colaboradorCodigo);
-        }
-        setTodosFornecedores(
-          Array.from(porCodigo.entries())
-            .map(([codigo, nome]) => ({ codigo, nome }))
-            .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
-        );
-      })
-      .catch(() => {});
-  }, []);
-
-  // Filtros independentes (item central da correção): nenhum é pré-requisito do outro. Sem NENHUM
-  // filtro, não busca nada automaticamente — evita carregar todas as evidências da aplicação à toa
-  // (estado inicial explícito, ver empty state abaixo).
-  useEffect(() => {
-    setBm(null);
-    setBmContext(null);
-    setError(null);
-    if (!selectedCiclo && !selectedFornecedor) {
-      setResultados(null);
-      return;
-    }
-    setLoadingLista(true);
-    const params = new URLSearchParams();
-    if (selectedCiclo) params.set("ciclo", selectedCiclo);
-    if (selectedFornecedor) params.set("colaboradorCodigo", selectedFornecedor.codigo);
-    fetch(`/api/sgc/status?${params.toString()}`)
-      .then((r) => r.json() as Promise<EvidenciaListItem[]>)
-      .then((data) => setResultados(data.filter((item) => isEvidenciaVisivel(item.status))))
-      .catch(() => setResultados([]))
-      .finally(() => setLoadingLista(false));
-  }, [selectedCiclo, selectedFornecedor]);
-
-  const fornecedorSugestoes = useMemo(() => {
-    const q = fornecedorQuery.trim().toLowerCase();
-    if (!q) return todosFornecedores.slice(0, 20);
-    return todosFornecedores.filter((f) => f.nome.toLowerCase().includes(q) || f.codigo.toLowerCase().includes(q)).slice(0, 20);
-  }, [todosFornecedores, fornecedorQuery]);
-
-  async function verBoletim(item: EvidenciaListItem) {
-    // Usa o colaboradorCodigo/ciclo REAIS deste item específico — nunca reconstrói a busca por
-    // nome, mesmo quando existem vários resultados na tela.
-    setLoadingBm(true);
-    setError(null);
-    setBm(null);
-    const res = await fetch(`/api/admin/bm?codigo=${encodeURIComponent(item.colaboradorCodigo)}&ciclo=${encodeURIComponent(item.ciclo)}`);
-    const data = await res.json();
-    if (!res.ok) { setError(data.error ?? "Erro ao buscar boletim."); }
-    else if (!data.pagamento && !data.documentos?.length) { setError("Nenhuma medição encontrada para este fornecedor e ciclo."); }
-    else { setBm(data); setBmContext({ ciclo: item.ciclo, nome: item.colaboradorNome || item.colaboradorCodigo }); }
-    setLoadingBm(false);
-  }
-
-  function limparFiltros() {
-    setSelectedCiclo(null);
-    setSelectedFornecedor(null);
-    setFornecedorQuery("");
-  }
-
-  const activeFilterCount = (selectedCiclo ? 1 : 0) + (selectedFornecedor ? 1 : 0);
-
-  return (
-    // min-w-0: item de grid/flex de qualquer ancestral (AppShell) precisa poder encolher — sem
-    // isso, a tabela larga do Boletim (min-w-[800px], dentro de um Card flex-col do HeroUI)
-    // empurraria a largura de toda a página em vez de só rolar dentro de si mesma.
-    <div className="grid min-w-0 max-w-full gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative shrink-0" ref={filtrosRef}>
-          <FilterButton count={activeFilterCount} onClick={() => setFiltrosAbertos((v) => !v)} />
-          {filtrosAbertos && (
-            <div className="absolute left-0 top-11 z-40 w-[300px] max-w-[90vw] rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
-              <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-[#9CA3AF]">Evidências</p>
-              <label className="text-label grid gap-1.5 text-[var(--muted-foreground)]">
-                Ciclo
-                <Select value={selectedCiclo ?? ""} onChange={(e) => setSelectedCiclo(e.target.value || null)}>
-                  <option value="">Todos os ciclos</option>
-                  {ciclos.map((c) => (
-                    <option key={c.ciclo} value={c.ciclo}>{c.ciclo}</option>
-                  ))}
-                </Select>
-              </label>
-              <label className="text-label relative mt-3 grid gap-1.5 text-[var(--muted-foreground)]">
-                Fornecedor
-                <Input
-                  value={selectedFornecedor ? selectedFornecedor.nome : fornecedorQuery}
-                  placeholder="Todos os fornecedores / buscar…"
-                  onFocus={() => setShowFornecedorSuggestions(true)}
-                  onChange={(e) => {
-                    setSelectedFornecedor(null);
-                    setFornecedorQuery(e.target.value);
-                    setShowFornecedorSuggestions(true);
-                  }}
-                />
-                {showFornecedorSuggestions && !selectedFornecedor && fornecedorSugestoes.length > 0 && (
-                  <div className="absolute top-full z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[var(--border)] bg-white shadow-lg">
-                    {fornecedorSugestoes.map((f) => (
-                      <button
-                        key={f.codigo}
-                        type="button"
-                        onClick={() => {
-                          setSelectedFornecedor(f);
-                          setFornecedorQuery("");
-                          setShowFornecedorSuggestions(false);
-                        }}
-                        className="flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-[#F9FAFB]"
-                      >
-                        <span className="font-semibold text-[#1A1A1A]">{f.nome}</span>
-                        <span className="font-technical text-[10px] text-[#9CA3AF]">{f.codigo}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </label>
-              <button
-                type="button"
-                onClick={limparFiltros}
-                className="mt-4 text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-              >
-                Limpar filtros
-              </button>
-            </div>
-          )}
-        </div>
-
-        {selectedCiclo && <FilterChip label={`Ciclo: ${selectedCiclo}`} onRemove={() => setSelectedCiclo(null)} />}
-        {selectedFornecedor && <FilterChip label={selectedFornecedor.nome} onRemove={() => setSelectedFornecedor(null)} />}
-      </div>
-
-      {resultados === null ? (
-        <Card className="p-6 text-sm text-[var(--muted-foreground)]">
-          Selecione um ciclo ou fornecedor para visualizar as evidências.
-        </Card>
-      ) : loadingLista ? (
-        <Card className="p-6 text-sm text-[var(--muted-foreground)]">Carregando…</Card>
-      ) : resultados.length === 0 ? (
-        <Card className="p-6 text-sm text-[var(--muted-foreground)]">Nenhuma evidência encontrada para os filtros selecionados.</Card>
-      ) : (
-        <div className="grid gap-2">
-          {resultados.map((item) => {
-            const statusInfo = evidenciaStatusConfig(item.status);
-            return (
-              <Card key={item.sgcId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-technical rounded bg-[#F3F4F6] px-1.5 py-0.5 text-[10px] font-bold text-[#6B7280]">{item.ciclo}</span>
-                    <p className="truncate text-sm font-semibold text-[#1A1A1A]">{item.colaboradorNome || item.colaboradorCodigo}</p>
-                  </div>
-                  <Badge variant={statusInfo.variant} className="mt-1">{statusInfo.label}</Badge>
-                </div>
-                <Button variant="secondary" onClick={() => verBoletim(item)} disabled={loadingBm}>
-                  Ver boletim
-                </Button>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {error && (
-        <div className="rounded-lg bg-[#FEF2F2] px-4 py-3 text-xs text-[#B91C1C]">{error}</div>
-      )}
-
-      {bm && (
-        // min-w-0 + max-w-full: o Card do HeroUI é flex-col por padrão (ver card.css) — sem isso
-        // ele cresce para acomodar a largura mínima da tabela do boletim em vez de rolar internamente.
-        <Card className="w-full min-w-0 max-w-full">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E7EB] px-5 py-4">
-            <p className="text-sm font-semibold text-[#1A1A1A]">
-              Boletim de Medição{bmContext ? ` — ${bmContext.nome} (${bmContext.ciclo})` : ""}
-            </p>
-          </div>
-          {/* Sem overflow-x-auto aqui: BoletimMedicao já rola horizontalmente por conta própria
-              (ver components/boletim-medicao.tsx) — evita dois containers de scroll aninhados. */}
-          <div className="min-w-0 max-w-full p-5">
-            <BoletimMedicao data={bm} />
-          </div>
-        </Card>
-      )}
     </div>
   );
 }

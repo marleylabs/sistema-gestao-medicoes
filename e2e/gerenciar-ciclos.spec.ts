@@ -22,6 +22,8 @@ async function login(page: Page, usuario: { usuario: string; senha: string }) {
   const lp = new LoginPage(page);
   await lp.goto();
   await lp.login(usuario.usuario, usuario.senha);
+  // Espera o redirecionamento pós-login terminar — um page.goto() durante essa navegação é abortado.
+  await page.waitForURL((url) => !url.pathname.startsWith("/login"));
 }
 
 function escritasEmCiclos(page: Page) {

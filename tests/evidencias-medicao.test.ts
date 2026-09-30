@@ -9,6 +9,9 @@ function readSource(relativePath: string) {
 
 const ROUTE = "app/api/sgc/status/route.ts";
 const PAGE = "components/medicoes-app.tsx";
+const DADOS = "components/evidencias/dados.ts";
+const WORKSPACE = "components/evidencias/evidencias-workspace.tsx";
+const DRAWER = "components/evidencias/evidencia-drawer.tsx";
 
 /**
  * Guarda de regressão para o bug corrigido: "Evidências de Medição" com fornecedor selecionado e
@@ -44,33 +47,47 @@ test("GET /api/sgc/status ordena por ciclo desc (mais recente primeiro)", () => 
   assert.match(source, /orderBy:\s*\[\{\s*ciclo:\s*"desc"/);
 });
 
-test("EvidenciasSection não reconstrói mais o Map por colaboradorCodigo que sobrescrevia ciclos antigos", () => {
-  const source = readSource(PAGE);
+test("Evidências não reconstrói o Map por colaboradorCodigo que sobrescrevia ciclos antigos", () => {
+  const source = readSource(DADOS) + readSource(WORKSPACE);
   assert.doesNotMatch(source, /aprovadosMap/, "o Map que causava o bug (fornecedor -> só o ciclo mais recente) precisa ter sido removido");
 });
 
-test("EvidenciasSection.verBoletim usa colaboradorCodigo/ciclo do PRÓPRIO item da lista — nunca reconstrói a busca por nome", () => {
-  const source = readSource(PAGE);
-  const fnIndex = source.indexOf("async function verBoletim(item: EvidenciaListItem)");
-  assert.ok(fnIndex > -1, "esperava encontrar verBoletim(item: EvidenciaListItem)");
-  const fnEnd = source.indexOf("\n  }\n", fnIndex);
-  const block = source.slice(fnIndex, fnEnd);
-  assert.match(block, /item\.colaboradorCodigo/);
-  assert.match(block, /item\.ciclo/);
+test("Evidências: BM e divergências usam colaboradorCodigo/ciclo do PRÓPRIO item — nunca reconstroem a busca por nome", () => {
+  const workspace = readSource(WORKSPACE);
+  const fnIndex = workspace.indexOf("async function verBm(e: Evidencia)");
+  assert.ok(fnIndex > -1, "esperava encontrar verBm(e: Evidencia)");
+  const block = workspace.slice(fnIndex, workspace.indexOf("\n  }\n", fnIndex));
+  assert.match(block, /e\.colaboradorCodigo/);
+  assert.match(block, /e\.ciclo/);
+  const drawer = readSource(DRAWER);
+  assert.match(drawer, /encodeURIComponent\(evidencia\.colaboradorCodigo\)/);
+  assert.match(drawer, /encodeURIComponent\(evidencia\.ciclo\)/);
 });
 
-test("EvidenciasSection: sem nenhum filtro selecionado, resultados fica null (estado inicial, sem carregar tudo à toa)", () => {
-  const source = readSource(PAGE);
-  const effectIndex = source.indexOf("if (!selectedCiclo && !selectedFornecedor)");
-  assert.ok(effectIndex > -1, "esperava a guarda 'sem filtro nenhum' antes de buscar");
-  const nearby = source.slice(effectIndex, effectIndex + 120);
-  assert.match(nearby, /setResultados\(null\)/);
+test("Evidências: sem ciclo e sem fornecedor, a lista fica null (estado inicial, sem carregar tudo à toa)", () => {
+  const source = readSource(DADOS);
+  const guardIndex = source.indexOf("if (!ciclo && !fornecedorCodigo)");
+  assert.ok(guardIndex > -1, "esperava a guarda 'sem filtro nenhum' antes de buscar");
+  assert.match(source.slice(guardIndex, guardIndex + 120), /setItens\(null\)/);
 });
 
-test("EvidenciasSection: filtro de fornecedor guarda colaboradorCodigo (identidade canônica), nunca o texto digitado", () => {
-  const source = readSource(PAGE);
-  assert.match(source, /selectedFornecedor:\s*\{\s*codigo:\s*string;\s*nome:\s*string\s*\}|useState<\{\s*codigo:\s*string;\s*nome:\s*string\s*\}\s*\|\s*null>/);
+test("Evidências: filtro de fornecedor guarda colaboradorCodigo (identidade canônica), nunca o texto digitado", () => {
+  const source = readSource(WORKSPACE);
+  assert.match(source, /useState<\{\s*codigo:\s*string;\s*nome:\s*string\s*\}\s*\|\s*null>/);
+  assert.match(source, /useEvidencias\(cicloFiltro, fornecedor\?\.codigo \?\? null\)/);
   assert.doesNotMatch(source, /colaboradorCodigo:\s*fornecedorQuery/, "nunca usar o texto livre digitado como colaboradorCodigo");
+});
+
+test("Evidências é somente conferência: nenhuma escrita (sem POST/PATCH/PUT/DELETE) e sem alert/window.confirm", () => {
+  const source = readSource(DADOS) + readSource(WORKSPACE) + readSource(DRAWER);
+  assert.doesNotMatch(source, /method:\s*"(POST|PATCH|PUT|DELETE)"/);
+  assert.doesNotMatch(source, /\balert\(|window\.confirm\(/);
+  assert.doesNotMatch(source, /api\/admin\/conferencia\/\$\{[^}]+\}\/(incluir|descartar)/, "Incluir/Descartar continuam só no editor de pagamento em Fornecedores");
+});
+
+test("Evidências usa o mapper central de status (getMapaPagamentoStatusMeta), sem rótulos locais paralelos", () => {
+  assert.match(readSource(DADOS), /getMapaPagamentoStatusMeta\(s\.status, s\.statusConferencia\)/);
+  assert.doesNotMatch(readSource(PAGE), /evidenciaStatusConfig|function EvidenciasSection/);
 });
 
 test("BoletimMedicao encapsula a tabela num wrapper com overflow-x-auto (scroll fica dentro do boletim, nunca na página)", () => {
@@ -103,21 +120,19 @@ test("CNPJ do boletim tem whitespace-nowrap (nunca quebra no meio do número)", 
   assert.match(before, /whitespace-nowrap/);
 });
 
-test("Card do Boletim (medicoes-app.tsx) nunca usa overflow-x-auto duplicado — BoletimMedicao já rola por conta própria", () => {
-  const source = readSource(PAGE);
-  const bmCardIndex = source.indexOf("Boletim de Medição{bmContext");
-  const wrapperIndex = source.lastIndexOf("<div", bmCardIndex);
-  const boletimCallIndex = source.indexOf("<BoletimMedicao", bmCardIndex);
+test("Modal do Boletim (Evidências) nunca usa overflow-x-auto duplicado — BoletimMedicao já rola por conta própria", () => {
+  const source = readSource(WORKSPACE);
+  const bmModalIndex = source.indexOf("Boletim de Medição{aberta");
+  const boletimCallIndex = source.indexOf("<BoletimMedicao", bmModalIndex);
+  const wrapperIndex = source.lastIndexOf("<div", boletimCallIndex);
   const between = source.slice(wrapperIndex, boletimCallIndex);
   assert.doesNotMatch(between, /className="[^"]*overflow-x-auto/, "não duplicar overflow-x-auto aqui — evita dois containers de scroll aninhados");
 });
 
-test("EvidenciasSection usa o novo padrão visual compartilhado (FilterButton/FilterChip), não o card grande antigo de filtros", () => {
-  const source = readSource(PAGE);
-  const sectionIndex = source.indexOf("function EvidenciasSection(");
-  const nextFnIndex = source.indexOf("\nfunction ", sectionIndex + 1);
-  const block = source.slice(sectionIndex, nextFnIndex > -1 ? nextFnIndex : undefined);
+test("Evidências usa o padrão visual compartilhado (FilterButton/FilterChip, painel lateral, linha abre o detalhe)", () => {
+  const block = readSource(WORKSPACE);
   assert.match(block, /<FilterButton/);
   assert.match(block, /<FilterChip/);
-  assert.doesNotMatch(block, /Selecione o ciclo e o fornecedor para visualizar o boletim/, "texto do card grande antigo não pode mais existir");
+  assert.match(readSource(DRAWER), /<AdminSidePanel/);
+  assert.doesNotMatch(block, /Ver boletim<\/Button>/, "sem botão por linha — a linha abre o detalhe");
 });

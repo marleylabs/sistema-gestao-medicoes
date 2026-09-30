@@ -1,0 +1,202 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { AlertTriangle, ArrowUpRight, FileText } from "lucide-react";
+import { Badge, BlurValue, Button } from "@/components/ui";
+import type { BmData } from "@/components/boletim-medicao";
+import { ComposicaoBoletim } from "@/components/boletim-resumo";
+import { AdminSidePanel, DataItem, PanelSection } from "@/components/administrativo/admin-side-panel";
+import type { Evidencia } from "@/components/evidencias/dados";
+
+const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const percent = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 2 });
+const dataCurta = (v: string | null | undefined) => (v ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(v.length === 10 ? `${v}T12:00:00` : v)) : "–");
+const dataHora = (v: string | null | undefined) => (v ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(v)) : "–");
+
+/** Entrada de GET /api/admin/conferencia (mesma rota que o editor de pagamento de Fornecedores usa). */
+type Divergencia = {
+  id: string;
+  nrVale: string | null;
+  documentoNaoMapeado: boolean;
+  comparacaoAmbigua: boolean;
+  formatoDivergente: boolean;
+  a1eqDivergente: boolean;
+  emissaoDivergente: boolean;
+  tipoDivergente: boolean;
+  equipe: { formato: string | null; a1eqHh: number | null; percentualEmissao: number | null; tipo: string | null };
+  fornecedor: { formato: string | null; a1eqHh: number; percentualEmissao: number; tipo: string | null };
+  status: "PENDENTE" | "INCLUIDA" | "DESCARTADA";
+  observacao: string | null;
+  resolvidoPorNome: string | null;
+  resolvidoEm: string | null;
+};
+
+const DIVERGENCIA_STATUS: Record<Divergencia["status"], { label: string; badge: "warning" | "success" | "neutral" }> = {
+  PENDENTE: { label: "Pendente", badge: "warning" },
+  INCLUIDA: { label: "Incluída", badge: "success" },
+  DESCARTADA: { label: "Descartada", badge: "neutral" },
+};
+
+/**
+ * Detalhe de uma evidência (BM do fornecedor no ciclo) — SOMENTE conferência: nenhuma ação de
+ * workflow. Composição e documentos de GET /api/admin/bm (resumo pela função única resumoBoletim);
+ * divergências de GET /api/admin/conferencia (a resolução continua no editor de pagamento em
+ * Fornecedores); "Ver BM" abre o BoletimMedicao completo, com a exportação/impressão de sempre.
+ */
+export function EvidenciaDrawer({
+  evidencia,
+  onVerBm,
+  onClose,
+  escEnabled,
+}: {
+  evidencia: Evidencia;
+  onVerBm: () => void;
+  onClose: () => void;
+  escEnabled?: boolean;
+}) {
+  const [bm, setBm] = useState<BmData | null>(null);
+  const [bmErro, setBmErro] = useState<string | null>(null);
+  const [divergencias, setDivergencias] = useState<Divergencia[] | null>(null);
+  const [divErro, setDivErro] = useState(false);
+
+  useEffect(() => {
+    let ativo = true;
+    setBm(null); setBmErro(null); setDivergencias(null); setDivErro(false);
+    const q = `codigo=${encodeURIComponent(evidencia.colaboradorCodigo)}&ciclo=${encodeURIComponent(evidencia.ciclo)}`;
+    fetch(`/api/admin/bm?${q}`).then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (!ativo) return;
+      if (!res.ok) setBmErro(data.error ?? "Erro ao buscar boletim.");
+      else if (!data.pagamento && !data.documentos?.length) setBmErro("Nenhuma medição encontrada para este fornecedor e ciclo.");
+      else setBm(data as BmData);
+    }).catch(() => { if (ativo) setBmErro("Erro ao buscar boletim."); });
+    fetch(`/api/admin/conferencia?${q}`).then(async (res) => {
+      if (!ativo) return;
+      if (!res.ok) { setDivErro(true); setDivergencias([]); return; }
+      setDivergencias((await res.json()) as Divergencia[]);
+    }).catch(() => { if (ativo) { setDivErro(true); setDivergencias([]); } });
+    return () => { ativo = false; };
+  }, [evidencia.colaboradorCodigo, evidencia.ciclo]);
+
+  const pendentes = divergencias?.filter((d) => d.status === "PENDENTE").length ?? 0;
+  const documentos = bm?.documentos ?? [];
+
+  return (
+    <AdminSidePanel
+      size="wide"
+      eyebrow={`Evidência · Ciclo ${evidencia.ciclo}`}
+      title={evidencia.nome}
+      subtitle={evidencia.empresa ?? undefined}
+      onClose={onClose}
+      escEnabled={escEnabled}
+      testId="evidencia-detalhe"
+      meta={<Badge variant={evidencia.statusMeta.badge}>{evidencia.statusMeta.label}</Badge>}
+      footer={<Button variant="secondary" onClick={onVerBm}><FileText size={14} />Ver BM</Button>}
+    >
+      <PanelSection title="Resumo">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="evidencia-resumo">
+          <DataItem label="Ciclo" technical>{evidencia.ciclo}</DataItem>
+          <DataItem label="Código" technical>{evidencia.colaboradorCodigo}</DataItem>
+          <DataItem label="Valor do BM">{bm?.pagamento ? <BlurValue>{brl.format(bm.pagamento.valor)}</BlurValue> : evidencia.valor !== null ? <BlurValue>{brl.format(evidencia.valor)}</BlurValue> : "–"}</DataItem>
+          <DataItem label="Revisão">{evidencia.revisaoNumero > 0 ? `Rev. ${evidencia.revisaoNumero}` : "Original"}</DataItem>
+          <DataItem label="Aprovado pelo fornecedor em">{dataHora(evidencia.aprovadoAt)}</DataItem>
+        </dl>
+      </PanelSection>
+
+      <PanelSection title="Composição do BM">
+        {bmErro ? <p className="text-sm text-[var(--error)]">{bmErro}</p>
+          : !bm ? <p className="text-sm text-[var(--muted-foreground)]">Carregando composição do BM…</p>
+          : <ComposicaoBoletim bm={bm} testId="evidencia-composicao" />}
+      </PanelSection>
+
+      <PanelSection title={`Divergências${pendentes ? ` · ${pendentes} pendente(s)` : ""}`}>
+        <div data-testid="evidencia-divergencias">
+          {divergencias === null ? <p className="text-sm text-[var(--muted-foreground)]">Carregando divergências…</p>
+            : divErro ? <p className="text-sm text-[var(--muted-foreground)]">Não foi possível carregar as divergências.</p>
+            : divergencias.length === 0 ? <p className="text-sm text-[var(--muted-foreground)]">Nenhuma divergência registrada na conferência do fornecedor.</p>
+            : (
+              <div className="grid gap-2">
+                {pendentes > 0 && (
+                  <p className="flex items-start gap-2 rounded-lg border border-[#f3d9a8] bg-[var(--warning-soft)] px-3 py-2 text-[12px] text-[var(--warning)]">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                    <span>A resolução (Incluir ou Descartar) é feita no pagamento do fornecedor, em Fornecedores.</span>
+                  </p>
+                )}
+                <ul className="divide-y divide-[#EFEFED] rounded-lg border border-[var(--border)]">
+                  {divergencias.map((d) => <DivergenciaItem key={d.id} d={d} />)}
+                </ul>
+              </div>
+            )}
+          {pendentes > 0 && (
+            <a href={`/fornecedores?ciclo=${encodeURIComponent(evidencia.ciclo)}`} className="mt-3 inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--primary)] hover:underline">
+              Abrir Fornecedores no ciclo {evidencia.ciclo}<ArrowUpRight size={13} />
+            </a>
+          )}
+        </div>
+      </PanelSection>
+
+      <PanelSection title={`Documentos medidos${documentos.length ? ` · ${documentos.length}` : ""}`}>
+        {!bm ? <p className="text-sm text-[var(--muted-foreground)]">{bmErro ? "Sem documentos para exibir." : "Carregando documentos…"}</p>
+          : documentos.length === 0 ? <p className="text-sm text-[var(--muted-foreground)]">Nenhum documento medido neste BM.</p>
+          : (
+            <ul className="divide-y divide-[#EFEFED] rounded-lg border border-[var(--border)]" data-testid="evidencia-documentos">
+              {documentos.map((d) => {
+                const desconto = (d.tipo2 ?? "").toUpperCase().trim() === "DESCONTO";
+                return (
+                  <li key={d.id} className="flex min-w-0 items-start gap-3 px-3 py-2.5 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-technical text-[12.5px] font-semibold text-[var(--foreground)]">{d.numeroDocumento ?? "–"}</p>
+                      <p className="truncate text-[12px] text-[var(--muted-foreground)]">{[d.projetoReferente, d.tituloPrimario].filter(Boolean).join(" · ") || "–"}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--muted-foreground)]">
+                        {d.tipo2 && <Badge variant={desconto ? "danger" : "neutral"}>{desconto ? "Desconto" : d.tipo2}</Badge>}
+                        {d.formato && <span>{d.formato}</span>}
+                        {d.contrato && <span>· {d.contrato}</span>}
+                        {d.dataCadastro && <span>· {dataCurta(d.dataCadastro)}</span>}
+                      </div>
+                    </div>
+                    <span className={`shrink-0 whitespace-nowrap tabular-nums ${desconto ? "text-[var(--error)]" : "text-[var(--foreground)]"}`}>
+                      <BlurValue>{brl.format(d.valorMedido)}</BlurValue>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+      </PanelSection>
+    </AdminSidePanel>
+  );
+}
+
+function DivergenciaItem({ d }: { d: Divergencia }) {
+  const meta = DIVERGENCIA_STATUS[d.status] ?? DIVERGENCIA_STATUS.PENDENTE;
+  const campos = [
+    { label: "Formato", equipe: d.equipe.formato ?? "–", fornecedor: d.fornecedor.formato ?? "–", divergente: d.formatoDivergente },
+    { label: "A1eq/HH", equipe: d.equipe.a1eqHh === null ? "–" : String(d.equipe.a1eqHh), fornecedor: String(d.fornecedor.a1eqHh), divergente: d.a1eqDivergente },
+    { label: "% Emissão", equipe: d.equipe.percentualEmissao === null ? "–" : percent.format(d.equipe.percentualEmissao), fornecedor: percent.format(d.fornecedor.percentualEmissao), divergente: d.emissaoDivergente },
+    { label: "Tipo", equipe: d.equipe.tipo ?? "–", fornecedor: d.fornecedor.tipo ?? "–", divergente: d.tipoDivergente },
+  ].filter((c) => c.divergente || d.documentoNaoMapeado);
+  return (
+    <li className="grid gap-1.5 px-3 py-2.5 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-technical text-[12.5px] font-semibold text-[var(--foreground)]">{d.nrVale ?? "Documento sem nº"}</span>
+        <span className="flex flex-wrap items-center gap-1.5">
+          {d.documentoNaoMapeado && <Badge variant="warning">Não mapeado pela Equipe</Badge>}
+          {d.comparacaoAmbigua && <Badge variant="danger">NR VALE duplicado — ambíguo</Badge>}
+          <Badge variant={meta.badge}>{meta.label}</Badge>
+        </span>
+      </div>
+      {!d.comparacaoAmbigua && campos.length > 0 && (
+        <dl className="grid gap-1 text-[12px]">
+          {campos.map((c) => (
+            <div key={c.label} className="flex flex-wrap items-baseline gap-x-2">
+              <dt className="w-20 shrink-0 text-[var(--muted-foreground)]">{c.label}</dt>
+              <dd className="text-[var(--foreground)]">Equipe <span className="font-technical">{c.equipe}</span> · Fornecedor <span className="font-technical font-semibold text-[var(--warning)]">{c.fornecedor}</span></dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {d.observacao && <p className="text-[12px] text-[var(--muted-foreground)]">{d.observacao}</p>}
+      {d.resolvidoEm && <p className="text-[11px] text-[var(--muted-foreground)]">{meta.label} por {d.resolvidoPorNome ?? "–"} em {dataHora(d.resolvidoEm)}</p>}
+    </li>
+  );
+}

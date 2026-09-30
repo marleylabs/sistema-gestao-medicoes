@@ -4,7 +4,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft, ChevronRight, FileText } from "lucide-react";
 import { Badge, BlurValue, Button } from "@/components/ui";
 import { formatParticipacao } from "@/components/mapa-pagamento-table";
-import { resumoBoletim, type BmData } from "@/components/boletim-medicao";
+import type { BmData } from "@/components/boletim-medicao";
+import { ComposicaoBoletim } from "@/components/boletim-resumo";
 import { AdminSidePanel, DataItem, PanelSection } from "@/components/administrativo/admin-side-panel";
 import { valorAtribuido, type ContratoHistorico, type FornecedorHistorico, type MedicaoHistorico } from "@/components/historico/dados";
 import { brl } from "@/components/historico/listas";
@@ -12,15 +13,6 @@ import { brl } from "@/components/historico/listas";
 type FinanceiroItem = { id: string; colaboradorCodigo: string; nfArquivoNome: string | null; nfCarregadoAt: string | null; pagoAt: string | null; comprovanteArquivoNome: string | null; status: string };
 
 const dataHora = (iso: string | null | undefined) => (iso ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso)) : null);
-
-function LinhaValor({ label, children, forte, negativo }: { label: string; children: ReactNode; forte?: boolean; negativo?: boolean }) {
-  return (
-    <div className={`flex items-baseline justify-between gap-4 py-1.5 text-sm ${forte ? "border-t border-[var(--border)] pt-2.5 font-semibold" : ""}`}>
-      <span className={forte ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}>{label}</span>
-      <span className={`whitespace-nowrap tabular-nums ${negativo ? "text-[var(--error)]" : "text-[var(--foreground)]"}`}>{children}</span>
-    </div>
-  );
-}
 
 function LinkArquivo({ href, children }: { href: string; children: ReactNode }) {
   return (
@@ -92,7 +84,6 @@ export function MedicaoDrawer({
     return () => { ativo = false; };
   }, [medicao.codigo, medicao.ciclo]);
 
-  const resumo = bm ? resumoBoletim(bm) : null;
   const contratos = Object.entries(medicao.participacoes).filter(([, p]) => p > 0).sort((a, b) => b[1] - a[1]);
 
   return (
@@ -135,16 +126,10 @@ export function MedicaoDrawer({
       </PanelSection>
 
       <PanelSection title="Composição do BM">
-        {bmErro ? <p className="text-sm text-[var(--error)]">{bmErro}</p> : !resumo ? (
+        {bmErro ? <p className="text-sm text-[var(--error)]">{bmErro}</p> : !bm ? (
           <p className="text-sm text-[var(--muted-foreground)]">Carregando composição do BM…</p>
         ) : (
-          <div data-testid="historico-composicao">
-            <LinhaValor label="Condições fixas"><BlurValue>{brl.format(resumo.ccFixoClt + resumo.ccFixoPj)}</BlurValue></LinhaValor>
-            <LinhaValor label="Documentos medidos"><BlurValue>{brl.format(resumo.totalDocumentosMedidos)}</BlurValue></LinhaValor>
-            <LinhaValor label="Descontos" negativo={resumo.ccDescontos > 0}>{resumo.ccDescontos > 0 ? <BlurValue>{`- ${brl.format(resumo.ccDescontos)}`}</BlurValue> : "–"}</LinhaValor>
-            <LinhaValor label="Total medido líquido" forte><BlurValue>{brl.format(resumo.totalMedidoLiquido || resumo.totalMedicao)}</BlurValue></LinhaValor>
-            <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">{resumo.documentosProdutivos.length} documento(s) medido(s){resumo.documentosDesconto.length ? ` · ${resumo.documentosDesconto.length} desconto(s)` : ""}.</p>
-          </div>
+          <ComposicaoBoletim bm={bm} testId="historico-composicao" />
         )}
       </PanelSection>
 
