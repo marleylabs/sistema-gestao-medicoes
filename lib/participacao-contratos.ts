@@ -72,8 +72,12 @@ async function carregarMedicoesDoCiclo(ciclo: string): Promise<MedicaoComAliases
     }));
 }
 
-/** Garante que cada nome de contrato elegível encontrado já exista em `contratos` (auto-registro, mesmo padrão de ensureContratosPadrao), e devolve o registro canônico id→nome na ordem de primeira aparição. */
-async function resolverContratosCanonicos(nomesEmOrdem: string[]): Promise<Map<string, ContratoResumo>> {
+/**
+ * Garante que cada nome de contrato elegível encontrado já exista em `contratos` (auto-registro, mesmo padrão de ensureContratosPadrao), e devolve o registro canônico id→nome na ordem de primeira aparição.
+ * `somenteLeitura`: nunca grava — um contrato ainda não registrado recebe um id sintético estável
+ * (`nao-registrado:<chave>`) com o mesmo nome normalizado; a participação calculada é idêntica.
+ */
+async function resolverContratosCanonicos(nomesEmOrdem: string[], somenteLeitura = false): Promise<Map<string, ContratoResumo>> {
   const existentes = await prisma.contrato.findMany({ select: { id: true, nome: true } });
   const porChave = new Map<string, ContratoResumo>();
   for (const c of existentes) porChave.set(contratoKey(c.nome), { id: c.id, nome: c.nome });
@@ -83,6 +87,10 @@ async function resolverContratosCanonicos(nomesEmOrdem: string[]): Promise<Map<s
     const key = contratoKey(nomeBruto);
     if (porChaveOrdenado.has(key)) continue;
     let resumo = porChave.get(key);
+    if (!resumo && somenteLeitura) {
+      resumo = { id: `nao-registrado:${key}`, nome: normalizeContratoNome(nomeBruto) };
+      porChave.set(key, resumo);
+    }
     if (!resumo) {
       const nome = normalizeContratoNome(nomeBruto);
       let criado: ContratoResumo;
@@ -135,12 +143,16 @@ export type ParticipacaoPorFornecedor = {
  * normalizados) — o mesmo documento pode aparecer sob mais de uma chave, mas isso é inofensivo: o
  * chamador sempre consulta por uma única chave (`normalizeAlias(item.projetistaCodigo)`), então só a
  * entrada correspondente é lida.
+ * `somenteLeitura` (usado pelo Histórico, rota GET sem efeito colateral): não auto-registra contratos.
  */
-export async function getParticipacaoPorFornecedorCiclo(ciclo: string): Promise<ParticipacaoPorFornecedor> {
+export async function getParticipacaoPorFornecedorCiclo(
+  ciclo: string,
+  opcoes: { somenteLeitura?: boolean } = {},
+): Promise<ParticipacaoPorFornecedor> {
   const medicoes = await carregarMedicoesDoCiclo(ciclo);
 
   const nomesEmOrdem = medicoes.filter((m) => isContratoElegivel(m.contrato)).map((m) => m.contrato as string);
-  const contratosCanonicos = await resolverContratosCanonicos(nomesEmOrdem);
+  const contratosCanonicos = await resolverContratosCanonicos(nomesEmOrdem, opcoes.somenteLeitura);
   const contratos = Array.from(contratosCanonicos.values());
 
   const porAliasDocs = new Map<string, MedicaoParaParticipacao[]>();

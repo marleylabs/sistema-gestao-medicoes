@@ -41,3 +41,17 @@ export async function requireAdministrativo() {
   }
   return { user, response: null };
 }
+
+export async function requireHistorico() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return { user: null, response: NextResponse.json({ error: "Não autenticado." }, { status: 401 }) };
+  }
+  // Leitura do Histórico: Medição/ADMIN de base; FINANCEIRO/ADMINISTRATIVO só com a permissão extra
+  // HISTORICO_MEDICOES concedida individualmente (mesmo padrão de requireAdministrativo). É uma
+  // guarda SOMENTE de leitura — nenhuma ação de ciclo/medição usa esta função.
+  if (!["ADMIN", "MEDICAO"].includes(user.perfil) && !(await hasPermissao(user, "HISTORICO_MEDICOES"))) {
+    return { user, response: NextResponse.json({ error: "Acesso restrito ao Histórico de Medições." }, { status: 403 }) };
+  }
+  return { user, response: null };
+}
