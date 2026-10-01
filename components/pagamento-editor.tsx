@@ -4,6 +4,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { AlertTriangle, ArrowLeft, Plus, Trash2, X } from "lucide-react";
 import { Badge, BlurValue, Button, IconButton, Input, Textarea } from "@/components/ui";
 import type { ContratoResumo, MapaPagamentoItem, Profissional } from "@/components/types";
+import { calcularBoletim, isDocumentoDesconto } from "@/lib/boletim-calculo";
 import { resolveCondicaoFixa, toCondicaoFixaConfig } from "@/lib/condicao-fixa";
 import {
   currency,
@@ -133,7 +134,7 @@ function docValorMedido(doc: DocLine): number {
 }
 
 function isDiscountDoc(doc: Pick<DocLine, "tipo2" | "se" | "numeroDocumento">) {
-  return normalizeText(doc.tipo2) === "DESCONTO" || normalizeText(doc.se) === "DESCONTO" || normalizeText(doc.numeroDocumento) === "DESCONTO";
+  return isDocumentoDesconto({ tipo2: doc.tipo2, projetoReferente: doc.se, numeroDocumento: doc.numeroDocumento });
 }
 
 function newDiscountLine(): DocLine {
@@ -355,15 +356,22 @@ function PaymentModal({
     }
   }
 
-  const documentosMedidos = docs.filter((doc) => !isDiscountDoc(doc));
-  const descontos = docs.filter(isDiscountDoc);
-  const totalDocsValorBruto = documentosMedidos.reduce((s, d) => s + docValorMedido(d), 0);
-  const totalDescontos = descontos.reduce((s, d) => s + Math.abs(docValorMedido(d)), 0);
-  const valorFixoBase = parseCurrencyNumber(form.valorFixo);
-  const adicionaisFixos = parseCurrencyNumber(form.adicionaisFixos);
-  const totalCondicoesFixas = valorFixoBase + adicionaisFixos;
-  const valorPrevistoBase = totalCondicoesFixas + totalDocsValorBruto;
-  const valorPrevistoLiquido = valorPrevistoBase - totalDescontos;
+  // Cálculo canônico do BM (lib/boletim-calculo.ts) — a mesma fonte do Portal, BM/PDF, Histórico,
+  // Evidências e Financeiro. O valor gravado é o total da medição sem arredondamento prévio,
+  // formatado ao salvar (currencyInputValue) — idêntico, em centavos, ao cálculo anterior daqui.
+  const calculo = calcularBoletim({
+    documentos: docs.map((doc) => ({ doc, tipo2: doc.tipo2, projetoReferente: doc.se, numeroDocumento: doc.numeroDocumento, contrato: doc.contrato, valorMedido: docValorMedido(doc) })),
+    condicoesFixas: { valorFixo: form.valorFixo, adicionaisFixos: form.adicionaisFixos },
+  });
+  const documentosMedidos = calculo.documentosMedidos.map((d) => d.doc);
+  const descontos = calculo.descontos.map((d) => d.doc);
+  const totalDocsValorBruto = calculo.totalDocumentos;
+  const temProducao = calculo.temProducao;
+  const totalDescontos = calculo.totalDescontos;
+  const adicionaisFixos = calculo.adicionais;
+  const totalCondicoesFixas = calculo.totalCondicoesFixas;
+  const temComposicao = !calculo.semComposicao;
+  const valorPrevistoLiquido = calculo.totalComposicaoBruto;
 
   // Fornecedor CONDICIONAL_PRODUCAO (ver lib/condicao-fixa.ts) — o valor fixo depende de "existem
   // documentos medidos" NESTE pagamento (linhas de Documentos Medidos já carregadas/adicionadas no
@@ -377,7 +385,7 @@ function PaymentModal({
       ? profissionaisFrescos.find((p) => normalizeText(p.codigo) === target || normalizeText(p.nome) === target || normalizeText(p.nomeCompleto) === target)
       : undefined;
     if (!matched || matched.tipoCondicaoFixa !== "CONDICIONAL_PRODUCAO") return;
-    const valorResolvido = resolveCondicaoFixa(toCondicaoFixaConfig(matched), totalDocsValorBruto > 0);
+    const valorResolvido = resolveCondicaoFixa(toCondicaoFixaConfig(matched), temProducao);
     if (valorResolvido == null) return;
     const nextValorFixo = currencyInputValue(valorResolvido);
     const nextTipoContratacao = matched.tipoContrato || "FIXO (PJ)";
@@ -385,12 +393,12 @@ function PaymentModal({
       if (cur.valorFixo === nextValorFixo && cur.tipoContratacao === nextTipoContratacao) return cur;
       return { ...cur, valorFixo: nextValorFixo, tipoContratacao: nextTipoContratacao };
     });
-  }, [codigoQuery, form.projetistaCodigo, form.razaoSocial, form.responsavel, profissionaisFrescos, totalDocsValorBruto]);
+  }, [codigoQuery, form.projetistaCodigo, form.razaoSocial, form.responsavel, profissionaisFrescos, temProducao]);
 
   useEffect(() => {
-    if (valorPrevistoBase <= 0 && totalDescontos <= 0) return;
+    if (!temComposicao) return;
     setForm((cur) => ({ ...cur, valor: currencyInputValue(valorPrevistoLiquido) }));
-  }, [totalDescontos, valorPrevistoBase, valorPrevistoLiquido]);
+  }, [temComposicao, valorPrevistoLiquido]);
 
   function updateDoc(key: string, field: keyof Omit<DocLine, "_key" | "id" | "_dirty">, value: string) {
     setDocs((cur) => cur.map((d) => d._key === key ? { ...d, [field]: value, _dirty: true } : d));
@@ -478,7 +486,7 @@ function PaymentModal({
     setSavingPayment(true);
     setSavePaymentError(null);
     try {
-      const shouldUseLiquidTotal = valorPrevistoBase > 0 || totalDescontos > 0;
+      const shouldUseLiquidTotal = temComposicao;
       const finalForm = shouldUseLiquidTotal ? { ...form, valor: currencyInputValue(valorPrevistoLiquido) } : form;
       const dirtyDocs = docs.filter((doc) => doc._dirty);
       for (const doc of dirtyDocs) {
@@ -525,7 +533,7 @@ function PaymentModal({
     // CONDICIONAL_PRODUCAO o valor depende de `totalDocsValorBruto` (Documentos Medidos já
     // presentes no formulário nesse instante); o efeito dedicado acima mantém isso em sincronia
     // conforme documentos são carregados/adicionados/removidos.
-    const valorResolvido = resolveCondicaoFixa(toCondicaoFixaConfig(p), totalDocsValorBruto > 0);
+    const valorResolvido = resolveCondicaoFixa(toCondicaoFixaConfig(p), temProducao);
     setCodigoQuery(identidade);
     setSelecionado({ cadastroAdministrativo: !!p.cadastroAdministrativo });
     setForm((cur) => {
@@ -667,7 +675,7 @@ function PaymentModal({
     { label: "Condição fixa", valor: currency.format(totalCondicoesFixas) },
     { label: "Documentos medidos", valor: currency.format(totalDocsValorBruto) },
     { label: "Descontos", valor: `- ${currency.format(totalDescontos)}`, tom: totalDescontos > 0 ? "danger" : undefined },
-    { label: "Total medido líquido", valor: currency.format(valorPrevistoLiquido), tom: "strong" },
+    { label: "Total da medição", valor: currency.format(valorPrevistoLiquido), tom: "strong" },
   ];
   const secaoTitulo = "text-sm font-semibold text-[var(--foreground)]";
 
@@ -845,7 +853,7 @@ function PaymentModal({
                   <span className="font-semibold text-[var(--foreground)]">{condicaoCondicional.comProducao == null ? "–" : currency.format(condicaoCondicional.comProducao)}</span>
                   {" · "}sem produção{" "}
                   <span className="font-semibold text-[var(--foreground)]">{condicaoCondicional.semProducao == null ? "–" : currency.format(condicaoCondicional.semProducao)}</span>
-                  {" — aplicado: "}<span className="font-semibold text-[var(--foreground)]">{totalDocsValorBruto > 0 ? "com produção" : "sem produção"}</span>.
+                  {" — aplicado: "}<span className="font-semibold text-[var(--foreground)]">{temProducao ? "com produção" : "sem produção"}</span>.
                 </p>
               )}
             </section>
@@ -989,7 +997,7 @@ function PaymentModal({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h3 className={secaoTitulo}>Documentos medidos</h3>
                 <div className="flex flex-wrap items-center gap-2">
-                  {(valorPrevistoBase > 0 || totalDescontos > 0) && (
+                  {temComposicao && (
                     <Button variant="ghost" className="h-8 px-3 text-xs" onClick={() => update("valor", formatCurrencyInput(String(valorPrevistoLiquido)))}>
                       Usar total ({currency.format(valorPrevistoLiquido)})
                     </Button>

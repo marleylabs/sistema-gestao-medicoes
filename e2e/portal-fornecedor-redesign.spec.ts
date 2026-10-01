@@ -98,7 +98,7 @@ test.describe.serial("Portal do Fornecedor — redesign da aprovação do BM", (
     const fundo = async (el: typeof aprovar) => el.evaluate((node) => getComputedStyle(node).backgroundColor);
     expect(await fundo(aprovar)).not.toBe(await fundo(revisao)); // primária cheia × secundária outline
 
-    await expect(page.getByTestId("portal-composicao")).toContainText("Total medido líquido");
+    await expect(page.getByTestId("portal-composicao")).toContainText("Total da medição");
     await page.getByRole("button", { name: /Documentos da medição/ }).click();
     await expect(page.getByTestId("portal-documentos")).toContainText("Nenhum documento medido neste ciclo.");
   });

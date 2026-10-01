@@ -83,7 +83,7 @@ test.describe.serial("Novo pagamento — sucesso e falha controlada, nunca silê
     const precoInput = docRow.getByPlaceholder("0", { exact: true }).last();
     await precoInput.fill("5000");
 
-    await expect(page.getByText("Total medido líquido")).toBeVisible();
+    await expect(page.getByText("Total da medição")).toBeVisible();
     await expect(page.getByText("R$ 9.900,00").last()).toBeVisible();
 
     const kpiAntes = await kpiFornecedoresNoCiclo(page);

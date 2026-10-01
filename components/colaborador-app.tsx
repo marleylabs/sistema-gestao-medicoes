@@ -41,8 +41,8 @@ import {
 } from "@/components/portal-fornecedor";
 import { Badge, Button, Card, IconButton, PageContainer, PageHeader } from "@/components/ui";
 import type { AuthUser } from "@/lib/session";
-import { computarParticipacao } from "@/lib/contratos";
-import { isDocumentoDesconto, isFinancialFollowUpStatus } from "@/lib/portal-fornecedor";
+import { calcularBoletim } from "@/lib/boletim-calculo";
+import { isFinancialFollowUpStatus } from "@/lib/portal-fornecedor";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "@/lib/presence";
 
 type SgcChatMessage = {
@@ -206,10 +206,16 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
 
   const canValidate = data?.sgc.status === "PENDENTE" && data?.sgc.statusConferencia === "CONCLUIDA";
 
-  const resultadoParticipacao = useMemo(() => {
+  // Cálculo canônico do BM (lib/boletim-calculo.ts): o MESMO total que o PDF, o Histórico, as
+  // Evidências e o Financeiro mostram, e que o editor grava em mapaPagamentoItem.valor.
+  const calculo = useMemo(() => {
     if (!data) return null;
-    const elegiveis = data.documentos.filter((d) => !isDocumentoDesconto(d));
-    return computarParticipacao(elegiveis.map((d) => ({ contrato: d.contrato, valorMedido: d.valorMedido })));
+    return calcularBoletim({
+      documentos: data.documentos,
+      condicoesFixas: data.pagamento?.condicoesFixas,
+      valorInformado: data.pagamento?.valor ?? null,
+      rev: data.pagamento?.rev ?? 0,
+    });
   }, [data]);
 
   const loadData = useCallback(async (opts?: { silent?: boolean }) => {
@@ -757,8 +763,9 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
           ciclo={data.cicloAtivo}
           revisaoLabel={data.sgc.revisaoLabel}
           status={data.sgc.status}
-          valor={data.pagamento?.valor ?? 0}
-          revisao={data.pagamento?.rev ?? 0}
+          totalMedicao={calculo?.totalMedicao ?? 0}
+          rev={calculo?.rev ?? 0}
+          totalAPagar={calculo?.totalAPagar ?? 0}
           documento={data.usuario.cnpj || data.usuario.cpf}
           razaoSocial={data.usuario.razaoSocial || data.pagamento?.razaoSocial || null}
           email={displayEmail(data.usuario.email)}
@@ -969,7 +976,9 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
           <AprovarBoletimDialog
             fornecedor={data.usuario.nome}
             ciclo={data.cicloAtivo}
-            valor={data.pagamento?.valor ?? 0}
+            totalMedicao={calculo?.totalMedicao ?? 0}
+            rev={calculo?.rev ?? 0}
+            totalAPagar={calculo?.totalAPagar ?? 0}
             saving={saving}
             erro={modalError}
             onCancel={fecharAprovar}
@@ -1004,16 +1013,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
         )}
 
         {/* Composição e documentos: ocultos no acompanhamento financeiro (APROVADO/PAGO), como antes. */}
-        {!isFinancialFollowUpStatus(data.sgc.status) && (
-          <ComposicaoPortal
-            documentos={data.documentos}
-            condicoesFixas={data.pagamento?.condicoesFixas}
-            contratos={resultadoParticipacao?.participacoes.map((p) => ({ nome: p.nome, percentual: p.percentual })) ?? []}
-            naoClassificado={resultadoParticipacao && resultadoParticipacao.documentosPendentes > 0
-              ? { percentual: resultadoParticipacao.percentualNaoClassificado, documentos: resultadoParticipacao.documentosPendentes }
-              : null}
-          />
-        )}
+        {!isFinancialFollowUpStatus(data.sgc.status) && calculo && <ComposicaoPortal calculo={calculo} />}
 
         {/* ── Documentos não considerados (divergências descartadas pela Equipe) ──
              Nunca usar a palavra "Divergência" aqui — regra de UX já estabelecida para o Portal.
@@ -1045,8 +1045,8 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
 
         {!isFinancialFollowUpStatus(data.sgc.status) && (
           <DocumentosMedicaoPortal
-            documentos={data.documentos}
-            condicoesFixas={data.pagamento?.condicoesFixas}
+            calculo={calculo!}
+            observacoesContrato={data.pagamento?.condicoesFixas?.observacoesContrato}
             codigo={data.usuario.codigo}
             ciclo={data.cicloAtivo}
           />
@@ -1499,7 +1499,8 @@ function MedicaoAprovadaCard({ med, onReload }: { med: MedicaoAprovada; onReload
             </div>
           </div>
           <div className="text-right">
-            <p className="text-stat-label uppercase tracking-wide text-[#9CA3AF]">Valor total</p>
+            {/* valor + rev do mapa = TOTAL A PAGAR (o total da medição sozinho é mapaPagamentoItem.valor). */}
+            <p className="text-stat-label uppercase tracking-wide text-[#9CA3AF]">Total a pagar</p>
             <p className="text-base font-bold text-[#1A1A1A]">{cur.format(totalValor)}</p>
           </div>
         </div>

@@ -16,18 +16,28 @@ function LinhaValor({ label, children, forte, negativo }: { label: string; child
 }
 
 /**
- * Composição compacta do BM (Condições fixas, Documentos medidos, Descontos, Total medido líquido) —
- * sempre pela função única `resumoBoletim`, a mesma que alimenta o BoletimMedicao completo. Usada
- * nos painéis de detalhe do Histórico e de Evidências.
+ * Composição compacta do BM (Condições fixas, Documentos medidos, Descontos, Total da medição e,
+ * com REV, Total a pagar) — pelo cálculo canônico (lib/boletim-calculo.ts via `resumoBoletim`), o
+ * mesmo do Portal, do editor de pagamento e do BoletimMedicao. Usada nos detalhes do Histórico e
+ * de Evidências; o total da medição é o mesmo valor mostrado nas listas (valor gravado do mapa).
  */
 export function ComposicaoBoletim({ bm, testId }: { bm: BmData; testId?: string }) {
   const resumo = resumoBoletim(bm);
   return (
     <div data-testid={testId}>
-      <LinhaValor label="Condições fixas"><BlurValue>{brl.format(resumo.ccFixoClt + resumo.ccFixoPj)}</BlurValue></LinhaValor>
-      <LinhaValor label="Documentos medidos"><BlurValue>{brl.format(resumo.totalDocumentosMedidos)}</BlurValue></LinhaValor>
-      <LinhaValor label="Descontos" negativo={resumo.ccDescontos > 0}>{resumo.ccDescontos > 0 ? <BlurValue>{`- ${brl.format(resumo.ccDescontos)}`}</BlurValue> : "–"}</LinhaValor>
-      <LinhaValor label="Total medido líquido" forte><BlurValue>{brl.format(resumo.totalMedidoLiquido || resumo.totalMedicao)}</BlurValue></LinhaValor>
+      <LinhaValor label="Condições fixas"><BlurValue>{brl.format(resumo.totalCondicoesFixas)}</BlurValue></LinhaValor>
+      <LinhaValor label="Documentos medidos"><BlurValue>{brl.format(resumo.totalDocumentos)}</BlurValue></LinhaValor>
+      <LinhaValor label="Descontos" negativo={resumo.totalDescontos > 0}>{resumo.totalDescontos > 0 ? <BlurValue>{`- ${brl.format(resumo.totalDescontos)}`}</BlurValue> : "–"}</LinhaValor>
+      <LinhaValor label="Total da medição" forte><BlurValue>{brl.format(resumo.totalMedicao)}</BlurValue></LinhaValor>
+      {resumo.rev !== 0 && (
+        <>
+          <LinhaValor label="REV / Ajustes"><BlurValue>{brl.format(resumo.rev)}</BlurValue></LinhaValor>
+          <LinhaValor label="Total a pagar" forte><BlurValue>{brl.format(resumo.totalAPagar)}</BlurValue></LinhaValor>
+        </>
+      )}
+      {resumo.diferencaValorGravado !== null && resumo.diferencaValorGravado !== 0 && (
+        <p className="mt-1 text-[11px] text-[var(--warning)]">A composição atual não corresponde ao valor gravado no mapa. Confira o pagamento.</p>
+      )}
       <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">{resumo.documentosProdutivos.length} documento(s) medido(s){resumo.documentosDesconto.length ? ` · ${resumo.documentosDesconto.length} desconto(s)` : ""}.</p>
     </div>
   );

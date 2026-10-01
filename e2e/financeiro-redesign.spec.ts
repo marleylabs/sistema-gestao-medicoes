@@ -121,8 +121,8 @@ test.describe.serial("Financeiro — redesign (resumo, lista, detalhe, pagamento
     await expect(composicao).toContainText(`Condições fixas${brl(8340)}`);
     await expect(composicao).toContainText(`Documentos medidos${brl(7000)}`);
     await expect(composicao).toContainText(`Descontos- ${brl(280)}`);
-    await expect(composicao).toContainText(`Total medido líquido${brl(15060)}`);
-    await expect(detalhe.getByText("O total do BM difere")).toHaveCount(0);
+    await expect(composicao).toContainText(`Total da medição${brl(15060)}`);
+    await expect(detalhe.getByText(/não corresponde ao valor gravado/)).toHaveCount(0);
     await expect(detalhe.getByText(`Desconto teste ${S}`)).toBeVisible();
     await expect(detalhe.getByRole("link", { name: "Abrir NF" })).toBeVisible();
     await expect(detalhe.getByRole("button", { name: "Marcar pago" })).toBeVisible();

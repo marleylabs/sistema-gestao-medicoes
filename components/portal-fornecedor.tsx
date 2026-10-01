@@ -4,19 +4,25 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronDown, Clock, MessageCircle, XCircle } from "lucide-react";
 import { Badge, Button, Card, Textarea } from "@/components/ui";
 import { formatCicloLabel } from "@/lib/ciclo";
-import {
-  composicaoPortal,
-  getPortalStatusMeta,
-  valorDocumentoPortal,
-  type PortalCondicoesFixas,
-  type PortalDocumento,
-} from "@/lib/portal-fornecedor";
+import type { CalculoBoletim, DocumentoBoletim } from "@/lib/boletim-calculo";
+import { getPortalStatusMeta } from "@/lib/portal-fornecedor";
 
 /**
  * Peças visuais do Portal do Fornecedor (components/colaborador-app.tsx). Só apresentação: estado,
- * chamadas de API e regras continuam em ColaboradorApp; status e composição vêm de
- * lib/portal-fornecedor.ts (mesmos rótulos e mesma fórmula de antes).
+ * chamadas de API e regras continuam em ColaboradorApp; status vem de lib/portal-fornecedor.ts e
+ * TODOS os valores do BM vêm do cálculo canônico (lib/boletim-calculo.ts), recebido pronto.
  */
+
+/** Documento como o Portal recebe de GET /api/colaborador/me (campos usados na lista). */
+export type DocumentoPortal = DocumentoBoletim & {
+  id: string;
+  formato: string | null;
+  equivalenteA1Horas: number;
+  percentualEmissao: number;
+  condicao: string | null;
+  precoUnitario: number;
+  obs: string | null;
+};
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const numero = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 });
@@ -67,8 +73,9 @@ export function BoletimResumoPortal({
   ciclo,
   revisaoLabel,
   status,
-  valor,
-  revisao,
+  totalMedicao,
+  rev,
+  totalAPagar,
   documento,
   razaoSocial,
   email,
@@ -78,8 +85,9 @@ export function BoletimResumoPortal({
   ciclo: string;
   revisaoLabel: string | null;
   status: string;
-  valor: number;
-  revisao: number;
+  totalMedicao: number;
+  rev: number;
+  totalAPagar: number;
   documento: string | null;
   razaoSocial: string | null;
   email: string | null;
@@ -103,12 +111,15 @@ export function BoletimResumoPortal({
 
         <div className="mt-5 grid gap-5 border-t border-[var(--border)] pt-5 md:grid-cols-[minmax(0,260px)_minmax(0,1fr)] md:gap-8">
           <div>
-            <p className="text-stat-label uppercase tracking-wide text-[var(--muted-foreground)]">Pagamento previsto</p>
+            <p className="text-stat-label uppercase tracking-wide text-[var(--muted-foreground)]">Total da medição</p>
             <p className="mt-1 text-[28px] font-bold leading-tight tracking-[-0.01em] text-[var(--foreground)] tabular-nums" data-testid="portal-bm-valor">
-              {brl.format(valor)}
+              {brl.format(totalMedicao)}
             </p>
-            {revisao > 0 && (
-              <p className="mt-1 text-[12px] text-[var(--muted-foreground)]">Revisão: <span className="tabular-nums text-[var(--foreground)]">{brl.format(revisao)}</span></p>
+            {rev !== 0 && (
+              <dl className="mt-2 grid gap-1 text-[12px]">
+                <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">REV / Ajustes</dt><dd className="tabular-nums text-[var(--foreground)]" data-testid="portal-bm-rev">{brl.format(rev)}</dd></div>
+                <div className="flex justify-between gap-4 font-semibold"><dt className="text-[var(--foreground)]">Total a pagar</dt><dd className="tabular-nums text-[var(--foreground)]" data-testid="portal-bm-total-pagar">{brl.format(totalAPagar)}</dd></div>
+              </dl>
             )}
           </div>
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
@@ -184,37 +195,34 @@ function Linha({ label, children, forte, negativo, detalhe }: { label: string; c
   );
 }
 
-export function ComposicaoPortal({
-  documentos,
-  condicoesFixas,
-  contratos,
-  naoClassificado,
-}: {
-  documentos: PortalDocumento[];
-  condicoesFixas: PortalCondicoesFixas | null | undefined;
-  contratos: Array<{ nome: string; percentual: number }>;
-  naoClassificado: { percentual: number; documentos: number } | null;
-}) {
-  const c = composicaoPortal(documentos, condicoesFixas);
+export function ComposicaoPortal({ calculo }: { calculo: CalculoBoletim }) {
+  const c = calculo;
+  const naoClassificado = c.participacao.documentosPendentes > 0 ? c.participacao : null;
   return (
     <Card className="p-5 sm:p-6">
       <section aria-labelledby="portal-composicao-titulo" data-testid="portal-composicao">
         <h2 id="portal-composicao-titulo" className="text-card-title text-[var(--foreground)]">Composição do boletim</h2>
-        <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">Como o valor medido deste ciclo é formado.</p>
+        <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">Como o total da medição deste ciclo é formado.</p>
         <div className="mt-4 grid gap-6 md:grid-cols-2 md:gap-10">
           <div>
-            <Linha label="Condições fixas" detalhe={c.totalCondicoesFixas > 0 ? c.tipoCondicaoFixa : undefined}>
+            <Linha label="Condições fixas" detalhe={c.totalCondicoesFixas > 0 ? (c.adicionais > 0 ? `${c.tipoCondicaoFixa} · inclui adicionais de ${brl.format(c.adicionais)}` : c.tipoCondicaoFixa) : undefined}>
               {c.totalCondicoesFixas > 0 ? brl.format(c.totalCondicoesFixas) : "–"}
             </Linha>
             <Linha label="Documentos medidos" detalhe={`${c.documentosMedidos.length} doc.`}>{brl.format(c.totalDocumentos)}</Linha>
             <Linha label="Descontos" negativo={c.totalDescontos > 0}>{c.totalDescontos > 0 ? `- ${brl.format(c.totalDescontos)}` : "–"}</Linha>
-            <Linha label="Total medido líquido" forte>{brl.format(c.totalLiquido)}</Linha>
+            <Linha label="Total da medição" forte>{brl.format(c.totalMedicao)}</Linha>
+            {c.rev !== 0 && (
+              <>
+                <Linha label="REV / Ajustes">{brl.format(c.rev)}</Linha>
+                <Linha label="Total a pagar" forte>{brl.format(c.totalAPagar)}</Linha>
+              </>
+            )}
           </div>
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Distribuição por contrato</p>
-            {contratos.length || naoClassificado ? (
+            {c.participacao.participacoes.length || naoClassificado ? (
               <ul className="mt-2 grid gap-2">
-                {contratos.map((contrato) => (
+                {c.participacao.participacoes.map((contrato) => (
                   <li key={contrato.nome} className="grid gap-1">
                     <div className="flex items-baseline justify-between gap-3 text-[13px]">
                       <span className="min-w-0 break-words font-medium text-[var(--foreground)]">{contrato.nome}</span>
@@ -226,9 +234,9 @@ export function ComposicaoPortal({
                   </li>
                 ))}
                 {naoClassificado && (
-                  <li className="flex items-baseline justify-between gap-3 text-[13px]" title={`${naoClassificado.documentos} documento(s) sem contrato (CTO) válido`}>
+                  <li className="flex items-baseline justify-between gap-3 text-[13px]" title={`${naoClassificado.documentosPendentes} documento(s) sem contrato (CTO) válido`}>
                     <span className="font-medium text-[var(--warning)]">Não classificado</span>
-                    <span className="tabular-nums text-[var(--warning)]">{percentual.format(naoClassificado.percentual / 100)}</span>
+                    <span className="tabular-nums text-[var(--warning)]">{percentual.format(naoClassificado.percentualNaoClassificado / 100)}</span>
                   </li>
                 )}
               </ul>
@@ -245,19 +253,19 @@ export function ComposicaoPortal({
 // ─── Documentos ───────────────────────────────────────────────────────────────
 
 export function DocumentosMedicaoPortal({
-  documentos,
-  condicoesFixas,
+  calculo,
+  observacoesContrato,
   codigo,
   ciclo,
 }: {
-  documentos: PortalDocumento[];
-  condicoesFixas: PortalCondicoesFixas | null | undefined;
+  calculo: CalculoBoletim<DocumentoPortal>;
+  observacoesContrato: string | null | undefined;
   codigo: string;
   ciclo: string;
 }) {
   const [aberto, setAberto] = useState(false);
   const painelId = useId();
-  const c = composicaoPortal(documentos, condicoesFixas);
+  const c = { ...calculo, hasObs: calculo.documentosMedidos.some((d) => d.obs) || calculo.descontos.some((d) => d.obs) };
   const vazio = c.documentosMedidos.length === 0 && c.descontos.length === 0 && c.totalCondicoesFixas <= 0;
   const cabecalhos = ["Documento", "CTO", "Formato", "A1eq / HH", "% Emissão", "Tipo", "Preço unit.", "Valor medido", ...(c.hasObs ? ["Observação"] : [])];
   const condicaoFixaLabel = `Provento base contratual - ${c.tipoCondicaoFixa}`;
@@ -307,7 +315,7 @@ export function DocumentosMedicaoPortal({
                           <span className="font-medium text-[var(--foreground)]">{condicaoFixaLabel}</span>
                         </td>
                         <td className="px-4 py-3 text-right font-semibold tabular-nums text-[var(--foreground)]">{brl.format(c.totalCondicoesFixas)}</td>
-                        {c.hasObs && <td className="px-4 py-3 text-[var(--muted-foreground)]">{condicoesFixas?.observacoesContrato ?? "Base fixa"}</td>}
+                        {c.hasObs && <td className="px-4 py-3 text-[var(--muted-foreground)]">{observacoesContrato ?? "Base fixa"}</td>}
                       </tr>
                     )}
                     {c.documentosMedidos.map((d) => (
@@ -322,7 +330,7 @@ export function DocumentosMedicaoPortal({
                         <td className="px-4 py-3 text-right tabular-nums text-[var(--muted-foreground)]">{d.percentualEmissao ? percentual.format(d.percentualEmissao) : "100%"}</td>
                         <td className="px-4 py-3 text-[var(--muted-foreground)]">{d.tipo2 ?? "–"}</td>
                         <td className="px-4 py-3 text-right tabular-nums text-[var(--muted-foreground)]">{d.precoUnitario ? brl.format(d.precoUnitario) : (d.condicao ?? "–")}</td>
-                        <td className="px-4 py-3 text-right font-semibold tabular-nums text-[var(--foreground)]">{brl.format(valorDocumentoPortal(d))}</td>
+                        <td className="px-4 py-3 text-right font-semibold tabular-nums text-[var(--foreground)]">{brl.format(d.valorMedido)}</td>
                         {c.hasObs && <td className="px-4 py-3 text-[var(--muted-foreground)]">{d.obs ?? ""}</td>}
                       </tr>
                     ))}
@@ -332,7 +340,7 @@ export function DocumentosMedicaoPortal({
                           <span className="mr-2 inline-flex rounded-md border border-[#efc6c6] bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--error)]">Desconto</span>
                           <span className="font-medium text-[var(--error)]">{d.obs || d.numeroDocumento || "Desconto aplicado"}</span>
                         </td>
-                        <td className="px-4 py-3 text-right font-semibold tabular-nums text-[var(--error)]">- {brl.format(Math.abs(valorDocumentoPortal(d)))}</td>
+                        <td className="px-4 py-3 text-right font-semibold tabular-nums text-[var(--error)]">- {brl.format(Math.abs(d.valorMedido))}</td>
                         {c.hasObs && <td className="px-4 py-3 text-[var(--error)]">{d.obs ?? "Dedução"}</td>}
                       </tr>
                     ))}
@@ -360,7 +368,7 @@ export function DocumentosMedicaoPortal({
                         <p className="break-all font-technical text-[13px] font-semibold text-[var(--foreground)]">{d.numeroDocumento ?? "–"}</p>
                         <p className="break-words text-[11px] text-[var(--muted-foreground)]">{d.projetoReferente}{d.contrato ? ` · ${d.contrato}` : ""}</p>
                       </div>
-                      <p className="whitespace-nowrap text-[13px] font-semibold tabular-nums text-[var(--foreground)]">{brl.format(valorDocumentoPortal(d))}</p>
+                      <p className="whitespace-nowrap text-[13px] font-semibold tabular-nums text-[var(--foreground)]">{brl.format(d.valorMedido)}</p>
                     </div>
                     <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
                       <div className="flex justify-between gap-2"><dt className="text-[var(--muted-foreground)]">Formato</dt><dd className="text-[var(--foreground)]">{d.formato ?? "–"}</dd></div>
@@ -379,7 +387,7 @@ export function DocumentosMedicaoPortal({
                         <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--error)]">Desconto</p>
                         <p className="break-words text-[13px] font-medium text-[var(--error)]">{d.obs || d.numeroDocumento || "Desconto aplicado"}</p>
                       </div>
-                      <p className="whitespace-nowrap text-[13px] font-semibold tabular-nums text-[var(--error)]">- {brl.format(Math.abs(valorDocumentoPortal(d)))}</p>
+                      <p className="whitespace-nowrap text-[13px] font-semibold tabular-nums text-[var(--error)]">- {brl.format(Math.abs(d.valorMedido))}</p>
                     </div>
                   </li>
                 ))}
@@ -387,8 +395,7 @@ export function DocumentosMedicaoPortal({
 
               <div className="flex justify-end border-t border-[var(--border)] px-5 py-3 sm:px-6">
                 <p className="text-[13px] font-semibold text-[var(--foreground)]">
-                  {c.hasFinancialAdjustments ? "Total medido líquido:" : "Total medido:"}{" "}
-                  <span className="tabular-nums">{brl.format(c.hasFinancialAdjustments ? c.totalLiquido : c.totalDocumentos)}</span>
+                  Total da medição: <span className="tabular-nums">{brl.format(c.totalMedicao)}</span>
                 </p>
               </div>
             </>
@@ -457,7 +464,9 @@ function ErroDialogo({ erro }: { erro: string | null }) {
 export function AprovarBoletimDialog({
   fornecedor,
   ciclo,
-  valor,
+  totalMedicao,
+  rev,
+  totalAPagar,
   saving,
   erro,
   onCancel,
@@ -465,7 +474,9 @@ export function AprovarBoletimDialog({
 }: {
   fornecedor: string;
   ciclo: string;
-  valor: number;
+  totalMedicao: number;
+  rev: number;
+  totalAPagar: number;
   saving: boolean;
   erro: string | null;
   onCancel: () => void;
@@ -492,7 +503,9 @@ export function AprovarBoletimDialog({
       <dl className="grid gap-2 rounded-lg border border-[var(--border)] bg-[#fafaf8] p-3 text-[13px]">
         <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">Fornecedor</dt><dd className="min-w-0 break-words text-right font-medium text-[var(--foreground)]">{fornecedor}</dd></div>
         <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">Ciclo</dt><dd className="font-technical font-semibold text-[var(--foreground)]">{ciclo}</dd></div>
-        <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">Pagamento previsto</dt><dd className="font-semibold tabular-nums text-[var(--foreground)]">{brl.format(valor)}</dd></div>
+        <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">Total da medição</dt><dd className="font-semibold tabular-nums text-[var(--foreground)]">{brl.format(totalMedicao)}</dd></div>
+        {rev !== 0 && <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">REV / Ajustes</dt><dd className="tabular-nums text-[var(--foreground)]">{brl.format(rev)}</dd></div>}
+        <div className="flex justify-between gap-4"><dt className="font-semibold text-[var(--foreground)]">Total a pagar</dt><dd className="font-bold tabular-nums text-[var(--foreground)]">{brl.format(totalAPagar)}</dd></div>
         <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">Ação</dt><dd className="font-medium text-[var(--foreground)]">Aprovar BM</dd></div>
       </dl>
     </PortalDialog>

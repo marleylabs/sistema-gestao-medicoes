@@ -3,7 +3,25 @@ import test from "node:test";
 import Module from "node:module";
 import path from "node:path";
 import type { BmData } from "../components/boletim-medicao";
-import { composicaoPortal, type PortalDocumento } from "../lib/portal-fornecedor";
+import { calcularBoletim, centavos, normalizeText, parseCurrencyNumber } from "../lib/boletim-calculo";
+
+/**
+ * REGRESSÃO DE EQUIVALÊNCIA DO CÁLCULO DO BM — gate de release.
+ *
+ * Fonte única: lib/boletim-calculo.ts (fórmula do editor Novo/Editar pagamento, que grava
+ * mapaPagamentoItem.valor). Todas as telas recebem a MESMA entrada das APIs (documentos de
+ * getDocumentosMedidos e condições fixas de rawPayload.condicoesFixas) e passam pela mesma função:
+ *
+ *  - Portal do Fornecedor ............ calcularBoletim (components/colaborador-app.tsx)
+ *  - BM/PDF, ComposicaoBoletim (drawers
+ *    de Histórico e Evidências) e
+ *    detalhe do Financeiro ............ resumoBoletim → calcularBoletim (components/boletim-medicao.tsx)
+ *  - Listas de Histórico/Evidências .. valor gravado (mapaPagamentoItem.valor)
+ *  - Valor gravado ................... editor de pagamento → calcularBoletim
+ *
+ * TOTAL DA MEDIÇÃO = fixo + adicionais + documentos − descontos (= valor gravado);
+ * TOTAL A PAGAR = TOTAL DA MEDIÇÃO + REV. Tudo comparado em centavos.
+ */
 
 // resumoBoletim é uma função pura, mas mora num .tsx de UI: só os módulos visuais que ele importa
 // (botão e ícone de impressão) são trocados por um stub, para o Node não carregar HeroUI. A função
@@ -19,42 +37,21 @@ moduleInterno._resolveFilename = function (request: string, ...rest: unknown[]) 
 const { resumoBoletim } = require("../components/boletim-medicao") as typeof import("../components/boletim-medicao");
 moduleInterno._resolveFilename = resolverOriginal;
 
-/**
- * MATRIZ DE CONSISTÊNCIA DO CÁLCULO DO BM — teste de CARACTERIZAÇÃO (não corrige nada).
- *
- * As duas APIs entregam a MESMA entrada às duas fórmulas (GET /api/colaborador/me → Portal;
- * GET /api/admin/bm e /api/colaborador/medicoes → resumoBoletim): mesmos documentos
- * (getDocumentosMedidos, valorMedido = A1eq × preço × %emissão) e mesmas condições fixas
- * (mapaPagamentoItem.rawPayload.condicoesFixas). Por isso a comparação pode ser feita aqui, em
- * centavos, sobre a mesma entrada:
- *
- *  - PORTAL      = composicaoPortal (lib/portal-fornecedor.ts) — também é a fórmula do editor de
- *                  pagamento (components/pagamento-editor.tsx) que GRAVA mapaPagamentoItem.valor.
- *  - INTERNO     = resumoBoletim (components/boletim-medicao.tsx) — BM/PDF, ComposicaoBoletim
- *                  (drawers de Histórico e Evidências) e detalhe do Financeiro.
- *  - PERSISTIDO  = mapaPagamentoItem.valor (+ rev = "a pagar" do Financeiro e "TOTAL DA MEDIÇÃO"
- *                  do PDF). Listas de Histórico/Evidências/Dashboard mostram esse valor.
- *
- * Os valores esperados abaixo são os de HOJE. Uma divergência registrada aqui é um achado a
- * decidir (fonte de verdade), não um comportamento aprovado; se a regra mudar, este teste precisa
- * ser atualizado junto, de propósito.
- */
+const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
 type Linha = { tipo2: string | null; valor: number; projeto?: string; numero?: string; contrato?: string };
 type Cenario = {
   id: string;
-  descricao: string;
   valorFixo: string | null;
   adicionaisFixos: string | null;
   linhas: Linha[];
   rev?: number;
-  /** Como o editor de pagamento grava mapaPagamentoItem.valor para esta entrada. */
-  persistidoEditor: number;
+  /** Só para BM sem composição: valor digitado no pagamento. */
+  valorDigitado?: number;
+  esperado: { totalMedicao: number; totalAPagar: number };
 };
 
-const centavos = (v: number) => Math.round(v * 100);
-
-function documentos(linhas: Linha[]): Array<PortalDocumento & BmData["documentos"][number]> {
+function documentos(linhas: Linha[]): BmData["documentos"] {
   return linhas.map((l, i) => ({
     id: `doc-${i}`,
     projetoReferente: l.projeto ?? "SE-E2E",
@@ -78,116 +75,165 @@ function documentos(linhas: Linha[]): Array<PortalDocumento & BmData["documentos
   }));
 }
 
-function bmInterno(c: Cenario, docs: ReturnType<typeof documentos>): BmData {
-  return {
-    ciclo: "2612",
-    revisaoNumero: 0,
-    revisaoLabel: null,
-    aprovadoAt: null,
-    colaborador: { nome: "Fornecedor", cpf: null, cnpj: "11.222.333/0001-81", razaoSocial: null, funcao: null },
-    contexto: null,
-    pagamento: {
-      ato: null, valor: c.persistidoEditor, rev: c.rev ?? 0, horas: 0,
-      intrSossego: 0, salobo: 0, acg: 0, escadasAlumar: 0, razaoSocial: null, cpfCnpj: null,
-      condicoesFixas: { valorFixo: c.valorFixo, tipoContratacao: null, adicionaisFixos: c.adicionaisFixos, observacoesContrato: null },
-    },
-    documentos: docs,
-  };
+/** Valor que o editor grava (total da composição formatado; sem composição, o digitado) — pela mesma função. */
+function valorGravadoPeloEditor(c: Cenario, docs: BmData["documentos"]) {
+  const calculo = calcularBoletim({ documentos: docs, condicoesFixas: { valorFixo: c.valorFixo, adicionaisFixos: c.adicionaisFixos } });
+  return calculo.semComposicao ? (c.valorDigitado ?? 0) : parseCurrencyNumber(brl.format(calculo.totalComposicaoBruto));
 }
 
-function comparar(c: Cenario) {
+function avaliar(c: Cenario) {
   const docs = documentos(c.linhas);
-  const portal = composicaoPortal(docs, { valorFixo: c.valorFixo, adicionaisFixos: c.adicionaisFixos, tipoContratacao: null, observacoesContrato: null });
-  const interno = resumoBoletim(bmInterno(c, docs));
-  const totalInternoExibido = interno.totalMedidoLiquido || interno.totalMedicao; // ComposicaoBoletim, Financeiro, linha final do PDF
+  const condicoesFixas = { valorFixo: c.valorFixo, tipoContratacao: null, adicionaisFixos: c.adicionaisFixos, observacoesContrato: null };
+  const gravado = valorGravadoPeloEditor(c, docs);
+  const rev = c.rev ?? 0;
+  const portal = calcularBoletim({ documentos: docs, condicoesFixas, valorInformado: gravado, rev });
+  const interno = resumoBoletim({
+    ciclo: "2612", revisaoNumero: 0, revisaoLabel: null, aprovadoAt: null,
+    colaborador: { nome: "Fornecedor", cpf: null, cnpj: "11.222.333/0001-81", razaoSocial: null, funcao: null },
+    contexto: null,
+    pagamento: { ato: null, valor: gravado, rev, horas: 0, intrSossego: 0, salobo: 0, acg: 0, escadasAlumar: 0, razaoSocial: null, cpfCnpj: null, condicoesFixas },
+    documentos: docs,
+  });
   return {
     cenario: c.id,
-    portalPagamentoPrevisto: centavos(c.persistidoEditor),
-    portalTotalLiquido: centavos(portal.totalLiquido),
-    internoTotalLiquido: centavos(totalInternoExibido),
-    pdfTotalDaMedicao: centavos(interno.totalMedicao), // valor + rev
-    persistido: centavos(c.persistidoEditor),
-    portalFixas: centavos(portal.totalCondicoesFixas),
-    internoFixas: centavos(interno.ccFixoClt + interno.ccFixoPj),
-    portalDocs: centavos(portal.totalDocumentos),
-    internoDocs: centavos(interno.totalDocumentosMedidos),
-    portalDescontos: centavos(portal.totalDescontos),
-    internoDescontos: centavos(interno.ccDescontos),
+    portal: centavos(portal.totalMedicao),
+    historicoLista: centavos(gravado),
+    historicoDrawer: centavos(interno.totalMedicao),  // ComposicaoBoletim
+    evidenciasLista: centavos(gravado),
+    evidenciasDrawer: centavos(interno.totalMedicao), // ComposicaoBoletim
+    pdfComposicao: centavos(interno.totalCondicoesFixas + interno.totalDocumentos - interno.totalDescontos),
+    pdfTotalMedicao: centavos(interno.totalMedicao),
+    persistido: centavos(gravado),
+    portalAPagar: centavos(portal.totalAPagar),
+    pdfAPagar: centavos(interno.totalAPagar),
+    financeiroAPagar: centavos(gravado + rev),       // components/financeiro/shared.ts: valorAPagar = valor + rev
+    portalRev: centavos(portal.rev),
+    pdfRev: centavos(interno.rev),
+    quebraIgual: centavos(portal.totalCondicoesFixas) === centavos(interno.totalCondicoesFixas)
+      && centavos(portal.totalDocumentos) === centavos(interno.totalDocumentos)
+      && centavos(portal.totalDescontos) === centavos(interno.totalDescontos),
+    semComposicao: portal.semComposicao,
+    diferencaValorGravado: interno.diferencaValorGravado,
   };
 }
 
 const CENARIOS: Cenario[] = [
-  { id: "1 normal", descricao: "produção sem fixo/adicional/desconto", valorFixo: null, adicionaisFixos: null,
-    linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: "DOC", valor: 500 }], persistidoEditor: 1500 },
-  { id: "2 fixo", descricao: "condição fixa + produção", valorFixo: "R$ 2.000,00", adicionaisFixos: null,
-    linhas: [{ tipo2: "DG", valor: 1000 }], persistidoEditor: 3000 },
-  { id: "3 adicional", descricao: "condição fixa + adicional fixo + produção", valorFixo: "R$ 2.000,00", adicionaisFixos: "R$ 300,00",
-    linhas: [{ tipo2: "DG", valor: 1000 }], persistidoEditor: 3300 },
-  { id: "3b adicional sem fixo", descricao: "só adicional fixo + produção", valorFixo: null, adicionaisFixos: "300",
-    linhas: [{ tipo2: "DG", valor: 1000 }], persistidoEditor: 1300 },
-  { id: "4 desconto tipo2", descricao: "desconto marcado em tipo2", valorFixo: null, adicionaisFixos: null,
-    linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: "DESCONTO", valor: -100 }], persistidoEditor: 900 },
-  { id: "5 desconto projeto", descricao: "desconto só pelo projeto (valor negativo)", valorFixo: null, adicionaisFixos: null,
-    linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: null, projeto: "DESCONTO", valor: -100 }], persistidoEditor: 900 },
-  { id: "5b desconto projeto (+)", descricao: "desconto só pelo projeto gravado com sinal POSITIVO", valorFixo: null, adicionaisFixos: null,
-    linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: null, projeto: "DESCONTO", valor: 100 }], persistidoEditor: 900 },
-  { id: "6 desconto número", descricao: "desconto só pelo número do documento (valor negativo)", valorFixo: null, adicionaisFixos: null,
-    linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: null, numero: "DESCONTO", valor: -100 }], persistidoEditor: 900 },
-  { id: "7 contratos", descricao: "múltiplos contratos", valorFixo: null, adicionaisFixos: null,
-    linhas: [{ tipo2: "DG", valor: 1000, contrato: "CTO-A" }, { tipo2: "DOC", valor: 500, contrato: "CTO-B" }, { tipo2: "HH", valor: 300, contrato: "CTO-A" }], persistidoEditor: 1800 },
-  { id: "8 combinação", descricao: "fixo + adicional + produção + desconto", valorFixo: "2000", adicionaisFixos: "300",
-    linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: "DOC", valor: 500 }, { tipo2: "DESCONTO", valor: -200 }], persistidoEditor: 3600 },
-  { id: "9 tipo2 vazio", descricao: "documento sem tipo2 (fora de DG/DOC/HH/MC), sem fixo", valorFixo: null, adicionaisFixos: null,
-    linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: null, valor: 400 }], persistidoEditor: 1400 },
-  { id: "10 rev", descricao: "pagamento com REV ≠ 0", valorFixo: null, adicionaisFixos: null, rev: 250,
-    linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: "DOC", valor: 500 }], persistidoEditor: 1500 },
+  { id: "1 normal", valorFixo: null, adicionaisFixos: null, linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: "DOC", valor: 500 }], esperado: { totalMedicao: 1500, totalAPagar: 1500 } },
+  { id: "2 fixo", valorFixo: "R$ 2.000,00", adicionaisFixos: null, linhas: [{ tipo2: "DG", valor: 1000 }], esperado: { totalMedicao: 3000, totalAPagar: 3000 } },
+  { id: "3 fixo + adicional", valorFixo: "R$ 2.000,00", adicionaisFixos: "R$ 300,00", linhas: [{ tipo2: "DG", valor: 1000 }], esperado: { totalMedicao: 3300, totalAPagar: 3300 } },
+  { id: "3b só adicional", valorFixo: null, adicionaisFixos: "300", linhas: [{ tipo2: "DG", valor: 1000 }], esperado: { totalMedicao: 1300, totalAPagar: 1300 } },
+  { id: "4 desconto pelo tipo", valorFixo: null, adicionaisFixos: null, linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: "DESCONTO", valor: -100 }], esperado: { totalMedicao: 900, totalAPagar: 900 } },
+  { id: "5 desconto pelo projeto", valorFixo: null, adicionaisFixos: null, linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: null, projeto: "DESCONTO", valor: -100 }], esperado: { totalMedicao: 900, totalAPagar: 900 } },
+  { id: "5b desconto pelo projeto (+)", valorFixo: null, adicionaisFixos: null, linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: null, projeto: "DESCONTO", valor: 100 }], esperado: { totalMedicao: 900, totalAPagar: 900 } },
+  { id: "6 desconto pelo número", valorFixo: null, adicionaisFixos: null, linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: null, numero: "DESCONTO", valor: -100 }], esperado: { totalMedicao: 900, totalAPagar: 900 } },
+  { id: "7 vários contratos", valorFixo: null, adicionaisFixos: null, linhas: [{ tipo2: "DG", valor: 1000, contrato: "CTO-A" }, { tipo2: "DOC", valor: 500, contrato: "CTO-B" }, { tipo2: "HH", valor: 300, contrato: "CTO-A" }], esperado: { totalMedicao: 1800, totalAPagar: 1800 } },
+  { id: "8 combinação", valorFixo: "2000", adicionaisFixos: "300", linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: "DOC", valor: 500 }, { tipo2: "DESCONTO", valor: -200 }], esperado: { totalMedicao: 3600, totalAPagar: 3600 } },
+  { id: "9 documento sem tipo, sem fixo", valorFixo: null, adicionaisFixos: null, linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: null, valor: 400 }], esperado: { totalMedicao: 1400, totalAPagar: 1400 } },
+  { id: "10 REV", valorFixo: null, adicionaisFixos: null, rev: 250, linhas: [{ tipo2: "DG", valor: 1000 }, { tipo2: "DOC", valor: 500 }], esperado: { totalMedicao: 1500, totalAPagar: 1750 } },
+  { id: "11 sem composição (valor digitado)", valorFixo: null, adicionaisFixos: null, linhas: [], valorDigitado: 777.77, esperado: { totalMedicao: 777.77, totalAPagar: 777.77 } },
 ];
 
-// Resultado observado hoje, em centavos: [portal total líquido, interno total líquido, PDF "TOTAL DA MEDIÇÃO"].
-const ESPERADO: Record<string, [number, number, number]> = {
-  "1 normal": [150000, 150000, 150000],
-  "2 fixo": [300000, 300000, 300000],
-  "3 adicional": [330000, 300000, 330000],          // interno ignora adicionaisFixos
-  "3b adicional sem fixo": [130000, 130000, 130000], // igual por coincidência: o fallback do interno "absorve" o adicional
-  "4 desconto tipo2": [90000, 90000, 90000],
-  "5 desconto projeto": [90000, 90000, 90000],      // mesmo total; quebra visual diferente (desconto vira documento negativo)
-  "5b desconto projeto (+)": [90000, 110000, 90000], // interno SOMA o "desconto" positivo
-  "6 desconto número": [90000, 90000, 90000],       // mesmo total; quebra visual diferente
-  "7 contratos": [180000, 180000, 180000],
-  "8 combinação": [360000, 330000, 360000],         // interno ignora adicionaisFixos
-  "9 tipo2 vazio": [140000, 180000, 140000],        // fallback do interno trata o doc sem tipo2 como condição fixa (conta 2x)
-  "10 rev": [150000, 150000, 175000],               // PDF/Financeiro somam rev; portal mostra rev separado
-};
-
-test("matriz: Portal × BM interno (PDF/Histórico/Evidências/Financeiro) × persistido, em centavos", () => {
-  const linhas = CENARIOS.map(comparar);
+test("matriz: TOTAL DA MEDIÇÃO idêntico em Portal, Histórico (lista/drawer), Evidências (lista/drawer), PDF e valor gravado", () => {
+  const linhas = CENARIOS.map(avaliar);
   console.table(linhas.map((l) => ({
-    cenario: l.cenario,
-    portal: l.portalTotalLiquido / 100,
-    interno: l.internoTotalLiquido / 100,
-    pdfTotalMedicao: l.pdfTotalDaMedicao / 100,
-    persistido: l.persistido / 100,
-    iguais: l.portalTotalLiquido === l.internoTotalLiquido && l.portalTotalLiquido === l.persistido && l.pdfTotalDaMedicao === l.persistido,
+    cenario: l.cenario, portal: l.portal / 100, historico: l.historicoDrawer / 100, evidencias: l.evidenciasDrawer / 100,
+    pdf: l.pdfTotalMedicao / 100, persistido: l.persistido / 100, rev: l.pdfRev / 100, aPagar: l.pdfAPagar / 100,
   })));
   for (const l of linhas) {
-    assert.deepEqual([l.portalTotalLiquido, l.internoTotalLiquido, l.pdfTotalDaMedicao], ESPERADO[l.cenario], l.cenario);
-    // O total do portal é sempre o valor que o editor grava (mesma fórmula).
-    assert.equal(l.portalTotalLiquido, l.persistido, `${l.cenario}: portal × persistido`);
+    const c = CENARIOS.find((x) => x.id === l.cenario)!;
+    const esperado = centavos(c.esperado.totalMedicao);
+    for (const ponto of ["portal", "historicoLista", "historicoDrawer", "evidenciasLista", "evidenciasDrawer", "pdfTotalMedicao", "persistido"] as const) {
+      assert.equal(l[ponto], esperado, `${l.cenario}: ${ponto}`);
+    }
+    if (!l.semComposicao) assert.equal(l.pdfComposicao, esperado, `${l.cenario}: composição do PDF fecha no total`);
+    assert.equal(l.quebraIgual, true, `${l.cenario}: mesma quebra (fixas/documentos/descontos)`);
+    assert.equal(l.diferencaValorGravado, 0, `${l.cenario}: sem alerta de integridade`);
   }
 });
 
-test("quebra visual: desconto só por projeto/número aparece como documento negativo no interno", () => {
-  for (const id of ["5 desconto projeto", "6 desconto número"]) {
-    const l = comparar(CENARIOS.find((c) => c.id === id)!);
-    assert.deepEqual([l.portalDocs, l.portalDescontos], [100000, 10000], id);
-    assert.deepEqual([l.internoDocs, l.internoDescontos], [90000, 0], id);
+test("REV separado: TOTAL A PAGAR = TOTAL DA MEDIÇÃO + REV em Portal, PDF e Financeiro", () => {
+  for (const l of CENARIOS.map(avaliar)) {
+    const c = CENARIOS.find((x) => x.id === l.cenario)!;
+    assert.equal(l.portalAPagar, centavos(c.esperado.totalAPagar), `${l.cenario}: portal a pagar`);
+    assert.equal(l.pdfAPagar, centavos(c.esperado.totalAPagar), `${l.cenario}: PDF a pagar`);
+    assert.equal(l.financeiroAPagar, centavos(c.esperado.totalAPagar), `${l.cenario}: Financeiro a pagar`);
+    assert.equal(l.portalRev, l.pdfRev, `${l.cenario}: REV`);
+  }
+  const rev = avaliar(CENARIOS.find((c) => c.id === "10 REV")!);
+  assert.deepEqual([rev.pdfTotalMedicao, rev.pdfRev, rev.pdfAPagar], [150000, 25000, 175000]);
+});
+
+test("GATE: valor mostrado ao fornecedor antes de aprovar = TOTAL DA MEDIÇÃO do PDF depois da aprovação", () => {
+  for (const l of CENARIOS.map(avaliar)) {
+    assert.equal(l.portal, l.pdfTotalMedicao, `${l.cenario}: portal × PDF`);
+    assert.equal(l.portalAPagar, l.pdfAPagar, `${l.cenario}: a pagar portal × PDF`);
   }
 });
 
-test("distribuição por contrato: mesma participação nos dois cálculos (cenário 7)", async () => {
-  const { computarParticipacao } = await import("../lib/contratos");
-  const docs = documentos(CENARIOS.find((c) => c.id === "7 contratos")!.linhas);
-  const portal = computarParticipacao(composicaoPortal(docs, null).documentosMedidos.map((d) => ({ contrato: d.contrato, valorMedido: d.valorMedido })));
-  const interno = computarParticipacao(resumoBoletim(bmInterno(CENARIOS.find((c) => c.id === "7 contratos")!, docs)).documentosProdutivos.map((d) => ({ contrato: d.contrato, valorMedido: d.valorMedido })));
-  assert.deepEqual(portal.participacoes.map((p) => [p.nome, p.percentual]), interno.participacoes.map((p) => [p.nome, p.percentual]));
+test("distribuição por contrato: a mesma no Portal e no PDF (cenário 7)", () => {
+  const c = CENARIOS.find((x) => x.id === "7 vários contratos")!;
+  const docs = documentos(c.linhas);
+  const portal = calcularBoletim({ documentos: docs, condicoesFixas: null });
+  const pdf = resumoBoletim({ ciclo: "2612", revisaoNumero: 0, revisaoLabel: null, aprovadoAt: null, colaborador: { nome: "F", cpf: null, cnpj: null, razaoSocial: null, funcao: null }, contexto: null, pagamento: null, documentos: docs });
+  assert.deepEqual(portal.participacao.participacoes.map((p) => [p.nome, p.percentual]), pdf.participacao.participacoes.map((p) => [p.nome, p.percentual]));
+  assert.deepEqual(portal.participacao.participacoes.map((p) => p.nome), ["CTO-A", "CTO-B"]);
+});
+
+test("integridade: valor gravado que não bate com a composição é sinalizado (não escondido)", () => {
+  const docs = documentos([{ tipo2: "DG", valor: 1000 }]);
+  const calculo = calcularBoletim({ documentos: docs, condicoesFixas: null, valorInformado: 1200 });
+  assert.equal(calculo.totalMedicao, 1000);
+  assert.equal(calculo.diferencaValorGravado, -200);
+  assert.equal(calcularBoletim({ documentos: docs, condicoesFixas: null, valorInformado: 1000 }).diferencaValorGravado, 0);
+});
+
+type LinhaEditor = { tipo2: string; se: string; numeroDocumento: string; equivalenteA1Horas: string; percentualEmissao: string; condicao: string };
+
+/** Fórmula do editor de pagamento ANTES da refatoração (components/pagamento-editor.tsx em b69b40d), congelada como referência. */
+function editorAntes(docs: LinhaEditor[], valorFixo: string, adicionaisFixos: string) {
+  const isDiscountDoc = (d: LinhaEditor) => normalizeText(d.tipo2) === "DESCONTO" || normalizeText(d.se) === "DESCONTO" || normalizeText(d.numeroDocumento) === "DESCONTO";
+  const docValorMedido = (d: LinhaEditor) => isDiscountDoc(d)
+    ? -Math.abs(parseCurrencyNumber(d.condicao))
+    : (parseFloat(d.equivalenteA1Horas) || 0) * (parseFloat(d.condicao) || 0) * ((parseFloat(d.percentualEmissao) || 0) / 100);
+  const documentosMedidos = docs.filter((d) => !isDiscountDoc(d));
+  const descontos = docs.filter(isDiscountDoc);
+  const totalDocsValorBruto = documentosMedidos.reduce((s, d) => s + docValorMedido(d), 0);
+  const totalDescontos = descontos.reduce((s, d) => s + Math.abs(docValorMedido(d)), 0);
+  const totalCondicoesFixas = parseCurrencyNumber(valorFixo) + parseCurrencyNumber(adicionaisFixos);
+  const valorPrevistoBase = totalCondicoesFixas + totalDocsValorBruto;
+  return { liquido: valorPrevistoBase - totalDescontos, usaLiquido: valorPrevistoBase > 0 || totalDescontos > 0, temProducao: totalDocsValorBruto > 0, docValorMedido };
+}
+
+test("editor: valor gravado idêntico em centavos antes × depois da refatoração (2.000 entradas aleatórias)", () => {
+  let semente = 20261001;
+  const rnd = () => (semente = (semente * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const escolha = <T,>(xs: readonly T[]) => xs[Math.floor(rnd() * xs.length)];
+  for (let i = 0; i < 2000; i++) {
+    const docs: LinhaEditor[] = Array.from({ length: Math.floor(rnd() * 6) }, () => {
+      const desconto = rnd() < 0.25;
+      const marca = escolha(["tipo2", "se", "numeroDocumento"] as const);
+      return {
+        tipo2: desconto && marca === "tipo2" ? "desconto" : escolha(["DG", "DOC", "HH", "MC", "", "0"]),
+        se: desconto && marca === "se" ? " Desconto " : `SE-${i}`,
+        numeroDocumento: desconto && marca === "numeroDocumento" ? "DESCONTO" : `VALE-${i}`,
+        equivalenteA1Horas: (rnd() * 40).toFixed(rnd() < 0.5 ? 3 : 1),
+        percentualEmissao: escolha(["100", "80", "50", "33.3", "0"]),
+        condicao: desconto ? (rnd() * 900).toFixed(2) : (rnd() * 300).toFixed(escolha([0, 2, 3])),
+      };
+    });
+    const valorFixo = rnd() < 0.5 ? "" : brl.format(Math.round(rnd() * 500000) / 100);
+    const adicionais = rnd() < 0.7 ? "" : (rnd() * 800).toFixed(2);
+    const antes = editorAntes(docs, valorFixo, adicionais);
+    const depois = calcularBoletim({
+      documentos: docs.map((d) => ({ tipo2: d.tipo2, projetoReferente: d.se, numeroDocumento: d.numeroDocumento, contrato: null, valorMedido: antes.docValorMedido(d) })),
+      condicoesFixas: { valorFixo, adicionaisFixos: adicionais },
+    });
+    assert.equal(brl.format(depois.totalComposicaoBruto), brl.format(antes.liquido), `caso ${i}: valor gravado`);
+    assert.equal(!depois.semComposicao, antes.usaLiquido, `caso ${i}: usa o total calculado`);
+    assert.equal(depois.temProducao, antes.temProducao, `caso ${i}: condição CONDICIONAL_PRODUCAO`);
+    if (antes.usaLiquido) {
+      // O total exibido em todas as telas é exatamente o valor que o editor grava.
+      assert.equal(centavos(depois.totalMedicao), centavos(parseCurrencyNumber(brl.format(antes.liquido))), `caso ${i}: total da medição × gravado`);
+    }
+  }
 });

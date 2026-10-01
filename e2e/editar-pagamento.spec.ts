@@ -72,7 +72,7 @@ test.describe.serial("Editar pagamento — painel lateral contextual", () => {
     await expect(painel.getByText(e2eCiclo(), { exact: true })).toBeVisible();
     await expect(painel.getByRole("button", { name: "Voltar ao fornecedor" })).toBeVisible();
 
-    for (const label of ["Pagamento atual", "Condição fixa", "Documentos medidos", "Descontos", "Total medido líquido"]) {
+    for (const label of ["Pagamento atual", "Condição fixa", "Documentos medidos", "Descontos", "Total da medição"]) {
       await expect(painel.getByLabel("Resumo do pagamento").getByText(label, { exact: true })).toBeVisible();
     }
     await expect(painel.getByLabel("Resumo do pagamento")).toContainText("R$ 100,00");

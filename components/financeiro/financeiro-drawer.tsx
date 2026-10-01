@@ -32,8 +32,8 @@ function LinkArquivo({ href, children }: { href: string; children: ReactNode }) 
 
 /**
  * Detalhe financeiro do fornecedor no ciclo. Valor a pagar = mesma fonte da lista (valor + rev do
- * mapa). A composição (condições fixas, documentos medidos, descontos) vem do BM já existente
- * (GET /api/admin/bm, o mesmo do "Ver BM") pela função única `resumoBoletim` — nada recalculado
+ * mapa: total da medição + REV). A composição vem do BM já existente (GET /api/admin/bm, o mesmo do
+ * "Ver BM") pelo cálculo canônico (lib/boletim-calculo.ts via `resumoBoletim`) — nada recalculado
  * aqui. "Marcar pago" continua exigindo status APROVADO (regra do backend) e mantém o comprovante
  * opcional no mesmo PATCH de sempre.
  */
@@ -86,9 +86,10 @@ export function FinanceiroDrawer({
   }, [item.colaboradorCodigo, ciclo]);
 
   const resumo = bm ? resumoBoletim(bm) : null;
-  // Mesmo total exibido no boletim impresso (líquido; na falta dele, valor + rev do pagamento).
-  const totalBm = resumo ? (resumo.totalMedidoLiquido || resumo.totalMedicao) : null;
   const aPagar = valorAPagar(item);
+  // Integridade: com uma fonte única de cálculo, só diverge se o valor gravado no mapa não
+  // corresponder mais à composição do BM (ex.: documento alterado depois de salvar o pagamento).
+  const divergeDoMapa = resumo !== null && resumo.diferencaValorGravado !== null && resumo.diferencaValorGravado !== 0;
   const podeMarcar = podeRegistrarPagamento && item.status === "APROVADO";
 
   return (
@@ -131,8 +132,8 @@ export function FinanceiroDrawer({
         </div>
         {item.rev !== 0 && (
           <div>
-            <Linha label="Valor do mapa"><BlurValue>{currency.format(item.valor)}</BlurValue></Linha>
-            <Linha label="Revisão"><BlurValue>{currency.format(item.rev)}</BlurValue></Linha>
+            <Linha label="Total da medição"><BlurValue>{currency.format(item.valor)}</BlurValue></Linha>
+            <Linha label="REV / Ajustes"><BlurValue>{currency.format(item.rev)}</BlurValue></Linha>
           </div>
         )}
       </PanelSection>
@@ -144,23 +145,32 @@ export function FinanceiroDrawer({
           <p className="text-sm text-[var(--muted-foreground)]">Carregando composição do BM…</p>
         ) : (
           <div data-testid="financeiro-composicao">
-            <Linha label="Condições fixas"><BlurValue>{currency.format(resumo.ccFixoClt + resumo.ccFixoPj)}</BlurValue></Linha>
-            <Linha label="Documentos medidos"><BlurValue>{currency.format(resumo.totalDocumentosMedidos)}</BlurValue></Linha>
-            <Linha label="Descontos" tom={resumo.ccDescontos > 0 ? "negativo" : undefined}>
-              {resumo.ccDescontos > 0 ? <BlurValue>{`- ${currency.format(resumo.ccDescontos)}`}</BlurValue> : "–"}
+            <Linha label="Condições fixas"><BlurValue>{currency.format(resumo.totalCondicoesFixas)}</BlurValue></Linha>
+            <Linha label="Documentos medidos"><BlurValue>{currency.format(resumo.totalDocumentos)}</BlurValue></Linha>
+            <Linha label="Descontos" tom={resumo.totalDescontos > 0 ? "negativo" : undefined}>
+              {resumo.totalDescontos > 0 ? <BlurValue>{`- ${currency.format(resumo.totalDescontos)}`}</BlurValue> : "–"}
             </Linha>
-            <Linha label="Total medido líquido" forte><BlurValue>{currency.format(totalBm ?? 0)}</BlurValue></Linha>
-            {totalBm !== null && Math.abs(totalBm - aPagar) > 0.01 && (
-              <p className="mt-2 text-[12px] text-[var(--warning)]">O total do BM difere do valor a pagar do mapa. Confira o boletim.</p>
+            <Linha label="Total da medição" forte><BlurValue>{currency.format(resumo.totalMedicao)}</BlurValue></Linha>
+            {resumo.rev !== 0 && (
+              <>
+                <Linha label="REV / Ajustes"><BlurValue>{currency.format(resumo.rev)}</BlurValue></Linha>
+                <Linha label="Total a pagar" forte><BlurValue>{currency.format(resumo.totalAPagar)}</BlurValue></Linha>
+              </>
+            )}
+            {divergeDoMapa && (
+              <p className="mt-2 text-[12px] text-[var(--warning)]">
+                A composição atual do BM não corresponde ao valor gravado no mapa ({currency.format(item.valor)}). Confira o pagamento antes de pagar.
+              </p>
             )}
           </div>
         )}
       </PanelSection>
 
-      {resumo && (resumo.fixoAmount > 0.01 || bm?.pagamento?.condicoesFixas?.tipoContratacao) && (
+      {resumo && (resumo.totalCondicoesFixas > 0 || bm?.pagamento?.condicoesFixas?.tipoContratacao) && (
         <PanelSection title="Condição fixa">
           <dl className="grid grid-cols-2 gap-3">
-            <DataItem label="Valor aplicado no BM"><span className="tabular-nums"><BlurValue>{currency.format(resumo.fixoAmount)}</BlurValue></span></DataItem>
+            <DataItem label="Valor aplicado no BM"><span className="tabular-nums"><BlurValue>{currency.format(resumo.valorFixo)}</BlurValue></span></DataItem>
+            {resumo.adicionais > 0 && <DataItem label="Adicionais fixos"><span className="tabular-nums"><BlurValue>{currency.format(resumo.adicionais)}</BlurValue></span></DataItem>}
             <DataItem label="Contratação">{bm?.pagamento?.condicoesFixas?.tipoContratacao ?? "–"}</DataItem>
           </dl>
           <p className="text-[12px] text-[var(--muted-foreground)]">A configuração da condição fixa é mantida no Administrativo.</p>

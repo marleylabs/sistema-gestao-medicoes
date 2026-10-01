@@ -148,6 +148,13 @@ async function main() {
   await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "Fornecedor Lock Recuperado" } } });
   await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "Fornecedor Lock Recuperado" } } });
   await prisma.usuario.deleteMany({ where: { nome: { startsWith: "Fornecedor Lock Recuperado" } } });
+  // e2e/bm-total-aprovacao.spec.ts — fornecedor dedicado do gate do total do BM (o spec também limpa).
+  await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorNome: { startsWith: "E2E BM Gate" } } });
+  await prisma.mapaPagamentoItem.deleteMany({ where: { responsavel: { startsWith: "E2E BM Gate" } } });
+  await prisma.medicao.deleteMany({ where: { sourceRowHash: { startsWith: "e2e-bm-gate-" } } });
+  await prisma.projeto.deleteMany({ where: { codigoProjeto: { startsWith: "PRJ-BM-GATE-" } } });
+  await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "E2E BM Gate" } } });
+  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "E2E BM Gate" } } });
   // e2e/portal-fornecedor-redesign.spec.ts — fornecedor dedicado (o próprio spec também limpa no fim).
   await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorNome: { startsWith: "E2E Portal Redesign" } } });
   await prisma.mapaPagamentoItem.deleteMany({ where: { responsavel: { startsWith: "E2E Portal Redesign" } } });

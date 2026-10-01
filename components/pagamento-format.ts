@@ -2,9 +2,8 @@
 export const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 export const percent  = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 });
 
-export function normalizeText(value: string | null) {
-  return (value ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase();
-}
+// Normalização e leitura de moeda: implementação única em lib/boletim-calculo.ts.
+export { normalizeText, parseCurrencyNumber } from "@/lib/boletim-calculo";
 
 export function money(value: number) {
   return value ? currency.format(value) : "–";
@@ -20,14 +19,6 @@ export function formatCurrencyInput(value: string) {
   const normalized = cleaned.includes(",") ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
   const parsed = Number(normalized);
   return currencyInputValue(Number.isFinite(parsed) ? parsed : 0);
-}
-
-export function parseCurrencyNumber(value: string) {
-  const cleaned = String(value ?? "").replace(/[^\d,.-]/g, "");
-  if (!cleaned) return 0;
-  const normalized = cleaned.includes(",") ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export function ratio(value: number) {

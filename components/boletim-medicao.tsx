@@ -3,8 +3,8 @@
 import { useRef } from "react";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui";
+import { calcularBoletim } from "@/lib/boletim-calculo";
 import { cicloToDates } from "@/lib/ciclo";
-import { computarParticipacao } from "@/lib/contratos";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const num = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 });
@@ -13,15 +13,6 @@ const pct = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDi
 function fmt(v: number) { return v ? brl.format(v) : "R$0,00"; }
 function fmtN(v: number) { return v ? num.format(v) : "0,000"; }
 function fmtP(v: number) { return v ? pct.format(v) : "0%"; }
-
-function parseCurrencyNumber(value: string | number | null | undefined) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  const cleaned = String(value ?? "").replace(/[^\d,.-]/g, "");
-  if (!cleaned) return 0;
-  const normalized = cleaned.includes(",") ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
 
 function dateLabel(v: string | null) {
   if (!v) return "–";
@@ -111,50 +102,42 @@ function Td({ children, colSpan, rowSpan, className = "", bold = false }: {
 }
 
 /**
- * Resumo financeiro do BM — ÚNICA implementação, usada pelo boletim impresso e pelo detalhe do
- * Financeiro (condições fixas, documentos medidos, descontos e total medido líquido). Mesma fórmula
- * que antes vivia inline em BoletimMedicao; nenhuma regra nova.
+ * Resumo financeiro do BM para as telas internas (BM/PDF, ComposicaoBoletim de Histórico e
+ * Evidências, detalhe do Financeiro). Os totais vêm SEMPRE do cálculo canônico
+ * (lib/boletim-calculo.ts — o mesmo do Portal e do editor de pagamento); aqui só se acrescenta a
+ * quebra por tipo (DG/MC, DOC, HH) e CLT/PJ das "Condições comerciais" do boletim. Nenhuma
+ * estimativa a partir do valor gravado: total da medição = fixo + adicionais + documentos −
+ * descontos; REV separado; total a pagar = total da medição + REV.
  */
 export function resumoBoletim(data: BmData) {
-  const documentosProdutivos = data.documentos.filter((d) => (d.tipo2 ?? "").toUpperCase().trim() !== "DESCONTO");
-  const totalValor = data.pagamento?.valor ?? 0;
-  const totalRev   = data.pagamento?.rev ?? 0;
-  const totalMedicao = totalValor + totalRev;
+  const calculo = calcularBoletim({
+    documentos: data.documentos,
+    condicoesFixas: data.pagamento?.condicoesFixas,
+    valorInformado: data.pagamento?.valor ?? null,
+    rev: data.pagamento?.rev ?? 0,
+  });
+  const documentosProdutivos = calculo.documentosMedidos;
+  const documentosDesconto = calculo.descontos;
 
-  // Condições Comerciais: soma valorMedido por tipo2 (DG → Desenhos, DOC → DOC, HH → HH)
+  // Condições comerciais: soma valorMedido dos documentos medidos por tipo2 (DG/MC, DOC, HH).
   function sumByTipo(t: string) {
-    return data.documentos
+    return documentosProdutivos
       .filter((d) => (d.tipo2 ?? "").toUpperCase().trim() === t)
       .reduce((s, d) => s + d.valorMedido, 0);
   }
-  const ccDesenhos  = sumByTipo("DG");
-  const ccDoc       = sumByTipo("DOC");
-  const ccHhDocs    = sumByTipo("HH");
+  const ccDesenhos   = sumByTipo("DG");
+  const ccDoc        = sumByTipo("DOC");
+  const ccHh         = sumByTipo("HH");
   const ccDesenhosMc = ccDesenhos + sumByTipo("MC");
-  const ccDescontosLiquido = sumByTipo("DESCONTO");
-  const ccDescontos = Math.abs(ccDescontosLiquido);
-  const documentosDesconto = data.documentos.filter((d) => (d.tipo2 ?? "").toUpperCase().trim() === "DESCONTO");
-
-  // Prioriza a condição fixa cadastrada no pagamento; a diferença fica como fallback para BMs antigos.
-  const docBasedTotal = ccDesenhosMc + ccDoc + ccHhDocs + ccDescontosLiquido;
-  const fixedFromCadastro = parseCurrencyNumber(data.pagamento?.condicoesFixas?.valorFixo);
-  const fixoAmount    = fixedFromCadastro > 0.01
-    ? fixedFromCadastro
-    : Math.round(Math.max(0, totalValor - docBasedTotal) * 100) / 100;
-  const isPj          = !!(data.colaborador.cnpj && data.colaborador.cnpj.trim() !== "–");
-  const ccFixoPj      = isPj && fixoAmount > 0.01 ? fixoAmount : 0;
-  const ccFixoClt     = !isPj && fixoAmount > 0.01 ? fixoAmount : 0;
-  const ccGarClt      = 0;
-  const ccGarPj       = 0;
-  // HH: usa docs calculados; se não houver docs HH com preço, cai no pagamento.valor
-  const ccHh          = ccHhDocs > 0 ? ccHhDocs : (fixoAmount <= 0.01 ? totalValor : 0);
-  const totalDocumentosMedidos = documentosProdutivos.reduce((s, d) => s + d.valorMedido, 0);
-  const totalMedidoLiquido = ccFixoClt + ccFixoPj + totalDocumentosMedidos - ccDescontos;
+  const isPj      = !!(data.colaborador.cnpj && data.colaborador.cnpj.trim() !== "–");
+  const ccFixoPj  = isPj ? calculo.totalCondicoesFixas : 0;
+  const ccFixoClt = isPj ? 0 : calculo.totalCondicoesFixas;
   return {
-    documentosProdutivos, documentosDesconto, totalValor, totalRev, totalMedicao,
-    ccDesenhos, ccDoc, ccHhDocs, ccDesenhosMc, ccDescontosLiquido, ccDescontos,
-    fixoAmount, isPj, ccFixoPj, ccFixoClt, ccGarClt, ccGarPj, ccHh,
-    totalDocumentosMedidos, totalMedidoLiquido,
+    ...calculo,
+    documentosProdutivos,
+    documentosDesconto,
+    ccDesenhos, ccDoc, ccHh, ccDesenhosMc,
+    isPj, ccFixoPj, ccFixoClt, ccGarClt: 0, ccGarPj: 0,
   };
 }
 
@@ -176,10 +159,10 @@ export function BoletimMedicao({ data }: { data: BmData }) {
   const atoFim         = datas.atoFim;
 
   const {
-    documentosProdutivos, documentosDesconto, totalMedicao,
-    ccDoc, ccDesenhosMc, ccDescontos,
+    documentosProdutivos, documentosDesconto, totalMedicao, rev: revAjustes, totalAPagar,
+    ccDoc, ccDesenhosMc, totalDescontos,
     ccFixoPj, ccFixoClt, ccGarClt, ccGarPj, ccHh,
-    totalDocumentosMedidos, totalMedidoLiquido,
+    totalCondicoesFixas, adicionais, totalDocumentos, participacao: resultadoParticipacao,
   } = resumoBoletim(data);
   const totalHorasDocs = documentosProdutivos.reduce((s, d) => s + d.equivalenteA1Horas, 0);
   const totalHoras = totalHorasDocs || pagamento?.horas || 0;
@@ -194,11 +177,8 @@ export function BoletimMedicao({ data }: { data: BmData }) {
   const inicialDoc = sumHrsByTipo("DOC");
   const inicialHh  = sumHrsByTipo("HH");
 
-  // Rateio por contrato: calculado automaticamente a partir dos Documentos Medidos (CTO + Valor Medido),
-  // não mais a partir dos 4 campos fixos de mapa_pagamento_itens. Contratos são descobertos dinamicamente.
-  const resultadoParticipacao = computarParticipacao(
-    documentosProdutivos.map((d) => ({ contrato: d.contrato, valorMedido: d.valorMedido })),
-  );
+  // Rateio por contrato: participação dos Documentos Medidos (CTO + Valor Medido), do cálculo
+  // canônico, aplicada sobre o TOTAL DA MEDIÇÃO (REV fica fora do rateio). Contratos dinâmicos.
   const participacaoContratos = resultadoParticipacao.participacoes.map((p) => ({ ...p, valorRateado: totalMedicao * (p.percentual / 100) }));
   const naoClassificadoRateado = totalMedicao * (resultadoParticipacao.percentualNaoClassificado / 100);
 
@@ -295,6 +275,12 @@ export function BoletimMedicao({ data }: { data: BmData }) {
               <Td rowSpan={4} colSpan={3} className="bm-top-cell bg-[#FFD966] text-center align-middle">
                 <div className="text-[10px] font-bold uppercase">TOTAL DA MEDIÇÃO</div>
                 <div className="text-[18px] font-bold mt-1">{fmt(totalMedicao)}</div>
+                {revAjustes !== 0 && (
+                  <>
+                    <div className="mt-1 text-[10px]">REV / AJUSTES: {fmt(revAjustes)}</div>
+                    <div className="mt-1 text-[10px] font-bold uppercase">TOTAL A PAGAR: {fmt(totalAPagar)}</div>
+                  </>
+                )}
               </Td>
             </tr>
             <tr>
@@ -380,8 +366,8 @@ export function BoletimMedicao({ data }: { data: BmData }) {
               <Td colSpan={6} bold className="text-center">{fmt(totalMedicao)}</Td>
             </tr>
             <tr>
-              <Td colSpan={6}>Descontos</Td>
-              <Td colSpan={6} className="text-center">{ccDescontos > 0 ? `- ${fmt(ccDescontos)}` : "–"}</Td>
+              <Td colSpan={6}>Descontos (já abatidos do total)</Td>
+              <Td colSpan={6} className="text-center">{totalDescontos > 0 ? `- ${fmt(totalDescontos)}` : "–"}</Td>
             </tr>
 
             {/* ── Linha separador ── */}
@@ -449,8 +435,8 @@ export function BoletimMedicao({ data }: { data: BmData }) {
                     <Td className="text-center font-bold bg-[#D9D9D9]">{fmtN(totalHoras)}</Td>
                     <Td className="bg-[#F3F3F3]" />
                     <Td colSpan={3} className="bg-[#F3F3F3]" />
-                    <Td className="text-right font-bold bg-[#FFD966]">{fmt(totalMedidoLiquido || totalMedicao)}</Td>
-                    <Td className="text-right font-bold bg-[#FFD966]">{fmt(totalMedidoLiquido || totalMedicao)}</Td>
+                    <Td className="text-right font-bold bg-[#FFD966]">{fmt(totalMedicao)}</Td>
+                    <Td className="text-right font-bold bg-[#FFD966]">{fmt(totalMedicao)}</Td>
                   </tr>
 
                   <tr>
@@ -458,21 +444,33 @@ export function BoletimMedicao({ data }: { data: BmData }) {
                     <Td colSpan={4} className="p-0">
                       <div className="m-2 rounded border border-[#D1D5DB] bg-white p-3 text-[10px] shadow-sm">
                         <div className="flex justify-between gap-4 py-0.5">
-                          <span>Condições fixas</span>
-                          <strong>{fmt(ccFixoClt + ccFixoPj)}</strong>
+                          <span>Condições fixas{adicionais > 0 ? " (inclui adicionais)" : ""}</span>
+                          <strong>{fmt(totalCondicoesFixas)}</strong>
                         </div>
                         <div className="flex justify-between gap-4 py-0.5">
                           <span>Documentos medidos</span>
-                          <strong>{fmt(totalDocumentosMedidos)}</strong>
+                          <strong>{fmt(totalDocumentos)}</strong>
                         </div>
                         <div className="flex justify-between gap-4 py-0.5">
                           <span>Descontos</span>
-                          <strong className="text-[#DC2626]">- {fmt(ccDescontos)}</strong>
+                          <strong className="text-[#DC2626]">- {fmt(totalDescontos)}</strong>
                         </div>
                         <div className="mt-1 flex justify-between gap-4 border-t border-[#D1D5DB] pt-1 font-bold">
-                          <span>Total medido líquido</span>
-                          <strong>{fmt(totalMedidoLiquido)}</strong>
+                          <span>Total da medição</span>
+                          <strong>{fmt(totalMedicao)}</strong>
                         </div>
+                        {revAjustes !== 0 && (
+                          <>
+                            <div className="flex justify-between gap-4 py-0.5">
+                              <span>REV / Ajustes</span>
+                              <strong>{fmt(revAjustes)}</strong>
+                            </div>
+                            <div className="mt-1 flex justify-between gap-4 border-t border-[#D1D5DB] pt-1 font-bold">
+                              <span>Total a pagar</span>
+                              <strong>{fmt(totalAPagar)}</strong>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </Td>
                   </tr>
