@@ -1053,5 +1053,3 @@ ALTER TABLE ONLY public.sgc_logs
 
 
 --
-
-
