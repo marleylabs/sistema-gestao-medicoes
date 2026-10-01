@@ -62,6 +62,10 @@ export const test = base.extend<{ forEachTest: void }>({
         // para perfil não autorizado (só ADMIN) e payload vazio/inválido — comportamento
         // intencional sob teste em e2e/administrativo-fornecedor-dedupe.spec.ts.
         if (url.endsWith("/api/admin/administrativo/fornecedores/bulk-delete") && (response.status() === 403 || response.status() === 400)) return;
+        // 400 de POST /api/colaborador/sgc é o retorno CORRETO para uma solicitação de revisão com
+        // motivo curto demais — validação do servidor exibida no diálogo, intencional em
+        // e2e/portal-fornecedor-redesign.spec.ts.
+        if (url.endsWith("/api/colaborador/sgc") && response.status() === 400) return;
         networkErrors.push(`${response.status()} ${response.request().method()} ${url}`);
       });
 

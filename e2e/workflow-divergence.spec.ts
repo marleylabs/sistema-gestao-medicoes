@@ -128,7 +128,7 @@ test.describe.serial("Divergência — upload divergente → EM ANÁLISE (fornec
     await expect(page.getByText("E2E-DOC-002", { exact: true })).toHaveCount(0);
 
     await portal.salvarEEnviarBm();
-    await portal.expectStatusBadge("AGUARDANDO_NF");
+    await portal.expectStatusBadge("Aguardando envio da NF");
 
     const sgc = await prisma.sgcAprovacaoMedicao.findUnique({ where: { colaboradorCodigo_ciclo: { colaboradorCodigo: CODIGO_B, ciclo: e2eCiclo() } } });
     expect(sgc?.status).toBe("AGUARDANDO_NF");

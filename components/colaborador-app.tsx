@@ -3,9 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import {
-  AlertTriangle,
   AlertCircle,
-  Banknote,
   Check,
   CheckCheck,
   CheckCircle2,
@@ -15,12 +13,10 @@ import {
   FileText,
   FileUp,
   LayoutDashboard,
-  UserRound,
   History,
   MessageCircle,
   Mic,
   RotateCcw,
-  Save,
   Search,
   Send,
   StopCircle,
@@ -32,13 +28,22 @@ import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { AppShell } from "@/components/app-shell";
 import { AccountMenu } from "@/components/account-menu";
 import { GeneralChatWidget } from "@/components/general-chat-widget";
-import { Badge, Button, Card, IconButton, PageContainer, PageHeader, Textarea } from "@/components/ui";
+import {
+  AprovarBoletimDialog,
+  BoletimResumoPortal,
+  ComposicaoPortal,
+  DocumentosMedicaoPortal,
+  EstadoConcluido,
+  formatDataHora,
+  PortalFeedback,
+  ResponderMedicaoDialog,
+  SolicitarRevisaoDialog,
+} from "@/components/portal-fornecedor";
+import { Badge, Button, Card, IconButton, PageContainer, PageHeader } from "@/components/ui";
 import type { AuthUser } from "@/lib/session";
 import { computarParticipacao } from "@/lib/contratos";
+import { isDocumentoDesconto, isFinancialFollowUpStatus } from "@/lib/portal-fornecedor";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "@/lib/presence";
-
-const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-const percent  = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 });
 
 type SgcChatMessage = {
   id: string;
@@ -116,22 +121,6 @@ function fileExtension(name: string) {
   return name.split(".").pop()?.toUpperCase() || "ARQ";
 }
 
-function normalizeText(value: string | null | undefined) {
-  return (value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
-}
-
-function parseCurrencyNumber(value: string | null | undefined) {
-  const cleaned = String(value ?? "").replace(/[^\d,.-]/g, "");
-  if (!cleaned) return 0;
-  const normalized = cleaned.includes(",") ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function isDiscountDocument(documento: Pick<ColaboradorData["documentos"][number], "tipo2" | "projetoReferente" | "numeroDocumento">) {
-  return normalizeText(documento.tipo2) === "DESCONTO" || normalizeText(documento.projetoReferente) === "DESCONTO" || normalizeText(documento.numeroDocumento) === "DESCONTO";
-}
-
 function hasUnreadMedicaoMessages(messages: SgcChatMessage[]) {
   return messages.some((message) => message.autor === "MEDICAO" && !message.lidoAt);
 }
@@ -170,33 +159,6 @@ function ChatAvatar({
   );
 }
 
-function ratio(v: number) { return v ? percent.format(v) : "–"; }
-
-function statusConfig(status: string) {
-  if (status === "PAGO")               return { label: "Medição concluída",       badge: "success" as const };
-  if (status === "APROVADO")           return { label: "Aguardando pagamento",    badge: "brand" as const };
-  if (status === "AGUARDANDO_NF")      return { label: "Aguardando envio da NF",  badge: "warning" as const };
-  if (status === "REVISAO_SOLICITADA") return { label: "Revisão solicitada",      badge: "warning" as const };
-  if (status === "AGUARDANDO_ENVIO")   return { label: "Aguardando envio do BM",  badge: "neutral" as const };
-  if (status === "CANCELADO")          return { label: "BM cancelado",            badge: "neutral" as const };
-  return                                      { label: "Pendente de validação",   badge: "neutral" as const };
-}
-
-function isFinancialFollowUpStatus(status: string) {
-  return status === "APROVADO" || status === "PAGO";
-}
-
-function SummaryField({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="min-w-0 rounded-lg border border-[#F3F4F6] bg-[#FAFAFA] px-3 py-2">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-[#9CA3AF]">{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold text-[#1A1A1A]" title={typeof value === "string" ? value : undefined}>
-        {value || "–"}
-      </p>
-    </div>
-  );
-}
-
 function displayEmail(value: string | null | undefined) {
   return value?.trim().toLowerCase() || null;
 }
@@ -211,10 +173,11 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   const [section, setSection]               = useState<Section>("portal");
   const [data, setData]                     = useState<ColaboradorData | null>(null);
   const [loading, setLoading]               = useState(true);
+  const [loadError, setLoadError]           = useState<"sessao" | "erro" | null>(null);
   const [medicoes, setMedicoes]             = useState<MedicaoAprovada[]>([]);
   const [medLoading, setMedLoading]         = useState(false);
-  const [documentsOpen, setDocumentsOpen]   = useState(false);
   const [actionModal, setActionModal]       = useState<"revisao" | "resposta" | null>(null);
+  const [aprovarOpen, setAprovarOpen]       = useState(false);
   const [pontos, setPontos]                 = useState("");
   const [respostaFornecedor, setRespostaFornecedor] = useState("");
   const [message, setMessage]               = useState<{ text: string; type: "success" | "info" } | null>(null);
@@ -242,16 +205,12 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   const nfInputRef                          = useRef<HTMLInputElement | null>(null);
 
   const canValidate = data?.sgc.status === "PENDENTE" && data?.sgc.statusConferencia === "CONCLUIDA";
-  const { label: statusLabel, badge: statusBadge } = data ? statusConfig(data.sgc.status) : { label: "", badge: "neutral" as const };
 
   const resultadoParticipacao = useMemo(() => {
     if (!data) return null;
-    const elegiveis = data.documentos.filter((d) => !isDiscountDocument(d));
+    const elegiveis = data.documentos.filter((d) => !isDocumentoDesconto(d));
     return computarParticipacao(elegiveis.map((d) => ({ contrato: d.contrato, valorMedido: d.valorMedido })));
   }, [data]);
-  const contratos = useMemo((): [string, number][] => {
-    return resultadoParticipacao?.participacoes.map((p): [string, number] => [p.nome, p.percentual / 100]) ?? [];
-  }, [resultadoParticipacao]);
 
   const loadData = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -262,7 +221,15 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
       // sem optional chaining, o que crashava com "Cannot read properties of undefined". Numa
       // falha, mantém o último estado válido em tela (item já estabelecido nesta sessão: nunca
       // apagar dados atuais por causa de uma consulta automática que falhou).
-      if (res.ok) setData(await res.json());
+      if (res.ok) {
+        setData(await res.json());
+        setLoadError(null);
+      } else {
+        // Só aparece quando ainda não há nenhum dado em tela (ver render): sessão expirada ou erro.
+        setLoadError(res.status === 401 ? "sessao" : "erro");
+      }
+    } catch {
+      setLoadError("erro");
     } finally {
       if (!opts?.silent) setLoading(false);
     }
@@ -338,7 +305,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     setSavingAction(null);
     if (!res.ok) {
       const errorText = payload.error ?? ERROR_FALLBACK[action];
-      if (actionModal) setModalError(errorText);
+      if (actionModal || aprovarOpen) setModalError(errorText);
       else setMessage({ text: errorText, type: "info" });
       return;
     }
@@ -348,6 +315,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
       return;
     }
     closeActionModal();
+    setAprovarOpen(false);
     setPontos("");
     if (action === "RESPONDER_MEDICAO") setRespostaFornecedor("");
     const msgs: Record<string, string> = {
@@ -359,13 +327,17 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     await loadData();
   }
 
+  // Aprovar = a mesma ação ENVIAR de sempre (exige SALVAR antes, regra do servidor). Só a confirmação
+  // mudou: diálogo da própria aplicação no lugar da confirmação nativa do navegador.
   function handleEnviar() {
     if (sgcRequestInFlightRef.current) return;
-    const confirmado = window.confirm(
-      "Aprovar este BM?\n\nAo continuar, você confirma os dados apresentados e o processo seguirá para envio da Nota Fiscal.",
-    );
-    if (!confirmado) return;
-    void sendSgc("ENVIAR");
+    setModalError(null);
+    setAprovarOpen(true);
+  }
+
+  function fecharAprovar() {
+    setModalError(null);
+    setAprovarOpen(false);
   }
 
   async function sendChatMessage() {
@@ -590,13 +562,38 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     playNotificationSound();
   }, [chatOpen, data?.sgc.mensagens, data?.sgc.status]);
 
-  if (loading || !data) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F5F5F5]">
-        <div className="flex items-center gap-3 text-sm text-[#555555]">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#2563EB]" />
-          Carregando ambiente do fornecedor…
+  // Recargas depois de uma ação mantêm o conteúdo em tela; o carregamento cheio só aparece sem dados.
+  if (!data) {
+    if (loading || !loadError) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-[var(--background)]">
+          <div role="status" className="flex items-center gap-3 text-[13px] text-[var(--muted-foreground)]">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--primary)]" aria-hidden />
+            Carregando ambiente do fornecedor…
+          </div>
         </div>
+      );
+    }
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--background)] p-4">
+        <Card className="w-full max-w-md p-6 text-center">
+          <span className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[var(--error-soft)] text-[var(--error)]">
+            <AlertCircle size={20} aria-hidden />
+          </span>
+          <h1 className="text-section-title text-[var(--foreground)]">
+            {loadError === "sessao" ? "Sua sessão expirou" : "Não foi possível carregar o portal"}
+          </h1>
+          <p className="mt-1 text-[13px] text-[var(--muted-foreground)]">
+            {loadError === "sessao" ? "Entre novamente para consultar seu boletim." : "Verifique sua conexão e tente novamente."}
+          </p>
+          <div className="mt-5 flex justify-center">
+            {loadError === "sessao" ? (
+              <a href="/login" className="inline-flex h-10 items-center rounded-lg bg-[var(--primary)] px-4 text-[13px] font-semibold text-white hover:bg-[var(--primary-hover)]">Entrar novamente</a>
+            ) : (
+              <Button className="h-10 px-4" onClick={() => void loadData()}>Tentar novamente</Button>
+            )}
+          </div>
+        </Card>
       </div>
     );
   }
@@ -613,7 +610,9 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
 
   return (
     <AppShell activeSection={section} onNavigate={(id) => setSection(id as Section)} navItems={navItems} pageTitle={TITLES[section]} sidebarFooter={<AccountMenu user={user} roleLabel="Fornecedor" onLogout={logout} compact />}>
-      <PageContainer className="grid gap-5">
+      {/* Portal externo: coluna central de leitura (não espalha o boletim pela tela toda); o respiro
+          inferior evita que os botões flutuantes de chat cubram o fim da página. */}
+      <PageContainer className="grid max-w-[1040px]! gap-5 pb-24!">
         <PageHeader
           eyebrow="Fornecedor"
           title={TITLES[section]}
@@ -747,510 +746,311 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
           </Card>
         )}
 
-        {/* ── Conteúdo visível após envio do BM e conclusão da conferência ── */}
+        {/* ── Conteúdo visível após envio do BM e conclusão da conferência ──
+             Hierarquia: resumo (quem, ciclo, valor, status) → ação do fornecedor → composição →
+             documentos. Ações e regras são as mesmas de antes (SALVAR → ENVIAR, SOLICITAR_REVISAO,
+             upload de NF); só a apresentação mudou. */}
         {section === "portal" && !aguardando && !precisaConferencia && <>
-        <Card className="p-6">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-            <div>
-              <p className="text-eyebrow mb-1 text-[var(--primary)]">SISTEMA APROVAÇÃO</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-xl font-bold text-[#1A1A1A]">{statusLabel}</h2>
-                {data.sgc.revisaoLabel && <Badge variant="brand">{data.sgc.revisaoLabel}</Badge>}
-              </div>
-            </div>
-            <Badge variant={statusBadge} className="shrink-0 px-3 py-1 text-xs">
-              {data.sgc.status}
-            </Badge>
-          </div>
+        <BoletimResumoPortal
+          nome={data.usuario.nome}
+          codigo={data.usuario.codigo}
+          ciclo={data.cicloAtivo}
+          revisaoLabel={data.sgc.revisaoLabel}
+          status={data.sgc.status}
+          valor={data.pagamento?.valor ?? 0}
+          revisao={data.pagamento?.rev ?? 0}
+          documento={data.usuario.cnpj || data.usuario.cpf}
+          razaoSocial={data.usuario.razaoSocial || data.pagamento?.razaoSocial || null}
+          email={displayEmail(data.usuario.email)}
+        />
 
-          {/* Feedback message */}
-          {message && (
-            <div className={`mt-4 rounded-lg px-4 py-3 text-sm font-medium ${message.type === "success" ? "bg-[#F0FDF4] text-[#16A34A]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
-              {message.text}
-            </div>
-          )}
-
-          {/* Link para Minhas Medições quando segue para acompanhamento financeiro */}
-          {isFinancialFollowUpStatus(data.sgc.status) && (
-            <div className="mt-5 flex flex-col items-start gap-3 rounded-lg border border-[#BBF7D0] bg-[#F0FDF4] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-[#15803D]">Acesse <strong>Minhas Medições</strong> para acompanhar o pagamento e os detalhes desta medição.</p>
-              <Button variant="success" className="w-full shrink-0 sm:w-auto" onClick={() => setSection("medicoes")}>
-                <History size={14} />
-                Ver medições
-              </Button>
-            </div>
-          )}
-
-          {/* NF Upload (AGUARDANDO_NF) */}
-          {data.sgc.status === "AGUARDANDO_NF" && (
-            <div className="mt-5 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] p-5">
-              <div className="mb-3 flex items-start gap-2">
-                <FileUp size={16} className="mt-0.5 shrink-0 text-[#D97706]" />
-                <div>
-                  <h3 className="text-sm font-bold text-[#1A1A1A]">Envio da Nota Fiscal</h3>
-                  <p className="mt-1 text-xs text-[#92400E]/80">
-                    Sua medição foi aprovada. Arraste o arquivo ou selecione no computador. Formato aceito: PDF pesquisável, até 10 MB.
-                  </p>
-                </div>
-              </div>
-              <input
-                ref={nfInputRef}
-                type="file"
-                accept=".pdf"
-                className="hidden"
-                onChange={(e) => selectNfFile(e.target.files?.[0] ?? null)}
-              />
-              <div
-                role="button"
-                tabIndex={0}
-                className={`rounded-xl border border-dashed px-4 py-5 text-center transition ${draggingNf ? "border-[#D97706] bg-[#FEF3C7]" : "border-[#FBBF24] bg-white/65 hover:bg-white"}`}
-                onClick={() => nfInputRef.current?.click()}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  event.preventDefault();
-                  nfInputRef.current?.click();
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setDraggingNf(true);
-                }}
-                onDragLeave={() => setDraggingNf(false)}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  setDraggingNf(false);
-                  selectNfFile(event.dataTransfer.files?.[0] ?? null);
-                }}
-              >
-                <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#FFF7ED] text-[#D97706]">
-                  <UploadCloud size={20} />
-                </span>
-                <p className="mt-3 text-sm font-semibold text-[#1A1A1A]">Clique para escolher ou arraste a Nota Fiscal</p>
-                <p className="mt-1 text-xs text-[#6B7280]">PDF pesquisável</p>
-              </div>
-              {nfFile && (
-                <div className="mt-3 rounded-xl border border-[#FDE68A] bg-white p-3 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFF7ED] text-[#D97706]">
-                      <FileIcon size={18} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-[#1A1A1A]">{nfFile.name}</p>
-                        <span className="shrink-0 rounded bg-[#F3F4F6] px-1.5 py-0.5 text-[10px] font-bold text-[#6B7280]">{fileExtension(nfFile.name)}</span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-[#6B7280]">{readableFileSize(nfFile.size)}</p>
-                    </div>
-                    {nfError ? (
-                      <button
-                        type="button"
-                        className="rounded-lg p-2 text-[#D97706] hover:bg-[#FFF7ED]"
-                        onClick={uploadNf}
-                        title="Tentar novamente"
-                      >
-                        <RotateCcw size={16} />
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="rounded-lg p-2 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#DC2626]"
-                      onClick={() => selectNfFile(null)}
-                      disabled={nfUploading}
-                      title="Remover arquivo"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#DCFCE7]">
-                    <div
-                      className={`h-full rounded-full transition-all duration-200 ${nfError ? "bg-[#DC2626]" : "bg-[#15803D]"}`}
-                      style={{ width: `${nfError ? 100 : nfProgress}%` }}
-                    />
-                  </div>
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    <p className={`flex items-center gap-1 text-xs ${nfError ? "text-[#B91C1C]" : "text-[#6B7280]"}`}>
-                      {nfError ? <AlertCircle size={13} /> : null}
-                      {nfError ?? (nfUploading ? `Enviando... ${nfProgress}%` : nfProgress === 100 ? "Arquivo enviado." : "Pronto para envio.")}
-                    </p>
-                    <Button variant="success" className="h-8 px-4" onClick={uploadNf} disabled={nfUploading}>
-                      {nfUploading ? "Enviando..." : nfError ? "Tentar novamente" : "Enviar NF"}
-                    </Button>
-                  </div>
-                </div>
-              )}
-              {nfError && !nfFile && <p className="mt-2 text-xs text-[#B91C1C]">{nfError}</p>}
-            </div>
-          )}
-
-          {/* Actions */}
+        <Card className="p-5 sm:p-6">
+          <section aria-label="Ação do fornecedor" data-testid="portal-acao">
           {canValidate ? (
-            <div className="mt-5 space-y-3">
-              <div className="flex flex-wrap gap-3">
-                <Button variant="secondary" className="h-10 px-5" onClick={() => sendSgc("SALVAR")} disabled={saving}>
-                  <Save size={15} />
-                  {savingAction === "SALVAR" ? "Salvando..." : "Salvar"}
-                </Button>
-                <Button
-                  variant="success"
-                  className="h-10 px-6"
-                  onClick={handleEnviar}
-                  disabled={saving || !salvoAt}
-                  title={!salvoAt ? "Salve primeiro para habilitar o Envio" : undefined}
-                >
-                  <Send size={15} />
-                  Enviar
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="h-10 border border-[#F59E0B] bg-[#FFFBEB] px-5 text-[#D97706] hover:bg-[#FEF3C7]"
-                  onClick={() => openActionModal("revisao")}
-                  disabled={saving}
-                >
-                  <AlertTriangle size={15} />
+            <>
+              <h2 className="text-card-title text-[var(--foreground)]">O que você precisa fazer</h2>
+              <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">
+                Confira o valor, a composição e os documentos. Se estiver tudo certo, salve sua validação e aprove o boletim.
+              </p>
+              <PortalFeedback message={message} />
+              <ol className="mt-4 grid gap-3 md:grid-cols-2">
+                <li className="flex flex-col gap-3 rounded-lg border border-[var(--border)] p-4">
+                  <div className="flex items-start gap-3">
+                    <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${salvoAt ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[#f1f1ef] text-[var(--foreground)]"}`} aria-hidden>
+                      {salvoAt ? <Check size={13} /> : "1"}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-[var(--foreground)]">Salvar validação</p>
+                      <p className="text-[12px] text-[var(--muted-foreground)]">
+                        {salvoAt ? `Validação salva em ${formatDataHora(salvoAt)}.` : "Registra que você conferiu os dados deste boletim."}
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="secondary" className="border-[var(--border-strong)]! mt-auto h-10 w-full sm:w-auto sm:self-start" onClick={() => sendSgc("SALVAR")} disabled={saving}>
+                    {savingAction === "SALVAR" ? "Salvando..." : "Salvar validação"}
+                  </Button>
+                </li>
+                <li className="flex flex-col gap-3 rounded-lg border border-[var(--border)] p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--primary-soft)] text-[11px] font-bold text-[var(--primary)]" aria-hidden>2</span>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-[var(--foreground)]">Aprovar boletim</p>
+                      <p className="text-[12px] text-[var(--muted-foreground)]">
+                        {salvoAt ? "Confirma os dados e segue para o envio da Nota Fiscal." : "Disponível depois de salvar a validação."}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    className="mt-auto h-10 w-full sm:w-auto sm:self-start"
+                    onClick={handleEnviar}
+                    disabled={saving || !salvoAt}
+                    title={!salvoAt ? "Salve a validação para habilitar a aprovação" : undefined}
+                    aura={!!salvoAt}
+                  >
+                    <CheckCircle2 size={15} aria-hidden />
+                    Aprovar boletim
+                  </Button>
+                </li>
+              </ol>
+              <div className="mt-4 flex flex-col gap-3 border-t border-[var(--border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-[12px] text-[var(--muted-foreground)]">Encontrou algum dado incorreto?</p>
+                <Button variant="outline" className="border-[var(--primary)]! h-10 w-full sm:w-auto" onClick={() => openActionModal("revisao")} disabled={saving}>
+                  <MessageCircle size={15} aria-hidden />
                   Solicitar revisão
                 </Button>
               </div>
-              {!salvoAt && (
-                <p className="text-xs text-[#9CA3AF]">
-                  Clique em <strong>Salvar</strong> para registrar e depois em <strong>Enviar</strong> para confirmar.
+            </>
+          ) : data.sgc.status === "AGUARDANDO_NF" ? (
+            <>
+              <EstadoConcluido
+                tone="success"
+                titulo="Boletim aprovado"
+                detalhe={data.sgc.aprovadoAt ? `Aprovado em ${formatDataHora(data.sgc.aprovadoAt)}. Envie a Nota Fiscal para seguir com o pagamento.` : "Envie a Nota Fiscal para seguir com o pagamento."}
+              />
+              <PortalFeedback message={message} />
+              <div className="mt-5 rounded-lg border border-[#f2dbb7] bg-[var(--warning-soft)] p-4 sm:p-5">
+                <div className="mb-3 flex items-start gap-2">
+                  <FileUp size={16} className="mt-0.5 shrink-0 text-[var(--warning)]" aria-hidden />
+                  <div>
+                    <h3 className="text-[13px] font-semibold text-[var(--foreground)]">Envio da Nota Fiscal</h3>
+                    <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">
+                      Arraste o arquivo ou selecione no computador. Formato aceito: PDF pesquisável, até 10 MB.
+                    </p>
+                  </div>
+                </div>
+                <input
+                  ref={nfInputRef}
+                  type="file"
+                  accept=".pdf"
+                  className="hidden"
+                  onChange={(e) => selectNfFile(e.target.files?.[0] ?? null)}
+                />
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Escolher arquivo da Nota Fiscal"
+                  className={`rounded-lg border border-dashed px-4 py-5 text-center transition ${draggingNf ? "border-[var(--warning)] bg-white" : "border-[#e6c48f] bg-white/70 hover:bg-white"}`}
+                  onClick={() => nfInputRef.current?.click()}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    nfInputRef.current?.click();
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setDraggingNf(true);
+                  }}
+                  onDragLeave={() => setDraggingNf(false)}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    setDraggingNf(false);
+                    selectNfFile(event.dataTransfer.files?.[0] ?? null);
+                  }}
+                >
+                  <UploadCloud size={22} className="mx-auto text-[var(--warning)]" aria-hidden />
+                  <p className="mt-2 text-[13px] font-semibold text-[var(--foreground)]">Clique para escolher ou arraste a Nota Fiscal</p>
+                  <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">PDF pesquisável</p>
+                </div>
+                {nfFile && (
+                  <div className="mt-3 rounded-lg border border-[var(--border)] bg-white p-3">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--warning-soft)] text-[var(--warning)]">
+                        <FileIcon size={18} aria-hidden />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-[13px] font-semibold text-[var(--foreground)]">{nfFile.name}</p>
+                          <span className="shrink-0 rounded bg-[#f1f1ef] px-1.5 py-0.5 text-[10px] font-bold text-[var(--muted-foreground)]">{fileExtension(nfFile.name)}</span>
+                        </div>
+                        <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">{readableFileSize(nfFile.size)}</p>
+                      </div>
+                      {nfError ? (
+                        <IconButton onClick={uploadNf} title="Tentar novamente" aria-label="Tentar novamente">
+                          <RotateCcw size={15} />
+                        </IconButton>
+                      ) : null}
+                      <IconButton onClick={() => selectNfFile(null)} disabled={nfUploading} title="Remover arquivo" aria-label="Remover arquivo">
+                        <Trash2 size={15} />
+                      </IconButton>
+                    </div>
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#efefec]">
+                      <div
+                        className={`h-full rounded-full transition-all duration-200 ${nfError ? "bg-[var(--error)]" : "bg-[var(--success)]"}`}
+                        style={{ width: `${nfError ? 100 : nfProgress}%` }}
+                      />
+                    </div>
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <p className={`flex items-center gap-1 text-[12px] ${nfError ? "text-[var(--error)]" : "text-[var(--muted-foreground)]"}`}>
+                        {nfError ? <AlertCircle size={13} aria-hidden /> : null}
+                        {nfError ?? (nfUploading ? `Enviando... ${nfProgress}%` : nfProgress === 100 ? "Arquivo enviado." : "Pronto para envio.")}
+                      </p>
+                      <Button className="h-10 w-full sm:h-9 sm:w-auto" onClick={uploadNf} disabled={nfUploading}>
+                        {nfUploading ? "Enviando..." : nfError ? "Tentar novamente" : "Enviar NF"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {nfError && !nfFile && <p className="mt-2 text-[12px] text-[var(--error)]">{nfError}</p>}
+              </div>
+            </>
+          ) : data.sgc.status === "REVISAO_SOLICITADA" ? (
+            <>
+              <EstadoConcluido
+                tone="warning"
+                titulo="Revisão solicitada"
+                detalhe={data.sgc.revisaoSolicitadaAt ? `Solicitada em ${formatDataHora(data.sgc.revisaoSolicitadaAt)}.` : null}
+              >
+                <p className="mt-2 text-[13px] text-[var(--foreground)]">
+                  Solicitação enviada. A conversa desta revisão fica disponível no chat flutuante.
                 </p>
+              </EstadoConcluido>
+              <PortalFeedback message={message} />
+              {data.sgc.pontosDiscordancia && (
+                <div className="mt-4 rounded-lg border border-[var(--border)] bg-[#fafaf8] p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Motivo informado</p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-[var(--foreground)]">{data.sgc.pontosDiscordancia}</p>
+                </div>
               )}
-            </div>
-          ) : data.sgc.status === "AGUARDANDO_NF" ? null : data.sgc.status === "REVISAO_SOLICITADA" ? (
-            <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-sm text-[#555555]">
-              Solicitação enviada. A conversa desta revisão fica disponível no chat flutuante.
-            </div>
+            </>
           ) : data.sgc.status === "CANCELADO" ? (
-            <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-sm text-[#555555]">
-              Este BM foi cancelado.
-            </div>
+            <>
+              <EstadoConcluido tone="neutral" titulo="BM cancelado" detalhe="Este BM foi cancelado." />
+              <PortalFeedback message={message} />
+            </>
+          ) : isFinancialFollowUpStatus(data.sgc.status) ? (
+            <>
+              <EstadoConcluido
+                tone="success"
+                titulo={data.sgc.status === "PAGO" ? "Medição concluída" : "Boletim aprovado"}
+                detalhe={data.sgc.aprovadoAt ? `Aprovado em ${formatDataHora(data.sgc.aprovadoAt)}.` : null}
+              >
+                <p className="mt-2 text-[13px] text-[var(--foreground)]">
+                  Acesse <strong>Minhas Medições</strong> para acompanhar o pagamento e os detalhes desta medição.
+                </p>
+              </EstadoConcluido>
+              <PortalFeedback message={message} />
+              <div className="mt-4 flex sm:justify-end">
+                <Button variant="secondary" className="border-[var(--border-strong)]! h-10 w-full sm:w-auto" onClick={() => setSection("medicoes")}>
+                  <History size={15} aria-hidden />
+                  Ver medições
+                </Button>
+              </div>
+            </>
           ) : (
-            <div className="mt-5 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-sm text-[#555555]">
-              A medição está disponível em Minhas Medições para acompanhamento financeiro.
-            </div>
+            <>
+              <p className="text-[13px] text-[var(--muted-foreground)]">A medição está disponível em Minhas Medições para acompanhamento financeiro.</p>
+              <PortalFeedback message={message} />
+            </>
           )}
-
+          </section>
         </Card>
 
-        {actionModal && (canValidate || actionModal === "resposta") && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 p-4">
-            <div className="w-full max-w-xl overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-2xl">
-              <div className="border-b border-[#FDE68A] bg-[#FFFBEB] px-5 py-4">
-                <p className="text-base font-bold text-[#1A1A1A]">
-                  {actionModal === "revisao" ? "Solicitar revisão" : "Responder equipe de Medição"}
-                </p>
-                <p className="mt-1 text-sm text-[#555555]">
-                  {actionModal === "revisao"
-                    ? "Descreva os pontos de discordância para análise da equipe de Medição."
-                    : "Leia o retorno recebido e envie uma resposta complementar para a equipe."}
-                </p>
-              </div>
-              <div className="grid gap-4 p-5">
-                {modalError && (
-                  <div className="rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] px-3 py-2 text-sm font-semibold text-[#AF1B1B]">
-                    {modalError}
-                  </div>
-                )}
-                {(actionModal === "resposta" || (actionModal === "revisao" && data.sgc.respostaAdmin)) && (
-                  <div className="rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] p-3">
-                    <p className="text-xs font-bold uppercase tracking-wide text-[#2563EB]">Resposta da equipe de Medição</p>
-                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-[#1A1A1A]">
-                      {data.sgc.respostaAdmin}
-                    </p>
-                  </div>
-                )}
-                {actionModal === "resposta" && data.sgc.pontosDiscordancia && (
-                  <div className="rounded-lg border border-[#FDE68A] bg-[#FFFBEB] p-3">
-                    <p className="text-xs font-bold uppercase tracking-wide text-[#D97706]">Sua solicitação original</p>
-                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-[#1A1A1A]">
-                      {data.sgc.pontosDiscordancia}
-                    </p>
-                  </div>
-                )}
-                {actionModal === "resposta" && data.sgc.observacaoColaborador && (
-                  <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
-                    <p className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Última resposta enviada</p>
-                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-[#1A1A1A]">
-                      {data.sgc.observacaoColaborador}
-                    </p>
-                  </div>
-                )}
-                <Textarea
-                  className="min-h-32 bg-white"
-                  value={actionModal === "revisao" ? pontos : respostaFornecedor}
-                  onChange={(e) => {
-                    if (actionModal === "revisao") setPontos(e.target.value);
-                    else setRespostaFornecedor(e.target.value);
-                  }}
-                  placeholder={
-                    actionModal === "revisao"
-                      ? "Descreva onde e por que os dados estão incorretos."
-                      : "Digite sua resposta para a equipe de Medição."
-                  }
-                />
-                <div className="flex flex-wrap justify-end gap-2">
-                  <Button variant="ghost" onClick={closeActionModal} disabled={saving}>
-                    Cancelar
-                  </Button>
-                  <Button
-                    variant="success"
-                    onClick={() => sendSgc(actionModal === "revisao" ? "SOLICITAR_REVISAO" : "RESPONDER_MEDICAO")}
-                    disabled={saving}
-                  >
-                    {saving ? "Enviando..." : actionModal === "revisao" ? "Enviar revisão" : "Enviar resposta"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
+        {aprovarOpen && canValidate && (
+          <AprovarBoletimDialog
+            fornecedor={data.usuario.nome}
+            ciclo={data.cicloAtivo}
+            valor={data.pagamento?.valor ?? 0}
+            saving={saving}
+            erro={modalError}
+            onCancel={fecharAprovar}
+            onConfirm={() => void sendSgc("ENVIAR")}
+          />
         )}
 
-        {/* ── Resumo do fornecedor (oculto no acompanhamento financeiro) ── */}
-        <Card className={`overflow-hidden ${isFinancialFollowUpStatus(data.sgc.status) ? "hidden" : ""}`}>
-          <div className="grid gap-5 p-5 xl:grid-cols-[1.15fr_0.9fr_0.95fr]">
-            <section className="min-w-0">
-              <div className="mb-4 flex items-center gap-3">
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB]">
-                  <UserRound size={18} />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wide text-[#9CA3AF]">Fornecedor</p>
-                  <h2 className="truncate text-base font-bold text-[#1A1A1A]">{data.usuario.nome}</h2>
-                </div>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <SummaryField label="ID" value={data.usuario.codigo} />
-                <SummaryField label="Função" value={data.usuario.funcao || "Cadastro em atualização"} />
-                <SummaryField label="CPF / CNPJ" value={data.usuario.cnpj || data.usuario.cpf || "Cadastro em atualização"} />
-                <SummaryField label="E-mail" value={displayEmail(data.usuario.email) || "Cadastro em atualização"} />
-                <div className="sm:col-span-2">
-                  <SummaryField label="Razão social" value={data.usuario.razaoSocial || "Cadastro em atualização"} />
-                </div>
-              </div>
-            </section>
+        {actionModal === "revisao" && canValidate && (
+          <SolicitarRevisaoDialog
+            value={pontos}
+            onChange={setPontos}
+            respostaAdmin={data.sgc.respostaAdmin}
+            saving={saving}
+            erro={modalError}
+            onCancel={closeActionModal}
+            onConfirm={() => void sendSgc("SOLICITAR_REVISAO")}
+          />
+        )}
 
-            <section className="min-w-0 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] p-4">
-              <div className="mb-4 flex items-center gap-3">
-                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-[#D97706] ring-1 ring-[#FDE68A]">
-                  <FileText size={17} />
-                </span>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-[#D97706]">Alocação</p>
-                  <p className="text-sm font-bold text-[#1A1A1A]">{data.alocacao?.ato ?? "–"}</p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {contratos.length ? contratos.map(([label, value]) => (
-                  <span key={label} className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-[#1A1A1A] ring-1 ring-[#FDE68A]">
-                    {label}
-                    <strong className="text-[#D97706]">{ratio(value)}</strong>
-                  </span>
-                )) : (
-                  <span className="text-sm text-[#92400E]">Nenhum contrato informado.</span>
-                )}
-                {resultadoParticipacao && resultadoParticipacao.documentosPendentes > 0 && (
-                  <span
-                    className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-[#B45309] ring-1 ring-[#FCD34D]"
-                    title={`${resultadoParticipacao.documentosPendentes} documento(s) sem contrato (CTO) válido`}
-                  >
-                    Não classificado
-                    <strong>{ratio(resultadoParticipacao.percentualNaoClassificado / 100)}</strong>
-                  </span>
-                )}
-              </div>
-              <div className="mt-4 rounded-lg bg-white px-3 py-2 ring-1 ring-[#FDE68A]">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#D97706]">Atuação</p>
-                <p className="mt-1 text-sm font-semibold text-[#1A1A1A]">{data.usuario.statusColaborador ?? "–"}</p>
-              </div>
-            </section>
+        {actionModal === "resposta" && (
+          <ResponderMedicaoDialog
+            value={respostaFornecedor}
+            onChange={setRespostaFornecedor}
+            respostaAdmin={data.sgc.respostaAdmin}
+            pontosDiscordancia={data.sgc.pontosDiscordancia}
+            observacaoColaborador={data.sgc.observacaoColaborador}
+            saving={saving}
+            erro={modalError}
+            onCancel={closeActionModal}
+            onConfirm={() => void sendSgc("RESPONDER_MEDICAO")}
+          />
+        )}
 
-            <section className="min-w-0 rounded-xl border border-[#BBF7D0] bg-[#F0FDF4] p-4">
-              <div className="mb-4 flex items-center gap-3">
-                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-[#16A34A] ring-1 ring-[#BBF7D0]">
-                  <Banknote size={17} />
-                </span>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-[#16A34A]">Pagamento previsto</p>
-                  <p className="text-xl font-bold text-[#1A1A1A]">{currency.format(data.pagamento?.valor ?? 0)}</p>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <SummaryField label="Revisão" value={data.pagamento?.rev ? currency.format(data.pagamento.rev) : "–"} />
-                <SummaryField label="Responsável" value={data.pagamento?.responsavel} />
-                <SummaryField label="Empresa" value={data.pagamento?.razaoSocial} />
-              </div>
-            </section>
-          </div>
-        </Card>
+        {/* Composição e documentos: ocultos no acompanhamento financeiro (APROVADO/PAGO), como antes. */}
+        {!isFinancialFollowUpStatus(data.sgc.status) && (
+          <ComposicaoPortal
+            documentos={data.documentos}
+            condicoesFixas={data.pagamento?.condicoesFixas}
+            contratos={resultadoParticipacao?.participacoes.map((p) => ({ nome: p.nome, percentual: p.percentual })) ?? []}
+            naoClassificado={resultadoParticipacao && resultadoParticipacao.documentosPendentes > 0
+              ? { percentual: resultadoParticipacao.percentualNaoClassificado, documentos: resultadoParticipacao.documentosPendentes }
+              : null}
+          />
+        )}
 
         {/* ── Documentos não considerados (divergências descartadas pela Equipe) ──
              Nunca usar a palavra "Divergência" aqui — regra de UX já estabelecida para o Portal.
              Não renderiza nada se não houver nenhum documento descartado (sem card vazio). */}
-        {data.documentosDescartados.length > 0 && (
-          <Card className={`overflow-hidden ${isFinancialFollowUpStatus(data.sgc.status) ? "hidden" : ""}`}>
-            <div className="px-5 py-4">
-              <h2 className="text-sm font-bold text-[#1A1A1A]">Documentos não considerados</h2>
-              <p className="mt-0.5 text-sm text-[#555555]">
-                {data.documentosDescartados.length === 1
-                  ? "1 documento não foi considerado nesta medição."
-                  : `${data.documentosDescartados.length} documentos não foram considerados nesta medição.`}
-              </p>
-            </div>
-            <div className="grid gap-2 px-5 pb-5">
+        {data.documentosDescartados.length > 0 && !isFinancialFollowUpStatus(data.sgc.status) && (
+          <Card className="p-5 sm:p-6">
+            <h2 className="text-card-title text-[var(--foreground)]">Documentos não considerados</h2>
+            <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">
+              {data.documentosDescartados.length === 1
+                ? "1 documento não foi considerado nesta medição."
+                : `${data.documentosDescartados.length} documentos não foram considerados nesta medição.`}
+            </p>
+            <ul className="mt-3 grid gap-2">
               {data.documentosDescartados.map((d) => (
-                <div key={d.id} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
-                  <p className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Documento</p>
-                  <p className="font-technical text-sm font-semibold text-[#1A1A1A]">{d.nrVale}</p>
-                  <p className="mt-2 text-xs font-bold uppercase tracking-wide text-[#6B7280]">Motivo</p>
-                  <p className="text-sm text-[#555555]">{d.motivo}</p>
-                </div>
+                <li key={d.id} className="grid gap-1 rounded-lg border border-[var(--border)] bg-[#fafaf8] p-3 sm:grid-cols-[minmax(0,200px)_1fr] sm:gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Documento</p>
+                    <p className="break-all font-technical text-[13px] font-semibold text-[var(--foreground)]">{d.nrVale}</p>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Motivo</p>
+                    <p className="break-words text-[13px] text-[var(--foreground)]">{d.motivo}</p>
+                  </div>
+                </li>
               ))}
-            </div>
+            </ul>
           </Card>
         )}
 
-        {/* ── Documents (oculto no acompanhamento financeiro) ── */}
-        <Card className={`overflow-hidden ${isFinancialFollowUpStatus(data.sgc.status) ? "hidden" : ""}`}>
-          <button
-            className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[#FAFAFA]"
-            onClick={() => setDocumentsOpen((v) => !v)}
-          >
-            <div>
-              <h2 className="text-sm font-bold text-[#1A1A1A]">Documentos da Medição do Ciclo</h2>
-              <p className="mt-0.5 text-sm text-[#555555]">
-                {data.documentos.filter((documento) => !isDiscountDocument(documento)).length} documentos vinculados ao ID {data.usuario.codigo} no ciclo {data.cicloAtivo}.
-              </p>
-            </div>
-            <ChevronDown className={`shrink-0 text-[#9CA3AF] transition-transform duration-200 ${documentsOpen ? "rotate-180" : ""}`} size={18} />
-          </button>
-
-          {documentsOpen && (() => {
-            const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-            const fmtN = (v: number) => new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(v);
-            const fmtP = (v: number) => new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 1 }).format(v);
-            const valorDocumento = (documento: ColaboradorData["documentos"][number]) =>
-              documento.valorMedido ?? (documento.equivalenteA1Horas * (parseFloat(documento.condicao ?? "0") || 0) * documento.percentualEmissao);
-            const documentosMedidos = data.documentos.filter((documento) => !isDiscountDocument(documento));
-            const descontos = data.documentos.filter((documento) => isDiscountDocument(documento));
-            const condicoesFixas = data.pagamento?.condicoesFixas;
-            const valorFixo = parseCurrencyNumber(condicoesFixas?.valorFixo);
-            const adicionaisFixos = parseCurrencyNumber(condicoesFixas?.adicionaisFixos);
-            const totalCondicoesFixas = valorFixo + adicionaisFixos;
-            const totalDocumentos = documentosMedidos.reduce((sum, documento) => sum + valorDocumento(documento), 0);
-            const totalDescontos = descontos.reduce((sum, documento) => sum + Math.abs(valorDocumento(documento)), 0);
-            const totalLiquido = totalCondicoesFixas + totalDocumentos - totalDescontos;
-            const hasFinancialAdjustments = totalCondicoesFixas > 0 || totalDescontos > 0;
-            const tipoCondicaoFixa = normalizeText(condicoesFixas?.tipoContratacao) || "FIXO PJ";
-            const hasObs = documentosMedidos.some((d) => d.obs) || descontos.some((d) => d.obs);
-            const headers = ["SE", "NR VALE / Projeto", "CTO", "Formato", "A1eq / HH", "% Emissão", "Tipo DG/DOC/HH", "Preço Unit.", "Valor Medido", "Total", ...(hasObs ? ["Observação"] : [])];
-            return (
-              <div className="border-t border-[#E5E7EB]">
-                <div className="overflow-x-auto pb-2">
-                  <table className="w-full border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-[#F9FAFB]">
-                        {headers.map((h) => (
-                          <th key={h} className="text-table-header whitespace-nowrap border-b border-[#E5E7EB] px-4 py-2.5 text-left text-[var(--muted-foreground)]">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {totalCondicoesFixas > 0 && (
-                        <tr className="border-b border-[#DBEAFE] bg-[#EFF6FF]/70 text-[#1D4ED8]">
-                          <td className="px-4 py-3">
-                            <span className="inline-flex rounded-md border border-[#BFDBFE] bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#2563EB]">
-                              Condição fixa
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 font-semibold text-[#2563EB]" colSpan={7}>
-                            Provento base contratual - {tipoCondicaoFixa}
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums font-bold text-[#1D4ED8]">{currency.format(totalCondicoesFixas)}</td>
-                          <td className="px-4 py-3 text-right tabular-nums font-bold text-[#1D4ED8]">{currency.format(totalCondicoesFixas)}</td>
-                          {hasObs && <td className="px-4 py-3 text-[#2563EB]">{condicoesFixas?.observacoesContrato ?? "Base fixa"}</td>}
-                        </tr>
-                      )}
-
-                      {documentosMedidos.map((d, i) => {
-                        const valorMedido = valorDocumento(d);
-                        return (
-                          <tr key={d.id} className={`border-b border-[#F3F4F6] last:border-0 hover:bg-[#FAFAFA] ${i % 2 !== 0 ? "bg-[#FAFAFA]" : ""}`}>
-                            <td className="px-4 py-3 font-medium text-[#1A1A1A]">{d.projetoReferente}</td>
-                            <td className="px-4 py-3 text-[#555555]">{d.numeroDocumento ?? "–"}</td>
-                            <td className="px-4 py-3 text-[#555555]">{d.contrato ?? "–"}</td>
-                            <td className="px-4 py-3 text-[#555555]">{d.formato ?? "–"}</td>
-                            <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{fmtN(d.equivalenteA1Horas)}</td>
-                            <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{d.percentualEmissao ? fmtP(d.percentualEmissao) : "100%"}</td>
-                            <td className="px-4 py-3 text-[#555555]">{d.tipo2 ?? "–"}</td>
-                            <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{d.precoUnitario ? currency.format(d.precoUnitario) : (d.condicao ?? "–")}</td>
-                            <td className="px-4 py-3 text-right tabular-nums text-[#555555]">{currency.format(valorMedido)}</td>
-                            <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#1A1A1A]">{currency.format(valorMedido)}</td>
-                            {hasObs && <td className="px-4 py-3 text-[#555555]">{d.obs ?? ""}</td>}
-                          </tr>
-                        );
-                      })}
-
-                      {descontos.map((d) => {
-                        const valorDesconto = Math.abs(valorDocumento(d));
-                        return (
-                          <tr key={d.id} className="border-b border-[#FEE2E2] text-[#DC2626] last:border-0">
-                            <td className="px-4 py-3">
-                              <span className="inline-flex rounded-md border border-[#FECACA] bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#DC2626]">
-                                Desconto
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 font-semibold text-[#DC2626]" colSpan={7}>
-                              {d.obs || d.numeroDocumento || "Desconto aplicado"}
-                            </td>
-                            <td className="px-4 py-3 text-right tabular-nums font-bold text-[#DC2626]">- {currency.format(valorDesconto)}</td>
-                            <td className="px-4 py-3 text-right tabular-nums font-bold text-[#DC2626]">- {currency.format(valorDesconto)}</td>
-                            {hasObs && <td className="px-4 py-3 text-[#DC2626]">{d.obs ?? "Dedução"}</td>}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    {!hasFinancialAdjustments && documentosMedidos.length > 0 && (
-                      <tfoot>
-                        <tr className="border-t-2 border-[#E5E7EB] bg-[#F9FAFB]">
-                          <td colSpan={8} className="px-4 py-2.5 text-right text-xs font-bold text-[#555555]">Total medido:</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-xs font-bold text-[#1A1A1A]">{currency.format(totalDocumentos)}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-xs font-bold text-[#1A1A1A]">{currency.format(totalDocumentos)}</td>
-                          {hasObs && <td />}
-                        </tr>
-                      </tfoot>
-                    )}
-                  </table>
-                </div>
-
-                {hasFinancialAdjustments && (
-                  <div className="flex justify-end px-5 pb-5 pt-4">
-                    <div className="grid w-80 min-w-[280px] gap-1.5 rounded-xl border border-[#E5E7EB] bg-white px-4 py-3 text-xs shadow-sm">
-                      {totalCondicoesFixas > 0 && (
-                        <div className="flex items-center justify-between gap-4">
-                          <span className="text-[#6B7280]">Condições fixas:</span>
-                          <span className="tabular-nums font-semibold text-[#1F2937]">{currency.format(totalCondicoesFixas)}</span>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-[#6B7280]">Documentos medidos:</span>
-                        <span className="tabular-nums font-semibold text-[#1F2937]">{currency.format(totalDocumentos)}</span>
-                      </div>
-                      {totalDescontos > 0 && (
-                        <div className="flex items-center justify-between gap-4">
-                          <span className="text-[#6B7280]">Descontos:</span>
-                          <span className="tabular-nums font-semibold text-[#DC2626]">- {currency.format(totalDescontos)}</span>
-                        </div>
-                      )}
-                      <div className="mt-2 flex items-center justify-between gap-4 border-t border-[#E5E7EB] pt-2">
-                        <span className="font-bold text-[#111827]">Total medido líquido:</span>
-                        <span className="tabular-nums text-sm font-bold text-[#111827]">{currency.format(totalLiquido)}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-        </Card>
+        {!isFinancialFollowUpStatus(data.sgc.status) && (
+          <DocumentosMedicaoPortal
+            documentos={data.documentos}
+            condicoesFixas={data.pagamento?.condicoesFixas}
+            codigo={data.usuario.codigo}
+            ciclo={data.cicloAtivo}
+          />
+        )}
         </>}
 
         {/* ── Minhas Medições ── */}

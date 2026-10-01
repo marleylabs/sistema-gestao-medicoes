@@ -148,6 +148,10 @@ async function main() {
   await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "Fornecedor Lock Recuperado" } } });
   await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "Fornecedor Lock Recuperado" } } });
   await prisma.usuario.deleteMany({ where: { nome: { startsWith: "Fornecedor Lock Recuperado" } } });
+  // e2e/portal-fornecedor-redesign.spec.ts — fornecedor dedicado (o próprio spec também limpa no fim).
+  await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorNome: { startsWith: "E2E Portal Redesign" } } });
+  await prisma.mapaPagamentoItem.deleteMany({ where: { responsavel: { startsWith: "E2E Portal Redesign" } } });
+  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "E2E Portal Redesign" } } });
   // e2e/administrativo-fornecedor-dedupe.spec.ts — importação idempotente + exclusão em massa.
   await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorCodigo: { startsWith: "E2E FORNECEDOR REDUNDANTE", mode: "insensitive" } } });
   await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: "E2E FORNECEDOR REDUNDANTE", mode: "insensitive" } } });

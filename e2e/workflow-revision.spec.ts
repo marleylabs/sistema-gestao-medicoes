@@ -140,7 +140,7 @@ test.describe.serial("Revisão — Solicitar revisão → motivo persistido → 
     const portal = new PortalPage(page);
     await portal.goto();
     await portal.salvarEEnviarBm();
-    await portal.expectStatusBadge("AGUARDANDO_NF");
+    await portal.expectStatusBadge("Aguardando envio da NF");
 
     const sgc = await prisma.sgcAprovacaoMedicao.findUnique({ where: { colaboradorCodigo_ciclo: { colaboradorCodigo: CODIGO_C, ciclo: e2eCiclo() } } });
     expect(sgc?.status).toBe("AGUARDANDO_NF");

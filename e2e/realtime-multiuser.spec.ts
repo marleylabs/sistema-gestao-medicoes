@@ -96,7 +96,7 @@ test.describe.serial("Atualização automática (sem F5) entre dois usuários", 
       const portalAtor = new PortalPage(ator);
       await portalAtor.goto();
       await portalAtor.salvarEEnviarBm();
-      await portalAtor.expectStatusBadge("AGUARDANDO_NF");
+      await portalAtor.expectStatusBadge("Aguardando envio da NF");
       await ator.request.post("/api/auth/logout");
     } finally {
       await atorCtx.close();
@@ -131,7 +131,7 @@ test.describe.serial("Atualização automática (sem F5) entre dois usuários", 
       const portalAtor = new PortalPage(ator);
       await portalAtor.goto();
       await portalAtor.uploadNf("tests/fixtures/nf/valida-b.pdf");
-      await portalAtor.expectStatusBadge("APROVADO");
+      await portalAtor.expectStatusBadge("Aguardando pagamento");
       await ator.request.post("/api/auth/logout");
     } finally {
       await atorCtx.close();

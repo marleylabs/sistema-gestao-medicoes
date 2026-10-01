@@ -64,7 +64,7 @@ test.describe.serial("Happy path — MEDICAO envia BM → FORNECEDOR conclui →
     // Conferência concluída sem divergência — NÃO deve mostrar "EM ANÁLISE" (não há o que analisar)
     // nem "DIVERGÊNCIA" (regra corrigida nesta sessão), e deve habilitar a ação de aprovação.
     await expect(page.getByText("EM ANÁLISE")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Enviar", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Aprovar boletim", exact: true })).toBeVisible();
 
     const sgc = await prisma.sgcAprovacaoMedicao.findUnique({ where: { colaboradorCodigo_ciclo: { colaboradorCodigo: CODIGO_A, ciclo: e2eCiclo() } } });
     expect(sgc?.statusConferencia).toBe("CONCLUIDA");
@@ -81,7 +81,7 @@ test.describe.serial("Happy path — MEDICAO envia BM → FORNECEDOR conclui →
     const portal = new PortalPage(page);
     await portal.goto();
     await portal.salvarEEnviarBm();
-    await portal.expectStatusBadge("AGUARDANDO_NF");
+    await portal.expectStatusBadge("Aguardando envio da NF");
 
     const sgc = await prisma.sgcAprovacaoMedicao.findUnique({ where: { colaboradorCodigo_ciclo: { colaboradorCodigo: CODIGO_A, ciclo: e2eCiclo() } } });
     expect(sgc?.status).toBe("AGUARDANDO_NF");
@@ -98,7 +98,7 @@ test.describe.serial("Happy path — MEDICAO envia BM → FORNECEDOR conclui →
     const portal = new PortalPage(page);
     await portal.goto();
     await portal.uploadNf("tests/fixtures/nf/valida-b.pdf");
-    await portal.expectStatusBadge("APROVADO");
+    await portal.expectStatusBadge("Aguardando pagamento");
 
     const sgc = await prisma.sgcAprovacaoMedicao.findUnique({ where: { colaboradorCodigo_ciclo: { colaboradorCodigo: CODIGO_A, ciclo: e2eCiclo() } } });
     expect(sgc?.status).toBe("APROVADO");
@@ -175,7 +175,7 @@ test.describe.serial("Happy path — MEDICAO envia BM → FORNECEDOR conclui →
 
     const portal = new PortalPage(page);
     await portal.goto();
-    await portal.expectStatusBadge("PAGO");
+    await portal.expectStatusBadge("Medição concluída");
 
     await page.request.post("/api/auth/logout");
   });

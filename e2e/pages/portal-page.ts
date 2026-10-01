@@ -32,19 +32,21 @@ export class PortalPage {
     await expect(this.page.getByText(/foram encontradas divergências/i)).toHaveCount(0);
   }
 
+  /** Aprovação = SALVAR (validação) → ENVIAR (confirmado no diálogo "Aprovar boletim"), mesma regra do servidor. */
   async salvarEEnviarBm() {
-    await this.page.getByRole("button", { name: "Salvar", exact: true }).click();
-    await expect(this.page.getByRole("button", { name: "Enviar", exact: true })).toBeEnabled();
-    // handleEnviar() usa window.confirm() — o Playwright descarta diálogos nativos por padrão,
-    // então sem isso o clique parece "não fazer nada" (o BM nunca avança de PENDENTE).
-    this.page.once("dialog", (dialog) => dialog.accept());
-    await this.page.getByRole("button", { name: "Enviar", exact: true }).click();
+    await this.page.getByRole("button", { name: "Salvar validação", exact: true }).click();
+    await expect(this.page.getByRole("button", { name: "Aprovar boletim", exact: true })).toBeEnabled();
+    await this.page.getByRole("button", { name: "Aprovar boletim", exact: true }).click();
+    const dialogo = this.page.getByRole("alertdialog", { name: "Aprovar boletim" });
+    await dialogo.getByRole("button", { name: "Aprovar boletim" }).click();
+    await expect(dialogo).toHaveCount(0);
   }
 
   async solicitarRevisao(motivo: string) {
     await this.page.getByRole("button", { name: "Solicitar revisão" }).click();
-    await this.page.getByRole("textbox").last().fill(motivo);
-    await this.page.getByRole("button", { name: "Enviar revisão" }).click();
+    const dialogo = this.page.getByRole("dialog", { name: "Solicitar revisão" });
+    await dialogo.getByLabel("Pontos de discordância").fill(motivo);
+    await dialogo.getByRole("button", { name: "Solicitar revisão" }).click();
   }
 
   async uploadNf(fixtureRelativePath: string) {
@@ -53,7 +55,8 @@ export class PortalPage {
     await this.page.getByRole("button", { name: /Enviar NF/i }).click();
   }
 
+  /** Badge de status do boletim — rótulo do fornecedor (lib/portal-fornecedor.ts), nunca o enum técnico. */
   async expectStatusBadge(label: string) {
-    await expect(this.page.getByText(label, { exact: true }).first()).toBeVisible();
+    await expect(this.page.getByTestId("portal-status")).toHaveText(label);
   }
 }
