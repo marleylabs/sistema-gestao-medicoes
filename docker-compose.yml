@@ -8,12 +8,15 @@ services:
     environment:
       POSTGRES_DB: medicoes
       POSTGRES_USER: medicoes_app
-      POSTGRES_PASSWORD: medicoes_app_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medicoes_app_dev}
     ports:
-      - "${POSTGRES_PORT:-15432}:5432"
+      # Interface configurável (padrão atual 0.0.0.0); 127.0.0.1 quando nenhuma integração externa precisar do banco.
+      - "${POSTGRES_BIND_ADDRESS:-0.0.0.0}:${POSTGRES_PORT:-15432}:5432"
     volumes:
+      # O schema é criado exclusivamente pelo histórico Prisma (`migrate deploy`, serviço "migrate" abaixo).
+      # database/schema.sql NÃO é mais montado em initdb: num volume novo ele criaria as tabelas antes do
+      # Prisma e o `migrate deploy` falharia com P3005.
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U medicoes_app -d medicoes"]
       interval: 5s
@@ -26,7 +29,7 @@ services:
       dockerfile: Dockerfile.etl
     container_name: medicoes-etl
     environment:
-      ETL_DATABASE_URL: postgresql+psycopg://medicoes_app:medicoes_app_dev@postgres:5432/medicoes
+      ETL_DATABASE_URL: postgresql+psycopg://medicoes_app:${POSTGRES_PASSWORD:-medicoes_app_dev}@postgres:5432/medicoes
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
     depends_on:
       postgres:
@@ -46,7 +49,7 @@ services:
     container_name: medicoes-web
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://medicoes_app:medicoes_app_dev@postgres:5432/medicoes
+      DATABASE_URL: postgresql://medicoes_app:${POSTGRES_PASSWORD:-medicoes_app_dev}@postgres:5432/medicoes
       NODE_ENV: production
       ALLOW_DATABASE_RESET: ${ALLOW_DATABASE_RESET:-false}
       AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET}
@@ -80,5 +83,21 @@ services:
       retries: 12
       start_period: 20s
 
+  # Aplica o histórico Prisma (sob demanda): docker compose --profile migrate run --rm migrate
+  migrate:
+    profiles: ["migrate"]
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      target: builder
+    environment:
+      DATABASE_URL: postgresql://medicoes_app:${POSTGRES_PASSWORD:-medicoes_app_dev}@postgres:5432/medicoes
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:
+    # Nome explícito e configurável: um banco novo usa outro volume sem apagar o anterior (rollback).
+    name: ${POSTGRES_VOLUME_NAME:-projetocrud-medio_postgres_data}
