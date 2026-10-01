@@ -52,10 +52,10 @@ test.describe.serial("Divergência — upload divergente → EM ANÁLISE (fornec
     await pagamentos.expectNoEnviarBm(FORNECEDOR_NOME);
     await pagamentos.abrirEditarPagamento(FORNECEDOR_NOME);
 
-    await expect(page.getByText("2 divergências encontradas")).toBeVisible();
-    await expect(page.getByText("E2E-DOC-002", { exact: true })).toBeVisible();
-    await expect(page.getByText("E2E-DOC-EXTRA", { exact: true })).toBeVisible();
-    await expect(page.getByText("Não mapeado pela Equipe")).toBeVisible();
+    await expect(page.getByTestId("divergencias-resumo")).toHaveText("2 documentos com divergência · 2 pendentes · 0 resolvidos");
+    await expect(pagamentos.divergenciaCard("E2E-DOC-002")).toBeVisible();
+    await expect(pagamentos.divergenciaCard("E2E-DOC-EXTRA")).toBeVisible();
+    await expect(pagamentos.divergenciaCard("E2E-DOC-EXTRA")).toContainText("Documento novo do fornecedor");
 
     const divergencias = await prisma.divergenciaMedicao.findMany({ where: { colaboradorCodigo: CODIGO_B, ciclo: e2eCiclo() } });
     expect(divergencias.length).toBe(2);
@@ -74,7 +74,7 @@ test.describe.serial("Divergência — upload divergente → EM ANÁLISE (fornec
 
     await pagamentos.expectDescartarDesabilitado("E2E-DOC-EXTRA");
     await pagamentos.descartarDivergencia("E2E-DOC-EXTRA", "Documento não pertence ao escopo do ciclo.");
-    await expect(page.getByText("Descartada")).toBeVisible();
+    await expect(pagamentos.divergenciaCard("E2E-DOC-EXTRA")).toHaveAttribute("data-status", "DESCARTADA");
 
     const divergencia = await prisma.divergenciaMedicao.findFirst({ where: { colaboradorCodigo: CODIGO_B, nrVale: "E2E-DOC-EXTRA" } });
     expect(divergencia?.status).toBe("DESCARTADA");
@@ -95,7 +95,7 @@ test.describe.serial("Divergência — upload divergente → EM ANÁLISE (fornec
     await pagamentos.goto();
     await pagamentos.abrirEditarPagamento(FORNECEDOR_NOME);
     await pagamentos.incluirDivergencia("E2E-DOC-002");
-    await expect(pagamentos["divergenciaCard"]("E2E-DOC-002")).toContainText("Incluída");
+    await expect(pagamentos.divergenciaCard("E2E-DOC-002")).toHaveAttribute("data-status", "INCLUIDA");
 
     const divergencia = await prisma.divergenciaMedicao.findFirst({ where: { colaboradorCodigo: CODIGO_B, nrVale: "E2E-DOC-002" } });
     expect(divergencia?.status).toBe("INCLUIDA");

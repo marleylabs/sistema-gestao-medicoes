@@ -34,6 +34,17 @@ const mascaraDivergente = createSimpleXlsx(headers, [
 ], "Documentos");
 fs.writeFileSync(path.join(outDir, "mascara-divergente.xlsx"), mascaraDivergente);
 
+// Caso real reportado (e2e/divergencias-redesign.spec.ts): máscara oficial "Mascara_Conferencia_Medicao.xlsx",
+// aba Documentos. NR-TESTE diverge só em A1eq/HH (equipe 2 × arquivo 1); NR-002 diverge em Formato,
+// A1eq/HH, % Emissão e Tipo (equipe A3 · 2 · 100 · DG); NR-NOVO só existe no arquivo.
+const mascaraConferenciaReal = createSimpleXlsx(headers, [
+  ["NR-TESTE", "A1", 1, 100, "DOC"],
+  ["NR-002", "A1", 1, 50, "DOC"],
+  ["NR-NOVO", "A1", 3, 100, "DOC"],
+], "Documentos");
+fs.writeFileSync(path.join(outDir, "Mascara_Conferencia_Medicao.xlsx"), mascaraConferenciaReal);
+
 console.log("[generate-e2e-fixtures] Gerado:");
 console.log(`  ${path.join(outDir, "mascara-valida.xlsx")}`);
 console.log(`  ${path.join(outDir, "mascara-divergente.xlsx")}`);
+console.log(`  ${path.join(outDir, "Mascara_Conferencia_Medicao.xlsx")}`);

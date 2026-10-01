@@ -75,35 +75,46 @@ export class PagamentosPage {
     await expect(this.page.getByRole("heading", { name: "Editar pagamento" })).toBeVisible();
   }
 
-  private divergenciaCard(nrVale: string) {
-    // Sobe até o primeiro <div> ancestral do NR VALE que contenha o botão "Incluir" (estado
-    // PENDENTE) OU o texto "Resolvido por" (estado INCLUIDA/DESCARTADA) — uma dessas duas
-    // condições é sempre verdadeira para o card da divergência, em qualquer estado, sem
-    // depender de classes/markup.
-    return this.page
-      .getByText(nrVale, { exact: true })
-      .locator('xpath=ancestor::div[.//button[normalize-space()="Incluir"] or contains(., "Resolvido por")][1]');
+  /** Documento na análise de divergências (components/divergencias/divergencias-medicao.tsx). */
+  divergenciaCard(nrVale: string) {
+    return this.page.locator(`[data-testid="divergencia-documento"][data-nr-vale="${nrVale}"]`);
   }
 
-  async incluirDivergencia(nrVale: string) {
-    const responsePromise = this.page.waitForResponse((r) => /\/api\/admin\/conferencia\/.+\/incluir$/.test(r.url()) && r.request().method() === "POST");
-    await this.divergenciaCard(nrVale).getByRole("button", { name: "Incluir" }).click();
+  /** Abre (expande) o documento, se estiver recolhido. */
+  async abrirDivergencia(nrVale: string) {
+    const card = this.divergenciaCard(nrVale);
+    const alternar = card.locator("button[aria-expanded]").first();
+    if ((await alternar.getAttribute("aria-expanded")) !== "true") await alternar.click();
+    await expect(alternar).toHaveAttribute("aria-expanded", "true");
+    return card;
+  }
+
+  /** Decisão do lado indicado (incluir = rota /incluir, descartar = rota /descartar), confirmada no diálogo. */
+  private async decidir(nrVale: string, acao: "incluir" | "descartar", observacao?: string) {
+    const card = await this.abrirDivergencia(nrVale);
+    if (observacao !== undefined) await card.getByLabel("Observação da análise").fill(observacao);
+    const botao = card.locator(`button[data-acao="${acao}"]`);
+    const label = (await botao.innerText()).trim();
+    await botao.click();
+    const dialogo = this.page.getByRole("alertdialog", { name: label });
+    const rota = new RegExp(`/api/admin/conferencia/.+/${acao}$`);
+    const responsePromise = this.page.waitForResponse((r) => rota.test(r.url()) && r.request().method() === "POST");
+    await dialogo.getByRole("button", { name: label }).click();
     await responsePromise;
+    await expect(dialogo).toHaveCount(0);
+  }
+
+  async incluirDivergencia(nrVale: string, observacao?: string) {
+    await this.decidir(nrVale, "incluir", observacao);
   }
 
   async expectDescartarDesabilitado(nrVale: string) {
-    await expect(this.divergenciaCard(nrVale).getByRole("button", { name: "Descartar" })).toBeDisabled();
+    const card = await this.abrirDivergencia(nrVale);
+    await expect(card.locator('button[data-acao="descartar"]')).toBeDisabled();
   }
 
   async descartarDivergencia(nrVale: string, observacao: string) {
-    const card = this.divergenciaCard(nrVale);
-    await card.getByPlaceholder("Informe uma observação sobre esta divergência...").fill(observacao);
-    // Sem esperar a resposta real, um segundo Incluir/Descartar em sequência (loop sobre várias
-    // divergências pendentes) corre na frente do primeiro POST ainda em voo — mesma classe de race
-    // condition já corrigida em enviarBm/uploadMascara nesta sessão.
-    const responsePromise = this.page.waitForResponse((r) => /\/api\/admin\/conferencia\/.+\/descartar$/.test(r.url()) && r.request().method() === "POST");
-    await card.getByRole("button", { name: "Descartar" }).click();
-    await responsePromise;
+    await this.decidir(nrVale, "descartar", observacao);
   }
 
   async fecharModalPagamento() {

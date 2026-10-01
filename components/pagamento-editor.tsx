@@ -4,7 +4,9 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { AlertTriangle, ArrowLeft, Plus, Trash2, X } from "lucide-react";
 import { Badge, BlurValue, Button, IconButton, Input, Textarea } from "@/components/ui";
 import type { ContratoResumo, MapaPagamentoItem, Profissional } from "@/components/types";
+import { DivergenciasMedicao } from "@/components/divergencias/divergencias-medicao";
 import { calcularBoletim, isDocumentoDesconto } from "@/lib/boletim-calculo";
+import type { DivergenciaDTO } from "@/lib/divergencia-comparacao";
 import { resolveCondicaoFixa, toCondicaoFixaConfig } from "@/lib/condicao-fixa";
 import {
   currency,
@@ -17,23 +19,7 @@ import {
   percent,
 } from "@/components/pagamento-format";
 
-type DivergenciaLinha = {
-  id: string;
-  nrVale: string;
-  idMedicaoExistente: string | null;
-  documentoNaoMapeado: boolean;
-  comparacaoAmbigua: boolean;
-  formatoDivergente: boolean;
-  a1eqDivergente: boolean;
-  emissaoDivergente: boolean;
-  tipoDivergente: boolean;
-  equipe: { formato: string | null; a1eqHh: number | null; percentualEmissao: number | null; tipo: string | null };
-  fornecedor: { formato: string; a1eqHh: number; percentualEmissao: number; tipo: string };
-  status: "PENDENTE" | "INCLUIDA" | "DESCARTADA";
-  observacao: string | null;
-  resolvidoPorNome: string | null;
-  resolvidoEm: string | null;
-};
+type DivergenciaLinha = DivergenciaDTO;
 
 /**
  * Cadastro/edição de pagamento — mesmo PaymentModal e mesma chamada POST /api/mapa-pagamento ou
@@ -299,36 +285,39 @@ function PaymentModal({
   // ── Divergências da conferência do fornecedor ──
   const [divergencias, setDivergencias] = useState<DivergenciaLinha[]>([]);
   const [divergenciasLoading, setDivergenciasLoading] = useState(false);
-  const [observacoesDivergencia, setObservacoesDivergencia] = useState<Record<string, string>>({});
-  const [resolvendoDivergenciaId, setResolvendoDivergenciaId] = useState<string | null>(null);
+  const [divergenciasErro, setDivergenciasErro] = useState<string | null>(null);
   const resolvendoDivergenciaRef = useRef(false);
 
   const loadDivergencias = useCallback(() => {
     if (!item || !codigo || !ciclo) return;
     setDivergenciasLoading(true);
     fetch(`/api/admin/conferencia?codigo=${encodeURIComponent(codigo)}&ciclo=${encodeURIComponent(ciclo)}`)
-      .then((r) => r.json())
-      .then((data: DivergenciaLinha[]) => setDivergencias(Array.isArray(data) ? data : []))
-      .catch(() => {})
+      .then(async (r) => {
+        if (!r.ok) throw new Error();
+        const data = (await r.json()) as DivergenciaLinha[];
+        setDivergencias(Array.isArray(data) ? data : []);
+        setDivergenciasErro(null);
+      })
+      .catch(() => setDivergenciasErro("Não foi possível carregar as divergências da medição."))
       .finally(() => setDivergenciasLoading(false));
   }, [item, codigo, ciclo]);
 
   useEffect(() => { loadDivergencias(); }, [loadDivergencias]);
 
-  async function resolverDivergencia(id: string, acao: "incluir" | "descartar") {
-    if (resolvendoDivergenciaRef.current) return;
+  // Mesmas rotas de sempre (incluir/descartar); a confirmação e os nomes das decisões ficam em
+  // components/divergencias. Devolve a mensagem de erro do backend (exibida no diálogo) ou null.
+  async function resolverDivergencia(id: string, acao: "incluir" | "descartar", observacao: string): Promise<string | null> {
+    if (resolvendoDivergenciaRef.current) return null;
     resolvendoDivergenciaRef.current = true;
-    setResolvendoDivergenciaId(id);
     try {
       const res = await fetch(`/api/admin/conferencia/${id}/${acao}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ observacao: observacoesDivergencia[id]?.trim() ?? "" }),
+        body: JSON.stringify({ observacao }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        window.alert(payload.error ?? "Não foi possível concluir a ação. Tente novamente.");
-        return;
+        return payload.error ?? "Não foi possível concluir a ação. Tente novamente.";
       }
       loadDivergencias();
       onDivergenciaResolvida?.();
@@ -350,9 +339,11 @@ function PaymentModal({
         })
         .catch(() => {})
         .finally(() => setDocsLoading(false));
+      return null;
+    } catch {
+      return "Erro de conexão. Tente novamente.";
     } finally {
       resolvendoDivergenciaRef.current = false;
-      setResolvendoDivergenciaId(null);
     }
   }
 
@@ -912,83 +903,15 @@ function PaymentModal({
               )}
             </section>
 
-            {/* Divergências da medição (conferência do fornecedor) — mesmas ações Incluir/Descartar. */}
-            {!divergenciasLoading && divergencias.length > 0 && (
+            {/* Divergências da medição (conferência do fornecedor) — análise por documento; mesmas ações de sempre. */}
+            {!divergenciasLoading && (divergencias.length > 0 || divergenciasErro) && (
               <section className="grid gap-3 px-5 py-5 sm:px-6">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className={secaoTitulo}>Divergências da Medição</h3>
-                  {(() => {
-                    const pendentes = divergencias.filter((d) => d.status === "PENDENTE").length;
-                    const resolvidas = divergencias.length - pendentes;
-                    return (
-                      <span className="text-xs text-[#7F1D1D]">
-                        {divergencias.length} divergência{divergencias.length !== 1 ? "s" : ""} encontrada{divergencias.length !== 1 ? "s" : ""} — {pendentes} pendente{pendentes !== 1 ? "s" : ""}, {resolvidas} resolvida{resolvidas !== 1 ? "s" : ""}
-                      </span>
-                    );
-                  })()}
-                </div>
-
-                <div className="grid gap-3">
-                  {divergencias.map((d) => {
-                    const emResolucao = resolvendoDivergenciaId === d.id;
-                    const observacaoAtual = observacoesDivergencia[d.id] ?? "";
-                    const podeDescartar = observacaoAtual.trim().length > 0;
-                    const campos: Array<{ label: string; equipe: string; fornecedor: string; divergente: boolean }> = [
-                      { label: "Formato", equipe: d.equipe.formato ?? "–", fornecedor: d.fornecedor.formato, divergente: d.formatoDivergente },
-                      { label: "A1eq/HH", equipe: d.equipe.a1eqHh === null ? "–" : String(d.equipe.a1eqHh), fornecedor: String(d.fornecedor.a1eqHh), divergente: d.a1eqDivergente },
-                      { label: "% Emissão", equipe: d.equipe.percentualEmissao === null ? "–" : percent.format(d.equipe.percentualEmissao), fornecedor: percent.format(d.fornecedor.percentualEmissao), divergente: d.emissaoDivergente },
-                      { label: "Tipo", equipe: d.equipe.tipo ?? "–", fornecedor: d.fornecedor.tipo, divergente: d.tipoDivergente },
-                    ];
-
-                    return (
-                      <div key={d.id} className="rounded-lg border border-[#FECACA] bg-[#FFFBFB] p-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-technical text-sm font-bold text-[#1A1A1A]">{d.nrVale}</span>
-                          {d.documentoNaoMapeado && <Badge variant="warning">Não mapeado pela Equipe</Badge>}
-                          {d.comparacaoAmbigua && <Badge variant="danger">NR VALE duplicado — ambíguo</Badge>}
-                          {d.status === "INCLUIDA" && <Badge variant="success">Incluída</Badge>}
-                          {d.status === "DESCARTADA" && <Badge variant="neutral">Descartada</Badge>}
-                        </div>
-
-                        {d.status === "PENDENTE" && !d.comparacaoAmbigua && (
-                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                            {campos.filter((c) => c.divergente || d.documentoNaoMapeado).map((c) => (
-                              <div key={c.label} className="rounded-md bg-[#FEF2F2] px-2.5 py-1.5 text-xs">
-                                <p className="font-semibold text-[#7F1D1D]">{c.label}</p>
-                                <p className="text-[#555555]">Equipe: <span className="font-technical">{c.equipe}</span></p>
-                                <p className="text-[#555555]">Fornecedor: <span className="font-technical">{c.fornecedor}</span></p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {d.status === "PENDENTE" ? (
-                          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-                            <Textarea
-                              className="min-h-[38px] bg-white text-xs"
-                              placeholder="Informe uma observação sobre esta divergência..."
-                              value={observacaoAtual}
-                              onChange={(e) => setObservacoesDivergencia((prev) => ({ ...prev, [d.id]: e.target.value }))}
-                            />
-                            <div className="flex items-center gap-2 self-end">
-                              <Button variant="secondary" className="h-8 px-3 text-xs" disabled={!podeDescartar || emResolucao} onClick={() => resolverDivergencia(d.id, "descartar")}>
-                                {emResolucao ? "Descartando..." : "Descartar"}
-                              </Button>
-                              <Button variant="success" className="h-8 px-3 text-xs" disabled={emResolucao} onClick={() => resolverDivergencia(d.id, "incluir")}>
-                                {emResolucao ? "Incluindo..." : "Incluir"}
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="mt-2 text-xs text-[#555555]">
-                            <p><span className="font-semibold">{d.status === "INCLUIDA" ? "Incluído" : "Motivo"}:</span> {d.observacao || "—"}</p>
-                            <p className="mt-0.5 text-[#9CA3AF]">Resolvido por {d.resolvidoPorNome ?? "—"}{d.resolvidoEm ? ` em ${new Date(d.resolvidoEm).toLocaleString("pt-BR")}` : ""}</p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                <DivergenciasMedicao
+                  divergencias={divergencias}
+                  erro={divergenciasErro}
+                  onRecarregar={loadDivergencias}
+                  onResolver={resolverDivergencia}
+                />
               </section>
             )}
 
