@@ -150,7 +150,7 @@ export async function PATCH(request: NextRequest) {
   // nunca desfaz o pagamento, que já está PAGO no banco.
   const mapaItem = await prisma.mapaPagamentoItem.findFirst({
     where: { projetistaCodigo: { equals: sgc.colaboradorCodigo, mode: "insensitive" }, ciclo: sgc.ciclo },
-    select: { valor: true },
+    select: { valor: true, rev: true },
   });
   await notifyPaymentCompleted({
     sgcId: id,
@@ -158,6 +158,7 @@ export async function PATCH(request: NextRequest) {
     ciclo: sgc.ciclo,
     fornecedorNome: sgc.colaboradorNome || sgc.colaboradorCodigo,
     valor: mapaItem ? Number(mapaItem.valor) : null,
+    rev: mapaItem ? Number(mapaItem.rev) : null,
     pagoAt: now,
   });
 

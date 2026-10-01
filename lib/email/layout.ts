@@ -27,6 +27,32 @@ export function formatCurrencyBRL(value: number | null | undefined) {
   return currencyFormatter.format(value ?? 0);
 }
 
+/**
+ * Bloco financeiro dos e-mails de pagamento. Semântica oficial: TOTAL DA MEDIÇÃO =
+ * mapaPagamentoItem.valor; REV / AJUSTES = rev; TOTAL A PAGAR = valor + rev — a mesma soma do
+ * "Valor a pagar" do Financeiro (components/financeiro/shared.ts:valorAPagar). Sem REV, só o
+ * total a pagar; com REV (positivo ou negativo), as três linhas.
+ */
+export function paymentTotalsBlock(input: { valor: number | null | undefined; rev?: number | null }) {
+  const valor = input.valor ?? 0;
+  const rev = input.rev ?? 0;
+  const totalAPagar = formatCurrencyBRL(valor + rev);
+  if (rev === 0) {
+    return { html: `<p><strong>Total a pagar:</strong> ${totalAPagar}</p>`, text: `Total a pagar: ${totalAPagar}` };
+  }
+  const cell = "padding:4px 24px 4px 0;font-size:14px;color:#1A1A1A;";
+  const valueCell = "padding:4px 0;font-size:14px;color:#1A1A1A;text-align:right;white-space:nowrap;";
+  const totalBorder = "border-top:1px solid #E4E4E7;";
+  const html = `
+    <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:12px 0;">
+      <tr><td style="${cell}">Total da medição</td><td style="${valueCell}">${formatCurrencyBRL(valor)}</td></tr>
+      <tr><td style="${cell}">REV / Ajustes</td><td style="${valueCell}">${formatCurrencyBRL(rev)}</td></tr>
+      <tr><td style="${cell}${totalBorder}"><strong>Total a pagar</strong></td><td style="${valueCell}${totalBorder}"><strong>${totalAPagar}</strong></td></tr>
+    </table>`;
+  const text = `Total da medição: ${formatCurrencyBRL(valor)}\nREV / Ajustes: ${formatCurrencyBRL(rev)}\nTotal a pagar: ${totalAPagar}`;
+  return { html, text };
+}
+
 export function formatDatePtBR(value: Date | string | null | undefined) {
   if (!value) return "";
   return dateFormatter.format(new Date(value));

@@ -76,13 +76,14 @@ export async function POST(request: NextRequest) {
   // desfaz a NF já registrada acima.
   const mapaItem = await prisma.mapaPagamentoItem.findFirst({
     where: { projetistaCodigo: { equals: sgc.colaboradorCodigo, mode: "insensitive" }, ciclo: sgc.ciclo },
-    select: { valor: true },
+    select: { valor: true, rev: true },
   });
   await notifyPaymentReady({
     sgcId: sgc.id,
     ciclo: sgc.ciclo,
     fornecedorNome: sgc.colaboradorNome || sgc.colaboradorCodigo,
     valor: mapaItem ? Number(mapaItem.valor) : null,
+    rev: mapaItem ? Number(mapaItem.rev) : null,
   });
 
   return NextResponse.json({ ok: true });

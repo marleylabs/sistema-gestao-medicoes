@@ -1,4 +1,4 @@
-import { emailLayout, escapeHtml, formatCurrencyBRL } from "@/lib/email/layout";
+import { emailLayout, escapeHtml, paymentTotalsBlock } from "@/lib/email/layout";
 import type { EmailContent } from "@/lib/email/types";
 
 /**
@@ -7,14 +7,14 @@ import type { EmailContent } from "@/lib/email/types";
  * `validateNfDocumentAgainstCadastro` aprovar o PDF). Nunca no momento do BM aprovado — a NF
  * pendente é o que efetivamente bloqueia o Financeiro até aqui.
  */
-export function paymentReadyTemplate(input: { fornecedorNome: string; ciclo: string; valor: number | null; appUrl: string | null }): EmailContent {
+export function paymentReadyTemplate(input: { fornecedorNome: string; ciclo: string; valor: number | null; rev?: number | null; appUrl: string | null }): EmailContent {
   const fornecedorNome = escapeHtml(input.fornecedorNome);
   const ciclo = escapeHtml(input.ciclo);
-  const valor = formatCurrencyBRL(input.valor);
+  const totais = paymentTotalsBlock({ valor: input.valor, rev: input.rev });
   const bodyHtml = `
     <p>O processo de <strong>${fornecedorNome}</strong> está disponível para pagamento.</p>
     <p><strong>Ciclo:</strong> ${ciclo}</p>
-    <p><strong>Valor:</strong> ${valor}</p>
+    ${totais.html}
     <p><strong>Nota Fiscal:</strong> recebida e validada</p>
   `;
   const html = emailLayout({
@@ -23,6 +23,6 @@ export function paymentReadyTemplate(input: { fornecedorNome: string; ciclo: str
     ctaLabel: "Acessar Financeiro",
     ctaUrl: input.appUrl ?? undefined,
   });
-  const text = `O processo de ${input.fornecedorNome} está disponível para pagamento.\n\nCiclo: ${input.ciclo}\nValor: ${valor}\nNota Fiscal: recebida e validada${input.appUrl ? `\n\nAcesse: ${input.appUrl}` : ""}`;
+  const text = `O processo de ${input.fornecedorNome} está disponível para pagamento.\n\nCiclo: ${input.ciclo}\n${totais.text}\nNota Fiscal: recebida e validada${input.appUrl ? `\n\nAcesse: ${input.appUrl}` : ""}`;
   return { subject: `Pagamento disponível — ${input.fornecedorNome} — Ciclo ${input.ciclo}`, html, text };
 }

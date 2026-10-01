@@ -154,9 +154,9 @@ export async function notifyBmRevisionRequested(input: { sgcId: string; ciclo: s
   });
 }
 
-export async function notifyPaymentReady(input: { sgcId: string; ciclo: string; fornecedorNome: string; valor: number | null }) {
+export async function notifyPaymentReady(input: { sgcId: string; ciclo: string; fornecedorNome: string; valor: number | null; rev?: number | null }) {
   const { emails, missingCount } = await resolveFinanceiroTeamEmails();
-  const content = paymentReadyTemplate({ fornecedorNome: input.fornecedorNome, ciclo: input.ciclo, valor: input.valor, appUrl: financeiroUrl() });
+  const content = paymentReadyTemplate({ fornecedorNome: input.fornecedorNome, ciclo: input.ciclo, valor: input.valor, rev: input.rev, appUrl: financeiroUrl() });
   return sendTransactionalEmail({
     event: "PAYMENT_READY",
     to: emails,
@@ -167,9 +167,9 @@ export async function notifyPaymentReady(input: { sgcId: string; ciclo: string; 
   });
 }
 
-export async function notifyPaymentCompleted(input: { sgcId: string; colaboradorCodigo: string; ciclo: string; fornecedorNome: string; valor: number | null; pagoAt: Date }) {
+export async function notifyPaymentCompleted(input: { sgcId: string; colaboradorCodigo: string; ciclo: string; fornecedorNome: string; valor: number | null; rev?: number | null; pagoAt: Date }) {
   const recipient = await resolveFornecedorEmail(input.colaboradorCodigo, input.fornecedorNome);
-  const content = paymentCompletedTemplate({ fornecedorNome: recipient.nome, ciclo: input.ciclo, valor: input.valor, pagoAt: input.pagoAt, appUrl: portalUrl() });
+  const content = paymentCompletedTemplate({ fornecedorNome: recipient.nome, ciclo: input.ciclo, valor: input.valor, rev: input.rev, pagoAt: input.pagoAt, appUrl: portalUrl() });
   return sendTransactionalEmail({
     event: "PAYMENT_COMPLETED",
     to: recipient.email ? [recipient.email] : [],
