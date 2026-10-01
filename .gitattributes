@@ -1,0 +1,3 @@
+# Migrations Prisma: o checksum registrado em _prisma_migrations depende dos bytes do arquivo.
+# LF em todas as plataformas evita "migration modificada" entre Windows e Linux.
+prisma/migrations/**/*.sql text eol=lf
