@@ -66,6 +66,9 @@ export const test = base.extend<{ forEachTest: void }>({
         // motivo curto demais — validação do servidor exibida no diálogo, intencional em
         // e2e/portal-fornecedor-redesign.spec.ts.
         if (url.endsWith("/api/colaborador/sgc") && response.status() === 400) return;
+        // 503 simulado de GET /api/colaborador/medicoes — estado de erro de "Minhas Medições",
+        // intencional em e2e/minhas-medicoes.spec.ts (route.fulfill; nunca vem do backend real).
+        if (url.endsWith("/api/colaborador/medicoes") && response.status() === 503) return;
         networkErrors.push(`${response.status()} ${response.request().method()} ${url}`);
       });
 

@@ -148,6 +148,10 @@ async function main() {
   await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "Fornecedor Lock Recuperado" } } });
   await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "Fornecedor Lock Recuperado" } } });
   await prisma.usuario.deleteMany({ where: { nome: { startsWith: "Fornecedor Lock Recuperado" } } });
+  // e2e/minhas-medicoes.spec.ts — fornecedor dedicado de "Minhas Medições" (o spec também limpa).
+  await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorNome: { startsWith: "E2E Minhas Medicoes" } } });
+  await prisma.mapaPagamentoItem.deleteMany({ where: { responsavel: { startsWith: "E2E Minhas Medicoes" } } });
+  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "E2E Minhas Medicoes" } } });
   // e2e/divergencias-redesign.spec.ts — fornecedor dedicado do caso real da conferência (o spec também limpa).
   await prisma.divergenciaMedicao.deleteMany({ where: { sgc: { colaboradorNome: { startsWith: "E2E Divergencia" } } } });
   await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorNome: { startsWith: "E2E Divergencia" } } });

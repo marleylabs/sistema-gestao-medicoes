@@ -28,6 +28,7 @@ import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { AppShell } from "@/components/app-shell";
 import { AccountMenu } from "@/components/account-menu";
 import { GeneralChatWidget } from "@/components/general-chat-widget";
+import { MinhasMedicoes, type MedicaoAprovada } from "@/components/minhas-medicoes";
 import {
   AprovarBoletimDialog,
   BoletimResumoPortal,
@@ -165,7 +166,6 @@ function displayEmail(value: string | null | undefined) {
 
 // ─── ColaboradorApp ───────────────────────────────────────────────────────────
 
-type MedicaoAprovada = BmData & { id: string; status?: string; nfArquivoNome?: string | null; nfCarregadoAt?: string | null; comprovanteArquivoNome?: string | null; comprovanteCarregadoAt?: string | null; };
 
 type Section = "portal" | "medicoes";
 
@@ -176,6 +176,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   const [loadError, setLoadError]           = useState<"sessao" | "erro" | null>(null);
   const [medicoes, setMedicoes]             = useState<MedicaoAprovada[]>([]);
   const [medLoading, setMedLoading]         = useState(false);
+  const [medErro, setMedErro]               = useState<string | null>(null);
   const [actionModal, setActionModal]       = useState<"revisao" | "resposta" | null>(null);
   const [aprovarOpen, setAprovarOpen]       = useState(false);
   const [pontos, setPontos]                 = useState("");
@@ -243,10 +244,18 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
 
   const loadMedicoes = useCallback(async () => {
     setMedLoading(true);
-    const res = await fetch("/api/colaborador/medicoes");
-    const json = await res.json();
-    setMedicoes(json.medicoes ?? []);
-    setMedLoading(false);
+    try {
+      const res = await fetch("/api/colaborador/medicoes");
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      setMedicoes(json.medicoes ?? []);
+      setMedErro(null);
+    } catch {
+      // Sem loading infinito: falha vira estado de erro com "Tentar novamente".
+      setMedErro("Não foi possível carregar suas medições.");
+    } finally {
+      setMedLoading(false);
+    }
   }, []);
 
   function playNotificationSound() {
@@ -622,7 +631,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
         <PageHeader
           eyebrow="Fornecedor"
           title={TITLES[section]}
-          description={section === "portal" ? "Acompanhe seu BM, nota fiscal, pagamento e comprovante." : "Consulte o histórico dos ciclos concluídos."}
+          description={section === "portal" ? "Acompanhe seu BM, nota fiscal, pagamento e comprovante." : "Acompanhe seus boletins, valores e pagamentos."}
         />
 
         {/* ── Portal ── */}
@@ -1055,31 +1064,14 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
 
         {/* ── Minhas Medições ── */}
         {section === "medicoes" && (
-          medLoading ? (
-            <div className="flex items-center justify-center py-20 text-sm text-[#555555]">
-              <div className="flex items-center gap-3">
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#2563EB]" />
-                Carregando medições…
-              </div>
-            </div>
-          ) : medicoes.length === 0 ? (
-            <Card className="p-10 text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#F3F4F6] text-[#9CA3AF]">
-                <History size={30} />
-              </div>
-              <h2 className="text-section-title text-[#1A1A1A]">Nenhuma medição disponível</h2>
-              <p className="mt-2 text-sm text-[#555555]">
-                As medições aprovadas ou aguardando NF aparecerão aqui.
-              </p>
-            </Card>
-          ) : (
-            <div className="grid gap-5">
-              {medicoes.map((med) => (
-                <MedicaoAprovadaCard key={med.id} med={med} onReload={loadMedicoes} />
-              ))}
-            </div>
-          )
-      )}
+          <MinhasMedicoes
+            medicoes={medicoes}
+            loading={medLoading}
+            erro={medErro}
+            fornecedorNome={data.usuario.nome}
+            onRecarregar={loadMedicoes}
+          />
+        )}
     </PageContainer>
       {section === "portal" && data.sgc.status === "REVISAO_SOLICITADA" && (
         <RevisionChatWidget
@@ -1345,321 +1337,5 @@ function RevisionChatWidget({
         </div>
       </section>
     </div>
-  );
-}
-
-// ─── MedicaoAprovadaCard ──────────────────────────────────────────────────────
-
-function MedicaoAprovadaCard({ med, onReload }: { med: MedicaoAprovada; onReload: () => void }) {
-  const cur = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-  const [bmOpen, setBmOpen] = useState(false);
-  const [nfFile, setNfFile] = useState<File | null>(null);
-  const [nfUploading, setNfUploading] = useState(false);
-  const [nfProgress, setNfProgress] = useState(0);
-  const [nfError, setNfError] = useState<string | null>(null);
-  const [draggingNf, setDraggingNf] = useState(false);
-  const nfInputRef = useRef<HTMLInputElement | null>(null);
-
-  const isAguardandoNf = med.status === "AGUARDANDO_NF";
-  const isAguardandoPagamento = med.status === "APROVADO";
-  const isConcluida = med.status === "PAGO";
-
-  const aprovadoLabel = med.aprovadoAt
-    ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(med.aprovadoAt))
-    : "–";
-
-  const nfEnviadaLabel = med.nfCarregadoAt
-    ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(med.nfCarregadoAt))
-    : null;
-
-  const totalValor = (med.pagamento?.valor ?? 0) + (med.pagamento?.rev ?? 0);
-
-  function selectNfFile(file: File | null) {
-    setNfError(null);
-    setNfProgress(0);
-    if (!file) {
-      setNfFile(null);
-      return;
-    }
-
-    const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
-    const allowedExtensions = /\.(pdf|jpg|jpeg|png)$/i;
-    if (!allowedTypes.has(file.type) && !allowedExtensions.test(file.name)) {
-      setNfFile(null);
-      setNfError("Formato inválido. Envie PDF, JPG ou PNG.");
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      setNfFile(null);
-      setNfError("A Nota Fiscal deve ter no máximo 10 MB.");
-      return;
-    }
-    setNfFile(file);
-  }
-
-  async function uploadNf() {
-    if (!nfFile) return;
-    setNfUploading(true);
-    setNfError(null);
-    setNfProgress(4);
-    const form = new FormData();
-    form.append("nf", nfFile);
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/api/colaborador/nf");
-        xhr.upload.onprogress = (event) => {
-          if (!event.lengthComputable) return;
-          setNfProgress(Math.min(95, Math.round((event.loaded / event.total) * 100)));
-        };
-        xhr.onload = () => {
-          const payload = (() => {
-            try { return JSON.parse(xhr.responseText || "{}"); } catch { return {}; }
-          })();
-          if (xhr.status >= 200 && xhr.status < 300) {
-            setNfProgress(100);
-            resolve();
-          } else {
-            reject(new Error(payload.error ?? "Erro ao enviar a NF."));
-          }
-        };
-        xhr.onerror = () => reject(new Error("Erro de conexão ao enviar a NF."));
-        xhr.send(form);
-      });
-      setNfFile(null);
-      onReload();
-    } catch (error) {
-      setNfError(error instanceof Error ? error.message : "Erro ao enviar a NF.");
-    } finally {
-      setNfUploading(false);
-    }
-  }
-
-  const headerBg = isAguardandoNf
-    ? "border-[#FDE68A] bg-[#FFFBEB]"
-    : isAguardandoPagamento
-      ? "border-[#BFDBFE] bg-[#EFF6FF]"
-      : "border-[#BBF7D0] bg-[#F0FDF4]";
-  const iconBg = isAguardandoNf
-    ? "bg-[#D97706]/10 text-[#D97706]"
-    : isAguardandoPagamento
-      ? "bg-[#2563EB]/10 text-[#2563EB]"
-      : "bg-[#16A34A]/10 text-[#16A34A]";
-  const titleColor = isAguardandoNf
-    ? "text-[#92400E]"
-    : isAguardandoPagamento
-      ? "text-[#1D4ED8]"
-      : "text-[#15803D]";
-  const subColor = isAguardandoNf
-    ? "text-[#D97706]"
-    : isAguardandoPagamento
-      ? "text-[#2563EB]"
-      : "text-[#16A34A]";
-  const StatusIcon = isAguardandoNf ? FileUp : isAguardandoPagamento ? Clock : CheckCircle2;
-  const statusTitle = isAguardandoNf
-    ? "Aguardando NF"
-    : isAguardandoPagamento
-      ? "Aguardando pagamento"
-      : isConcluida
-        ? "Medição Concluída"
-        : "Medição";
-  const statusSubtitle = isAguardandoNf
-    ? "Envie a Nota Fiscal para seguir com o pagamento"
-    : isAguardandoPagamento
-      ? nfEnviadaLabel
-        ? `NF enviada em ${nfEnviadaLabel}. Pagamento pendente.`
-        : "Nota Fiscal recebida. Pagamento pendente."
-      : med.comprovanteCarregadoAt
-        ? `Pagamento concluído em ${new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(med.comprovanteCarregadoAt))}`
-        : `Aprovado em ${aprovadoLabel}`;
-
-  return (
-    <Card className="overflow-hidden">
-      {/* Header */}
-      <div className={`border-b px-5 py-4 ${headerBg}`}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${iconBg}`}>
-              <StatusIcon size={18} />
-            </span>
-            <div>
-              <div className="flex items-center gap-2">
-                <p className={`text-sm font-bold ${titleColor}`}>
-                  {statusTitle} — Ciclo {med.ciclo}
-                </p>
-                {med.revisaoLabel && (
-                  <Badge variant={isAguardandoNf ? "warning" : isAguardandoPagamento ? "brand" : "success"} className="shrink-0">
-                    {med.revisaoLabel}
-                  </Badge>
-                )}
-              </div>
-              <p className={`text-xs ${subColor}`}>
-                {statusSubtitle}
-              </p>
-            </div>
-          </div>
-          <div className="text-right">
-            {/* valor + rev do mapa = TOTAL A PAGAR (o total da medição sozinho é mapaPagamentoItem.valor). */}
-            <p className="text-stat-label uppercase tracking-wide text-[#9CA3AF]">Total a pagar</p>
-            <p className="text-base font-bold text-[#1A1A1A]">{cur.format(totalValor)}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* NF status / upload */}
-      {isAguardandoNf && (
-        <div className="border-b border-[#FDE68A] bg-[#FFFBEB] px-5 py-4">
-          <div className="mb-3 flex items-start gap-2">
-            <FileUp size={16} className="mt-0.5 shrink-0 text-[#D97706]" />
-            <div>
-              <p className="text-sm font-semibold text-[#92400E]">Envio da Nota Fiscal</p>
-              <p className="mt-1 text-xs text-[#92400E]/80">Arraste o arquivo ou selecione no computador. Formato aceito: PDF pesquisável, até 10 MB.</p>
-            </div>
-          </div>
-          <input
-            ref={nfInputRef}
-            type="file"
-            accept=".pdf"
-            className="hidden"
-            onChange={(e) => selectNfFile(e.target.files?.[0] ?? null)}
-          />
-          <div
-            role="button"
-            tabIndex={0}
-            className={`rounded-xl border border-dashed px-4 py-5 text-center transition ${draggingNf ? "border-[#D97706] bg-[#FEF3C7]" : "border-[#FBBF24] bg-white/65 hover:bg-white"}`}
-            onClick={() => nfInputRef.current?.click()}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" && event.key !== " ") return;
-              event.preventDefault();
-              nfInputRef.current?.click();
-            }}
-            onDragOver={(event) => {
-              event.preventDefault();
-              setDraggingNf(true);
-            }}
-            onDragLeave={() => setDraggingNf(false)}
-            onDrop={(event) => {
-              event.preventDefault();
-              setDraggingNf(false);
-              selectNfFile(event.dataTransfer.files?.[0] ?? null);
-            }}
-          >
-            <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#FFF7ED] text-[#D97706]">
-              <UploadCloud size={20} />
-            </span>
-            <p className="mt-3 text-sm font-semibold text-[#1A1A1A]">Clique para escolher ou arraste a Nota Fiscal</p>
-            <p className="mt-1 text-xs text-[#6B7280]">PDF pesquisável</p>
-          </div>
-          {nfFile && (
-            <div className="mt-3 rounded-xl border border-[#FDE68A] bg-white p-3 shadow-sm">
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFF7ED] text-[#D97706]">
-                  <FileIcon size={18} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-semibold text-[#1A1A1A]">{nfFile.name}</p>
-                    <span className="shrink-0 rounded bg-[#F3F4F6] px-1.5 py-0.5 text-[10px] font-bold text-[#6B7280]">{fileExtension(nfFile.name)}</span>
-                  </div>
-                  <p className="mt-0.5 text-xs text-[#6B7280]">{readableFileSize(nfFile.size)}</p>
-                </div>
-                {nfError ? (
-                  <button
-                    type="button"
-                    className="rounded-lg p-2 text-[#D97706] hover:bg-[#FFF7ED]"
-                    onClick={uploadNf}
-                    title="Tentar novamente"
-                  >
-                    <RotateCcw size={16} />
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="rounded-lg p-2 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#DC2626]"
-                  onClick={() => selectNfFile(null)}
-                  disabled={nfUploading}
-                  title="Remover arquivo"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#DCFCE7]">
-                <div
-                  className={`h-full rounded-full transition-all duration-200 ${nfError ? "bg-[#DC2626]" : "bg-[#15803D]"}`}
-                  style={{ width: `${nfError ? 100 : nfProgress}%` }}
-                />
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <p className={`flex items-center gap-1 text-xs ${nfError ? "text-[#B91C1C]" : "text-[#6B7280]"}`}>
-                  {nfError ? <AlertCircle size={13} /> : null}
-                  {nfError ?? (nfUploading ? `Enviando... ${nfProgress}%` : nfProgress === 100 ? "Arquivo enviado." : "Pronto para envio.")}
-                </p>
-                <Button variant="success" className="h-8 px-4" onClick={uploadNf} disabled={nfUploading}>
-                  {nfUploading ? "Enviando..." : nfError ? "Tentar novamente" : "Enviar NF"}
-                </Button>
-              </div>
-            </div>
-          )}
-          {nfError && !nfFile && <p className="mt-2 text-xs text-[#B91C1C]">{nfError}</p>}
-        </div>
-      )}
-
-      {!isAguardandoNf && med.nfArquivoNome && (
-        <div className={`flex items-center gap-3 border-b px-5 py-3 ${isAguardandoPagamento ? "border-[#BFDBFE] bg-[#EFF6FF]" : "border-[#BBF7D0] bg-[#F0FDF4]"}`}>
-          <FileText size={14} className={`shrink-0 ${isAguardandoPagamento ? "text-[#2563EB]" : "text-[#16A34A]"}`} />
-          <span className={`flex-1 text-xs ${isAguardandoPagamento ? "text-[#1D4ED8]" : "text-[#15803D]"}`}>
-            NF enviada: <strong>{med.nfArquivoNome}</strong>
-            {nfEnviadaLabel && <span className={`ml-1 ${isAguardandoPagamento ? "text-[#2563EB]/70" : "text-[#16A34A]/70"}`}>· {nfEnviadaLabel}</span>}
-          </span>
-          <a
-            href={`/api/colaborador/nf/${med.id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-white ${isAguardandoPagamento ? "bg-[#2563EB] hover:bg-[#1D4ED8]" : "bg-[#16A34A] hover:bg-[#15803D]"}`}
-          >
-            Visualizar NF
-          </a>
-        </div>
-      )}
-
-      {med.status === "PAGO" && med.comprovanteArquivoNome && (
-        <div className="flex items-center gap-3 border-b border-[#BFDBFE] bg-[#EFF6FF] px-5 py-3">
-          <FileText size={14} className="shrink-0 text-[#2563EB]" />
-          <span className="flex-1 text-xs text-[#1D4ED8]">
-            Comprovante de pagamento: <strong>{med.comprovanteArquivoNome}</strong>
-            {med.comprovanteCarregadoAt && (
-              <span className="ml-1 text-[#2563EB]/70">
-                · {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(med.comprovanteCarregadoAt))}
-              </span>
-            )}
-          </span>
-          <a
-            href={`/api/colaborador/comprovante/${med.id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0 rounded-lg bg-[#2563EB] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1D4ED8]"
-          >
-            Ver comprovante
-          </a>
-        </div>
-      )}
-
-      {/* Dropdown do Boletim */}
-      <button
-        className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-[#FAFAFA]"
-        onClick={() => setBmOpen((v) => !v)}
-      >
-        <span className="text-sm font-medium text-[#555555]">
-          {bmOpen ? "Ocultar" : "Ver"} Boletim de Medição
-        </span>
-        <ChevronDown className={`shrink-0 text-[#9CA3AF] transition-transform duration-200 ${bmOpen ? "rotate-180" : ""}`} size={16} />
-      </button>
-
-      {bmOpen && (
-        <div className="border-t border-[#E5E7EB] p-5">
-          <BoletimMedicao data={med} />
-        </div>
-      )}
-    </Card>
   );
 }

@@ -120,9 +120,12 @@ test.describe.serial("Gate — total do BM: Portal → aprovação → PDF; Hist
     await entrar(page, USUARIO, SENHA);
     await page.goto("/");
     await page.getByRole("button", { name: "Minhas Medições" }).first().click();
-    const card = page.locator("div").filter({ hasText: `Ciclo ${ciclo}` }).filter({ has: page.getByRole("button", { name: /Ver Boletim de Medição/ }) }).last();
-    await expect(card).toContainText(`Total a pagar${TOTAL_A_PAGAR}`);
-    await card.getByRole("button", { name: /Ver Boletim de Medição/ }).click();
+    await page.getByRole("row", { name: `Abrir medição do ciclo ${ciclo}` }).click();
+    const detalhe = page.getByTestId("minhas-medicoes-detalhe");
+    await expect(detalhe.getByTestId("minhas-medicoes-total-pagar")).toHaveText(TOTAL_A_PAGAR);
+    await expect(detalhe.getByTestId("minhas-medicoes-total-medicao")).toHaveText(TOTAL_MEDICAO);
+    await expect(detalhe.getByTestId("minhas-medicoes-rev")).toHaveText(`+ ${REV}`);
+    await detalhe.getByRole("button", { name: "Ver boletim" }).click();
     const bm = page.locator("table").filter({ hasText: "BOLETIM DE MEDIÇÃO" }).first();
     await expect(bm).toBeVisible();
     const texto = (await bm.innerText()).replace(/\s+/g, " ");

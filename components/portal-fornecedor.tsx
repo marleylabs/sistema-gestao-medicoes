@@ -195,7 +195,8 @@ function Linha({ label, children, forte, negativo, detalhe }: { label: string; c
   );
 }
 
-export function ComposicaoPortal({ calculo }: { calculo: CalculoBoletim }) {
+/** `empilhado`: uma coluna (painéis estreitos, ex. detalhe de Minhas Medições); padrão do Portal inalterado. */
+export function ComposicaoPortal({ calculo, empilhado = false }: { calculo: CalculoBoletim; empilhado?: boolean }) {
   const c = calculo;
   const naoClassificado = c.participacao.documentosPendentes > 0 ? c.participacao : null;
   return (
@@ -203,7 +204,7 @@ export function ComposicaoPortal({ calculo }: { calculo: CalculoBoletim }) {
       <section aria-labelledby="portal-composicao-titulo" data-testid="portal-composicao">
         <h2 id="portal-composicao-titulo" className="text-card-title text-[var(--foreground)]">Composição do boletim</h2>
         <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">Como o total da medição deste ciclo é formado.</p>
-        <div className="mt-4 grid gap-6 md:grid-cols-2 md:gap-10">
+        <div className={`mt-4 grid gap-6 ${empilhado ? "" : "md:grid-cols-2 md:gap-10"}`}>
           <div>
             <Linha label="Condições fixas" detalhe={c.totalCondicoesFixas > 0 ? (c.adicionais > 0 ? `${c.tipoCondicaoFixa} · inclui adicionais de ${brl.format(c.adicionais)}` : c.tipoCondicaoFixa) : undefined}>
               {c.totalCondicoesFixas > 0 ? brl.format(c.totalCondicoesFixas) : "–"}
