@@ -17,10 +17,13 @@ import {
 } from "@/lib/divergencia-comparacao";
 
 /**
- * Divergências da Medição — análise da conferência do fornecedor pela Equipe de Medição, por
- * DOCUMENTO (comparação campo a campo). Só apresentação: os dados vêm de GET
- * /api/admin/conferencia e as decisões chamam as mesmas rotas de sempre (incluir/descartar) via
- * `onResolver`, com nomes e consequências descritos em lib/divergencia-comparacao.ts.
+ * Divergências da Medição — análise da conferência do fornecedor, por DOCUMENTO (comparação campo
+ * a campo). Só apresentação: os dados vêm de GET /api/admin/conferencia; nomes, resumo e
+ * consequências em lib/divergencia-comparacao.ts. O cartão do documento tem dois modos:
+ *  - "revisao" (Fornecedores → Editar pagamento): observação + decisões, que chamam as mesmas rotas
+ *    de sempre (incluir/descartar) via `onResolver`, com confirmação;
+ *  - "leitura" (drawer de Evidências): a mesma comparação e o mesmo registro da decisão, sem
+ *    nenhum campo, botão ou chamada de escrita.
  */
 
 const dataHora = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
@@ -177,18 +180,20 @@ function DocumentoDivergencia({
   divergencia,
   aberto,
   onAlternar,
-  observacao,
+  modo = "revisao",
+  observacao = "",
   onObservacao,
   onDecidir,
-  ocupado,
+  ocupado = false,
 }: {
   divergencia: DivergenciaDTO;
   aberto: boolean;
   onAlternar: () => void;
-  observacao: string;
-  onObservacao: (valor: string) => void;
-  onDecidir: (acao: AcaoDivergencia) => void;
-  ocupado: boolean;
+  modo?: "revisao" | "leitura";
+  observacao?: string;
+  onObservacao?: (valor: string) => void;
+  onDecidir?: (acao: AcaoDivergencia) => void;
+  ocupado?: boolean;
 }) {
   const painelId = useId();
   const campoObsId = useId();
@@ -223,11 +228,15 @@ function DocumentoDivergencia({
 
           <Comparacao campos={campos} />
 
-          {pendente ? (
+          {pendente && modo === "leitura" ? (
+            <p className="text-[12px] text-[var(--muted-foreground)]" data-testid="divergencia-pendente-leitura">
+              Esta divergência ainda precisa ser analisada pela equipe de Medição.
+            </p>
+          ) : pendente ? (
             <>
               <div className="grid gap-1.5">
                 <label htmlFor={campoObsId} className="text-label text-[var(--foreground)]">Observação da análise</label>
-                <Textarea id={campoObsId} className="min-h-[60px]" placeholder="Registre o motivo da decisão, se necessário..." value={observacao} onChange={(e) => onObservacao(e.target.value)} />
+                <Textarea id={campoObsId} className="min-h-[60px]" placeholder="Registre o motivo da decisão, se necessário..." value={observacao} onChange={(e) => onObservacao?.(e.target.value)} />
                 <p className="text-helper text-[var(--muted-foreground)]">
                   Obrigatória para “{acoes.equipe.label}” — o motivo aparece para o fornecedor. Opcional para “{acoes.fornecedor.label}”.
                 </p>
@@ -242,7 +251,7 @@ function DocumentoDivergencia({
                       <Button
                         variant="secondary"
                         className="border-[var(--border-strong)]! mt-auto h-10 w-full sm:w-auto sm:self-start"
-                        onClick={() => onDecidir(acao)}
+                        onClick={() => onDecidir?.(acao)}
                         disabled={ocupado || bloqueada}
                         title={bloqueada ? "Informe a observação da análise (motivo) para esta decisão" : undefined}
                         data-acao={acao.acao}
@@ -260,15 +269,48 @@ function DocumentoDivergencia({
               {tipo === "CAMPOS" && divergentes.length > 0 && (
                 <div><dt className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Valor adotado</dt><dd className="font-technical">{divergentes.map((c) => `${c.label}: ${(d.status === "INCLUIDA" ? c.fornecedor : c.equipe) ?? "—"}`).join(" · ")}</dd></div>
               )}
+              {/* "Aceitar dados do fornecedor" grava o valor do fornecedor só nos campos divergentes: equipe → fornecedor. */}
+              {tipo === "CAMPOS" && d.status === "INCLUIDA" && divergentes.length > 0 && (
+                <div className="sm:col-span-2"><dt className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Alteração aplicada na medição</dt><dd className="font-technical" data-testid="divergencia-alteracao">{divergentes.map((c) => `${c.label}: ${c.equipe ?? "—"} → ${c.fornecedor ?? "—"}`).join(" · ")}</dd></div>
+              )}
               <div className="sm:col-span-2"><dt className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">{d.status === "DESCARTADA" ? "Motivo" : "Observação"}</dt><dd className="whitespace-pre-wrap break-words">{d.observacao || "—"}</dd></div>
-              <div className="sm:col-span-2 text-[12px] text-[var(--muted-foreground)]">
-                Resolvido por {d.resolvidoPorNome ?? "—"}{d.resolvidoEm ? ` em ${fmtData(d.resolvidoEm)}` : ""}
-              </div>
+              {(d.resolvidoPorNome || d.resolvidoEm) && (
+                <div className="sm:col-span-2 text-[12px] text-[var(--muted-foreground)]">
+                  Resolvido por {d.resolvidoPorNome ?? "—"}{d.resolvidoEm ? ` em ${fmtData(d.resolvidoEm)}` : ""}
+                </div>
+              )}
             </dl>
           )}
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * Lista SOMENTE LEITURA (Evidências): mesmos cartões e comparação do modo de revisão, sem filtros
+ * novos, observação, decisões, confirmação nem chamadas de escrita. Pendentes abertos; resolvidos
+ * recolhidos (nunca escondidos).
+ */
+export function DivergenciasLeitura({ divergencias }: { divergencias: DivergenciaDTO[] }) {
+  const { documentos } = useMemo(() => agruparPorDocumento(divergencias), [divergencias]);
+  const [abertos, setAbertos] = useState<Set<string>>(() => new Set(divergencias.filter((d) => d.status === "PENDENTE").map((d) => d.id)));
+  return (
+    <ul className="grid gap-2" data-testid="divergencias-leitura">
+      {documentos.map((d) => (
+        <DocumentoDivergencia
+          key={d.id}
+          divergencia={d}
+          modo="leitura"
+          aberto={abertos.has(d.id)}
+          onAlternar={() => setAbertos((atual) => {
+            const novo = new Set(atual);
+            if (novo.has(d.id)) novo.delete(d.id); else novo.add(d.id);
+            return novo;
+          })}
+        />
+      ))}
+    </ul>
   );
 }
 

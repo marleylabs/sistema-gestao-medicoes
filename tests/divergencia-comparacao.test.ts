@@ -149,3 +149,13 @@ test("tela: comparação acessível, sem window.confirm, ações e rotas de semp
   assert.doesNotMatch(ui + editor, /window\.(confirm|alert)/);
   assert.match(editor, /fetch\(`\/api\/admin\/conferencia\/\$\{id\}\/\$\{acao\}`/);
 });
+
+test("Evidências reutiliza a apresentação documental em modo somente leitura (sem decisão nem escrita)", () => {
+  const ui = fs.readFileSync(path.join(__dirname, "..", "components", "divergencias", "divergencias-medicao.tsx"), "utf8");
+  const drawer = fs.readFileSync(path.join(__dirname, "..", "components", "evidencias", "evidencia-drawer.tsx"), "utf8");
+  assert.match(ui, /export function DivergenciasLeitura\(/);
+  assert.match(ui, /modo="leitura"/);
+  assert.match(ui, /pendente && modo === "leitura" \?/, "pendente em leitura não abre observação nem decisões");
+  assert.match(drawer, /<DivergenciasLeitura divergencias=\{divergencias\} \/>/);
+  assert.doesNotMatch(drawer, /function DivergenciaItem|method: "POST"|\/incluir|\/descartar|onResolver/);
+});
