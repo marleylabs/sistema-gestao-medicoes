@@ -75,6 +75,14 @@ export type DivergenciaCandidata = {
 
 // ─── Comparação ────────────────────────────────────────────────────────────
 
+/**
+ * Conferência dos documentos do fornecedor — UNILATERAL, orientada pelo arquivo do fornecedor:
+ * para cada documento que o fornecedor espera, verifica se ele existe na medição da equipe e se os
+ * campos coincidem. Divergência = documento esperado não localizado, ou localizado com dados
+ * diferentes. Documentos presentes só na medição da equipe NÃO constituem divergência (a equipe pode
+ * medir o que o fornecedor ainda não esperava) — não percorrer equipe → fornecedor.
+ * Regra travada em tests/conferencia-medicao.test.ts ("conferência unilateral").
+ */
 export function compararDocumentos(equipeDocs: EquipeDoc[], fornecedorLinhas: FornecedorLinha[]): DivergenciaCandidata[] {
   const grupos = new Map<string, { original: string; linhas: FornecedorLinha[] }>();
   for (const linha of fornecedorLinhas) {

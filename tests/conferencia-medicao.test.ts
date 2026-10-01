@@ -132,3 +132,34 @@ test("parseFornecedorPlanilha rejeita planilha vazia", () => {
   const result = parseFornecedorPlanilha([]);
   assert.equal(result.ok, false);
 });
+
+// ─── Conferência unilateral (regra de negócio travada) ───────────────────────
+// A conferência é orientada pelo arquivo do fornecedor: documentos presentes só na medição da
+// equipe NÃO são divergência; documento esperado pelo fornecedor e não localizado É divergência.
+
+const EQUIPE_EXTRA = equipeDoc({ id: "doc-extra", numeroDocumento: "NR-EQUIPE-EXTRA", formato: "A1", equivalenteA1Horas: 2, percentualEmissao: 1, tipo2: "DOC" });
+
+test("conferência unilateral: documento só na medição da equipe (NR-EQUIPE-EXTRA) não gera divergência", () => {
+  const conferido = equipeDoc({ id: "doc-ok", numeroDocumento: "NR-OK", formato: "A1", equivalenteA1Horas: 1, percentualEmissao: 1, tipo2: "DOC" });
+  const result = compararDocumentos([EQUIPE_EXTRA, conferido], [fornecedorLinha({ nrVale: "NR-OK", formato: "A1", a1eqHh: 1, percentualEmissao: 1, tipo: "DOC" })]);
+  assert.deepEqual(result, [], "NR-EQUIPE-EXTRA ausente do arquivo é aceito (a equipe pode medir o que o fornecedor ainda não esperava)");
+});
+
+test("conferência unilateral: NR-EQUIPE-EXTRA sem divergência e NR-FALTANTE (só no arquivo) com divergência", () => {
+  const result = compararDocumentos([EQUIPE_EXTRA], [fornecedorLinha({ nrVale: "NR-FALTANTE", formato: "A1", a1eqHh: 1, percentualEmissao: 1, tipo: "DOC" })]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].nrVale, "NR-FALTANTE");
+  assert.equal(result[0].documentoNaoMapeado, true);
+  assert.equal(result[0].equipe, null);
+  assert.equal(result[0].idMedicaoExistente, null);
+  assert.equal(result.some((d) => d.nrVale === "NR-EQUIPE-EXTRA"), false);
+});
+
+test("conferência unilateral: só existem os tipos 'campo divergente' e 'documento esperado não localizado' (sem tipo 'só na equipe')", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const ui = fs.readFileSync(path.join(__dirname, "..", "components", "divergencias", "divergencias-medicao.tsx"), "utf8");
+  const dominio = fs.readFileSync(path.join(__dirname, "..", "lib", "divergencia-comparacao.ts"), "utf8");
+  assert.doesNotMatch(ui + dominio, /Não informado pelo fornecedor|AUSENTE_FORNECEDOR|SO_EQUIPE/);
+  assert.match(dominio, /export type TipoDivergencia = "CAMPOS" \| "SO_FORNECEDOR" \| "AMBIGUA";/);
+});

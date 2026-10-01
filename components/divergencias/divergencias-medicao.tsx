@@ -43,14 +43,14 @@ function StatusCampoChip({ status }: { status: StatusCampo }) {
   );
 }
 
-function Valor({ valor, ausente, destaque }: { valor: string | null; ausente: string; destaque: boolean }) {
+/** `ausente` só vale para o lado da equipe (documento esperado não localizado); o fornecedor sempre informa os campos. */
+function Valor({ valor, ausente = "—", destaque }: { valor: string | null; ausente?: string; destaque: boolean }) {
   if (valor === null) return <span className="italic text-[var(--muted-foreground)]">{ausente}</span>;
   return <span className={`font-technical break-all ${destaque ? "font-bold text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>{valor}</span>;
 }
 
 function Comparacao({ campos }: { campos: CampoComparado[] }) {
   const ausenteEquipe = "Não existe na medição da equipe";
-  const ausenteFornecedor = "Não informado pelo fornecedor";
   return (
     <>
       {/* Desktop: tabela. */}
@@ -69,7 +69,7 @@ function Comparacao({ campos }: { campos: CampoComparado[] }) {
               <tr key={c.chave} data-campo={c.chave} data-status-campo={c.status} className={`border-b border-[var(--border)] last:border-0 ${destaque ? "bg-[var(--error-soft)]" : ""}`}>
                 <th scope="row" className={`px-3 py-2 text-left font-medium ${destaque ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]"}`}>{c.label}</th>
                 <td className="px-3 py-2"><Valor valor={c.equipe} ausente={ausenteEquipe} destaque={destaque} /></td>
-                <td className="px-3 py-2"><Valor valor={c.fornecedor} ausente={ausenteFornecedor} destaque={destaque} /></td>
+                <td className="px-3 py-2"><Valor valor={c.fornecedor} destaque={destaque} /></td>
                 <td className="px-3 py-2"><StatusCampoChip status={c.status} /></td>
               </tr>
             );
@@ -88,7 +88,7 @@ function Comparacao({ campos }: { campos: CampoComparado[] }) {
               </div>
               <dl className="mt-2 grid grid-cols-2 gap-3 text-[13px]">
                 <div className="min-w-0"><dt className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Equipe</dt><dd><Valor valor={c.equipe} ausente={ausenteEquipe} destaque={destaque} /></dd></div>
-                <div className="min-w-0"><dt className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Fornecedor</dt><dd><Valor valor={c.fornecedor} ausente={ausenteFornecedor} destaque={destaque} /></dd></div>
+                <div className="min-w-0"><dt className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Fornecedor</dt><dd><Valor valor={c.fornecedor} destaque={destaque} /></dd></div>
               </dl>
             </li>
           );

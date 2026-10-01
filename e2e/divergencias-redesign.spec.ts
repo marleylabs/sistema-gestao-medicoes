@@ -131,7 +131,7 @@ test.describe.serial("Divergências da Medição — análise por documento (cas
 
     const novo = await pagamentos.abrirDivergencia("NR-NOVO");
     await expect(novo).toContainText("Documento novo do fornecedor");
-    await expect(novo.getByTestId("divergencia-resumo")).toHaveText("Documento informado pelo fornecedor e não localizado na medição da equipe.");
+    await expect(novo.getByTestId("divergencia-resumo")).toHaveText("Documento esperado pelo fornecedor não localizado na medição.");
     await expect(novo.getByTestId("divergencia-comparacao")).toContainText("Não existe na medição da equipe");
     await expect(novo).not.toContainText("undefined");
   });

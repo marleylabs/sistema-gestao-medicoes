@@ -8,6 +8,11 @@ import { normalizeNrVale } from "@/lib/conferencia-medicao";
  *  - quais campos divergem são as flags gravadas pela própria comparação (formatoDivergente, ...);
  *  - NR VALE usa a mesma normalização do matching (normalizeNrVale).
  *
+ * A conferência é unilateral (ver compararDocumentos): só existem dois tipos funcionais de
+ * divergência — documento encontrado com campo diferente (CAMPOS) e documento esperado pelo
+ * fornecedor não localizado na medição (SO_FORNECEDOR). Documento só da equipe nunca é divergência.
+ * (AMBIGUA = NR VALE repetido no próprio arquivo do fornecedor; os campos não são comparados.)
+ *
  * Semântica real das ações (app/api/admin/conferencia/[id]/incluir|descartar):
  *  - INCLUIR com documento da equipe: grava na Medicao da equipe os valores do fornecedor SÓ nos
  *    campos divergentes. Sem documento da equipe: cria a Medicao com os dados do fornecedor (preço
@@ -123,7 +128,7 @@ function listaHumana(itens: string[]) {
 
 /** Frase objetiva gerada da comparação — não indica qual lado está certo. */
 export function resumoDivergencia(tipo: TipoDivergencia, divergentes: CampoComparado[]) {
-  if (tipo === "SO_FORNECEDOR") return "Documento informado pelo fornecedor e não localizado na medição da equipe.";
+  if (tipo === "SO_FORNECEDOR") return "Documento esperado pelo fornecedor não localizado na medição.";
   if (tipo === "AMBIGUA") return "O NR VALE aparece mais de uma vez no arquivo do fornecedor, por isso os campos não foram comparados. Os valores do fornecedor exibidos são os da primeira ocorrência.";
   if (divergentes.length === 1) {
     const c = divergentes[0];

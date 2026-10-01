@@ -78,7 +78,7 @@ test("documento só do fornecedor: registro completo, lado da equipe 'Não exist
   assert.equal(tipo, "SO_FORNECEDOR");
   assert.ok(campos.every((c) => c.equipe === null && c.status === "AUSENTE_EQUIPE"));
   assert.deepEqual(campos.map((c) => c.fornecedor), ["NR-NOVO", "A1", "3", "100%", "DOC"]);
-  assert.equal(resumo, "Documento informado pelo fornecedor e não localizado na medição da equipe.");
+  assert.equal(resumo, "Documento esperado pelo fornecedor não localizado na medição.");
   assert.equal(acoes.fornecedor.label, "Incluir documento na medição");
   assert.equal(acoes.equipe.label, "Não incluir documento");
   assert.doesNotMatch(JSON.stringify(campos), /undefined/);
