@@ -84,8 +84,12 @@ export class PagamentosPage {
   async abrirDivergencia(nrVale: string) {
     const card = this.divergenciaCard(nrVale);
     const alternar = card.locator("button[aria-expanded]").first();
-    if ((await alternar.getAttribute("aria-expanded")) !== "true") await alternar.click();
-    await expect(alternar).toHaveAttribute("aria-expanded", "true");
+    // O componente abre sozinho o primeiro pendente logo após o primeiro render (efeito): ler
+    // "false" e clicar pode cruzar com essa abertura e fechá-lo. Repete até ficar aberto.
+    await expect(async () => {
+      if ((await alternar.getAttribute("aria-expanded")) !== "true") await alternar.click();
+      await expect(alternar).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+    }).toPass({ timeout: 10_000 });
     return card;
   }
 
