@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, CalendarRange, Plus, Search } from "lucide-react";
+import { ArrowRight, CalendarRange, Plus, Search, Send } from "lucide-react";
 import { contractParticipation, MapaItemActions, MapaPagamentoEditor, type Revisao } from "@/components/mapa-pagamento-table";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
@@ -12,6 +12,9 @@ import { getMapaPagamentoStatusMeta, getSgcDisplayStatusMeta, type SgcDisplaySta
 import { FornecedorDrawer } from "./fornecedor-drawer";
 import { displayStatusOf, FornecedoresKpis } from "./fornecedores-kpis";
 import { FornecedoresTable } from "./fornecedores-table";
+import { EnvioBmLoteDialog, type ItemEnvioBmPrevia } from "./envio-bm-lote-dialog";
+import { BulkSelectionBar } from "@/components/bulk-selection-bar";
+import { alternarTodosAptos, elegibilidadeDaLinha, estadoCabecalho, previaEnvioBm } from "@/lib/bm-envio-selecao";
 
 const CICLO_GERAL = "GERAL";
 const ORDEM_STATUS: SgcDisplayStatus[] = ["AGUARDANDO_ENVIO", "AGUARDANDO", "DIVERGENCIA", "REVISAO_SOLICITADA", "AGUARDANDO_NF", "APROVADO", "PAGO", "CANCELADO"];
@@ -51,6 +54,7 @@ export function FornecedoresPage({
   podeExcluirCiclos = false,
   onCriarCiclo,
   onExcluirCiclo,
+  onBmsEnviados,
 }: {
   itens: MapaPagamentoItem[];
   contratos: ContratoResumo[];
@@ -78,6 +82,8 @@ export function FornecedoresPage({
   onCriarCiclo?: (ciclo: string) => Promise<string | null>;
   /** Exclui o ciclo (DELETE /api/ciclos, ADMIN); devolve a mensagem de erro ou null. */
   onExcluirCiclo?: (ciclo: string) => Promise<string | null>;
+  /** Depois de um envio de BMs em lote: recarrega listagem e status (mesma tela, mesmo ciclo). */
+  onBmsEnviados?: () => Promise<void> | void;
 }) {
   const [gerenciandoCiclos, setGerenciandoCiclos] = useState(false);
   const podeGerenciarCiclos = isAdmin && !!onCriarCiclo && !!onExcluirCiclo;
@@ -90,6 +96,15 @@ export function FornecedoresPage({
   const [toast, setToast] = useState<string | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const [detalheId, setDetalheId] = useState<string | null>(null);
+  // Seleção do envio de BMs em lote — sempre de UM ciclo: trocar o ciclo zera a seleção.
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [previaLote, setPreviaLote] = useState<ItemEnvioBmPrevia[] | null>(null);
+  const [cicloDaSelecao, setCicloDaSelecao] = useState(ciclo);
+  if (cicloDaSelecao !== ciclo) {
+    setCicloDaSelecao(ciclo);
+    setSelecionados(new Set());
+    setPreviaLote(null);
+  }
   const adicionarRef = useRef<HTMLDivElement>(null);
   const focarAdicionar = () => requestAnimationFrame(() => adicionarRef.current?.querySelector("button")?.focus());
 
@@ -136,6 +151,29 @@ export function FornecedoresPage({
       return sortOrder === "valor-desc" ? b.valor - a.valor : a.valor - b.valor;
     });
   }, [itens, search, contratoSelecionado, contratos, statusFiltro, alocacaoFiltro, sgcStatus, sortOrder]);
+
+  // Envio em lote: mesmo público do botão individual (isAdmin = MEDICAO/ADMIN) e só num ciclo real.
+  const podeSelecionar = isAdmin && ciclo !== CICLO_GERAL;
+  const elegibilidadeDe = (item: MapaPagamentoItem) =>
+    elegibilidadeDaLinha(item, sgcStatus[item.projetistaCodigo ?? ""], revisaoMap.get(item.projetistaCodigo ?? "")?.revisaoSolicitadaAt);
+  // Nunca mantém selecionado um item que saiu da lista (recarga, exclusão) ou que deixou de ser apto
+  // (status carregado/atualizado depois da marcação — ex.: "selecionar todos" antes de os status
+  // chegarem): a seleção só contém BMs aptos pelo estado que a tela conhece agora.
+  const idsAtuais = new Set(itens.filter((item) => elegibilidadeDe(item).elegivel).map((item) => item.id));
+  const selecionadosValidos = [...selecionados].filter((id) => idsAtuais.has(id));
+  if (selecionadosValidos.length !== selecionados.size) setSelecionados(new Set(selecionadosValidos));
+  const itensSelecionados = itens.filter((item) => selecionados.has(item.id));
+  const idsFiltrados = new Set(filtrados.map((item) => item.id));
+  const selecionadosOcultos = itensSelecionados.filter((item) => !idsFiltrados.has(item.id)).length;
+  const aptosVisiveis = podeSelecionar ? filtrados.filter((item) => elegibilidadeDe(item).elegivel).map((item) => item.id) : [];
+  const previaAtual = previaEnvioBm(itensSelecionados, elegibilidadeDe);
+  const aptosSelecionados = previaAtual.filter((p) => p.elegivel).length;
+  const alternarSelecionado = (id: string) => setSelecionados((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
 
   const detalhe = detalheId ? itens.find((item) => item.id === detalheId) ?? null : null;
   // Modo do painel lateral: "details" (drawer compacto) ou "edit-payment" (editor largo do mesmo fornecedor).
@@ -269,11 +307,41 @@ export function FornecedoresPage({
           </label>
         </div>
 
+        {podeSelecionar && (
+          <BulkSelectionBar
+            count={itensSelecionados.length}
+            singular="BM selecionado"
+            plural="BMs selecionados"
+            onClear={() => setSelecionados(new Set())}
+            detail={
+              <>
+                <span data-testid="bulk-aptos-envio-bm">{aptosSelecionados === 1 ? "1 apto para envio" : `${aptosSelecionados} aptos para envio`}</span>
+                {selecionadosOcultos > 0 && (
+                  <span> · {selecionadosOcultos === 1 ? "1 selecionado fora da visualização atual" : `${selecionadosOcultos} selecionados fora da visualização atual`}</span>
+                )}
+              </>
+            }
+          >
+            <Button onClick={() => setPreviaLote(previaAtual)} disabled={aptosSelecionados === 0}>
+              <Send size={13} />
+              {aptosSelecionados === 1 ? "Enviar 1 BM" : `Enviar ${aptosSelecionados} BMs`}
+            </Button>
+          </BulkSelectionBar>
+        )}
+
         <FornecedoresTable
           itens={filtrados}
           contratos={contratos}
           sgcStatus={sgcStatus}
           onOpen={(item) => setDetalheId(item.id)}
+          selecao={podeSelecionar ? {
+            selecionados,
+            elegibilidade: elegibilidadeDe,
+            cabecalho: estadoCabecalho(aptosVisiveis, selecionados),
+            totalAptos: aptosVisiveis.length,
+            onAlternar: alternarSelecionado,
+            onAlternarTodos: () => setSelecionados((prev) => alternarTodosAptos(aptosVisiveis, prev)),
+          } : undefined}
         />
 
         <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-3 text-[12px] text-[var(--muted-foreground)]">
@@ -321,6 +389,21 @@ export function FornecedoresPage({
             if (eraCadastro && id) setDetalheId(id);
           }}
           onDivergenciaResolvida={onDivergenciaResolvida}
+        />
+      )}
+
+      {previaLote && (
+        <EnvioBmLoteDialog
+          ciclo={ciclo}
+          cicloLabel={cicloOptionLabel(ciclo).split(" · ")[0]}
+          previa={previaLote}
+          onClose={() => setPreviaLote(null)}
+          onProcessado={() => {
+            // Seleção processada sai; ciclo, busca e filtros ficam como estavam (só os dados recarregam).
+            const processados = new Set(previaLote.map((p) => p.item.id));
+            setSelecionados((prev) => new Set([...prev].filter((id) => !processados.has(id))));
+            void onBmsEnviados?.();
+          }}
         />
       )}
 

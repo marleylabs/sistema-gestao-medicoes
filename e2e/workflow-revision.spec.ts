@@ -59,7 +59,7 @@ test.describe.serial("Revisão — Solicitar revisão → motivo persistido → 
 
     const linha = page.getByTestId("fornecedores-tabela").locator("tr", { hasText: FORNECEDOR_NOME });
     await expect(linha).toContainText("Revisão solicitada");
-    await linha.locator("td").first().click();
+    await linha.locator("td:not(:has(input[type=checkbox]))").first().click();
     const detalhe = page.getByRole("dialog", { name: `Detalhe de ${FORNECEDOR_NOME}` });
     await expect(detalhe).toBeVisible();
     await detalhe.getByRole("button", { name: "Ver comentário do fornecedor" }).click();

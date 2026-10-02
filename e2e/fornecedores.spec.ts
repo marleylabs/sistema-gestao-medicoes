@@ -86,7 +86,7 @@ test.describe("Fornecedores — tabela só de leitura; detalhe (drawer) concentr
     await expect(detalhe).toHaveCount(0);
 
     // Clique na linha abre o detalhe com hierarquia e TODAS as ações (mesmas regras de sempre).
-    await linha.locator("td").first().click();
+    await linha.locator("td:not(:has(input[type=checkbox]))").first().click();
     await expect(detalhe).toBeVisible();
     for (const secao of ["Resumo", "Empresa", "Distribuição por contrato", "Ações"]) {
       await expect(detalhe.getByText(secao, { exact: true })).toBeVisible();
@@ -130,7 +130,7 @@ test.describe("Fornecedores — tabela só de leitura; detalhe (drawer) concentr
     const semRolagemLocal = await tabela.evaluate((el) => el.parentElement!.scrollWidth <= el.parentElement!.clientWidth);
     expect(semRolagemLocal).toBe(true);
     await expect(page.getByRole("columnheader", { name: "Ações" })).toHaveCount(0);
-    await tabela.locator("tr", { hasText: FORNECEDOR_NOME }).locator("td").first().click();
+    await tabela.locator("tr", { hasText: FORNECEDOR_NOME }).locator("td:not(:has(input[type=checkbox]))").first().click();
     await expect(page.getByRole("dialog", { name: `Detalhe de ${FORNECEDOR_NOME}` })).toBeVisible();
     expect(await semOverflowGlobal(page)).toBe(true);
   });

@@ -811,6 +811,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
             podeExcluirCiclos={isFullAdmin}
             onCriarCiclo={criarCicloApi}
             onExcluirCiclo={excluirCiclo}
+            onBmsEnviados={async () => { await Promise.all([refreshAll(), loadAlertas()]); }}
           />
         </PageContainer>
       )}

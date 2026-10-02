@@ -174,6 +174,14 @@ async function main() {
   // e2e/administrativo-primeiro-acesso-lote.spec.ts — fornecedores dedicados (o spec também limpa).
   await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "E2E PAL " } } });
   await prisma.usuario.deleteMany({ where: { nome: { startsWith: "E2E PAL " } } });
+  // e2e/fornecedores-envio-bm-lote.spec.ts — fornecedores e ciclos dedicados do envio de BMs em lote (o spec também limpa).
+  await prisma.sgcLog.deleteMany({ where: { sgc: { colaboradorNome: { startsWith: "E2E BMLOTE " } } } });
+  await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorNome: { startsWith: "E2E BMLOTE " } } });
+  await prisma.mapaPagamentoItem.deleteMany({ where: { responsavel: { startsWith: "E2E BMLOTE " } } });
+  await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "E2E BMLOTE " } } });
+  await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "E2E BMLOTE " } } });
+  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "E2E BMLOTE " } } });
+  await prisma.mapaPagamentoContexto.deleteMany({ where: { mesReferencia: { startsWith: "E2E BM Lote " } } });
   // e2e/seguranca-senha-temporaria.spec.ts — fornecedor dedicado do "Redefinir senha" (o spec também limpa).
   await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "E2E SENHA " } } });
   await prisma.usuario.deleteMany({ where: { nome: { startsWith: "E2E SENHA " } } });

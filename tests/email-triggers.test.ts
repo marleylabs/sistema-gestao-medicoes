@@ -15,15 +15,18 @@ function readRoute(relativePath: string) {
  * CadastroFornecedor. Estes testes leem o código-fonte real da rota (não um mock) para garantir
  * que a correção não seja revertida por engano em uma futura edição.
  */
+// A regra do envio do BM vive em lib/bm-envio.ts (enviarBoletimFornecedor), usada pela rota individual e pelo lote.
+const BM_ENVIO = "lib/bm-envio.ts";
+
 test("POST /api/sgc/enviar resolve o e-mail via resolveFornecedorEmail (CadastroFornecedor + fallback), não mais por profissional.email direto", () => {
-  const source = readRoute("app/api/sgc/enviar/route.ts");
+  const source = readRoute(BM_ENVIO);
   assert.match(source, /resolveFornecedorEmail\(colaboradorCodigo/);
   assert.doesNotMatch(source, /profissional\??\.email/);
 });
 
 test("POST /api/sgc/enviar dispara notifyBmAvailable de forma incondicional após o upsert do workflow ter sucesso, não atrás de uma checagem de status antiga (ex.: PENDENTE)", () => {
-  const source = readRoute("app/api/sgc/enviar/route.ts");
-  const upsertIndex = source.indexOf("prisma.sgcAprovacaoMedicao.upsert");
+  const source = readRoute(BM_ENVIO);
+  const upsertIndex = source.indexOf("tx.sgcAprovacaoMedicao.upsert");
   const notifyIndex = source.indexOf("notifyBmAvailable(");
   assert.ok(upsertIndex > -1 && notifyIndex > -1, "esperava encontrar tanto o upsert quanto a chamada de notificação");
   assert.ok(notifyIndex > upsertIndex, "notifyBmAvailable deve vir depois do upsert (nunca antes de persistir o workflow)");
@@ -35,7 +38,7 @@ test("POST /api/sgc/enviar dispara notifyBmAvailable de forma incondicional apó
 });
 
 test("POST /api/sgc/enviar registra EMAIL_ENVIADO/ERRO_EMAIL a partir do resultado real de notifyBmAvailable (auditoria não é descartada)", () => {
-  const source = readRoute("app/api/sgc/enviar/route.ts");
+  const source = readRoute(BM_ENVIO);
   assert.match(source, /emailResult\.ok \? "EMAIL_ENVIADO" : "ERRO_EMAIL"/);
 });
 
@@ -69,7 +72,7 @@ test("matriz de eventos: os 7 eventos continuam conectados às rotas/transiçõe
     },
     {
       event: "BM_AVAILABLE",
-      file: "app/api/sgc/enviar/route.ts",
+      file: BM_ENVIO,
       mustContain: [/status: "PENDENTE"/, /statusConferencia: "AGUARDANDO_UPLOAD"/, /notifyBmAvailable\(/],
     },
     {

@@ -39,7 +39,7 @@ async function abrirDetalhe(page: Page, width = 1440, height = 900) {
   await page.goto(`/fornecedores?ciclo=${e2eCiclo()}`);
   const linha = page.getByTestId("fornecedores-tabela").locator("tr", { hasText: NOME });
   if (width >= 768) {
-    await linha.locator("td").first().click();
+    await linha.locator("td:not(:has(input[type=checkbox]))").first().click();
   } else {
     await page.getByTestId("fornecedores-lista-mobile").getByRole("button", { name: new RegExp(NOME) }).click();
   }

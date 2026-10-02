@@ -37,7 +37,7 @@ export class PagamentosPage {
     }
     const row = this.rowFor(fornecedorNome);
     await expect(row).toBeVisible();
-    await row.locator("td").first().click();
+    await row.locator("td:not(:has(input[type=checkbox]))").first().click();
     await expect(detalhe).toBeVisible();
     return detalhe;
   }
