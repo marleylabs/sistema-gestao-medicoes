@@ -402,7 +402,8 @@ export function FuncionarioCreatePanel({
   escEnabled,
 }: {
   onClose: () => void;
-  onCreated: (usuario: Funcionario) => void;
+  /** Resposta da criação: a senha inicial vem SÓ aqui (exibição única), nunca da listagem. */
+  onCreated: (usuario: Funcionario & { senhaTemporaria: string | null }) => void;
   onError: (message: string) => void;
   escEnabled?: boolean;
 }) {
@@ -423,7 +424,7 @@ export function FuncionarioCreatePanel({
         onError(payload.error ?? "Não foi possível cadastrar o funcionário.");
         return;
       }
-      onCreated(payload as Funcionario);
+      onCreated(payload as Funcionario & { senhaTemporaria: string | null });
     } finally {
       setSaving(false);
     }

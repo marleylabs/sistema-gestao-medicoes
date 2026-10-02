@@ -8,7 +8,6 @@ export type AcessoInfo = {
   ativo: boolean;
   email: string | null;
   primeiroLogin: boolean;
-  senhaTemporaria: string | null;
 };
 
 export type Funcionario = {
@@ -18,7 +17,6 @@ export type Funcionario = {
   perfil: string;
   ativo: boolean;
   primeiroLogin: boolean;
-  senhaTemporaria: string | null;
   email: string | null;
   permissoesExtras: string[];
 };

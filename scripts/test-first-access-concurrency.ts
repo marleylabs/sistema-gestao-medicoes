@@ -131,6 +131,68 @@ async function main() {
     // proteção de perfil ADMIN é responsabilidade da rota, coberta por tests/first-access.test.ts).
     console.log("PASS (CENÁRIO 14): proteção de perfil ADMIN já coberta estaticamente em tests/first-access.test.ts (rejeição ocorre ANTES desta função ser chamada).");
 
+    // ─── CENÁRIO 15 — OUTRA operação (outro requestId) em andamento bloqueia uma nova rotação ───
+    // Simula a janela real: a operação X já commitou a rotação (claim PENDENTE) e ainda está
+    // enviando o e-mail; uma operação Y para o mesmo usuário não pode gerar uma 2ª senha.
+    const hashAntesY = (await prismaTest.usuario.findUniqueOrThrow({ where: { id: u1.id } })).senhaHash;
+    const requestX = randomUUID();
+    await prismaTest.adminAuditLog.create({
+      data: { action: "FIRST_ACCESS_SENT", adminId: admin.adminId, adminUsuario: admin.adminUsuario, adminNome: admin.adminNome, targetType: "Usuario", targetId: u1.id, targetCodigo: u1.usuario, metadata: { requestId: requestX, resultado: "PENDENTE" } },
+    });
+    const y = await rotateAndSendFirstAccess({
+      db: prismaTest, requestId: randomUUID(), usuarioId: u1.id, usuarioNome: u1.nome, usuarioLogin: u1.usuario, email: "concorrencia1@example.test", ...admin,
+    });
+    assert.equal(y.ok, false);
+    assert.equal(!y.ok && y.status, 409);
+    assert.equal(!y.ok && y.motivo, "EM_ANDAMENTO");
+    assert.equal((await prismaTest.usuario.findUniqueOrThrow({ where: { id: u1.id } })).senhaHash, hashAntesY, "nenhuma 2ª senha enquanto a outra operação está PENDENTE");
+    console.log("PASS (CENÁRIO 15): outra operação PENDENTE (requestId diferente) → 409 EM_ANDAMENTO, senha intacta.");
+
+    // ─── CENÁRIO 16 — PENDENTE antigo (processo caiu) não bloqueia para sempre ───
+    await prismaTest.adminAuditLog.updateMany({
+      where: { action: "FIRST_ACCESS_SENT", targetId: u1.id, metadata: { path: ["requestId"], equals: requestX } },
+      data: { createdAt: new Date(Date.now() - 3 * 60 * 1000) },
+    });
+    const recuperacao = await rotateAndSendFirstAccess({
+      db: prismaTest, requestId: randomUUID(), usuarioId: u1.id, usuarioNome: u1.nome, usuarioLogin: u1.usuario, email: "concorrencia1@example.test", ...admin,
+    });
+    assert.equal(recuperacao.ok, true, "depois da janela, uma nova confirmação recupera");
+    console.log("PASS (CENÁRIO 16): PENDENTE antigo (> janela) não bloqueia uma nova confirmação.");
+
+    // ─── CENÁRIO 17 — quem já definiu a senha (primeiroLogin=false) nunca é rotacionado ───
+    await prismaTest.usuario.update({ where: { id: u1.id }, data: { primeiroLogin: false } });
+    const hashDefinido = (await prismaTest.usuario.findUniqueOrThrow({ where: { id: u1.id } })).senhaHash;
+    const claimsAntes17 = await prismaTest.adminAuditLog.count({ where: { action: "FIRST_ACCESS_SENT", targetId: u1.id } });
+    const definida = await rotateAndSendFirstAccess({
+      db: prismaTest, requestId: randomUUID(), usuarioId: u1.id, usuarioNome: u1.nome, usuarioLogin: u1.usuario, email: "concorrencia1@example.test", ...admin,
+    });
+    assert.equal(!definida.ok && definida.status, 409);
+    assert.equal(!definida.ok && definida.motivo, "ACESSO_JA_DEFINIDO");
+    const depois17 = await prismaTest.usuario.findUniqueOrThrow({ where: { id: u1.id } });
+    assert.equal(depois17.senhaHash, hashDefinido, "senha definida pelo usuário intocada");
+    assert.equal(depois17.primeiroLogin, false);
+    assert.equal(await prismaTest.adminAuditLog.count({ where: { action: "FIRST_ACCESS_SENT", targetId: u1.id } }), claimsAntes17, "nenhum claim/e-mail");
+    console.log("PASS (CENÁRIO 17): primeiroLogin=false → 409 ACESSO_JA_DEFINIDO, sem rotação, sem claim, sem e-mail.");
+
+    // ─── CENÁRIO 18 — duas operações DIFERENTES disparadas no mesmo instante ───
+    const u2 = await prismaTest.usuario.create({
+      data: { usuario: `E2E-CC2-${runId.slice(0, 8)}`.toUpperCase(), nome: "Concorrencia Teste 2", senhaHash: "x", perfil: "COLABORADOR", primeiroLogin: true, email: encryptSensitive("concorrencia2@example.test") },
+    });
+    usuarioIds.push(u2.id);
+    const [opA, opB] = await Promise.all([randomUUID(), randomUUID()].map((rid) =>
+      rotateAndSendFirstAccess({ db: prismaTest, requestId: rid, usuarioId: u2.id, usuarioNome: u2.nome, usuarioLogin: u2.usuario, email: "concorrencia2@example.test", ...admin })));
+    const rotacoes = await prismaTest.adminAuditLog.count({ where: { action: "FIRST_ACCESS_SENT", targetId: u2.id } });
+    const enviados = await prismaTest.emailLog.count({ where: { idempotencyKey: { startsWith: `first-access/${u2.id}/` }, status: "SENT" } });
+    // A trava por usuário serializa as duas; a segunda vê a primeira PENDENTE (409) ou, se o e-mail
+    // da primeira já terminou, é uma nova rotação legítima e SEQUENCIAL — em ambos os casos cada
+    // rotação tem exatamente um e-mail e o hash final corresponde ao último enviado.
+    assert.ok([opA, opB].some((r) => r.ok), "pelo menos uma operação conclui");
+    for (const r of [opA, opB]) if (!r.ok) assert.equal(r.motivo, "EM_ANDAMENTO");
+    assert.equal(rotacoes, [opA, opB].filter((r) => r.ok).length, "uma rotação por operação concluída — nunca rotação sem e-mail");
+    assert.equal(enviados, rotacoes, "cada rotação tem exatamente um FIRST_ACCESS SENT");
+    console.log(`PASS (CENÁRIO 18): duas operações simultâneas → ${rotacoes} rotação(ões) serializada(s), ${enviados} e-mail(s); ${[opA, opB].some((r) => !r.ok) ? "a segunda recebeu 409 EM_ANDAMENTO" : "a segunda rodou depois da primeira concluir"}.`);
+    assert.equal((await prismaTest.usuario.findUniqueOrThrow({ where: { id: u2.id } })).senhaTemporaria, null);
+
     console.log("\n=== TODOS OS CENÁRIOS DE CONCORRÊNCIA DE FIRST_ACCESS PASSARAM ===");
   } finally {
     for (const id of usuarioIds) await prismaTest.usuario.deleteMany({ where: { id } });

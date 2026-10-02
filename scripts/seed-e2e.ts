@@ -174,6 +174,9 @@ async function main() {
   // e2e/administrativo-primeiro-acesso-lote.spec.ts — fornecedores dedicados (o spec também limpa).
   await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "E2E PAL " } } });
   await prisma.usuario.deleteMany({ where: { nome: { startsWith: "E2E PAL " } } });
+  // e2e/seguranca-senha-temporaria.spec.ts — fornecedor dedicado do "Redefinir senha" (o spec também limpa).
+  await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "E2E SENHA " } } });
+  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "E2E SENHA " } } });
   // e2e/administrativo-fornecedor-dedupe.spec.ts — importação idempotente + exclusão em massa.
   await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorCodigo: { startsWith: "E2E FORNECEDOR REDUNDANTE", mode: "insensitive" } } });
   await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: "E2E FORNECEDOR REDUNDANTE", mode: "insensitive" } } });

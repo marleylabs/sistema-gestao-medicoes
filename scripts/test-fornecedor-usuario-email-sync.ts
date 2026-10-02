@@ -105,6 +105,18 @@ async function main() {
 
     // ─── FIRST_ACCESS consegue usar o e-mail agora sincronizado (sem fallback cadastral —
     // continua exigindo Usuario.email real) ───
+    // Primeiro acesso é só para quem ainda não definiu a senha (regra do botão, também aplicada no
+    // servidor): com primeiroLogin=false (estado deixado pelo cenário acima) é 409, sem rotação.
+    const bloqueado = await rotateAndSendFirstAccess({
+      db: prismaTest, requestId: randomUUID(), usuarioId: usuario1.id,
+      usuarioNome: usuarioAposMaisUmaReimportacao.nome, usuarioLogin: usuarioAposMaisUmaReimportacao.usuario,
+      email: decryptSensitive(usuarioAposMaisUmaReimportacao.email),
+      adminId: admin.id, adminUsuario: admin.usuario, adminNome: admin.nome,
+    });
+    assert.equal(!bloqueado.ok && bloqueado.motivo, "ACESSO_JA_DEFINIDO", "quem já definiu a senha não recebe primeiro acesso");
+    assert.equal((await prismaTest.usuario.findUniqueOrThrow({ where: { id: usuario1.id } })).senhaHash, senhaHashAntes, "e a senha dele não muda");
+    console.log("PASS: FIRST_ACCESS recusado (409 ACESSO_JA_DEFINIDO) para quem já definiu a senha, sem rotação.");
+    await prismaTest.usuario.update({ where: { id: usuario1.id }, data: { primeiroLogin: true } });
     const firstAccessResult = await rotateAndSendFirstAccess({
       db: prismaTest,
       requestId: randomUUID(),

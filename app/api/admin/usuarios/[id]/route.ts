@@ -9,6 +9,7 @@ import { isValidEmail, requiresEmail, EMAIL_REQUIRED_MESSAGE } from "@/lib/usuar
 import { isValidPerfil } from "@/lib/perfis";
 import { isValidPermissao, isElegivelParaPermissaoExtra, type Permissao } from "@/lib/permissoes";
 import { getPermissoesExtras } from "@/lib/permissoes-acesso";
+import { jsonNoStore } from "@/lib/no-store";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
@@ -41,7 +42,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const tempHash = await hashPassword(tempPass);
     await prisma.usuario.update({
       where: { id },
-      data: { senhaHash: tempHash, senhaTemporaria: tempPass, primeiroLogin: true, updatedAt: new Date() },
+      // Só o hash é persistido: a senha em texto existe apenas nesta requisição e na resposta
+      // imediata (exibição única ao ADMIN) — nunca no banco, nunca recuperável depois.
+      data: { senhaHash: tempHash, senhaTemporaria: null, primeiroLogin: true, updatedAt: new Date() },
     });
     // A senha temporária NUNCA vai no e-mail (nem em texto, nem hash) — só um aviso de que a
     // senha foi redefinida. O admin repassa a senha temporária ao usuário pelo canal já usado
@@ -53,7 +56,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       const result = await notifyPasswordReset({ usuarioId: user.id, nome: user.nome, email: emailDestino });
       emailNotificado = result.ok;
     }
-    return NextResponse.json({
+    return jsonNoStore({
       senhaTemporaria: tempPass,
       emailNotificado,
       aviso: emailDestino ? null : "Senha redefinida. O usuário não possui e-mail cadastrado e não receberá a notificação.",
@@ -66,6 +69,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     // para qualquer ADMIN futuro, sem checar nome/código específico.
     if (user.perfil === "ADMIN") {
       return NextResponse.json({ error: "Não é possível enviar primeiro acesso para um administrador." }, { status: 403 });
+    }
+    // Primeiro acesso é só para quem ainda não definiu a própria senha (mesma regra do botão, que
+    // some com primeiroLogin = false). Trocar a senha de quem já acessa é "Redefinir senha".
+    // rotateAndSendFirstAccess relê isso dentro da trava (corrida com o próprio primeiro login).
+    if (!user.primeiroLogin) {
+      return NextResponse.json({ error: "Este usuário já definiu a própria senha. Para trocar a senha dele, use Redefinir senha." }, { status: 409 });
     }
     const emailDestino = decryptSensitive(user.email);
     if (!emailDestino) {

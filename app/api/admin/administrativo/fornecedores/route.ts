@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { findColaboradorUsuarios, importCadastrosFornecedores, normalizePersonName, serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
 import { requireAdministrativo } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
+import { jsonNoStore } from "@/lib/no-store";
 
 const MAX_SIZE = 15 * 1024 * 1024;
 
@@ -47,7 +48,8 @@ export async function POST(request: NextRequest) {
       usuario: auth.user!.usuario,
       nome: auth.user!.nome,
     });
-    return NextResponse.json(result);
+    // `senhasTemporarias` (usuários novos/reativados) só existem nesta resposta — nunca cacheável.
+    return jsonNoStore(result);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Não foi possível importar os cadastros." },

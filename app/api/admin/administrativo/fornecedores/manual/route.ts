@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonNoStore } from "@/lib/no-store";
 import { requireAdministrativo } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { validateTipoCondicaoFixaForWrite } from "@/lib/condicao-fixa";
@@ -143,7 +144,8 @@ export async function POST(request: NextRequest) {
   }
   const cadastro = await prisma.cadastroFornecedor.findUniqueOrThrow({ where: { id: resultado.cadastroId } });
 
-  return NextResponse.json(
+  // `usuarioCriado.senha` (exibição única ao ADMIN) só existe nesta resposta — nunca cacheável.
+  return jsonNoStore(
     {
       cadastro: serializeCadastroFornecedor(cadastro),
       criado: resultado.created,

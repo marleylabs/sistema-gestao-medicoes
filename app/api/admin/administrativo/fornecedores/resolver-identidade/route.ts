@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonNoStore } from "@/lib/no-store";
 import { requireAdministrativo } from "@/lib/admin";
 import {
   FornecedorResolucaoInvalidaError,
@@ -92,7 +93,8 @@ export async function POST(request: NextRequest) {
       usuario: auth.user.usuario,
       nome: auth.user.nome,
     });
-    return NextResponse.json(resultado);
+    // `usuarioReativado.senha` só existe nesta resposta — nunca cacheável.
+    return jsonNoStore(resultado);
   } catch (error) {
     if (error instanceof FornecedorResolucaoInvalidaError) {
       return NextResponse.json({ error: error.message }, { status: 409 });

@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { decryptSensitive } from "@/lib/encryption";
 import { criarUsuarioInterno } from "@/lib/usuario-provisioning";
+import { jsonNoStore } from "@/lib/no-store";
 
 export async function GET() {
   const admin = await requireAdmin();
@@ -20,7 +21,6 @@ export async function GET() {
       perfil: true,
       ativo: true,
       primeiroLogin: true,
-      senhaTemporaria: true,
       email: true,
       ultimoLoginAt: true,
       createdAt: true,
@@ -36,7 +36,6 @@ export async function GET() {
       perfil: u.perfil,
       ativo: u.ativo,
       primeiroLogin: u.primeiroLogin,
-      senhaTemporaria: u.primeiroLogin ? u.senhaTemporaria : null,
       email: decryptSensitive(u.email),
       ultimoLoginAt: u.ultimoLoginAt?.toISOString() ?? null,
       createdAt: u.createdAt.toISOString(),
@@ -54,5 +53,6 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const result = await criarUsuarioInterno({ nome: body?.nome, perfil: body?.perfil, email: body?.email });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
-  return NextResponse.json(result.usuario, { status: result.status });
+  // Única resposta que carrega a senha inicial (exibição única) — nunca cacheável.
+  return jsonNoStore(result.usuario, { status: result.status });
 }

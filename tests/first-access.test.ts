@@ -93,8 +93,30 @@ test("rotateAndSendFirstAccess exige requestId em formato UUID válido, rejeitad
 
 test("a identidade da operação é o requestId (UUID do frontend), não updatedAt.getTime() — timestamp não é robusto sob concorrência", () => {
   const source = readRoute(LIB);
-  assert.match(source, /credentialVersion:\s*requestId/);
-  assert.match(source, /idempotencyKey\s*=\s*`first-access\/\$\{input\.usuarioId\}\/\$\{requestId\}`/);
+  assert.match(source, /credentialVersion:\s*requestId/, "chave do e-mail = first-access/{usuarioId}/{requestId}");
+  assert.match(source, /metadata: \{ path: \["requestId"\], equals: requestId \}/, "o claim da operação é procurado pelo requestId");
+});
+
+test("trava POR USUÁRIO: duas operações diferentes (requestIds distintos) para o mesmo usuário são serializadas e a segunda não rotaciona enquanto a primeira está PENDENTE", () => {
+  const source = readRoute(LIB);
+  assert.match(source, /lockKey\s*=\s*`first-access-user\/\$\{input\.usuarioId\}`/);
+  assert.match(source, /pg_advisory_xact_lock\(hashtext\(\$\{lockKey\}\)\)/);
+  const txIndex = source.indexOf("$transaction(async (tx)");
+  const pendenteIndex = source.indexOf('metadata: { path: ["resultado"], equals: "PENDENTE" }', txIndex);
+  const rotateIndex = source.indexOf(".usuario.update(", txIndex);
+  assert.ok(pendenteIndex > txIndex && pendenteIndex < rotateIndex, "checar operação em andamento ANTES de rotacionar, dentro da trava");
+  assert.match(source, /JANELA_OPERACAO_EM_ANDAMENTO_MS/);
+});
+
+test("primeiroLogin é relido DENTRO da trava: quem já definiu a senha recebe 409 ACESSO_JA_DEFINIDO e nada é rotacionado", () => {
+  const source = readRoute(LIB);
+  const txIndex = source.indexOf("$transaction(async (tx)");
+  const releituraIndex = source.indexOf("select: { primeiroLogin: true }", txIndex);
+  const rotateIndex = source.indexOf(".usuario.update(", txIndex);
+  assert.ok(releituraIndex > txIndex && releituraIndex < rotateIndex);
+  assert.match(source, /motivo: "ACESSO_JA_DEFINIDO"/);
+  const block = actionBlock(readRoute(ROUTE));
+  assert.ok(block.indexOf("if (!user.primeiroLogin)") > -1 && block.indexOf("if (!user.primeiroLogin)") < block.indexOf("rotateAndSendFirstAccess("), "rota individual também barra primeiroLogin=false antes de rotacionar");
 });
 
 test("checagem de 'já processado' e rotação da senha acontecem dentro da MESMA transação com advisory lock (nunca só depois, via email_logs) — garante 1 única rotação sob concorrência", () => {

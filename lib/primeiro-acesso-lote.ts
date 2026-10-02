@@ -67,6 +67,8 @@ const MOTIVO_FALHA_ENVIO = "Não foi possível enviar o e-mail. Envie novamente.
 
 function resultadoDoEnvio(envio: RotateAndSendFirstAccessResult): Pick<ResultadoPrimeiroAcessoLote, "status" | "motivo"> {
   if (envio.ok) return { status: "ENVIADO", motivo: envio.alreadyProcessed ? "Acesso já enviado nesta operação" : "Acesso enviado" };
+  // Relido DENTRO da trava do service: a pessoa concluiu o primeiro login entre a leitura e o envio.
+  if (envio.status === 409 && envio.motivo === "ACESSO_JA_DEFINIDO") return { status: "IGNORADO", motivo: "Acesso já ativado (senha definida pelo usuário)" };
   if (envio.status === 409) return { status: "IGNORADO", motivo: "Envio já em andamento. Verifique novamente em instantes." };
   return { status: "FALHA", motivo: MOTIVO_FALHA_ENVIO };
 }

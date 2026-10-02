@@ -176,7 +176,9 @@ export async function ensureDefaultAccessUsers() {
           usuario,
           nome: colaborador.nomeCompleto || colaborador.nome || usuario,
           senhaHash: tempHash,
-          senhaTemporaria: tempPass,
+          // Nunca em texto puro: o acesso desses usuários é entregue por "Enviar primeiro acesso"
+          // ou "Redefinir senha" (exibição única), não por leitura posterior do banco.
+          senhaTemporaria: null,
           primeiroLogin: true,
           perfil: "COLABORADOR",
         },

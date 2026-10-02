@@ -239,14 +239,16 @@ function CredencialModal({
   senha: string;
   onClose: () => void;
 }) {
+  // A senha vive só nestas props/estado em memória (vinda da resposta imediata da operação):
+  // nunca persistida no navegador nem recuperável pela API depois que o modal fecha.
   const [visivel, setVisivel] = useState(false);
   const [copiado, setCopiado] = useState(false);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
+      <div role="dialog" aria-modal="true" aria-labelledby="credencial-titulo" data-testid="credencial-modal" className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
         <div className="border-b border-[#E5E7EB] px-5 py-4">
-          <h2 className="text-sm font-bold text-[#1A1A1A]">{titulo}</h2>
+          <h2 id="credencial-titulo" className="text-sm font-bold text-[#1A1A1A]">{titulo}</h2>
         </div>
         <div className="grid gap-3 p-5 text-sm">
           <div>
@@ -291,7 +293,7 @@ function CredencialModal({
           </div>
           <p className="flex items-start gap-1.5 text-xs text-[#92400E]">
             <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-            Esta senha será exibida somente agora — feche este modal só depois de repassá-la ao usuário.
+            Copie esta senha agora. Ela não poderá ser visualizada novamente.
           </p>
         </div>
         <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">

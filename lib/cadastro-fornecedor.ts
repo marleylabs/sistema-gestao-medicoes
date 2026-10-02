@@ -713,13 +713,15 @@ export function resolveFornecedorIdentity(row: CadastroRow, index: IdentityIndex
  */
 export async function findColaboradorUsuarios(nomes: string[]) {
   const wanted = new Set(nomes.map((n) => normalizePersonName(n)).filter(Boolean));
-  const map = new Map<string, { id: string; usuario: string; perfil: string; ativo: boolean; email: string | null; primeiroLogin: boolean; senhaTemporaria: string | null }>();
+  // DTO explícito do acesso (vai para a listagem do Administrativo, que ADMINISTRATIVO também lê):
+  // nenhuma credencial — nem senha, nem hash, nem senha temporária.
+  const map = new Map<string, { id: string; usuario: string; perfil: string; ativo: boolean; email: string | null; primeiroLogin: boolean }>();
   if (wanted.size === 0) return map;
   // `in` + `mode: insensitive` não é suportado pelo Prisma para filtro de string — carrega todos os
   // COLABORADOR (mesmo padrão de `buildIdentityIndex`, abaixo) e casa em memória por nome normalizado.
   const usuarios = await prisma.usuario.findMany({
     where: { perfil: "COLABORADOR", excluidoAt: null },
-    select: { id: true, usuario: true, nome: true, perfil: true, ativo: true, email: true, primeiroLogin: true, senhaTemporaria: true },
+    select: { id: true, usuario: true, nome: true, perfil: true, ativo: true, email: true, primeiroLogin: true },
   });
   for (const u of usuarios) {
     const key = normalizePersonName(u.nome);
@@ -731,7 +733,6 @@ export async function findColaboradorUsuarios(nomes: string[]) {
       ativo: u.ativo,
       email: decryptSensitive(u.email),
       primeiroLogin: u.primeiroLogin,
-      senhaTemporaria: u.primeiroLogin ? u.senhaTemporaria : null,
     });
   }
   return map;
@@ -943,7 +944,7 @@ export async function upsertCadastroFornecedor(
     // primeiro encontrado.
     const existingUsers = await tx.usuario.findMany({
       where: { perfil: "COLABORADOR", nome: { equals: row.responsavel, mode: "insensitive" } },
-      select: { id: true, usuario: true, ativo: true, excluidoAt: true, senhaTemporaria: true },
+      select: { id: true, usuario: true, ativo: true, excluidoAt: true },
     });
     if (existingUsers.length > 1) {
       throw new FornecedorUsuarioAmbiguoError(`Identidade de acesso ambígua para "${row.responsavel}" — mais de um Usuario compatível encontrado. Resolva manualmente antes de importar esta linha.`);
@@ -957,7 +958,8 @@ export async function upsertCadastroFornecedor(
           usuario,
           nome: row.responsavel,
           senhaHash: await hashPassword(senha),
-          senhaTemporaria: senha,
+          // Só o hash é persistido; a senha em texto volta UMA vez em `usuarioCriado` (resposta).
+          senhaTemporaria: null,
           primeiroLogin: true,
           perfil: "COLABORADOR",
           // Mesmo e-mail já gravado em CadastroFornecedor/Profissional acima — sem isso,
@@ -968,16 +970,12 @@ export async function upsertCadastroFornecedor(
       });
       usuarioCriado = { usuario, nome: row.responsavel, senha, email: row.email ?? null };
     } else if (existingUser.excluidoAt) {
-      // A exclusão administrativa limpa `senhaTemporaria`/`primeiroLogin` (ver
-      // deleteFornecedoresDefinitivamente) — se a pessoa nunca tinha completado o primeiro login
-      // antes de ser excluída, reativar só `ativo`/`excluidoAt` deixaria a conta sem nenhuma senha
-      // recuperável. Gera uma nova senha temporária SOMENTE nesse caso (nunca sobrescreve uma senha
-      // real já definida pela pessoa). De qualquer forma, isso continua sendo REATIVAÇÃO, nunca
-      // criação — o registro já existia (ver `usuariosReativados`, nunca `usuariosCriados`).
-      let senhaReativacao: string | null = null;
-      if (!existingUser.senhaTemporaria) {
-        senhaReativacao = generateTempPassword();
-      }
+      // As duas exclusões (deleteFornecedoresDefinitivamente e DELETE /api/admin/usuarios/[id])
+      // limpam `senhaTemporaria`/`primeiroLogin`: uma identidade excluída nunca tem senha
+      // recuperável, então a reativação sempre gera uma nova senha temporária (antes isso dependia
+      // de `senhaTemporaria` vazio — sempre verdade após a exclusão — e o texto puro deixou de ser
+      // persistido). Continua sendo REATIVAÇÃO, nunca criação (`usuariosReativados`).
+      const senhaReativacao = generateTempPassword();
       await tx.usuario.update({
         where: { id: existingUser.id },
         data: {
@@ -990,7 +988,10 @@ export async function upsertCadastroFornecedor(
           // este campo (ver deleteFornecedoresDefinitivamente), então uma reativação sem isso
           // deixaria o Usuario permanentemente sem e-mail mesmo com CadastroFornecedor.email válido.
           email: encryptSensitive(row.email),
-          ...(senhaReativacao ? { senhaHash: await hashPassword(senhaReativacao), senhaTemporaria: senhaReativacao, primeiroLogin: true } : {}),
+          // Só o hash; a senha em texto volta UMA vez em `usuarioReativado.senha` (resposta).
+          senhaHash: await hashPassword(senhaReativacao),
+          senhaTemporaria: null,
+          primeiroLogin: true,
         },
       });
       usuarioReativado = { usuario: existingUser.usuario, nome: row.responsavel, senha: senhaReativacao, email: row.email ?? null };

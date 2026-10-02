@@ -7,6 +7,7 @@ import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
 import { isValidEmail, requiresEmail, EMAIL_REQUIRED_MESSAGE } from "@/lib/usuario-email-policy";
 import { isValidPerfil } from "@/lib/perfis";
 
+/** DTO do usuário — sem nenhuma credencial (senha, hash ou senha temporária). */
 export type UsuarioSerializado = {
   id: string;
   usuario: string;
@@ -14,15 +15,17 @@ export type UsuarioSerializado = {
   perfil: string;
   ativo: boolean;
   primeiroLogin: boolean;
-  senhaTemporaria: string | null;
   email: string | null;
   ultimoLoginAt: string | null;
   createdAt: string;
 };
 
+/** Resposta da CRIAÇÃO: o DTO + a senha inicial, exibida uma única vez (nunca persistida em texto). */
+export type UsuarioCriado = UsuarioSerializado & { senhaTemporaria: string };
+
 function serialize(u: {
   id: string; usuario: string; nome: string; perfil: string; ativo: boolean; primeiroLogin: boolean;
-  senhaTemporaria: string | null; email: string | null; ultimoLoginAt: Date | null; createdAt: Date;
+  email: string | null; ultimoLoginAt: Date | null; createdAt: Date;
 }): UsuarioSerializado {
   return {
     id: u.id,
@@ -31,7 +34,6 @@ function serialize(u: {
     perfil: u.perfil,
     ativo: u.ativo,
     primeiroLogin: u.primeiroLogin,
-    senhaTemporaria: u.primeiroLogin ? u.senhaTemporaria : null,
     email: decryptSensitive(u.email),
     ultimoLoginAt: u.ultimoLoginAt?.toISOString() ?? null,
     createdAt: u.createdAt.toISOString(),
@@ -39,7 +41,7 @@ function serialize(u: {
 }
 
 export type CriarUsuarioInternoResult =
-  | { ok: true; status: 200 | 201; usuario: UsuarioSerializado }
+  | { ok: true; status: 200 | 201; usuario: UsuarioCriado }
   | { ok: false; status: number; error: string };
 
 /**
@@ -92,7 +94,7 @@ export async function criarUsuarioInterno(input: { nome: unknown; perfil: unknow
           perfil,
           ativo: true,
           primeiroLogin: true,
-          senhaTemporaria: senha,
+          senhaTemporaria: null,
           senhaHash: await hashPassword(senha),
           email: email ? encryptSensitive(email) : null,
           excluidoAt: null,
@@ -111,7 +113,7 @@ export async function criarUsuarioInterno(input: { nome: unknown; perfil: unknow
       perfil,
       ativo: true,
       primeiroLogin: true,
-      senhaTemporaria: senha,
+      senhaTemporaria: null,
       senhaHash: await hashPassword(senha),
       email: email ? encryptSensitive(email) : null,
     },
