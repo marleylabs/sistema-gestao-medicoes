@@ -1,4 +1,4 @@
-import { avaliarElegibilidadeEnvioBm, type ElegibilidadeEnvioBm } from "@/lib/bm-envio-elegibilidade";
+import { avaliarElegibilidadeEnvioBm, ultimaAlteracaoDoBm, type ElegibilidadeEnvioBm } from "@/lib/bm-envio-elegibilidade";
 
 /**
  * Seleção do "Enviar BMs" em lote na tela Fornecedores — funções puras (sem React) para a tela e
@@ -19,12 +19,14 @@ export function elegibilidadeDaLinha(
   item: LinhaEnvioBm,
   bm: StatusBmDaLinha,
   revisaoSolicitadaAt: string | Date | null | undefined,
+  /** Linhas do ciclo carregado: a alteração do BM é a mais recente entre as do mesmo fornecedor. */
+  linhasDoCiclo: LinhaEnvioBm[] = [item],
 ): ElegibilidadeEnvioBm {
   return avaliarElegibilidadeEnvioBm({
     status: bm?.status,
     statusConferencia: bm?.statusConferencia,
     revisaoSolicitadaAt,
-    itemAtualizadoEm: item.updatedAt ?? null,
+    itemAtualizadoEm: ultimaAlteracaoDoBm(linhasDoCiclo, item.projetistaCodigo) ?? item.updatedAt ?? null,
   });
 }
 

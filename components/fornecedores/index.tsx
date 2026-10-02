@@ -155,7 +155,7 @@ export function FornecedoresPage({
   // Envio em lote: mesmo público do botão individual (isAdmin = MEDICAO/ADMIN) e só num ciclo real.
   const podeSelecionar = isAdmin && ciclo !== CICLO_GERAL;
   const elegibilidadeDe = (item: MapaPagamentoItem) =>
-    elegibilidadeDaLinha(item, sgcStatus[item.projetistaCodigo ?? ""], revisaoMap.get(item.projetistaCodigo ?? "")?.revisaoSolicitadaAt);
+    elegibilidadeDaLinha(item, sgcStatus[item.projetistaCodigo ?? ""], revisaoMap.get(item.projetistaCodigo ?? "")?.revisaoSolicitadaAt, itens);
   // Nunca mantém selecionado um item que saiu da lista (recarga, exclusão) ou que deixou de ser apto
   // (status carregado/atualizado depois da marcação — ex.: "selecionar todos" antes de os status
   // chegarem): a seleção só contém BMs aptos pelo estado que a tela conhece agora.

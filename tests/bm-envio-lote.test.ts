@@ -285,3 +285,47 @@ test("diálogo: requestId único por confirmação, trava síncrona contra duplo
   assert.match(d, /p\.item\.valor/, "total vem do valor gravado (coluna Valor), sem recalcular o BM");
   assert.doesNotMatch(d, /calcularBoletim/);
 });
+
+// ── Paridade visual: detalhe/seleção avaliam o BM pela alteração mais recente do fornecedor no ciclo ──
+
+test("multilinha: ultimaAlteracaoDoBm = maior updatedAt das linhas do MESMO fornecedor (outras ignoradas)", () => {
+  const { ultimaAlteracaoDoBm } = require("../lib/bm-envio-elegibilidade") as typeof import("../lib/bm-envio-elegibilidade");
+  const linhas = [
+    { projetistaCodigo: "X", updatedAt: "2026-08-01T10:00:00Z" },
+    { projetistaCodigo: "X", updatedAt: "2026-08-03T10:00:00Z" },
+    { projetistaCodigo: "Y", updatedAt: "2026-09-30T10:00:00Z" },
+    { projetistaCodigo: "X", updatedAt: null },
+  ];
+  assert.equal(ultimaAlteracaoDoBm(linhas, "X")?.toISOString(), "2026-08-03T10:00:00.000Z");
+  assert.equal(ultimaAlteracaoDoBm(linhas, "Z"), null);
+  assert.equal(ultimaAlteracaoDoBm(linhas, null), null);
+});
+
+test("multilinha: linha antiga + linha nova → Reenviar disponível mesmo abrindo pela linha antiga; todas antigas → bloqueado com o mesmo motivo", () => {
+  const revisao = "2026-08-02T10:00:00Z";
+  const bm = { status: "REVISAO_SOLICITADA", statusConferencia: "CONCLUIDA" };
+  const antiga = { id: "a", projetistaCodigo: "X", updatedAt: "2026-08-01T10:00:00Z" };
+  const nova = { id: "b", projetistaCodigo: "X", updatedAt: "2026-08-03T10:00:00Z" };
+  const outraAntiga = { id: "c", projetistaCodigo: "X", updatedAt: "2026-07-30T10:00:00Z" };
+  assert.deepEqual(elegibilidadeDaLinha(antiga, bm, revisao, [antiga, nova]), { elegivel: true, reenvio: true }, "A: linha antiga, BM alterado");
+  assert.deepEqual(elegibilidadeDaLinha(nova, bm, revisao, [antiga, nova]), { elegivel: true, reenvio: true });
+  assert.deepEqual(elegibilidadeDaLinha(antiga, bm, revisao, [antiga, outraAntiga]),
+    { elegivel: false, motivo: "REVISAO_SEM_ALTERACAO", mensagem: "Revisão solicitada: altere o pagamento antes de reenviar" }, "B: todas antigas");
+  // Mesma decisão do servidor: helper alimentado com o MAX das linhas (o que o service/lote calculam no banco).
+  assert.deepEqual(elegibilidadeDaLinha(antiga, bm, revisao, [antiga, nova]),
+    avaliarElegibilidadeEnvioBm({ status: bm.status, statusConferencia: bm.statusConferencia, revisaoSolicitadaAt: revisao, itemAtualizadoEm: nova.updatedAt }));
+  // D/E preservados: CANCELADO bloqueado em qualquer combinação de linhas.
+  assert.equal(elegibilidadeDaLinha(antiga, { status: "CANCELADO" }, revisao, [antiga, nova]).elegivel, false);
+});
+
+test("paridade: botão do detalhe, seleção do lote, service e rota do lote usam o MESMO dado agregado (alteração mais recente do fornecedor no ciclo)", () => {
+  const botao = code(read("components/mapa-pagamento-table.tsx"));
+  assert.match(botao, /itemAtualizadoEm: ultimaAlteracaoDoBm\(itens, codigo\) \?\? item\.updatedAt,/, "detalhe: não só a linha aberta");
+  assert.match(code(read("components/fornecedores/index.tsx")), /revisaoMap\.get\(item\.projetistaCodigo \?\? ""\)\?\.revisaoSolicitadaAt, itens\);/, "seleção: linhas do ciclo carregado");
+  assert.match(code(read("lib/bm-envio-selecao.ts")), /itemAtualizadoEm: ultimaAlteracaoDoBm\(linhasDoCiclo, item\.projetistaCodigo\)/);
+  assert.match(code(read("lib/bm-envio.ts")), /tx\.mapaPagamentoItem\.aggregate\(\{\s*where: \{ ciclo, projetistaCodigo: colaboradorCodigo \},\s*_max: \{ updatedAt: true \},/, "service: MAX no banco dentro da trava");
+  assert.match(code(read("app/api/sgc/enviar/lote/route.ts")), /groupBy\(\{\s*by: \["projetistaCodigo"\],[\s\S]*?_max: \{ updatedAt: true \}/, "lote: MAX por fornecedor");
+  assert.doesNotMatch(botao, /new Date\(item\.updatedAt\) > new Date\(revisao/, "sem comparação própria da linha no botão");
+  // "Geral" continua sem ação (D) — preservado.
+  assert.match(botao, /\{cicloReal && onEnviarBm && \(podeEnviar \|\| \(isRevisaoEnvio && !temAlteracao\)\) && \(/);
+});

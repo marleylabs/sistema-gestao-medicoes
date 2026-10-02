@@ -6,7 +6,7 @@ import { Button, IconButton } from "@/components/ui";
 import type { ContratoResumo, MapaPagamentoItem } from "@/components/types";
 import type { SgcStatusEntry } from "@/lib/sgc-display-status";
 import { normalizeText } from "@/components/pagamento-format";
-import { avaliarElegibilidadeEnvioBm } from "@/lib/bm-envio-elegibilidade";
+import { avaliarElegibilidadeEnvioBm, ultimaAlteracaoDoBm } from "@/lib/bm-envio-elegibilidade";
 import { isCicloValido } from "@/lib/ciclo";
 
 // Compatibilidade: consumidores existentes importam estes daqui.
@@ -157,7 +157,8 @@ export function MapaItemActions({
     status: sgcEntry?.status,
     statusConferencia: sgcEntry?.statusConferencia,
     revisaoSolicitadaAt: revisao?.revisaoSolicitadaAt,
-    itemAtualizadoEm: item.updatedAt,
+    // Nível do BM (todas as linhas do fornecedor no ciclo carregado), como o servidor — não só esta linha.
+    itemAtualizadoEm: ultimaAlteracaoDoBm(itens, codigo) ?? item.updatedAt,
   });
   const temAlteracao = !(!elegibilidadeEnvio.elegivel && elegibilidadeEnvio.motivo === "REVISAO_SEM_ALTERACAO");
   // "Geral" (ou qualquer valor que não seja um ciclo real) nunca envia: o BM sempre pertence a uma

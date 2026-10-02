@@ -14,7 +14,9 @@ import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prism
  *   R — REVISAO_SOLICITADA (sem alteração → bloqueado; com alteração → reenviado);
  *   M — apto, enviado pelo lote (o lote continua funcionando);
  *   W — REVISAO_SOLICITADA com DUAS linhas: uma antiga, outra alterada depois → apto (lote);
- *   X — REVISAO_SOLICITADA com DUAS linhas, ambas antigas → bloqueado (individual e lote).
+ *   X — REVISAO_SOLICITADA com DUAS linhas, ambas antigas → bloqueado (individual e lote);
+ *   P — como W, mas pelo DETALHE: aberto pela linha antiga, "Reenviar BM" disponível e executado;
+ *   Q — como X, pelo DETALHE: aberto pela linha antiga, "Reenviar BM" indisponível.
  */
 
 test.beforeAll(assertConnectedToE2eDatabase);
@@ -23,7 +25,7 @@ const S = randomUUID().slice(0, 4).toUpperCase();
 const CICLO = "2804";
 const PREFIXO = `E2E BMIND ${S}`;
 const base = 970000 + Math.floor(Math.random() * 9000);
-const L = ["H", "K", "R", "M", "W", "X"] as const;
+const L = ["H", "K", "R", "M", "W", "X", "P", "Q"] as const;
 type Letra = (typeof L)[number];
 const codigo = (l: Letra) => `P0${base + L.indexOf(l)}`;
 const nome = (l: Letra) => `${PREFIXO} ${l}`;
@@ -40,15 +42,31 @@ async function entrar(page: Page, usuario: { usuario: string; senha: string }) {
 }
 
 async function abrirDetalhe(page: Page, ciclo: string, l: Letra) {
-  // A tela troca "Geral" pelo ciclo mais recente assim que GET /api/ciclos responde (comportamento
-  // existente): só escolhe o ciclo depois disso, senão a escolha é sobrescrita.
-  const ciclosCarregados = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/ciclos" && r.request().method() === "GET");
   await page.goto("/fornecedores");
-  await ciclosCarregados;
+  // A tela começa em "Geral" e, quando os ciclos carregam, troca sozinha para o mais recente
+  // (comportamento existente). Só escolhe o ciclo DEPOIS dessa troca — senão é sobrescrito.
+  await expect(page.getByRole("combobox", { name: "Ciclo" })).not.toHaveValue("GERAL");
   await page.getByRole("combobox", { name: "Ciclo" }).selectOption(ciclo);
   await expect(page.getByRole("combobox", { name: "Ciclo" })).toHaveValue(ciclo);
   await page.getByPlaceholder("Nome, código ou empresa").fill(PREFIXO);
   await page.getByTestId("fornecedores-tabela").locator("tr", { hasText: nome(l) }).locator("td:not(:has(input[type=checkbox]))").first().click();
+  const detalhe = page.getByRole("dialog", { name: `Detalhe de ${nome(l)}` });
+  await expect(detalhe).toBeVisible();
+  return detalhe;
+}
+
+/** Abre o detalhe por UMA linha específica do fornecedor (identificada pelo valor exibido). */
+async function abrirDetalheLinha(page: Page, l: Letra, valor: string) {
+  await page.goto("/fornecedores");
+  // A tela começa em "Geral" e, quando os ciclos carregam, troca sozinha para o mais recente
+  // (comportamento existente). Só escolhe o ciclo DEPOIS dessa troca — senão é sobrescrito.
+  await expect(page.getByRole("combobox", { name: "Ciclo" })).not.toHaveValue("GERAL");
+  await page.getByRole("combobox", { name: "Ciclo" }).selectOption(CICLO);
+  await expect(page.getByRole("combobox", { name: "Ciclo" })).toHaveValue(CICLO);
+  await page.getByPlaceholder("Nome, código ou empresa").fill(nome(l));
+  const linhas = page.getByTestId("fornecedores-tabela").locator("tr", { hasText: nome(l) });
+  await expect(linhas).toHaveCount(2);
+  await linhas.filter({ hasText: valor }).locator("td:not(:has(input[type=checkbox]))").first().click();
   const detalhe = page.getByRole("dialog", { name: `Detalhe de ${nome(l)}` });
   await expect(detalhe).toBeVisible();
   return detalhe;
@@ -95,9 +113,9 @@ test.describe.serial("Fornecedores — envio individual de BM alinhado ao lote",
       itemIds[l] = item.id;
     }
     // Segunda linha no mesmo ciclo para W (alterada depois do pedido) e X (antiga).
-    for (const [l, quando] of [["W", new Date()], ["X", new Date(pedidoRevisao.getTime() - 120_000)]] as const) {
+    for (const [l, quando] of [["W", new Date()], ["X", new Date(pedidoRevisao.getTime() - 120_000)], ["P", new Date()], ["Q", new Date(pedidoRevisao.getTime() - 120_000)]] as const) {
       await prisma.mapaPagamentoItem.update({ where: { id: itemIds[l] }, data: { updatedAt: new Date(pedidoRevisao.getTime() - 60_000) } });
-      await prisma.mapaPagamentoItem.create({ data: { ciclo: CICLO, ordem: 9750 + L.indexOf(l), projetistaCodigo: codigo(l), responsavel: nome(l), valor: 500, sourceRowHash: `e2e-bmind-${S}-${l}-2`, updatedAt: quando } });
+      await prisma.mapaPagamentoItem.create({ data: { ciclo: CICLO, ordem: 9750 + L.indexOf(l), projetistaCodigo: codigo(l), responsavel: nome(l), valor: 2222, sourceRowHash: `e2e-bmind-${S}-${l}-2`, updatedAt: quando } });
       await prisma.sgcAprovacaoMedicao.create({ data: { colaboradorCodigo: codigo(l), colaboradorNome: nome(l), ciclo: CICLO, status: "REVISAO_SOLICITADA", statusConferencia: "CONCLUIDA", revisaoNumero: 0, revisaoSolicitadaAt: pedidoRevisao } });
     }
     const k = await prisma.sgcAprovacaoMedicao.create({ data: { colaboradorCodigo: codigo("K"), colaboradorNome: nome("K"), ciclo: CICLO, status: "CANCELADO", statusConferencia: "AGUARDANDO_UPLOAD", revisaoNumero: 1 } });
@@ -130,6 +148,31 @@ test.describe.serial("Fornecedores — envio individual de BM alinhado ao lote",
     expect([h.status, h.statusConferencia, h.revisaoNumero]).toEqual(["PENDENTE", "AGUARDANDO_UPLOAD", 0]);
     expect(await prisma.emailLog.count({ where: { event: "BM_AVAILABLE", status: "SENT", idempotencyKey: `bm-available/${h.id}/0` } })).toBe(1);
     expect(await prisma.sgcAprovacaoMedicao.count({ where: { ciclo: "GERAL" } }), "nunca um BM em 'GERAL'").toBe(0);
+    await page.request.post("/api/auth/logout");
+  });
+
+  test("detalhe multilinha: aberto pela linha ANTIGA, Reenviar BM segue a alteração mais recente do fornecedor no ciclo (= servidor e lote)", async ({ page }) => {
+    await entrar(page, e2eUsers.medicao);
+
+    // Q: as duas linhas antigas → Reenviar BM indisponível, com o mesmo motivo do servidor.
+    const detalheQ = await abrirDetalheLinha(page, "Q", "1.000,00");
+    const reenviarQ = detalheQ.getByRole("button", { name: "Reenviar BM", exact: true });
+    await expect(reenviarQ).toBeDisabled();
+    await expect(reenviarQ).toHaveAttribute("title", "Faça alguma alteração no pagamento antes de reenviar");
+    await page.keyboard.press("Escape");
+
+    // P: linha antiga aberta, a OUTRA linha foi alterada depois do pedido → disponível e executa.
+    const antes = (await bm("P"))!;
+    const detalheP = await abrirDetalheLinha(page, "P", "1.000,00");
+    const reenviarP = detalheP.getByRole("button", { name: "Reenviar BM", exact: true });
+    await expect(reenviarP).toBeEnabled();
+    const resposta = page.waitForResponse((r) => r.url().endsWith("/api/sgc/enviar") && r.request().method() === "POST");
+    await reenviarP.click();
+    expect((await resposta).status()).toBe(200);
+    const depois = (await bm("P"))!;
+    expect([depois.status, depois.statusConferencia, depois.revisaoNumero]).toEqual(["PENDENTE", "AGUARDANDO_UPLOAD", antes.revisaoNumero + 1]);
+    expect(await prisma.sgcLog.count({ where: { sgcId: depois.id, acao: "REENVIAR_BM" } }), "uma transição").toBe(1);
+    expect(await prisma.emailLog.count({ where: { event: "BM_AVAILABLE", idempotencyKey: `bm-available/${depois.id}/${depois.revisaoNumero}` } }), "um e-mail").toBe(1);
     await page.request.post("/api/auth/logout");
   });
 

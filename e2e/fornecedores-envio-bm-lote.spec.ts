@@ -51,7 +51,11 @@ async function entrar(page: Page, usuario: { usuario: string; senha: string }) {
 
 async function abrirFornecedores(page: Page, ciclo = CICLO_A) {
   await page.goto("/fornecedores");
+  // A tela começa em "Geral" e, quando os ciclos carregam, troca sozinha para o mais recente
+  // (comportamento existente). Só escolhe o ciclo DEPOIS dessa troca — senão é sobrescrito.
+  await expect(page.getByRole("combobox", { name: "Ciclo" })).not.toHaveValue("GERAL");
   await page.getByRole("combobox", { name: "Ciclo" }).selectOption(ciclo);
+  await expect(page.getByRole("combobox", { name: "Ciclo" })).toHaveValue(ciclo);
   await page.getByPlaceholder("Nome, código ou empresa").fill(PREFIXO);
 }
 

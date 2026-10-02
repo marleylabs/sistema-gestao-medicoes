@@ -12,6 +12,26 @@ import { getMapaPagamentoStatusMeta } from "@/lib/sgc-display-status";
  * Nada aqui vem do primeiro acesso — regras independentes.
  */
 
+/**
+ * "Pagamento alterado depois do pedido de revisão" é avaliado no nível do BM: a alteração mais
+ * recente entre TODAS as linhas do fornecedor no ciclo. O servidor calcula o mesmo valor no banco
+ * (`_max.updatedAt` em lib/bm-envio.ts e na rota do lote); a tela usa esta função sobre as linhas
+ * do ciclo que já carregou — nunca só a linha aberta.
+ */
+export function ultimaAlteracaoDoBm(
+  linhasDoCiclo: { projetistaCodigo?: string | null; updatedAt?: string | Date | null }[],
+  colaboradorCodigo: string | null | undefined,
+): Date | null {
+  if (!colaboradorCodigo) return null;
+  let maisRecente: Date | null = null;
+  for (const linha of linhasDoCiclo) {
+    if (linha.projetistaCodigo !== colaboradorCodigo || !linha.updatedAt) continue;
+    const data = new Date(linha.updatedAt);
+    if (!Number.isNaN(data.getTime()) && (!maisRecente || data > maisRecente)) maisRecente = data;
+  }
+  return maisRecente;
+}
+
 export type MotivoInelegivelEnvioBm = "REVISAO_SEM_ALTERACAO" | "JA_ENVIADO" | "CANCELADO";
 
 export type ElegibilidadeEnvioBm =
