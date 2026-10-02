@@ -4,9 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { notifyBmAvailable } from "@/lib/email";
 import { resolveFornecedorEmail } from "@/lib/email/resolve-recipients";
 import { logBmAction } from "@/lib/bm-log";
-
-/** Status a partir dos quais o servidor aceita (re)enviar o BM — mesma lista de sempre da rota. */
-export const STATUS_REENVIAVEIS_SERVIDOR = ["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA", "CANCELADO"] as const;
+import { avaliarElegibilidadeEnvioBm, type MotivoInelegivelEnvioBm } from "@/lib/bm-envio-elegibilidade";
+import { isCicloValido } from "@/lib/ciclo";
 
 export type EnviarBoletimInput = {
   colaboradorCodigo: string;
@@ -29,18 +28,22 @@ export type EnviarBoletimResult =
       /** Replay da MESMA confirmação de lote: já enviado por ela, nada foi refeito. */
       alreadyProcessed: boolean;
     }
-  | { ok: false; httpStatus: 400 | 409; error: string; motivo: "FORNECEDOR_INVALIDO" | "JA_ENVIADO"; statusAtual?: string };
+  | { ok: false; httpStatus: 400 | 409; error: string; motivo: "FORNECEDOR_INVALIDO" | "CICLO_INVALIDO" | MotivoInelegivelEnvioBm; statusAtual?: string };
 
 const ERRO_FORNECEDOR = "Fornecedor inexistente ou excluído definitivamente.";
-const ERRO_JA_ENVIADO = "Medição já enviada para este fornecedor neste ciclo.";
+export const ERRO_CICLO_INVALIDO = "Selecione um ciclo específico para enviar o boletim.";
 
 const marcaLote = (requestId: string) => `lote:${requestId}`;
 
 /**
  * Envio do BM ao fornecedor — fonte única usada pelo envio individual (POST /api/sgc/enviar) e pelo
- * envio em lote (POST /api/sgc/enviar/lote). Comportamento (extraído da rota, sem mudança de regra):
+ * envio em lote (POST /api/sgc/enviar/lote). Comportamento:
+ *  0. o ciclo precisa ser real (YYMM, `isCicloValido`) — "GERAL" ou malformado nunca vira BM;
  *  1. o fornecedor precisa ser exatamente um Profissional não excluído com esse código;
- *  2. só (re)envia a partir de AGUARDANDO_ENVIO (ou sem BM), REVISAO_SOLICITADA ou CANCELADO;
+ *  2. elegibilidade = `avaliarElegibilidadeEnvioBm` (a MESMA regra do botão e do lote): sem BM ou
+ *     AGUARDANDO_ENVIO; REVISAO_SOLICITADA só com o pagamento alterado depois do pedido de revisão.
+ *     CANCELADO e qualquer status já enviado ficam bloqueados (antes a rota aceitava CANCELADO e
+ *     revisão sem alteração — exceções que nenhuma tela oferecia);
  *  3. transição para PENDENTE + statusConferencia AGUARDANDO_UPLOAD (revisão incrementa
  *     revisaoNumero) e limpa divergências de uma rodada anterior;
  *  4. log ENVIAR_BM/REENVIAR_BM e, DEPOIS (fora da transação), o e-mail BM_AVAILABLE + log
@@ -54,6 +57,10 @@ const marcaLote = (requestId: string) => `lote:${requestId}`;
  */
 export async function enviarBoletimFornecedor(input: EnviarBoletimInput): Promise<EnviarBoletimResult> {
   const { colaboradorCodigo, ciclo } = input;
+  // Defesa em profundidade: as rotas já validam, mas o service nunca cria BM fora de um ciclo real.
+  if (!isCicloValido(ciclo)) {
+    return { ok: false, httpStatus: 400, error: ERRO_CICLO_INVALIDO, motivo: "CICLO_INVALIDO" };
+  }
 
   const profissionais = await prisma.profissional.findMany({
     where: { deletedAt: null, OR: [{ codigo: colaboradorCodigo }, { codigo: null, nome: colaboradorCodigo }] },
@@ -70,14 +77,25 @@ export async function enviarBoletimFornecedor(input: EnviarBoletimInput): Promis
 
     const existing = await tx.sgcAprovacaoMedicao.findUnique({
       where: { colaboradorCodigo_ciclo: { colaboradorCodigo, ciclo } },
-      select: { id: true, status: true, voltadoAt: true, revisaoNumero: true },
+      select: { id: true, status: true, statusConferencia: true, revisaoSolicitadaAt: true, voltadoAt: true, revisaoNumero: true },
     });
-
-    if (existing && !(STATUS_REENVIAVEIS_SERVIDOR as readonly string[]).includes(existing.status)) {
-      return { bloqueado: true as const, existing };
+    // "Pagamento alterado depois do pedido de revisão": a alteração mais recente dos itens deste BM
+    // (mesmo fornecedor, mesmo ciclo) no mapa de pagamento — relida aqui, dentro da trava.
+    const ultimaAlteracao = await tx.mapaPagamentoItem.aggregate({
+      where: { ciclo, projetistaCodigo: colaboradorCodigo },
+      _max: { updatedAt: true },
+    });
+    const elegibilidade = avaliarElegibilidadeEnvioBm({
+      status: existing?.status,
+      statusConferencia: existing?.statusConferencia,
+      revisaoSolicitadaAt: existing?.revisaoSolicitadaAt,
+      itemAtualizadoEm: ultimaAlteracao._max.updatedAt,
+    });
+    if (!elegibilidade.elegivel) {
+      return { bloqueado: true as const, existing, elegibilidade };
     }
 
-    const isRevisao = existing?.status === "REVISAO_SOLICITADA";
+    const isRevisao = elegibilidade.reenvio;
     const now = new Date();
     const sgc = await tx.sgcAprovacaoMedicao.upsert({
       where: { colaboradorCodigo_ciclo: { colaboradorCodigo, ciclo } },
@@ -116,9 +134,10 @@ export async function enviarBoletimFornecedor(input: EnviarBoletimInput): Promis
 
   if (transicao.bloqueado) {
     const atual = transicao.existing;
+    const { motivo, mensagem } = transicao.elegibilidade;
     // Replay da MESMA confirmação de lote (duplo clique, "Tentar novamente" após queda de rede):
     // se foi ela que enviou este BM, o resultado é "já enviado nesta operação", sem refazer nada.
-    if (input.requestId) {
+    if (atual && input.requestId) {
       const enviadoPorEsta = await prisma.sgcLog.findFirst({
         where: { sgcId: atual.id, acao: { in: ["ENVIAR_BM", "REENVIAR_BM"] }, observacao: marcaLote(input.requestId) },
         select: { id: true },
@@ -127,7 +146,7 @@ export async function enviarBoletimFornecedor(input: EnviarBoletimInput): Promis
         return { ok: true, sgcId: atual.id, status: atual.status, colaboradorCodigo, revisaoNumero: atual.revisaoNumero, emailNotificacao: { ok: true, testMode: false }, alreadyProcessed: true };
       }
     }
-    return { ok: false, httpStatus: 409, error: ERRO_JA_ENVIADO, motivo: "JA_ENVIADO", statusAtual: atual.status };
+    return { ok: false, httpStatus: 409, error: mensagem, motivo, statusAtual: atual?.status };
   }
 
   const { existing, sgc, isRevisao } = transicao;

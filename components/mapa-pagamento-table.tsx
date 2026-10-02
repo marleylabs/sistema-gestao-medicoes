@@ -6,6 +6,8 @@ import { Button, IconButton } from "@/components/ui";
 import type { ContratoResumo, MapaPagamentoItem } from "@/components/types";
 import type { SgcStatusEntry } from "@/lib/sgc-display-status";
 import { normalizeText } from "@/components/pagamento-format";
+import { avaliarElegibilidadeEnvioBm } from "@/lib/bm-envio-elegibilidade";
+import { isCicloValido } from "@/lib/ciclo";
 
 // Compatibilidade: consumidores existentes importam estes daqui.
 export { formatParticipacao, money } from "@/components/pagamento-format";
@@ -149,10 +151,20 @@ export function MapaItemActions({
   const codigo = item.projetistaCodigo ?? "";
   const sgcStatusValue = sgcEntry?.status ?? "AGUARDANDO_ENVIO";
   const isRevisaoEnvio = sgcStatusValue === "REVISAO_SOLICITADA";
-  const temAlteracao = isRevisaoEnvio && revisao?.revisaoSolicitadaAt && item.updatedAt
-    ? new Date(item.updatedAt) > new Date(revisao.revisaoSolicitadaAt)
-    : true;
-  const podeEnviar = onEnviarBm && ["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA"].includes(sgcStatusValue) && temAlteracao;
+  // Mesma regra do servidor e do envio em lote (lib/bm-envio-elegibilidade.ts) — nada de lista
+  // de status paralela aqui.
+  const elegibilidadeEnvio = avaliarElegibilidadeEnvioBm({
+    status: sgcEntry?.status,
+    statusConferencia: sgcEntry?.statusConferencia,
+    revisaoSolicitadaAt: revisao?.revisaoSolicitadaAt,
+    itemAtualizadoEm: item.updatedAt,
+  });
+  const temAlteracao = !(!elegibilidadeEnvio.elegivel && elegibilidadeEnvio.motivo === "REVISAO_SEM_ALTERACAO");
+  // "Geral" (ou qualquer valor que não seja um ciclo real) nunca envia: o BM sempre pertence a uma
+  // competência específica — o servidor também recusa.
+  const cicloReal = isCicloValido(ciclo);
+  const podeEnviar = !!onEnviarBm && cicloReal && elegibilidadeEnvio.elegivel;
+  const envioAplicavel = !!onEnviarBm && (elegibilidadeEnvio.elegivel || (isRevisaoEnvio && !temAlteracao));
   const sgcId = sgcEntry?.id;
   const podeRetornar = onRetornarBm && sgcId && ["PENDENTE", "REVISAO_SOLICITADA"].includes(sgcStatusValue);
   async function excluir() {
@@ -179,7 +191,12 @@ export function MapaItemActions({
           {retornando ? "Retornando..." : "Retornar BM"}
         </Button>
       )}
-      {onEnviarBm && (podeEnviar || (isRevisaoEnvio && !temAlteracao)) && (
+      {envioAplicavel && !cicloReal && (
+        <p className="text-[12px] text-[var(--muted-foreground)]" data-testid="envio-bm-requer-ciclo">
+          Selecione um ciclo específico para enviar o boletim.
+        </p>
+      )}
+      {cicloReal && onEnviarBm && (podeEnviar || (isRevisaoEnvio && !temAlteracao)) && (
         <Button
           disabled={enviando || !temAlteracao}
           title={

@@ -32,7 +32,7 @@ import { EvidenciasWorkspace } from "@/components/evidencias/evidencias-workspac
 import { useViewportAlign } from "@/components/use-viewport-align";
 import { Badge, Button, Card, FilterButton, FilterChip, IconButton, PageContainer, PageHeader, Select } from "@/components/ui";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
-import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
+import { cicloToDates, cicloToMesReferencia, isCicloValido } from "@/lib/ciclo";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "@/lib/presence";
 import type { AuthUser } from "@/lib/session";
 import { indexSgcStatusByColaborador, type SgcStatusApiEntry, type SgcStatusEntry } from "@/lib/sgc-display-status";
@@ -226,6 +226,8 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
   }
 
   async function enviarBm(colaboradorCodigo: string) {
+    // A ação não aparece em "Geral" (MapaItemActions); se chegar aqui sem ciclo real, não chama a rota.
+    if (!isCicloValido(activeCiclo)) return;
     const res = await fetch("/api/sgc/enviar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

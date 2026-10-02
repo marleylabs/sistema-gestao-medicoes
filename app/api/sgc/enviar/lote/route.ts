@@ -41,6 +41,13 @@ export async function POST(request: NextRequest) {
         select: { id: true, colaboradorCodigo: true, status: true, statusConferencia: true, revisaoSolicitadaAt: true },
       });
       const bmPorCodigo = new Map(bms.map((b) => [b.colaboradorCodigo, b]));
+      // "Pagamento alterado depois da revisão" avaliado no nível do BM (todos os itens do fornecedor
+      // no ciclo), exatamente como o service faz dentro da trava.
+      const ultimaAlteracao = new Map((await prisma.mapaPagamentoItem.groupBy({
+        by: ["projetistaCodigo"],
+        where: { ciclo: pedido.ciclo, projetistaCodigo: { in: codigos } },
+        _max: { updatedAt: true },
+      })).map((g) => [g.projetistaCodigo, g._max.updatedAt]));
       // Replay da mesma confirmação: BMs cujo envio foi registrado com este requestId.
       const enviadosPorEsta = new Set((await prisma.sgcLog.findMany({
         where: { sgcId: { in: bms.map((b) => b.id) }, acao: { in: ["ENVIAR_BM", "REENVIAR_BM"] }, observacao: `lote:${requestId}` },
@@ -53,7 +60,7 @@ export async function POST(request: NextRequest) {
           ciclo: i.ciclo,
           colaboradorCodigo: i.projetistaCodigo,
           nome: i.responsavel,
-          atualizadoEm: i.updatedAt,
+          atualizadoEm: (i.projetistaCodigo ? ultimaAlteracao.get(i.projetistaCodigo) : null) ?? i.updatedAt,
           bm: bm ? { status: bm.status, statusConferencia: bm.statusConferencia, revisaoSolicitadaAt: bm.revisaoSolicitadaAt } : null,
           enviadoNestaOperacao: bm ? enviadosPorEsta.has(bm.id) : false,
         }];
@@ -63,7 +70,7 @@ export async function POST(request: NextRequest) {
       const r = await enviarBoletimFornecedor({ colaboradorCodigo, ciclo, usuario, telaOrigem: "Fornecedores / Envio em lote", requestId });
       return r.ok
         ? { ok: true, alreadyProcessed: r.alreadyProcessed, emailOk: r.emailNotificacao.ok }
-        : { ok: false, motivo: r.motivo, statusAtual: r.statusAtual };
+        : { ok: false, motivo: r.motivo, mensagem: r.error, statusAtual: r.statusAtual };
     },
   });
 

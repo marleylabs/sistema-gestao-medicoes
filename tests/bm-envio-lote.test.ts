@@ -63,12 +63,40 @@ test("elegibilidade: sem BM ou AGUARDANDO_ENVIO envia; REVISAO_SOLICITADA só co
   assert.deepEqual(avaliarElegibilidadeEnvioBm({ status: "CANCELADO" }), { elegivel: false, motivo: "CANCELADO", mensagem: "BM cancelado neste ciclo" });
 });
 
-test("elegibilidade espelha o botão individual (MapaItemActions) e o servidor individual continua aceitando os mesmos status", () => {
-  const botao = read("components/mapa-pagamento-table.tsx");
-  assert.match(botao, /const podeEnviar = onEnviarBm && \["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA"\]\.includes\(sgcStatusValue\) && temAlteracao;/);
-  assert.match(botao, /new Date\(item\.updatedAt\) > new Date\(revisao\.revisaoSolicitadaAt\)/);
-  assert.match(read("lib/bm-envio.ts"), /STATUS_REENVIAVEIS_SERVIDOR = \["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA", "CANCELADO"\]/);
+test("paridade: botão individual (MapaItemActions), service individual e lote decidem pela MESMA regra e pelo MESMO ciclo", () => {
+  const botao = code(read("components/mapa-pagamento-table.tsx"));
+  assert.match(botao, /const elegibilidadeEnvio = avaliarElegibilidadeEnvioBm\(\{/);
+  assert.match(botao, /const podeEnviar = !!onEnviarBm && cicloReal && elegibilidadeEnvio\.elegivel;/);
+  assert.match(botao, /const cicloReal = isCicloValido\(ciclo\);/);
+  assert.doesNotMatch(botao, /\["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA"\]\.includes/, "sem lista de status paralela no botão");
+  // O service individual decide pela MESMA função (sem lista paralela de status que aceitava CANCELADO).
+  const svc = code(read("lib/bm-envio.ts"));
+  assert.match(svc, /avaliarElegibilidadeEnvioBm\(\{/);
+  assert.doesNotMatch(svc, /STATUS_REENVIAVEIS|\["AGUARDANDO_ENVIO", "REVISAO_SOLICITADA"/);
+  assert.match(svc, /if \(!isCicloValido\(ciclo\)\)/, "service: defesa em profundidade do ciclo");
+  // Ciclo: individual e lote pela MESMA regra (lib/ciclo.ts), nenhuma regex própria.
+  assert.match(code(read("app/api/sgc/enviar/route.ts")), /if \(!isCicloValido\(ciclo\)\)/);
+  const lote = code(read("lib/bm-envio-lote.ts"));
+  assert.match(lote, /if \(!isCicloValido\(ciclo\)\)/);
+  assert.doesNotMatch(lote + code(read("app/api/sgc/enviar/route.ts")), /\d\{4\}/, "nenhuma regex de ciclo duplicada");
   assert.doesNotMatch(code(read("lib/bm-envio-elegibilidade.ts")), /"Aguardando envio"/, "regra pelo enum, nunca pelo rótulo");
+});
+
+test("ciclo: isCicloValido aceita só YYMM real (mês 01–12); GERAL, vazio e malformados recusados", () => {
+  const { isCicloValido } = require("../lib/ciclo") as typeof import("../lib/ciclo");
+  for (const ok of ["2608", "2601", "2612", "2911"]) assert.equal(isCicloValido(ok), true, ok);
+  for (const ruim of ["GERAL", "", " ", "2026-08", "260", "26081", "ABC1", "2613", "2600", "9996", null, undefined, 2608]) {
+    assert.equal(isCicloValido(ruim as unknown), false, String(ruim));
+  }
+  assert.equal(normalizarPedidoEnvioBmLote({ ids: [uuid(1)], ciclo: "9996" }).ok, false, "lote: mês inválido recusado (antes só exigia 4 dígitos)");
+  assert.equal(normalizarPedidoEnvioBmLote({ ids: [uuid(1)], ciclo: "GERAL" }).ok, false);
+});
+
+test("tela: em 'Geral' o botão individual não existe (mensagem de contexto) e o handler nunca chama a rota sem ciclo real", () => {
+  const botao = code(read("components/mapa-pagamento-table.tsx"));
+  assert.match(botao, /\{cicloReal && onEnviarBm && \(podeEnviar \|\| \(isRevisaoEnvio && !temAlteracao\)\) && \(/);
+  assert.match(botao, /Selecione um ciclo específico para enviar o boletim\./);
+  assert.match(code(read("components/medicoes-app.tsx")), /async function enviarBm\(colaboradorCodigo: string\) \{\s*if \(!isCicloValido\(activeCiclo\)\) return;/);
 });
 
 // ── Seleção (tela) ───────────────────────────────────────────────────────────
@@ -156,8 +184,8 @@ test("parcial: enviado, inapto, outro ciclo, já enviado por outro usuário (rev
     item(7),
     item(8, { bm: { status: "REVISAO_SOLICITADA", statusConferencia: null, revisaoSolicitadaAt: "2026-10-01T00:00:00Z" } }),
   ], async ({ colaboradorCodigo }) => {
-    if (colaboradorCodigo === "F4") return { ok: false, motivo: "JA_ENVIADO", statusAtual: "PENDENTE" };
-    if (colaboradorCodigo === "F5") return { ok: false, motivo: "FORNECEDOR_INVALIDO" };
+    if (colaboradorCodigo === "F4") return { ok: false, motivo: "JA_ENVIADO", mensagem: "BM já enviado (Aguardando fornecedor)", statusAtual: "PENDENTE" };
+    if (colaboradorCodigo === "F5") return { ok: false, motivo: "FORNECEDOR_INVALIDO", mensagem: "Fornecedor inexistente ou excluído definitivamente." };
     if (colaboradorCodigo === "F6") throw new Error("connection reset re_secret_123");
     if (colaboradorCodigo === "F7") return { ok: true, alreadyProcessed: false, emailOk: false };
     return { ok: true, alreadyProcessed: false, emailOk: true };

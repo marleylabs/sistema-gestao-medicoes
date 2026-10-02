@@ -23,6 +23,21 @@ function parseCiclo(ciclo: string): { year: number; month: number } {
   return { year, month };
 }
 
+/**
+ * Ciclo real de medição (YYMM com mês 01–12) — a mesma regra de `parseCiclo`. "GERAL" (visão de
+ * todos os ciclos), vazio ou malformado nunca são ciclo. Usado onde uma operação precisa de UMA
+ * competência específica (ex.: envio de BM individual e em lote).
+ */
+export function isCicloValido(ciclo: unknown): ciclo is string {
+  if (typeof ciclo !== "string") return false;
+  try {
+    parseCiclo(ciclo);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function cicloToDates(ciclo: string) {
   const { year, month } = parseCiclo(ciclo);
 

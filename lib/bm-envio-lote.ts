@@ -1,4 +1,5 @@
 import { avaliarElegibilidadeEnvioBm } from "@/lib/bm-envio-elegibilidade";
+import { isCicloValido } from "@/lib/ciclo";
 
 /**
  * Envio de BMs EM LOTE (Fornecedores, um ciclo) — só orquestração. A regra é a do envio
@@ -62,14 +63,14 @@ export type ItemEnvioBm = {
 /** Resultado do service individual, no formato que a orquestração precisa. */
 export type EnvioBmResultado =
   | { ok: true; alreadyProcessed: boolean; emailOk: boolean }
-  | { ok: false; motivo: "FORNECEDOR_INVALIDO" | "JA_ENVIADO"; statusAtual?: string };
+  | { ok: false; motivo: string; mensagem: string; statusAtual?: string };
 
 export function normalizarPedidoEnvioBmLote(raw: { ids?: unknown; ciclo?: unknown }):
   | { ok: true; ids: string[]; ciclo: string }
   | { ok: false; error: string } {
   const ciclo = typeof raw.ciclo === "string" ? raw.ciclo.trim() : "";
-  // "Geral" não é um ciclo: o lote sempre opera numa competência específica.
-  if (!/^\d{4}$/.test(ciclo)) return { ok: false, error: "Selecione um ciclo específico para enviar BMs em lote." };
+  // "Geral" não é um ciclo: o lote sempre opera numa competência específica (mesma regra do individual).
+  if (!isCicloValido(ciclo)) return { ok: false, error: "Selecione um ciclo específico para enviar BMs em lote." };
   if (!Array.isArray(raw.ids)) return { ok: false, error: "Informe um array de IDs." };
   const ids = [...new Set(raw.ids.filter((id): id is string => typeof id === "string").map((id) => id.trim()).filter((id) => UUID_PATTERN.test(id)))];
   if (ids.length === 0) return { ok: false, error: "Nenhum BM válido informado." };
@@ -145,9 +146,12 @@ export async function processarEnvioBmEmLote(input: {
         });
       } else if (envio.motivo === "FORNECEDOR_INVALIDO") {
         resultados.push({ id, nome, status: "IGNORADO", motivo: "Fornecedor inexistente ou excluído definitivamente" });
-      } else {
+      } else if (envio.motivo === "JA_ENVIADO") {
         // Revalidado dentro da trava do service: outro usuário/aba enviou antes.
         resultados.push({ id, nome, status: "IGNORADO", motivo: "BM já não estava mais aguardando envio" });
+      } else {
+        // Demais recusas do service vêm com o motivo da MESMA regra (avaliarElegibilidadeEnvioBm).
+        resultados.push({ id, nome, status: "IGNORADO", motivo: envio.mensagem });
       }
     } catch (error) {
       console.error("[bm-envio-lote] envio falhou", { mapaItemId: id, error: error instanceof Error ? error.message : String(error) });

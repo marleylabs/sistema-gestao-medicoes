@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { enviarBoletimFornecedor } from "@/lib/bm-envio";
+import { ERRO_CICLO_INVALIDO, enviarBoletimFornecedor } from "@/lib/bm-envio";
+import { isCicloValido } from "@/lib/ciclo";
 
 /**
  * Envio individual do BM ("Enviar BM" / "Reenviar BM" no detalhe do fornecedor). Toda a regra —
- * validação do fornecedor, status reenviáveis, transição para PENDENTE, logs e e-mail
- * BM_AVAILABLE — vive em `enviarBoletimFornecedor` (lib/bm-envio.ts), a mesma usada pelo envio
- * em lote. Esta rota só autentica, lê o payload e mantém as respostas de sempre.
+ * validação do fornecedor, elegibilidade (`avaliarElegibilidadeEnvioBm`), transição para PENDENTE,
+ * logs e e-mail BM_AVAILABLE — vive em `enviarBoletimFornecedor` (lib/bm-envio.ts), a mesma usada
+ * pelo envio em lote. Esta rota só autentica, valida o payload (ciclo real — nunca "GERAL") e
+ * mantém o formato das respostas.
  */
 export async function POST(request: NextRequest) {
   const admin = await requireAdmin();
@@ -18,6 +20,10 @@ export async function POST(request: NextRequest) {
 
   if (!colaboradorCodigo) {
     return NextResponse.json({ error: "ID do fornecedor é obrigatório." }, { status: 400 });
+  }
+  // Mesma regra de ciclo do lote: "GERAL" (visão de todos os ciclos), vazio ou malformado → 400.
+  if (!isCicloValido(ciclo)) {
+    return NextResponse.json({ error: ERRO_CICLO_INVALIDO }, { status: 400 });
   }
 
   const resultado = await enviarBoletimFornecedor({
