@@ -48,8 +48,15 @@ PROJECT_COLUMNS = {
     "contrato": ["CONTRATO"],
 }
 
+# Identidade do fornecedor numa linha de Documentos: SOMENTE a coluna PROJETISTA. Antes havia
+# fallback para "Evidência" e "Número do Documento" quando PROJETISTA vinha vazio (célula mesclada,
+# linha sem projetista): descrições ("HORAS DE ESTUDO…", "TUBULAÇÃO") e números de documento
+# ("GRD-…", "ORC-…") viravam "fornecedores". Linha de medição sem PROJETISTA agora bloqueia a carga
+# (SEM_PROJETISTA, ver assert_operational_identities_resolved) — nunca vira identidade.
+IDENTITY_HEADER = "PROJETISTA"
+
 PROFESSIONAL_COLUMNS = {
-    "nome": ["PROJETISTA", "Evidência", "Número do Documento"],
+    "nome": [IDENTITY_HEADER],
     "funcao": ["FUNÇÃO", "FUNÇÃO2", "Função"],
 }
 
@@ -1149,6 +1156,22 @@ def dataframe_from_excel_rows(rows: list[list[Any]], first_excel_row: int | None
     return df
 
 
+def merged_anchor_values(sheet, column: int, first_row: int, last_row: int) -> dict[int, Any]:
+    """{linha: valor da célula-âncora} para as linhas cobertas por um intervalo mesclado na coluna.
+    Em células mescladas o openpyxl só devolve valor na âncora (canto superior esquerdo); as demais
+    vêm vazias, embora a planilha mostre o mesmo conteúdo para todas as linhas do intervalo."""
+    values: dict[int, Any] = {}
+    for merged in sheet.merged_cells.ranges:
+        if not (merged.min_col <= column <= merged.max_col):
+            continue
+        if merged.max_row < first_row or merged.min_row > last_row:
+            continue
+        anchor = sheet.cell(merged.min_row, merged.min_col).value
+        for row_number in range(max(merged.min_row, first_row), min(merged.max_row, last_row) + 1):
+            values[row_number] = anchor
+    return values
+
+
 def read_excel_header_region(
     excel_path: Path,
     sheet_name: str,
@@ -1156,6 +1179,7 @@ def read_excel_header_region(
     key_header: str,
     max_header_row: int = 100,
     row_key_headers: list[str] | None = None,
+    merged_fill_headers: list[str] | None = None,
 ) -> pd.DataFrame:
     workbook = load_workbook(excel_path, read_only=False, data_only=True, keep_vba=should_keep_vba(excel_path))
     try:
@@ -1199,13 +1223,27 @@ def read_excel_header_region(
             if normalize_for_compare(header) in normalized_row_keys
         ]
 
+        # Colunas de identidade em células mescladas herdam o valor da âncora (só elas — valores
+        # numéricos mesclados nunca são duplicados).
+        merged_fill: dict[int, dict[int, Any]] = {}
+        normalized_fill = {normalize_for_compare(header) for header in (merged_fill_headers or [])}
+        for index, header in enumerate(headers):
+            if normalize_for_compare(header) in normalized_fill:
+                merged_fill[min_col + index] = merged_anchor_values(sheet, min_col + index, header_row + 1, sheet.max_row)
+
+        def cell_value(row_number: int, column: int) -> Any:
+            value = sheet.cell(row_number, column).value
+            if column in merged_fill and (value is None or (isinstance(value, str) and not value.strip())):
+                return merged_fill[column].get(row_number, value)
+            return value
+
         last_row = header_row
         for row_number in range(header_row + 1, sheet.max_row + 1):
-            if any(clean_text(sheet.cell(row_number, min_col + index).value) for index in row_key_indexes):
+            if any(clean_text(cell_value(row_number, min_col + index)) for index in row_key_indexes):
                 last_row = row_number
 
         rows = [
-            [sheet.cell(row_number, column).value for column in range(min_col, max_col + 1)]
+            [cell_value(row_number, column) for column in range(min_col, max_col + 1)]
             for row_number in range(header_row, last_row + 1)
         ]
         return dataframe_from_excel_rows(rows, first_excel_row=header_row)
@@ -1230,8 +1268,9 @@ def read_measurements_sheet(excel_path: Path, sheet_name: str) -> pd.DataFrame:
     df = read_excel_header_region(
         excel_path,
         sheet_name,
-        required_headers={"Número da Medição", "Projeto Referente", "PROJETISTA"},
+        required_headers={"Número da Medição", "Projeto Referente", IDENTITY_HEADER},
         key_header="Número da Medição",
+        merged_fill_headers=[IDENTITY_HEADER],
         row_key_headers=[
             "PROJETISTA",
             "Motivo Desconto",
@@ -2271,13 +2310,19 @@ class UnresolvedIdentityError(ValueError):
 
     def __init__(self, details: list[dict[str, Any]]):
         self.details = details
-        nomes = ", ".join(f'"{d["valor"]}"' for d in details[:12])
-        extra = f" (+{len(details) - 12})" if len(details) > 12 else ""
-        super().__init__(
-            "Importação bloqueada. Identidade operacional não resolvida: "
-            f"{nomes}{extra}. Vincule cada nome a um Profissional existente (alias) ou confirme-o como novo "
-            "profissional antes de reimportar. Nenhum dado foi alterado."
-        )
+        identidades = [d for d in details if d.get("status") != "SEM_PROJETISTA"]
+        sem_projetista = sum(d.get("ocorrencias", 0) for d in details if d.get("status") == "SEM_PROJETISTA")
+        partes = []
+        if identidades:
+            nomes = ", ".join(f'"{d["valor"]}"' for d in identidades[:12])
+            extra = f" (+{len(identidades) - 12})" if len(identidades) > 12 else ""
+            partes.append(
+                f"Identidade operacional não resolvida: {nomes}{extra}. Vincule cada nome a um Profissional "
+                "existente (alias) ou confirme-o como novo profissional antes de reimportar."
+            )
+        if sem_projetista:
+            partes.append(f"{sem_projetista} linha(s) de medição sem PROJETISTA: preencha a coluna na planilha.")
+        super().__init__("Importação bloqueada. " + " ".join(partes) + " Nenhum dado foi alterado.")
 
     def to_dict(self) -> dict[str, Any]:
         return {"code": self.code, "message": str(self), "details": self.details}
@@ -2441,7 +2486,7 @@ def assert_operational_identities_resolved(
         if status and resolver.resolve(status["codigo"])["status"] != "RESOLVIDO":
             resolver.declare(status["codigo"])
 
-    def registrar(valor: Any, origem: str, linha: int) -> None:
+    def registrar(valor: Any, origem: str, linha: int, coluna: str) -> None:
         nome = clean_text(valor)
         if not nome or is_expense_professional_name(nome):
             return
@@ -2450,11 +2495,31 @@ def assert_operational_identities_resolved(
             resolvidas.setdefault(normalize_person_name(nome), {"valor": nome, "via": resultado["via"], "codigo": resultado["codigo"]})
             return
         chave = (normalize_person_name(nome), origem)
-        item = ocorrencias.setdefault(chave, {"valor": nome, "origem": origem, "ciclo": ciclo, "status": resultado["status"],
+        item = ocorrencias.setdefault(chave, {"valor": nome, "origem": origem, "coluna": coluna, "ciclo": ciclo, "status": resultado["status"],
                                               "candidatos": resultado.get("candidatos", []), "ocorrencias": 0, "linhas": []})
+        if coluna not in item["coluna"].split(" / "):
+            item["coluna"] = f'{item["coluna"]} / {coluna}'
         item["ocorrencias"] += 1
         if len(item["linhas"]) < 10:
             item["linhas"].append(linha)
+
+    # Linha de medição (ou só de desconto) sem PROJETISTA: a carga gravaria a medição sem fornecedor.
+    # Bloqueia com a lista de linhas — nunca vira identidade, nunca oferece alias/cadastro.
+    sem_projetista: dict[str, dict[str, Any]] = {}
+
+    def registrar_sem_projetista(row: pd.Series, origem: str, linha: int) -> None:
+        item = sem_projetista.setdefault(origem, {"valor": "", "origem": origem, "coluna": IDENTITY_HEADER, "ciclo": ciclo,
+                                                  "status": "SEM_PROJETISTA", "candidatos": [], "ocorrencias": 0, "linhas": [],
+                                                  "exemplos": []})
+        item["ocorrencias"] += 1
+        if len(item["linhas"]) < 10:
+            item["linhas"].append(linha)
+        if len(item["exemplos"]) < 5:
+            item["exemplos"].append({
+                "linha": linha,
+                "numeroDocumento": clean_text(first_value(row, MEASUREMENT_COLUMNS["numero_documento"])),
+                "evidencia": (clean_text(first_value(row, MEASUREMENT_COLUMNS["evidencia"])) or "")[:80] or None,
+            })
 
     excel_rows = df.attrs.get("excel_row_numbers", [])
     for position, (index, row) in enumerate(df.iterrows()):
@@ -2469,7 +2534,10 @@ def assert_operational_identities_resolved(
             continue
         # Linha real do Excel (mesma fonte da pré-validação de negativos); fallback índice + cabeçalho.
         linha = excel_rows[position] if position < len(excel_rows) else int(index) + 2
-        registrar(professional_raw["nome"], sheet_name, linha)
+        if not clean_text(professional_raw["nome"]):
+            registrar_sem_projetista(row, sheet_name, linha)
+            continue
+        registrar(professional_raw["nome"], sheet_name, linha, IDENTITY_HEADER)
 
     for index, row in bm_aux_df.iterrows():
         raw = extract(row, BM_AUX_COLUMNS)
@@ -2482,15 +2550,15 @@ def assert_operational_identities_resolved(
         for chave in ("responsavel", "auxiliar"):
             nome = clean_text(raw[chave])
             if nome and canonical_codes.get(normalize_for_compare(nome), nome) in codigos_bm_aux:
-                registrar(nome, bm_aux_sheet_name or "Documentos Auxiliares", int(index) + 2)
+                registrar(nome, bm_aux_sheet_name or "Documentos Auxiliares", int(index) + 2, "Responsavel" if chave == "responsavel" else "Auxiliar")
 
     for index, row in payment_map_items_df.iterrows():
         item = build_payment_map_item(row, index + 1, canonical_codes, ciclo=ciclo)
         if item:
-            registrar(item["projetista_codigo"], payment_map_sheet_name or "MAPA PAGTO", int(index) + 2)
+            registrar(item["projetista_codigo"], payment_map_sheet_name or "MAPA PAGTO", int(index) + 2, IDENTITY_HEADER)
 
-    if ocorrencias:
-        details = []
+    if ocorrencias or sem_projetista:
+        details = list(sem_projetista.values())
         for item in sorted(ocorrencias.values(), key=lambda d: (-d["ocorrencias"], d["valor"])):
             sugestoes = cadastro_suggestions(cadastros, item["valor"])
             details.append({**item, "sugestoesCadastro": sugestoes})

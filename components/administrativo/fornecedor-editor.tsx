@@ -260,6 +260,8 @@ type UsuarioCriado = { usuario: string; nome: string; senha: string; email: stri
  */
 export function FornecedorEditor(props: {
   mode: "create";
+  /** Nome pré-preenchido (ex.: identidade da importação confirmada como novo fornecedor). Só o nome. */
+  nomeInicial?: string;
   onClose: () => void;
   onCreated: (usuarioCriado: UsuarioCriado) => void;
   onError: (message: string) => void;
@@ -273,7 +275,10 @@ export function FornecedorEditor(props: {
   onError: (message: string) => void;
   escEnabled?: boolean;
 }) {
-  const [createForm, setCreateForm] = useState<CreateForm>(NOVO_FORNECEDOR_FORM_INICIAL);
+  const [createForm, setCreateForm] = useState<CreateForm>(() => ({
+    ...NOVO_FORNECEDOR_FORM_INICIAL,
+    responsavel: props.mode === "create" ? (props.nomeInicial ?? "").trim() : "",
+  }));
   const [editForm, setEditForm] = useState<EditForm | null>(() => (props.mode === "edit" ? cadastroFormFromItem(props.item) : null));
   const [saving, setSaving] = useState(false);
 

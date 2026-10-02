@@ -105,7 +105,7 @@ test("resolver-identidade, candidatos-identidade, bulk-delete e criar-funcionár
 
 test("AdministrativoPanel/CadastroCard/FuncionarioCard: isAdmin continua isFullAdmin — quem entra só pela permissão extra tem a MESMA experiência reduzida do perfil ADMINISTRATIVO nativo (nenhuma ação nova precisou ser implementada no painel)", () => {
   const source = readSource("components/medicoes-app.tsx");
-  assert.match(source, /<AdministrativoPanel isAdmin=\{isFullAdmin\} \/>/);
+  assert.match(source, /<AdministrativoPanel\s+isAdmin=\{isFullAdmin\}[^>]*\/>/);
   assert.match(source, /isFullAdmin \|\| isAdministrativo \|\| temAcessoAdministrativoExtra/);
 });
 

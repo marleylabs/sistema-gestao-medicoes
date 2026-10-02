@@ -27,6 +27,7 @@ import { ComentarioDropdown } from "@/components/mapa-pagamento-table";
 import { FornecedoresPage } from "@/components/fornecedores";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { AdministrativoPanel } from "@/components/administrativo-panel";
+import { IdentidadesPendentes, type EtlUnresolvedIdentity } from "@/components/importacao/identidades-pendentes";
 import { HistoricoWorkspace } from "@/components/historico/historico-workspace";
 import { EvidenciasWorkspace } from "@/components/evidencias/evidencias-workspace";
 import { useViewportAlign } from "@/components/use-viewport-align";
@@ -120,6 +121,15 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
   const section: Section = naRotaFornecedores
     ? (VALID_SECTIONS.includes("fornecedores") ? "fornecedores" : defaultSection)
     : sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : defaultSection;
+  // Nome da importação confirmado como novo fornecedor: só em memória (nunca na URL) até o
+  // Painel Administrativo abrir o cadastro com ele.
+  const [novoFornecedorNome, setNovoFornecedorNome] = useState<string | null>(null);
+  const limparNovoFornecedorNome = useCallback(() => setNovoFornecedorNome(null), []);
+  function abrirNovoFornecedorDaImportacao(nome: string) {
+    setNovoFornecedorNome(nome);
+    setSection("administrativo");
+  }
+
   function setSection(s: Section) {
     // Entre / e /fornecedores o ciclo ativo segue pela URL (?ciclo=), para não voltar a "Geral".
     const cicloParam = activeCiclo !== CICLO_GERAL ? `ciclo=${activeCiclo}` : "";
@@ -839,6 +849,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
                   loadCiclos();
                   refreshAll();
                 }}
+                onNovoFornecedor={isFullAdmin ? abrirNovoFornecedorDaImportacao : undefined}
               />
             </div>
           </div>
@@ -860,7 +871,11 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
           perfil ADMINISTRATIVO nativo já tinha (ver/editar/criar fornecedor, importar planilha,
           sem ações sensíveis) — decisão explícita do pedido, nada novo a implementar no painel. */}
       {section === "administrativo" && (isFullAdmin || isAdministrativo || temAcessoAdministrativoExtra) && (
-        <AdministrativoPanel isAdmin={isFullAdmin} />
+        <AdministrativoPanel
+          isAdmin={isFullAdmin}
+          novoFornecedorNome={novoFornecedorNome}
+          onNovoFornecedorAberto={limparNovoFornecedorNome}
+        />
       )}
 
       {selectedAlerta && (
@@ -1097,18 +1112,6 @@ type EtlInvalidRow = {
   negativeFields: Record<string, string>;
 };
 
-/** Identidade operacional da planilha que não resolveu para um Profissional (etl UnresolvedIdentityError). */
-type EtlUnresolvedIdentity = {
-  valor: string;
-  origem: string;
-  ciclo?: string;
-  status: "NAO_RESOLVIDO" | "AMBIGUO" | "CONFLITO_ALIAS";
-  candidatos?: string[];
-  ocorrencias: number;
-  linhas: number[];
-  sugestoesCadastro?: string[];
-};
-
 type EtlStatus = {
   running: boolean;
   lastResult: Record<string, unknown> | null;
@@ -1121,11 +1124,15 @@ function isUnresolvedIdentity(row: EtlInvalidRow | EtlUnresolvedIdentity): row i
   return "valor" in row && "ocorrencias" in row;
 }
 
-const identityStatusLabels: Record<EtlUnresolvedIdentity["status"], string> = {
-  NAO_RESOLVIDO: "não encontrado",
-  AMBIGUO: "ambíguo",
-  CONFLITO_ALIAS: "código já é alias de outro fornecedor",
-};
+function identityBlockMessage(details: EtlUnresolvedIdentity[]) {
+  const semProjetista = details.filter((d) => d.status === "SEM_PROJETISTA").reduce((n, d) => n + d.ocorrencias, 0);
+  const nomes = details.filter((d) => d.status !== "SEM_PROJETISTA").length;
+  const partes = ["Importação bloqueada."];
+  if (nomes) partes.push(`${nomes} identidade(s) da planilha não correspondem a um fornecedor cadastrado: vincule cada nome a um fornecedor existente ou confirme-o como novo antes de reimportar.`);
+  if (semProjetista) partes.push(`${semProjetista} linha(s) de medição estão sem PROJETISTA.`);
+  partes.push("Nenhum dado foi alterado.");
+  return partes.join(" ");
+}
 
 const negativeMeasurementFieldLabels: Record<string, string> = {
   quantidade: "Quantidade",
@@ -1137,7 +1144,15 @@ const negativeMeasurementFieldLabels: Record<string, string> = {
   valor_reajuste: "Valor do reajuste",
 };
 
-function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[]; onImported: () => void }) {
+function ImportarPlanilhaSection({
+  ciclos,
+  onImported,
+  onNovoFornecedor,
+}: {
+  ciclos: CicloEntry[];
+  onImported: () => void;
+  onNovoFornecedor?: (nome: string) => void;
+}) {
   const [file, setFile]         = useState<File | null>(null);
   const [ciclo, setCiclo]       = useState("");
   const [uploading, setUploading] = useState(false);
@@ -1354,26 +1369,19 @@ function ImportarPlanilhaSection({ ciclos, onImported }: { ciclos: CicloEntry[];
               <div className="grid gap-3 rounded-lg bg-[#FEF2F2] p-3 text-xs text-[#B91C1C]">
                 <p className="whitespace-pre-line font-medium">
                   {status.lastErrorDetails?.length && status.lastErrorDetails.every(isUnresolvedIdentity)
-                    ? `Importação bloqueada. ${status.lastErrorDetails.length} identidade(s) da planilha não correspondem a um fornecedor cadastrado. Vincule cada nome a um fornecedor existente (alias) ou confirme-o como novo antes de reimportar. Nenhum dado foi alterado.`
+                    ? identityBlockMessage(status.lastErrorDetails)
                     : status.lastErrorDetails?.length
                     ? `Importação bloqueada. ${status.lastErrorDetails.length} medição(ões) com valores negativos foram encontradas. Revise as linhas abaixo. Nenhum dado foi alterado.`
                     : status.lastError}
                 </p>
                 {!!status.lastErrorDetails?.length && status.lastErrorDetails.every(isUnresolvedIdentity) && (
-                  <ol className="grid list-decimal gap-2 pl-5" data-testid="etl-identidades-nao-resolvidas">
-                    {status.lastErrorDetails.map((row) => (
-                      <li key={`${row.origem}-${row.valor}`}>
-                        <span className="font-semibold">&quot;{row.valor}&quot; — {identityStatusLabels[row.status] ?? row.status}</span>
-                        <span className="block">
-                          {row.origem}, {row.ocorrencias} ocorrência(s){row.linhas.length ? ` — linha(s) ${row.linhas.join(", ")}${row.ocorrencias > row.linhas.length ? "…" : ""}` : ""}
-                        </span>
-                        {!!row.candidatos?.length && <span className="block">Candidatos: {row.candidatos.join("; ")}</span>}
-                        {!!row.sugestoesCadastro?.length && (
-                          <span className="block text-[#92400E]">Sugestão (não aplicada): {row.sugestoesCadastro.join("; ")}</span>
-                        )}
-                      </li>
-                    ))}
-                  </ol>
+                  <div className="rounded-lg bg-white p-3">
+                    <IdentidadesPendentes
+                      detalhes={status.lastErrorDetails}
+                      ciclo={status.lastErrorDetails.find((d) => d.ciclo)?.ciclo ?? null}
+                      onNovoFornecedor={onNovoFornecedor}
+                    />
+                  </div>
                 )}
                 {!!status.lastErrorDetails?.length && !status.lastErrorDetails.every(isUnresolvedIdentity) && (
                   <ol className="grid list-decimal gap-2 pl-5">

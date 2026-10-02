@@ -864,7 +864,7 @@ function FiltrosPopover({
 
 type Painel =
   | { tipo: "fornecedor"; id: string; modo: "detalhe" | "edicao" }
-  | { tipo: "novo-fornecedor" }
+  | { tipo: "novo-fornecedor"; nomeInicial?: string }
   | { tipo: "funcionario"; id: string }
   | { tipo: "novo-funcionario" }
   | { tipo: "importar" };
@@ -879,7 +879,16 @@ type Confirmacao = { titulo: string; mensagem: ReactNode; confirmar: string; ton
  * visualizar/editar/cadastrar fornecedor = quem acessa a tela; inativar/reativar, exclusão
  * definitiva, ações de acesso e gestão de funcionários = ADMIN (isAdmin).
  */
-export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) {
+export function AdministrativoPanel({
+  isAdmin = false,
+  novoFornecedorNome,
+  onNovoFornecedorAberto,
+}: {
+  isAdmin?: boolean;
+  /** Nome vindo da resolução de identidades da importação: abre "Novo fornecedor" já com ele. */
+  novoFornecedorNome?: string | null;
+  onNovoFornecedorAberto?: () => void;
+}) {
   const [items, setItems] = useState<CadastroFornecedor[]>([]);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [loading, setLoading] = useState(true);
@@ -901,6 +910,11 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
   const [situacaoFiltro, setSituacaoFiltro] = useState<Set<SituacaoOpcao>>(new Set());
 
   const [painel, setPainel] = useState<Painel | null>(null);
+  useEffect(() => {
+    if (!novoFornecedorNome) return;
+    setPainel({ tipo: "novo-fornecedor", nomeInicial: novoFornecedorNome });
+    onNovoFornecedorAberto?.();
+  }, [novoFornecedorNome, onNovoFornecedorAberto]);
   const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   // Credencial (senha temporária) exibida SOMENTE logo após criar usuário ou redefinir senha —
@@ -1466,6 +1480,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
       {painel?.tipo === "novo-fornecedor" && (
         <FornecedorEditor
           mode="create"
+          nomeInicial={painel.nomeInicial}
           escEnabled={!algumModalAberto}
           onClose={() => setPainel(null)}
           onCreated={async (usuarioCriado) => {
