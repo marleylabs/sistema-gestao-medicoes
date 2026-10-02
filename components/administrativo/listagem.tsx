@@ -73,6 +73,7 @@ export function FornecedoresCadastroTable({
   isAdmin,
   selectedIds,
   allSelected,
+  someSelected = false,
   onToggleSelected,
   onToggleAll,
   onOpen,
@@ -81,6 +82,8 @@ export function FornecedoresCadastroTable({
   isAdmin: boolean;
   selectedIds: Set<string>;
   allSelected: boolean;
+  /** Parte (não todos) dos filtrados selecionada → cabeçalho em estado "indeterminate". */
+  someSelected?: boolean;
   onToggleSelected: (id: string) => void;
   onToggleAll: () => void;
   onOpen: (item: CadastroFornecedor) => void;
@@ -93,7 +96,14 @@ export function FornecedoresCadastroTable({
             <tr>
               {isAdmin && (
                 <Th className="w-10 pr-0">
-                  <input type="checkbox" checked={allSelected} onChange={onToggleAll} aria-label="Selecionar todos os fornecedores filtrados" className="h-3.5 w-3.5 cursor-pointer accent-[var(--primary)]" />
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                    onChange={onToggleAll}
+                    aria-label="Selecionar todos os fornecedores filtrados"
+                    className="h-3.5 w-3.5 cursor-pointer accent-[var(--primary)]"
+                  />
                 </Th>
               )}
               <Th>Fornecedor</Th>
@@ -160,6 +170,21 @@ export function FornecedoresCadastroTable({
       </div>
 
       <ul className="divide-y divide-[#EFEFED] md:hidden" data-testid="administrativo-lista-mobile">
+        {isAdmin && (
+          <li className="bg-[#FAFAF8]">
+            <label className="flex min-h-10 cursor-pointer items-center gap-3 px-4 py-2 text-[12px] font-semibold text-[var(--muted-foreground)]">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                onChange={onToggleAll}
+                aria-label="Selecionar todos os fornecedores filtrados"
+                className="h-4 w-4 accent-[var(--primary)]"
+              />
+              Selecionar todos ({itens.length})
+            </label>
+          </li>
+        )}
         {itens.map((item) => (
           <li key={item.id} className="flex items-stretch">
             {isAdmin && (

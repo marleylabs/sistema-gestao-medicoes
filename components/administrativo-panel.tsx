@@ -13,6 +13,9 @@ import { FornecedorEditor, FuncionarioCreatePanel } from "@/components/administr
 import { FornecedorDetalhe, FuncionarioDetalhe } from "@/components/administrativo/detalhes";
 import { AdministrativoKpis, FornecedoresCadastroTable, FuncionariosTable } from "@/components/administrativo/listagem";
 import { ImportarConsultaPanel, type ImportAtencaoDetalhe, type ImportResult } from "@/components/administrativo/importar-panel";
+import { PrimeiroAcessoLoteDialog } from "@/components/administrativo/primeiro-acesso-lote-dialog";
+import { BulkSelectionBar } from "@/components/bulk-selection-bar";
+import { avaliarElegibilidadePrimeiroAcesso } from "@/lib/primeiro-acesso-elegibilidade";
 
 type IdentityCandidateSummary = {
   codigo: string;
@@ -911,6 +914,8 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // Exclusão individual (Zona de risco do detalhe) e em massa (seleção) — mesmo modal/endpoint.
   const [deleteTargets, setDeleteTargets] = useState<CadastroFornecedor[] | null>(null);
+  // Envio de primeiro acesso em lote: snapshot da seleção no momento da confirmação.
+  const [primeiroAcessoLote, setPrimeiroAcessoLote] = useState<CadastroFornecedor[] | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -1026,10 +1031,15 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
   const allFilteredSelected = filtered.length > 0 && filtered.every((item) => selectedIds.has(item.id));
   // A seleção sobrevive à troca de filtro/busca; ações em massa operam sobre TODA a seleção real.
   const selectedItems = items.filter((item) => selectedIds.has(item.id));
+  const someFilteredSelected = filtered.some((item) => selectedIds.has(item.id));
+  // A seleção sobrevive a filtro/busca — a barra diz quantos selecionados estão fora da visualização.
+  const filteredIds = new Set(filtered.map((item) => item.id));
+  const selecionadosOcultos = selectedItems.filter((item) => !filteredIds.has(item.id)).length;
+  const aptosPrimeiroAcesso = selectedItems.filter((item) => avaliarElegibilidadePrimeiroAcesso(item.acesso, item.email).elegivel).length;
   const pendencias = items.filter((item) => item.pendencias.length > 0);
 
   const algumModalAberto = Boolean(
-    confirmacao || credencial || resetSenhaTarget || primeiroAcessoTarget || perfilTarget || permissoesTarget || deleteTargets || resolverItem,
+    confirmacao || credencial || resetSenhaTarget || primeiroAcessoTarget || perfilTarget || permissoesTarget || deleteTargets || resolverItem || primeiroAcessoLote,
   );
 
   function pedirResetSenha(usuarioId: string, nome: string, email: string | null) {
@@ -1355,6 +1365,34 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
           </div>
         )}
 
+        {isAdmin && aba === "fornecedores" && (
+          <BulkSelectionBar
+            count={selectedItems.length}
+            singular="fornecedor selecionado"
+            plural="fornecedores selecionados"
+            onClear={clearSelection}
+            detail={
+              <>
+                <span data-testid="bulk-aptos-primeiro-acesso">
+                  {aptosPrimeiroAcesso === 1 ? "1 apto ao primeiro acesso" : `${aptosPrimeiroAcesso} aptos ao primeiro acesso`}
+                </span>
+                {selecionadosOcultos > 0 && (
+                  <span> · {selecionadosOcultos === 1 ? "1 selecionado fora da visualização atual" : `${selecionadosOcultos} selecionados fora da visualização atual`}</span>
+                )}
+              </>
+            }
+          >
+            <Button variant="danger" onClick={() => setDeleteTargets(selectedItems)}>
+              <Trash2 size={13} />
+              Excluir definitivamente
+            </Button>
+            <Button onClick={() => setPrimeiroAcessoLote(selectedItems)}>
+              <Send size={13} />
+              Enviar primeiro acesso
+            </Button>
+          </BulkSelectionBar>
+        )}
+
         {loading && totalAba === 0 ? (
           <div className="px-6 py-14 text-center text-sm text-[var(--muted-foreground)]">Carregando cadastros...</div>
         ) : totalAba === 0 ? (
@@ -1375,6 +1413,7 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
             isAdmin={isAdmin}
             selectedIds={selectedIds}
             allSelected={allFilteredSelected}
+            someSelected={someFilteredSelected}
             onToggleSelected={toggleSelected}
             onToggleAll={toggleSelectAllFiltered}
             onOpen={(item) => setPainel({ tipo: "fornecedor", id: item.id, modo: "detalhe" })}
@@ -1552,20 +1591,20 @@ export function AdministrativoPanel({ isAdmin = false }: { isAdmin?: boolean }) 
         />
       )}
 
-      {isAdmin && selectedItems.length > 0 && (
-        <div className="fixed bottom-5 left-1/2 z-[55] flex max-w-[calc(100vw-32px)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-xl border border-[var(--border)] bg-white px-4 py-3 shadow-lg">
-          <span className="text-xs font-bold text-[var(--foreground)]">
-            {selectedItems.length} {selectedItems.length === 1 ? "fornecedor selecionado" : "fornecedores selecionados"}
-          </span>
-          <Button variant="secondary" onClick={clearSelection}>Cancelar seleção</Button>
-          <Button variant="danger" onClick={() => setDeleteTargets(selectedItems)}>
-            <Trash2 size={13} />
-            Excluir definitivamente
-          </Button>
-        </div>
-      )}
-
       {deleteTargets && <DeleteConfirmModal items={deleteTargets} onClose={() => setDeleteTargets(null)} onDone={handleDeletionDone} />}
+
+      {primeiroAcessoLote && (
+        <PrimeiroAcessoLoteDialog
+          itens={primeiroAcessoLote}
+          onClose={() => setPrimeiroAcessoLote(null)}
+          onProcessado={() => {
+            // Seleção processada sai; busca/filtros/aba ficam como estavam (só os dados recarregam).
+            const processados = new Set(primeiroAcessoLote.map((item) => item.id));
+            setSelectedIds((prev) => new Set([...prev].filter((id) => !processados.has(id))));
+            load();
+          }}
+        />
+      )}
 
       {resolverItem && <ResolverIdentidadeModal item={resolverItem} onClose={() => setResolverItem(null)} onResolved={handleIdentidadeResolvida} />}
 
