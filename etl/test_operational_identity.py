@@ -113,23 +113,32 @@ def test_bm_aux_alias_reports_alias_via_and_uses_canonical_cadastro() -> None:
     assert find_cadastro_for_generated_payment(cadastros, {"codigo": "CRISTIANO JEFERSON", "nome": "CRISTIANO JEFERSON"}, sug) is None
 
 
-def test_preflight_blocks_unresolved_and_ambiguous_with_details() -> None:
-    cadastros = {"x": {"colaborador_codigo": "PAULO ROBERTO SOUZA", "responsavel": "PAULO ROBERTO SOUZA"}}
-    rows = [normal_row(PROJETISTA="PAULO SOUZA"), normal_row(PROJETISTA="PAULO SOUZA"), normal_row(PROJETISTA="AMBIGUO"), normal_row(PROJETISTA="RONALD LEAL")]
+def test_preflight_blocks_ambiguous_alias_but_not_unknown_name() -> None:
+    """Regra nova: nome plausível sem cadastro (HUGO PRADO) NÃO bloqueia — vira pendente; alias
+    ambíguo (mesmo alias em dois Profissionais) é inconsistência e continua bloqueando."""
+    cadastros = {"x": {"colaborador_codigo": "HUGO ALVES PRADO", "responsavel": "HUGO ALVES PRADO"}}
+    rows = [normal_row(PROJETISTA="HUGO PRADO"), normal_row(PROJETISTA="HUGO PRADO"), normal_row(PROJETISTA="AMBIGUO"), normal_row(PROJETISTA=ALIASES[0]["alias"])]
     try:
         preflight(rows, resolver(), cadastros)
     except UnresolvedIdentityError as error:
         by_name = {d["valor"]: d for d in error.details}
-        assert set(by_name) == {"PAULO SOUZA", "AMBIGUO"}
-        assert by_name["PAULO SOUZA"]["status"] == "NAO_RESOLVIDO"
-        assert by_name["PAULO SOUZA"]["ocorrencias"] == 2 and by_name["PAULO SOUZA"]["linhas"] == [2, 3]
-        assert by_name["PAULO SOUZA"]["origem"] == "Documentos" and by_name["PAULO SOUZA"]["ciclo"] == "2608"
-        assert by_name["PAULO SOUZA"]["sugestoesCadastro"] == ["PAULO ROBERTO SOUZA"]  # só informativa
+        assert set(by_name) == {"AMBIGUO"}
         assert by_name["AMBIGUO"]["status"] == "AMBIGUO"
         assert error.to_dict()["code"] == "UNRESOLVED_OPERATIONAL_IDENTITIES"
         assert "Nenhum dado foi alterado" in str(error)
     else:
-        raise AssertionError("Preflight deveria bloquear PAULO SOUZA e o alias ambíguo.")
+        raise AssertionError("Preflight deveria bloquear o alias ambíguo.")
+
+
+def test_preflight_unknown_plausible_name_becomes_pending() -> None:
+    cadastros = {"x": {"colaborador_codigo": "HUGO ALVES PRADO", "responsavel": "HUGO ALVES PRADO"}}
+    summary = preflight([normal_row(PROJETISTA="HUGO PRADO"), normal_row(PROJETISTA="HUGO PRADO"), normal_row(PROJETISTA=ALIASES[0]["alias"])], resolver(), cadastros)
+    [pendente] = summary["identidades_pendentes"]
+    assert pendente["valor"] == "HUGO PRADO" and pendente["ocorrencias"] == 2 and pendente["linhas"] == [2, 3]
+    assert pendente["origem"] == "Documentos"
+    assert pendente["sugestoesCadastro"] == ["HUGO ALVES PRADO"]  # só informativa, nunca aplicada
+    assert summary["plano"]["pendentes"]["HUGO PRADO"]["ciclo"] == "2608"
+    assert summary["identidades_por_via"] == {"ALIAS": 1}
 
 
 def test_preflight_blocks_base_code_that_is_alias_of_other_identity() -> None:
@@ -156,23 +165,24 @@ def test_server_exposes_identity_details() -> None:
     original = server.ingest
 
     def reject(**_kwargs):
-        raise UnresolvedIdentityError([{"valor": "PAULO SOUZA", "origem": "Documentos", "status": "NAO_RESOLVIDO", "ocorrencias": 1, "linhas": [5]}])
+        raise UnresolvedIdentityError([{"valor": "HUGO PRADO", "origem": "Documentos", "status": "AMBIGUO", "ocorrencias": 1, "linhas": [5]}])
 
     try:
         server.ingest = reject
         server.run_etl(b"fixture", "2608")
         assert server._last_error_type == "validation"
-        assert server._last_error_details[0]["valor"] == "PAULO SOUZA"
-        assert "PAULO SOUZA" in server._last_error
+        assert server._last_error_details[0]["valor"] == "HUGO PRADO"
+        assert "HUGO PRADO" in server._last_error
     finally:
         server.ingest = original
 
 
-def test_unresolved_identity_stops_before_transaction_begin() -> None:
-    """Nome inédito bloqueia ANTES de engine.begin(): nada de full_refresh/limpeza parcial do ciclo."""
+def test_structural_identity_error_stops_before_transaction_begin() -> None:
+    """Erro estrutural (linha com dados sem PROJETISTA) bloqueia ANTES de engine.begin(): nada de
+    full_refresh/limpeza parcial do ciclo."""
     import ingest_medicoes as ingest_module
 
-    df = pd.DataFrame([normal_row(PROJETISTA="NOME INEDITO SEM ALIAS")])
+    df = pd.DataFrame([normal_row(PROJETISTA=None)])
     df.attrs["excel_row_numbers"] = [7]
 
     class ReadOnlyConnection:
@@ -202,6 +212,7 @@ def test_unresolved_identity_stops_before_transaction_begin() -> None:
         "latest_fonte_medicao_by_collaborator": lambda _conn: {},
         "load_operational_identity_resolver": lambda _conn: resolver(),
         "latest_cadastros_by_collaborator": lambda _conn: {},
+        "load_import_decisions": lambda *_a, **_k: {"nomes_descartados": {}, "linhas_descartadas": set(), "existentes": {}},
         "reflect_tables": lambda _engine: (None, None, None, None, None, None),
         "build_generated_payment_context": lambda *_a, **_k: {"ciclo": "2608", "mes_referencia": None, "producao_label": "PRODUÇÃO", "producao_inicio": None,
                                                                "producao_fim": None, "ato_label": "ATO", "ato_ciclo": "2608", "contratos": [], "rateio": []},
@@ -214,9 +225,9 @@ def test_unresolved_identity_stops_before_transaction_begin() -> None:
         try:
             ingest_module.ingest(Path("fixture.xlsx"), "Documentos", "Base", "MAPA PAGTO", "Documentos Auxiliares", "postgresql://fixture", False, True, "2608")
         except UnresolvedIdentityError as error:
-            assert error.details[0]["valor"] == "NOME INEDITO SEM ALIAS" and error.details[0]["linhas"] == [7]
+            assert error.details[0]["status"] == "SEM_PROJETISTA" and error.details[0]["linhas"] == [7]
         else:
-            raise AssertionError("Identidade inédita deveria bloquear a importação.")
+            raise AssertionError("Linha sem PROJETISTA deveria bloquear a importação.")
         assert engine.begin_called is False
     finally:
         for name, original in originals.items():

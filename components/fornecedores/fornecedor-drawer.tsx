@@ -81,7 +81,9 @@ export function FornecedorDrawer({
             <p className="text-eyebrow mb-1 text-[var(--primary)]">Fornecedor</p>
             <h2 className="text-section-title break-words text-[var(--foreground)]">{nome}</h2>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge variant={meta.badge} className="whitespace-nowrap">{meta.label}</Badge>
+              {item.cadastroPendente
+                ? <Badge variant="warning" className="whitespace-nowrap">Cadastro pendente</Badge>
+                : <Badge variant={meta.badge} className="whitespace-nowrap">{meta.label}</Badge>}
               {sgcEntry && sgcEntry.revisaoNumero > 0 && <span className="font-technical text-[11px] text-[var(--muted-foreground)]">Rev. {sgcEntry.revisaoNumero}</span>}
               {codigo && <span className="font-technical text-[11px] text-[var(--muted-foreground)]">{codigo}</span>}
             </div>

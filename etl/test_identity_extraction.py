@@ -5,7 +5,8 @@ Bug pós-deploy: com PROJETISTA vazio (célula mesclada ou linha sem projetista)
 e números de orçamento viravam "identidades não resolvidas". Agora:
 - a identidade vem SÓ de PROJETISTA;
 - célula mesclada de PROJETISTA herda o valor da âncora (só essa coluna);
-- linha de medição sem PROJETISTA bloqueia como SEM_PROJETISTA (nunca vira alias/cadastro)."""
+- linha de medição sem PROJETISTA bloqueia como SEM_PROJETISTA (nunca vira alias/cadastro) até ser
+  corrigida ou descartada conscientemente; nome desconhecido não bloqueia (vira pendente)."""
 from __future__ import annotations
 
 import tempfile
@@ -103,29 +104,29 @@ def test_rows_without_projetista_block_and_never_become_identities() -> None:
         valores = {d["valor"] for d in error.details}
         assert not any(v.startswith(("GRD", "ORC", "HORAS", "TUBULA")) for v in valores if v)
         mensagem = str(error)
-        assert "3 linha(s) de medição sem PROJETISTA" in mensagem and "Nenhum dado foi alterado" in mensagem
-        assert "Identidade operacional não resolvida" not in mensagem
+        assert "3 linha(s) possuem dados de medição, mas não têm PROJETISTA válido" in mensagem and "Nenhum dado foi alterado" in mensagem
+        assert "descarte conscientemente" in mensagem
     else:
         raise AssertionError("Linhas de medição sem PROJETISTA deveriam bloquear a importação.")
 
 
-def test_unresolved_name_detail_carries_column_and_sorts_after_missing() -> None:
+def test_missing_projetista_blocks_while_unknown_name_stays_pending() -> None:
+    """Linha com dados sem PROJETISTA bloqueia; o nome desconhecido ao lado dela NÃO é erro (pendente)."""
     rows = [normal_row(PROJETISTA="NOME SINTETICO NOVO"), normal_row(PROJETISTA=None), normal_row(PROJETISTA="NOME SINTETICO NOVO")]
     df = pd.DataFrame(rows)
     df.attrs["excel_row_numbers"] = [10, 11, 12]
-    bm_aux = pd.DataFrame([{"Responsavel": "AUXILIAR SINTETICO", "Ciclo": "2608"}])
     try:
-        preflight(df, bm_aux)
+        preflight(df)
     except UnresolvedIdentityError as error:
-        by_status = [d["status"] for d in error.details]
-        assert by_status[0] == "SEM_PROJETISTA"
-        nomes = {d["valor"]: d for d in error.details if d["status"] != "SEM_PROJETISTA"}
-        assert nomes["NOME SINTETICO NOVO"]["coluna"] == "PROJETISTA" and nomes["NOME SINTETICO NOVO"]["linhas"] == [10, 12]
+        assert [d["status"] for d in error.details] == ["SEM_PROJETISTA"]
         assert error.details[0]["linhas"] == [11]
-        mensagem = str(error)
-        assert '"NOME SINTETICO NOVO"' in mensagem and "1 linha(s) de medição sem PROJETISTA" in mensagem
+        assert len(error.details[0]["chaves"]) == 1  # chave estável para o descarte consciente
+        assert '"NOME SINTETICO NOVO"' not in str(error)
     else:
-        raise AssertionError("Nome sem correspondência deveria bloquear.")
+        raise AssertionError("Linha sem PROJETISTA deveria bloquear.")
+    summary = preflight(df.iloc[[0, 2]])
+    assert [p["valor"] for p in summary["identidades_pendentes"]] == ["NOME SINTETICO NOVO"]
+    assert summary["plano"]["pendentes"]["NOME SINTETICO NOVO"]["coluna"] == "PROJETISTA"
 
 
 def test_fully_resolved_sheet_passes() -> None:

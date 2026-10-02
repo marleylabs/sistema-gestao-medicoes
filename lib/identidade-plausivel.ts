@@ -9,8 +9,9 @@ const PREFIXO_DOCUMENTO = /^(GRD|ORC|DOC|MC|RT|LD|MD|PT)[-_./][A-Z0-9]*[-_./]/i;
 export function pareceNomeDeFornecedor(valor: string | null | undefined): boolean {
   const texto = String(valor ?? "").trim();
   if (texto.length < 3 || texto.length > 80) return false;
-  if (/\d/.test(texto)) return false; // nomes não têm dígitos; documentos, GRDs e orçamentos têm
-  if (PREFIXO_DOCUMENTO.test(texto)) return false;
+  // Documento/GRD/orçamento/ano: prefixo de documento ou 4+ dígitos seguidos. Um dígito isolado é
+  // nome legítimo de empresa ("A1 ENGENHARIA", "3D PROJETOS", "ENGENHARIA 360").
+  if (PREFIXO_DOCUMENTO.test(texto) || /\d{4,}/.test(texto)) return false;
   const letras = texto.replace(/[^\p{L}]/gu, "");
   if (letras.length < 3) return false;
   const palavras = texto.split(/\s+/).filter(Boolean);

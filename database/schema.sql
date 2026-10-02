@@ -176,6 +176,33 @@ create table if not exists profissional_aliases (
 create unique index if not exists profissional_aliases_profissional_alias_key on profissional_aliases(profissional_id, alias_normalizado);
 create index if not exists profissional_aliases_alias_normalizado_idx on profissional_aliases(alias_normalizado);
 
+-- ─── importacao_identidades ──────────────────────────────────
+-- Identidade da importação por ciclo (PENDENTE/VINCULADO/AUTO_VINCULADO/DESCARTADO) e decisão de
+-- descartar linha sem PROJETISTA. Ver prisma/schema.prisma:ImportacaoIdentidade.
+create table if not exists importacao_identidades (
+    id                  uuid        primary key default gen_random_uuid(),
+    ciclo               text        not null,
+    tipo                text        not null,
+    chave               text        not null,
+    valor_bruto         text        not null,
+    origem              text        not null,
+    status              text        not null,
+    profissional_id     uuid        references profissionais(id) on delete set null on update cascade,
+    ocorrencias         integer     not null default 0,
+    linhas              jsonb       not null default '[]',
+    metadata            jsonb       not null default '{}',
+    resolvido_por_id    uuid,
+    resolvido_por_nome  text,
+    resolvido_at        timestamptz,
+    descartado_por_id   uuid,
+    descartado_por_nome text,
+    descartado_at       timestamptz,
+    created_at          timestamptz not null default now(),
+    updated_at          timestamptz not null default now()
+);
+create unique index if not exists importacao_identidades_ciclo_tipo_chave_key on importacao_identidades(ciclo, tipo, chave);
+create index if not exists importacao_identidades_ciclo_status_idx on importacao_identidades(ciclo, status);
+
 -- ─── cadastros administrativos de fornecedores ───────────────
 create table if not exists cadastros_fornecedores (
     id                   uuid        primary key default gen_random_uuid(),

@@ -73,6 +73,9 @@ export const test = base.extend<{ forEachTest: void }>({
         // 503 simulado de GET /api/colaborador/medicoes — estado de erro de "Minhas Medições",
         // intencional em e2e/minhas-medicoes.spec.ts (route.fulfill; nunca vem do backend real).
         if (url.endsWith("/api/colaborador/medicoes") && response.status() === 503) return;
+        // 422 de GET /api/admin/etl é o retorno CORRETO de uma importação bloqueada por erro de
+        // validação (ex.: linha sem PROJETISTA) — intencional em e2e/importacao-identidades.spec.ts.
+        if (url.endsWith("/api/admin/etl") && response.status() === 422) return;
         networkErrors.push(`${response.status()} ${response.request().method()} ${url}`);
       });
 

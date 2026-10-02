@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     carregar: async (ids) => {
       const itens = await prisma.mapaPagamentoItem.findMany({
         where: { id: { in: ids } },
-        select: { id: true, ciclo: true, projetistaCodigo: true, responsavel: true, updatedAt: true },
+        select: { id: true, ciclo: true, projetistaCodigo: true, responsavel: true, updatedAt: true, identidadeImportacao: { select: { status: true } } },
       });
       const codigos = [...new Set(itens.map((i) => i.projetistaCodigo).filter((c): c is string => !!c))];
       const bms = await prisma.sgcAprovacaoMedicao.findMany({
@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
           atualizadoEm: (i.projetistaCodigo ? ultimaAlteracao.get(i.projetistaCodigo) : null) ?? i.updatedAt,
           bm: bm ? { status: bm.status, statusConferencia: bm.statusConferencia, revisaoSolicitadaAt: bm.revisaoSolicitadaAt } : null,
           enviadoNestaOperacao: bm ? enviadosPorEsta.has(bm.id) : false,
+          cadastroPendente: i.identidadeImportacao?.status === "PENDENTE",
         }];
       }));
     },

@@ -62,6 +62,9 @@ export default defineConfig({
     env: {
       NODE_ENV: "development",
       DATABASE_URL: process.env.DATABASE_URL_TEST ?? "",
+      // ETL real da suíte (e2e/importacao-identidades.spec.ts sobe etl/server.py nesta porta, no
+      // mesmo Postgres E2E) — nunca o ETL da aplicação.
+      ETL_SERVER_URL: process.env.E2E_ETL_SERVER_URL ?? "http://127.0.0.1:4011",
       APP_URL: baseURL,
       AUTH_SESSION_SECRET: process.env.AUTH_SESSION_SECRET ?? "e2e-session-secret-com-pelo-menos-32-caracteres",
       AUTH_COOKIE_SECURE: "false",
@@ -92,7 +95,6 @@ export default defineConfig({
       // /15min por IP+usuário) é correto em produção mas dispara 429 nesse volume de reuso. Só
       // desliga aqui, nunca em produção (nada fora deste webServer define esta variável).
       AUTH_RATE_LIMIT_DISABLED: "true",
-      ETL_SERVER_URL: process.env.ETL_SERVER_URL ?? "http://127.0.0.1:4000",
     },
   },
 });

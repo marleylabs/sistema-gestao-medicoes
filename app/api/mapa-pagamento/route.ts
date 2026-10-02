@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
       ...(isGeral ? { ciclo: { in: ciclosPermitidos } } : { ciclo }),
     },
     orderBy: [{ ciclo: "desc" }, { ordem: "asc" }],
+    include: { identidadeImportacao: { select: { id: true, status: true } } },
   });
   const cadastros = await prisma.cadastroFornecedor.findMany({
     select: {
@@ -57,12 +58,17 @@ export async function GET(request: NextRequest) {
     : (participacaoPorCiclo.get(ciclo)?.contratos ?? []);
 
   const itensSerializados = itens.map((item) => {
-    const serializado = serializeMapaPagamentoItem(item, cadastroFornecedorOverrideForMapaItem(item, cadastros));
+    // Cadastro pendente: nunca exibe dados de um cadastro "parecido" (o override casa por nome
+    // aproximado/CNPJ) — o registro ainda não tem vínculo cadastral.
+    const cadastroPendente = item.identidadeImportacao?.status === "PENDENTE";
+    const serializado = serializeMapaPagamentoItem(item, cadastroPendente ? null : cadastroFornecedorOverrideForMapaItem(item, cadastros));
     const participacao = item.projetistaCodigo
       ? participacaoPorCiclo.get(item.ciclo)?.porAlias[normalizeAlias(item.projetistaCodigo)]
       : undefined;
     return {
       ...serializado,
+      cadastroPendente,
+      identidadeImportacaoId: cadastroPendente ? item.identidadeImportacao?.id ?? null : null,
       participacaoContratos: participacao?.participacoes ?? {},
       documentosPendentesContrato: participacao?.documentosPendentes ?? 0,
       valorTotalDocumentosContrato: participacao?.valorTotal ?? 0,

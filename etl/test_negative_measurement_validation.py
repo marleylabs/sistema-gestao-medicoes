@@ -191,6 +191,7 @@ def test_invalid_rows_stop_before_transaction_begin() -> None:
         "latest_fonte_medicao_by_collaborator": lambda _conn: {},
         "load_operational_identity_resolver": lambda _conn: ingest_module.OperationalIdentityResolver([], []),
         "latest_cadastros_by_collaborator": lambda _conn: {},
+        "load_import_decisions": lambda *_a, **_k: {"nomes_descartados": {}, "linhas_descartadas": set(), "existentes": {}},
         "reflect_tables": lambda _engine: (None, None, None, None, None, None),
         "build_generated_payment_context": lambda *_args, **_kwargs: {
             "ciclo": "2608",

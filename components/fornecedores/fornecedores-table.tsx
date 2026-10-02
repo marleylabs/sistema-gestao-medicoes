@@ -86,6 +86,16 @@ function Distribuicao({ item, contratos }: { item: MapaPagamentoItem; contratos:
   );
 }
 
+/** Cadastro pendente de vínculo: badge com texto (nunca só cor) e motivo do BM indisponível. */
+function CadastroPendenteBadge() {
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <Badge variant="warning" className="shrink-0 whitespace-nowrap">Cadastro pendente</Badge>
+      <span className="text-[10px] text-[var(--muted-foreground)]">BM indisponível</span>
+    </div>
+  );
+}
+
 function StatusCell({ sgcEntry }: { sgcEntry?: SgcStatusEntry }) {
   const meta = getMapaPagamentoStatusMeta(sgcEntry?.status ?? "AGUARDANDO_ENVIO", sgcEntry?.statusConferencia);
   return (
@@ -152,7 +162,8 @@ export function FornecedoresTable({
                       onOpen(item);
                     }
                   }}
-                  className={`cursor-pointer border-b border-[#EFEFED] transition-colors last:border-0 hover:bg-[#FAFAF8] focus-visible:bg-[#FAFAF8] focus-visible:outline-none ${selecao?.selecionados.has(item.id) ? "bg-[#FDF6F6]" : ""}`}
+                  data-cadastro-pendente={item.cadastroPendente ? "true" : undefined}
+                  className={`cursor-pointer border-b border-[#EFEFED] transition-colors last:border-0 hover:bg-[#FAFAF8] focus-visible:bg-[#FAFAF8] focus-visible:outline-none ${item.cadastroPendente ? "bg-[#F4F4F2] text-[var(--muted-foreground)]" : ""} ${selecao?.selecionados.has(item.id) ? "bg-[#FDF6F6]" : ""}`}
                 >
                   {selecao && (
                     // O clique no checkbox nunca abre o detalhe da linha.
@@ -164,7 +175,7 @@ export function FornecedoresTable({
                     </td>
                   )}
                   <td className="px-2.5 py-3 xl:px-4">
-                    <p className="max-w-[160px] truncate font-semibold text-[var(--foreground)] xl:max-w-[260px]">{item.responsavel ?? codigo ?? "–"}</p>
+                    <p className={`max-w-[160px] truncate font-semibold xl:max-w-[260px] ${item.cadastroPendente ? "text-[var(--muted-foreground)]" : "text-[var(--foreground)]"}`}>{item.responsavel ?? codigo ?? "–"}</p>
                     {codigo && <p className="mt-0.5 font-technical text-[10px] text-[var(--muted-foreground)]">{codigo}</p>}
                   </td>
                   <td className="hidden px-2.5 py-3 xl:px-4 min-[1400px]:table-cell">
@@ -174,7 +185,7 @@ export function FornecedoresTable({
                   <td className="hidden px-2.5 py-3 xl:table-cell xl:px-4"><Distribuicao item={item} contratos={contratos} /></td>
                   <td className="hidden px-2.5 py-3 text-[var(--muted-foreground)] xl:px-4 min-[1400px]:table-cell">{item.alocacao ?? "–"}</td>
                   <td className="whitespace-nowrap px-2.5 py-3 text-right font-semibold tabular-nums text-[var(--foreground)] xl:px-4"><BlurValue>{money(item.valor)}</BlurValue></td>
-                  <td className="px-2.5 py-3 xl:px-4"><StatusCell sgcEntry={sgcStatus[codigo]} /></td>
+                  <td className="px-2.5 py-3 xl:px-4">{item.cadastroPendente ? <CadastroPendenteBadge /> : <StatusCell sgcEntry={sgcStatus[codigo]} />}</td>
                 </tr>
               );
             })}
@@ -195,7 +206,7 @@ export function FornecedoresTable({
         {itens.map((item) => {
           const codigo = item.projetistaCodigo ?? "";
           return (
-            <li key={item.id} className="flex items-stretch">
+            <li key={item.id} className={`flex items-stretch ${item.cadastroPendente ? "bg-[#F4F4F2]" : ""}`} data-cadastro-pendente={item.cadastroPendente ? "true" : undefined}>
               {selecao && (
                 <label className="flex min-w-10 items-center justify-center pl-4">
                   <CheckboxLinha item={item} selecao={selecao} nome={item.responsavel ?? codigo ?? "fornecedor"} />
@@ -205,7 +216,7 @@ export function FornecedoresTable({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-[var(--foreground)]">{item.responsavel ?? codigo ?? "–"}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <StatusCell sgcEntry={sgcStatus[codigo]} />
+                    {item.cadastroPendente ? <CadastroPendenteBadge /> : <StatusCell sgcEntry={sgcStatus[codigo]} />}
                   </div>
                 </div>
                 <div className="shrink-0 text-right">

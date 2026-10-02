@@ -159,6 +159,7 @@ export function MapaItemActions({
     revisaoSolicitadaAt: revisao?.revisaoSolicitadaAt,
     // Nível do BM (todas as linhas do fornecedor no ciclo carregado), como o servidor — não só esta linha.
     itemAtualizadoEm: ultimaAlteracaoDoBm(itens, codigo) ?? item.updatedAt,
+    cadastroPendente: item.cadastroPendente,
   });
   const temAlteracao = !(!elegibilidadeEnvio.elegivel && elegibilidadeEnvio.motivo === "REVISAO_SEM_ALTERACAO");
   // "Geral" (ou qualquer valor que não seja um ciclo real) nunca envia: o BM sempre pertence a uma

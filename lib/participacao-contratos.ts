@@ -59,6 +59,7 @@ async function carregarMedicoesDoCiclo(ciclo: string): Promise<MedicaoComAliases
       condicao: true,
       projeto: { select: { contrato: true } },
       profissional: { select: { codigo: true, nome: true, nomeCompleto: true } },
+      identidadeImportacao: { select: { status: true, valorBruto: true } },
     },
     orderBy: [{ dataCadastro: "asc" }, { createdAt: "asc" }],
   });
@@ -68,7 +69,10 @@ async function carregarMedicoesDoCiclo(ciclo: string): Promise<MedicaoComAliases
     .map((m) => ({
       contrato: m.projeto?.contrato ?? null,
       valorMedido: calcularValorMedido(m).valorMedido,
-      aliases: m.profissional ? aliasesDoProfissional(m.profissional) : [],
+      // Cadastro pendente: o nome da planilha é a chave da linha do mapa (projetistaCodigo).
+      aliases: m.profissional
+        ? aliasesDoProfissional(m.profissional)
+        : m.identidadeImportacao?.status === "PENDENTE" ? [normalizeAlias(m.identidadeImportacao.valorBruto)] : [],
     }));
 }
 

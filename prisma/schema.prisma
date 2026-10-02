@@ -228,6 +228,7 @@ model Profissional {
   medicoesComoCoordenador  Medicao[] @relation("MedicoesCoordenador")
   medicoesComoProfissional Medicao[] @relation("MedicoesProfissional")
   aliases                  ProfissionalAlias[]
+  identidadesImportacao    ImportacaoIdentidade[]
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
@@ -260,6 +261,43 @@ model ProfissionalAlias {
   @@unique([profissionalId, aliasNormalizado], map: "profissional_aliases_profissional_alias_key")
   @@index([aliasNormalizado])
   @@map("profissional_aliases")
+}
+
+/// Identidade de uma importação de medição, por ciclo. `tipo`:
+///  - IDENTIDADE: nome da planilha (chave = normalizePersonName) — PENDENTE (sem vínculo cadastral:
+///    medições ficam com idProfissional NULL e apontam para cá; BM bloqueado), VINCULADO (humano
+///    escolheu o cadastro), AUTO_VINCULADO (correspondência determinística do ETL) ou DESCARTADO
+///    (não compõe o ciclo; o ETL respeita a decisão em reimportações do MESMO ciclo).
+///  - LINHA_SEM_PROJETISTA: decisão de descartar uma linha com dados e sem PROJETISTA
+///    (chave = hash da linha, o mesmo `source_row_hash` da medição). Só DESCARTADO.
+/// Nunca cria Profissional/código provisório. Descarte vale só para o ciclo; alias é global.
+model ImportacaoIdentidade {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ciclo             String
+  tipo              String
+  chave             String
+  valorBruto        String        @map("valor_bruto")
+  origem            String
+  status            String
+  profissionalId    String?       @map("profissional_id") @db.Uuid
+  profissional      Profissional? @relation(fields: [profissionalId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  ocorrencias       Int           @default(0)
+  linhas            Json          @default("[]")
+  metadata          Json          @default("{}")
+  resolvidoPorId    String?       @map("resolvido_por_id") @db.Uuid
+  resolvidoPorNome  String?       @map("resolvido_por_nome")
+  resolvidoAt       DateTime?     @map("resolvido_at") @db.Timestamptz
+  descartadoPorId   String?       @map("descartado_por_id") @db.Uuid
+  descartadoPorNome String?       @map("descartado_por_nome")
+  descartadoAt      DateTime?     @map("descartado_at") @db.Timestamptz
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime      @default(now()) @map("updated_at") @db.Timestamptz
+  medicoes          Medicao[]
+  mapaItens         MapaPagamentoItem[]
+
+  @@unique([ciclo, tipo, chave], map: "importacao_identidades_ciclo_tipo_chave_key")
+  @@index([ciclo, status], map: "importacao_identidades_ciclo_status_idx")
+  @@map("importacao_identidades")
 }
 
 model CadastroFornecedor {
@@ -350,6 +388,9 @@ model Medicao {
   valorMedicao       Decimal       @default(0) @map("valor_medicao") @db.Decimal(16, 4)
   sourceRowHash      String        @unique @map("source_row_hash")
   rawPayload         Json          @default("{}") @map("raw_payload")
+  /// Medição de identidade ainda sem vínculo cadastral (idProfissional NULL) — ver ImportacaoIdentidade.
+  identidadeImportacaoId String?   @map("identidade_importacao_id") @db.Uuid
+  identidadeImportacao   ImportacaoIdentidade? @relation(fields: [identidadeImportacaoId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime      @default(now()) @map("updated_at") @db.Timestamptz
 
@@ -359,6 +400,7 @@ model Medicao {
   @@index([idCoordenador], map: "idx_medicoes_id_coordenador")
   @@index([idProfissional], map: "idx_medicoes_id_profissional")
   @@index([ciclo], map: "idx_medicoes_ciclo")
+  @@index([identidadeImportacaoId], map: "idx_medicoes_identidade_importacao")
   @@map("medicoes")
 }
 
@@ -397,12 +439,17 @@ model MapaPagamentoItem {
   status           String?
   sourceRowHash    String   @unique @map("source_row_hash")
   rawPayload       Json     @default("{}") @map("raw_payload")
+  /// Linha de fornecedor com cadastro pendente: `projetistaCodigo` é só o nome da planilha (nenhum
+  /// Profissional tem esse código) e o envio de BM fica bloqueado até o vínculo.
+  identidadeImportacaoId String?  @map("identidade_importacao_id") @db.Uuid
+  identidadeImportacao   ImportacaoIdentidade? @relation(fields: [identidadeImportacaoId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
   @@index([ciclo], map: "idx_mapa_pagamento_itens_ciclo")
   @@index([projetistaCodigo], map: "idx_mapa_pagamento_itens_projetista")
   @@index([ato], map: "idx_mapa_pagamento_itens_ato")
+  @@index([identidadeImportacaoId], map: "idx_mapa_pagamento_itens_identidade_importacao")
   @@map("mapa_pagamento_itens")
 }
 

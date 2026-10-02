@@ -1,4 +1,8 @@
+import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures/test-with-error-guard";
 import { LoginPage } from "./pages/login-page";
@@ -6,41 +10,41 @@ import { e2eUsers } from "./fixtures";
 import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
 
 /**
- * Resolução de identidades na importação de medição. O ETL não roda no E2E: o status do último
- * processamento (GET /api/admin/etl) é simulado com os detalhes que o etl devolve; as ações
- * (verificar, buscar, vincular, cadastrar) usam as rotas e o banco E2E reais. Dados sintéticos.
+ * Fluxo completo de identidades na importação — com o ETL REAL (etl/server.py, subido por este spec
+ * em 127.0.0.1:4011 apontando para o Postgres E2E) e uma planilha SINTÉTICA
+ * (e2e/fixtures/planilha_identidades.py):
+ *   erro estrutural bloqueia → descarte consciente → importação conclui com AUTO_MATCH, linha vazia
+ *   ignorada e cadastros pendentes no ciclo (cinza, BM indisponível) → vínculo sem reimportar (BM
+ *   liberado) → descarte de outro pendente (sai do total) → reimportação reconhece o alias.
  */
 
 test.beforeAll(assertConnectedToE2eDatabase);
 
+const ROOT = path.join(__dirname, "..");
+const CICLO = "2806"; // ciclo real (YYMM) exclusivo deste spec
 const S = randomUUID().replace(/[^a-f]/g, "").slice(0, 6).toUpperCase().padEnd(6, "X");
-const ALFA = `E2E IDENT ALFA ${S}`;
-const BETA = `E2E IDENT BETA ${S}`;
-const APELIDO = `IDENT APELIDO ${S}`;
-const ESCOLHA = `IDENT ESCOLHA ${S}`;
-const NOVO = `IDENT NOVO ${S}`;
-const GRD = "GRD-T-SINT-2026-0001";
+const RESOLVIDO = `FORNECEDOR E2E ${S} RESOLVIDO`;
+const MARIA_CANONICA = `MARIA ${S} FERNANDA LIMA COSTA`;
+const ROMERO_CANONICO = `ROMERO ${S} CARVALHO`;
+const ROMERO = `ROMERO ${S} PINTO`;
+const CARLOS = `CARLOS ${S} NUNES`;
+const ETL_PORT = 4011;
+let etl: ChildProcess | null = null;
+let planilha = "";
 
-const detalhes = [
-  { valor: "", origem: "Documentos", coluna: "PROJETISTA", ciclo: "2804", status: "SEM_PROJETISTA", candidatos: [], ocorrencias: 2, linhas: [9, 10],
-    exemplos: [{ linha: 9, numeroDocumento: "DOC-SINT-1", evidencia: "DESCRICAO SINTETICA" }] },
-  { valor: APELIDO, origem: "Documentos", coluna: "PROJETISTA", ciclo: "2804", status: "NAO_RESOLVIDO", candidatos: [], ocorrencias: 7, linhas: [11, 12, 13, 14, 15, 16, 17], sugestoesCadastro: [ALFA] },
-  { valor: ESCOLHA, origem: "Documentos Auxiliares", coluna: "Responsavel", ciclo: "2804", status: "NAO_RESOLVIDO", candidatos: [], ocorrencias: 1, linhas: [4], sugestoesCadastro: [] },
-  { valor: GRD, origem: "Documentos", coluna: "PROJETISTA", ciclo: "2804", status: "NAO_RESOLVIDO", candidatos: [], ocorrencias: 3, linhas: [20, 21, 22], sugestoesCadastro: [] },
-  { valor: NOVO, origem: "Documentos", coluna: "PROJETISTA", ciclo: "2804", status: "NAO_RESOLVIDO", candidatos: [], ocorrencias: 2, linhas: [30, 31], sugestoesCadastro: [] },
-];
+function etlDatabaseUrl() {
+  return (process.env.DATABASE_URL_TEST ?? "").replace(/^postgres(ql)?:\/\//, "postgresql+psycopg://").replace(/\?.*$/, "");
+}
 
-async function simularEtlBloqueado(page: Page, itens: unknown[], posts: string[]) {
-  await page.route("**/api/admin/etl", async (route) => {
-    if (route.request().method() !== "GET") {
-      posts.push(route.request().method());
-      return route.fulfill({ status: 500, json: { error: "ETL não deve ser chamado neste teste." } });
-    }
-    return route.fulfill({
-      status: 200,
-      json: { running: false, lastResult: null, lastError: "Importação bloqueada.", lastErrorType: "validation", lastErrorDetails: itens },
-    });
-  });
+async function esperarEtl() {
+  for (let i = 0; i < 60; i += 1) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${ETL_PORT}/health`);
+      if (res.ok) return;
+    } catch { /* subindo */ }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error("ETL da suíte não respondeu em 127.0.0.1:4011");
 }
 
 async function login(page: Page, usuario: { usuario: string; senha: string }) {
@@ -50,141 +54,199 @@ async function login(page: Page, usuario: { usuario: string; senha: string }) {
   await page.waitForURL((url) => !url.pathname.startsWith("/login"));
 }
 
-const card = (page: Page, valor: string) => page.locator(`[data-testid="identidade-card"][data-valor="${valor}"]`).locator("xpath=..");
+async function importar(page: Page) {
+  await page.goto("/?section=importar");
+  // O input escondido só reage depois da hidratação do React: repete até o arquivo aparecer.
+  await expect(async () => {
+    // Limpa antes: repetir o MESMO arquivo não dispara "change" de novo no navegador.
+    await page.locator("#etl-file-input").setInputFiles([]);
+    await page.locator("#etl-file-input").setInputFiles(planilha);
+    await expect(page.getByText("planilha-identidades.xlsx")).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
+  await page.getByPlaceholder("Ou digite (ex: 2607)").fill(CICLO);
+  const post = page.waitForResponse((r) => r.url().endsWith("/api/admin/etl") && r.request().method() === "POST");
+  await page.getByRole("button", { name: "Iniciar importação" }).click();
+  expect((await post).status()).toBe(202);
+  // Fim real do processamento: a mensagem final do polling (concluída ou bloqueada).
+  await expect(page.getByText(/Importação concluída com sucesso!|Importação bloqueada\. Revise as linhas/)).toBeVisible({ timeout: 90_000 });
+}
 
-let alfaId = "";
-let betaId = "";
+const somaMapa = async () => Number((await prisma.mapaPagamentoItem.aggregate({ where: { ciclo: CICLO }, _sum: { valor: true } }))._sum.valor ?? 0);
 
-test.describe.serial("Importação — resolução de identidades", () => {
+async function semOverflow(page: Page) {
+  const o = await page.evaluate(() => ({ s: document.documentElement.scrollWidth, c: document.documentElement.clientWidth }));
+  expect(o.s, "sem rolagem horizontal").toBeLessThanOrEqual(o.c + 1);
+}
+
+async function limparCiclo() {
+  await prisma.sgcLog.deleteMany({ where: { ciclo: CICLO } });
+  await prisma.sgcAprovacaoMedicao.deleteMany({ where: { ciclo: CICLO } });
+  await prisma.medicao.deleteMany({ where: { ciclo: CICLO } });
+  await prisma.mapaPagamentoItem.deleteMany({ where: { ciclo: CICLO } });
+  await prisma.importacaoIdentidade.deleteMany({ where: { ciclo: CICLO } });
+  await prisma.mapaPagamentoContexto.deleteMany({ where: { ciclo: CICLO } });
+}
+
+test.describe.serial("Importação — identidades pendentes, automáticas e descartadas (ETL real)", () => {
   test.beforeAll(async () => {
-    for (const [codigo, razao] of [[ALFA, `ALFA RAZAO ${S} LTDA`], [BETA, `BETA RAZAO ${S} LTDA`]]) {
-      const p = await prisma.profissional.create({ data: { nome: codigo, codigo, nomeCompleto: codigo } });
-      await prisma.cadastroFornecedor.create({ data: { cnpjNormalizado: "11222333000181", colaboradorCodigo: codigo, responsavel: codigo, razaoSocial: razao, rawPayload: {} } });
-      if (codigo === ALFA) alfaId = p.id; else betaId = p.id;
+    planilha = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "e2e-ident-")), "planilha-identidades.xlsx");
+    execFileSync(process.env.PYTHON ?? "python", [path.join(ROOT, "e2e", "fixtures", "planilha_identidades.py"), planilha, S], { cwd: ROOT });
+    await limparCiclo();
+    for (const codigo of [RESOLVIDO, MARIA_CANONICA, ROMERO_CANONICO]) {
+      await prisma.profissional.create({ data: { nome: codigo, codigo, nomeCompleto: codigo } });
+      await prisma.cadastroFornecedor.create({
+        data: { cnpjNormalizado: "11222333000181", colaboradorCodigo: codigo, responsavel: codigo, razaoSocial: `${codigo} LTDA`, email: `${codigo.replace(/\s+/g, "-").toLowerCase()}@example.test`, rawPayload: {} },
+      });
     }
+    etl = spawn(process.env.PYTHON ?? "python", [path.join(ROOT, "etl", "server.py")], {
+      cwd: path.join(ROOT, "etl"),
+      env: { ...process.env, ETL_SERVER_PORT: String(ETL_PORT), ETL_SERVER_HOST: "127.0.0.1", ETL_DATABASE_URL: etlDatabaseUrl(), PYTHONIOENCODING: "utf-8" },
+      // Saída do ETL da suíte num arquivo temporário (diagnóstico de falha; nunca no console).
+      stdio: ["ignore", fs.openSync(path.join(os.tmpdir(), "e2e-etl-identidades.log"), "w"), fs.openSync(path.join(os.tmpdir(), "e2e-etl-identidades.err.log"), "w")],
+    });
+    await esperarEtl();
   });
 
   test.afterAll(async () => {
-    const codigos = [ALFA, BETA, NOVO];
+    etl?.kill();
+    await limparCiclo();
+    const codigos = [RESOLVIDO, MARIA_CANONICA, ROMERO_CANONICO];
     const ids = (await prisma.profissional.findMany({ where: { codigo: { in: codigos } }, select: { id: true } })).map((p) => p.id);
-    await prisma.adminAuditLog.deleteMany({ where: { targetId: { in: ids } } });
+    await prisma.adminAuditLog.deleteMany({ where: { OR: [{ targetId: { in: ids } }, { targetCodigo: { contains: S } }, { action: "IDENTIDADE_IMPORTACAO_DESCARTADA", targetType: "ImportacaoLinha", createdAt: { gte: new Date(Date.now() - 3_600_000) } }] } });
     await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: codigos } } });
-    await prisma.profissional.deleteMany({ where: { id: { in: ids } } });
-    await prisma.usuario.deleteMany({ where: { nome: NOVO, perfil: "COLABORADOR" } });
+    await prisma.profissional.deleteMany({ where: { id: { in: ids } } }); // aliases em cascata
+    await prisma.projeto.deleteMany({ where: { codigoProjeto: "PRJ-E2E-IDENT", medicoes: { none: {} } } });
   });
 
-  test("ADMIN: cards, filtros, vínculo à sugestão, escolha de fornecedor e novo cadastro pré-preenchido", async ({ page }) => {
-    test.setTimeout(120_000);
-    const posts: string[] = [];
-    await simularEtlBloqueado(page, detalhes, posts);
+  test("ADMIN: bloqueio estrutural → descarte → importação com auto-match e pendentes → vínculo → descarte → reimportação", async ({ page }) => {
+    test.setTimeout(240_000);
     await login(page, e2eUsers.admin);
-    await page.goto("/?section=importar");
 
-    const contador = page.getByTestId("identidades-contador");
-    await expect(contador).toHaveText("4 de 4 identidade(s) pendente(s)");
-    await expect(page.getByTestId("identidades-sem-projetista")).toContainText("2 linha(s) de medição sem PROJETISTA");
-    await expect(page.getByTestId("identidades-sem-projetista").getByRole("button")).toHaveCount(0);
+    // 1) Linha com dados sem PROJETISTA bloqueia; nada é gravado.
+    await importar(page);
+    await expect(page.getByText(/1 linha\(s\) possuem dados de medição, mas não têm PROJETISTA válido/)).toBeVisible();
+    await expect(page.getByTestId("identidades-sem-projetista")).toContainText(`DOC-${S}-SEM`);
+    expect(await prisma.medicao.count({ where: { ciclo: CICLO } })).toBe(0);
+    expect(await prisma.profissionalAlias.count({ where: { profissional: { codigo: MARIA_CANONICA } } })).toBe(0);
 
-    // Ordenado por ocorrências; só as primeiras linhas, com expansão.
-    const valores = await page.getByTestId("identidade-card").evaluateAll((els) => els.map((e) => e.getAttribute("data-valor")));
-    expect(valores).toEqual([APELIDO, GRD, NOVO, ESCOLHA]);
-    await expect(card(page, APELIDO)).toContainText("linha(s) 11, 12, 13, 14, 15…");
-    await card(page, APELIDO).getByRole("button", { name: `Expandir ${APELIDO}` }).click();
-    await expect(card(page, APELIDO)).toContainText("linha(s) 11, 12, 13, 14, 15, 16, 17");
-    await expect(card(page, APELIDO)).toContainText(`Sugestão (não aplicada): ${ALFA}`);
-    await expect(card(page, ESCOLHA)).toContainText("Documentos Auxiliares · coluna Responsavel");
+    // 2) Descarte consciente (diálogo do design system), depois reimporta.
+    await page.getByRole("button", { name: "Descartar estas linhas" }).click();
+    const dialogo = page.getByTestId("linhas-descartar-dialog");
+    await expect(dialogo).toContainText(`DOC-${S}-SEM`);
+    await dialogo.getByRole("button", { name: "Descartar linhas" }).dblclick();
+    await expect(page.getByText(/linha\(s\) descartada\(s\) deste ciclo\. Reimporte a medição/)).toBeVisible();
+    expect(await prisma.importacaoIdentidade.count({ where: { ciclo: CICLO, tipo: "LINHA_SEM_PROJETISTA", status: "DESCARTADO" } })).toBe(1);
 
-    // Resíduo de parser: sem ações (nem "novo").
-    await expect(card(page, GRD).getByTestId("identidade-nao-parece-nome")).toBeVisible();
-    await expect(card(page, GRD).getByRole("button", { name: /Vincular|Escolher|novo fornecedor/ })).toHaveCount(0);
+    await importar(page);
+    const resumo = page.getByTestId("etl-resumo-identidades");
+    await expect(resumo).toContainText("Importação concluída");
+    await expect(resumo).toContainText("1 correspondência(s) resolvida(s) automaticamente");
+    await expect(resumo).toContainText("2 cadastro(s) pendente(s) de vínculo");
+    await expect(resumo).toContainText("o envio de BM ficará indisponível até o vínculo cadastral");
+    await resumo.getByText("Resolvidos automaticamente").click();
+    await expect(page.getByTestId("etl-correspondencias-automaticas")).toContainText(`MARIA ${S} COSTA → ${MARIA_CANONICA}`);
+    // Linhas vazias nunca viraram ocorrência; pendentes estão no ciclo (sem Profissional) e no total.
+    expect(await prisma.medicao.count({ where: { ciclo: CICLO } })).toBe(5);
+    expect(await somaMapa()).toBe(190); // 100 + 10 + 50 + 30 (a linha descartada, 7, não entra)
+    expect(await prisma.profissional.count({ where: { OR: [{ codigo: ROMERO }, { nome: ROMERO }] } })).toBe(0);
 
-    // Filtros e busca
-    await page.getByRole("button", { name: "Sem sugestão", exact: true }).click();
-    await expect(page.getByTestId("identidade-card")).toHaveCount(3);
-    await page.getByRole("button", { name: "Com sugestão", exact: true }).click();
-    await expect(page.getByTestId("identidade-card")).toHaveCount(1);
-    await page.getByRole("button", { name: "Todos", exact: true }).click();
-    await page.getByLabel("Buscar identidade").fill("escolha");
-    await expect(page.getByTestId("identidade-card")).toHaveCount(1);
-    await page.getByLabel("Buscar identidade").fill("");
+    const painel = page.getByTestId("identidades-do-ciclo");
+    await expect(painel.getByTestId("identidades-contador")).toHaveText("2 cadastro(s) pendente(s) de vínculo");
+    await expect(painel.locator(`[data-testid="identidade-card"][data-valor="${ROMERO}"]`)).toContainText("Cadastro pendente");
 
-    // 1) Vincular à sugestão — diálogo do design system, duplo clique cria um único alias.
-    await card(page, APELIDO).getByRole("button", { name: "Vincular à sugestão" }).click();
+    // 3) Fornecedores: linha cinza, badge, BM indisponível (UI e API).
+    await page.goto(`/fornecedores?ciclo=${CICLO}`);
+    const linhaRomero = page.locator("tr", { hasText: ROMERO });
+    await expect(linhaRomero).toHaveAttribute("data-cadastro-pendente", "true");
+    await expect(linhaRomero).toContainText("Cadastro pendente");
+    await expect(linhaRomero).toContainText("BM indisponível");
+    await expect(linhaRomero.getByRole("checkbox")).toBeDisabled();
+    await expect(linhaRomero.getByRole("checkbox")).toHaveAttribute("title", /Vincule este registro a um cadastro/);
+    await expect(page.getByTestId("fornecedores-cadastros-pendentes")).toContainText("2 cadastros pendentes de vínculo");
+    const forjado = await page.request.post("/api/sgc/enviar", { data: { colaboradorCodigo: ROMERO, ciclo: CICLO } });
+    expect(forjado.status()).toBe(409);
+    expect(await prisma.sgcAprovacaoMedicao.count({ where: { ciclo: CICLO, colaboradorCodigo: ROMERO } })).toBe(0);
+
+    // 4) Vincular pelo próprio registro pendente (drawer) — sem reimportar.
+    await linhaRomero.click();
+    const detalhe = page.getByTestId("cadastro-pendente-detalhe");
+    await expect(detalhe).toBeVisible();
+    await detalhe.getByRole("button", { name: "Vincular cadastro" }).click();
     const vincular = page.getByTestId("identidade-vincular-dialog");
-    await expect(vincular).toContainText(APELIDO);
-    await expect(vincular).toContainText(ALFA);
+    await vincular.getByLabel("Buscar cadastro").fill(`ROMERO ${S}`);
+    await vincular.getByTestId("identidade-busca-resultados").getByRole("button", { name: new RegExp(ROMERO_CANONICO) }).click();
+    await expect(vincular.getByTestId("identidade-alvo")).toContainText(ROMERO_CANONICO);
     await vincular.getByRole("button", { name: "Confirmar vínculo" }).dblclick();
-    await expect(vincular).toHaveCount(0);
-    await expect(page.getByText(`"${APELIDO}" vinculado a ${ALFA}.`)).toBeVisible();
-    await expect(contador).toHaveText("3 de 4 identidade(s) pendente(s)");
-    await expect(card(page, APELIDO)).toContainText("Resolvido");
-    const aliases = await prisma.profissionalAlias.findMany({ where: { profissionalId: alfaId } });
-    expect(aliases.map((a) => [a.alias, a.origem])).toEqual([[APELIDO, "DOCUMENTOS"]]);
-    const alfa = await prisma.profissional.findUniqueOrThrow({ where: { id: alfaId } });
-    expect([alfa.codigo, alfa.nome]).toEqual([ALFA, ALFA]); // canônico intocado
+    await expect(page.getByText(`"${ROMERO}" vinculado a ${ROMERO_CANONICO}.`)).toBeVisible();
+    const linhaVinculada = page.locator("tr", { hasText: ROMERO_CANONICO });
+    await expect(linhaVinculada).not.toHaveAttribute("data-cadastro-pendente", "true");
+    await expect(linhaVinculada.getByRole("checkbox")).toBeEnabled();
+    expect(await somaMapa()).toBe(190); // vínculo nunca muda valor
+    expect(await prisma.profissionalAlias.count({ where: { aliasNormalizado: ROMERO, profissional: { codigo: ROMERO_CANONICO } } })).toBe(1);
+    const enviar = await page.request.post("/api/sgc/enviar", { data: { colaboradorCodigo: ROMERO_CANONICO, ciclo: CICLO } });
+    expect(enviar.ok(), "BM liberado sem reimportação").toBe(true);
 
-    // 2) Escolher fornecedor — busca por razão social.
-    await card(page, ESCOLHA).getByRole("button", { name: "Escolher fornecedor" }).click();
-    const escolher = page.getByTestId("identidade-escolher-dialog");
-    await escolher.getByLabel("Buscar fornecedor").fill(`BETA RAZAO ${S}`);
-    await escolher.getByTestId("identidade-busca-resultados").getByRole("button", { name: new RegExp(BETA) }).click();
-    await expect(escolher).toContainText(ESCOLHA);
-    await escolher.getByRole("button", { name: "Confirmar vínculo" }).click();
-    await expect(escolher).toHaveCount(0);
-    await expect(contador).toHaveText("2 de 4 identidade(s) pendente(s)");
-    expect((await prisma.profissionalAlias.findFirstOrThrow({ where: { profissionalId: betaId } })).origem).toBe("DOCUMENTOS_AUXILIARES");
+    // 5) Descartar o outro pendente: confirmação com impacto; sai do total.
+    await page.locator("tr", { hasText: CARLOS }).click();
+    await page.getByTestId("cadastro-pendente-detalhe").getByRole("button", { name: "Descartar" }).click();
+    const descartar = page.getByTestId("identidade-descartar-dialog");
+    await expect(descartar).toContainText(`Descartar ${CARLOS} desta medição?`);
+    await expect(descartar).toContainText("1 ocorrência(s) serão desconsideradas");
+    await expect(descartar).toContainText("R$ 30,00");
+    await descartar.getByRole("button", { name: "Descartar" }).click();
+    await expect(page.getByText(`"${CARLOS}" descartado deste ciclo.`)).toBeVisible();
+    await expect(page.locator("tr", { hasText: CARLOS })).toHaveCount(0);
+    expect(await somaMapa()).toBe(160);
+    await expect(page.getByTestId("fornecedores-cadastros-pendentes")).toHaveCount(0);
 
-    // Filtro "Resolvidos"
-    await page.getByRole("button", { name: "Resolvidos", exact: true }).click();
-    await expect(page.getByTestId("identidade-card")).toHaveCount(2);
-    await page.getByRole("button", { name: "Todos", exact: true }).click();
-
-    // 3) Confirmar como novo — abre o cadastro oficial só com o nome preenchido.
-    await card(page, NOVO).getByRole("button", { name: "Confirmar como novo fornecedor" }).click();
-    await page.getByTestId("identidade-novo-dialog").getByRole("button", { name: "Abrir cadastro" }).click();
-    await expect(page.getByRole("heading", { name: "Novo fornecedor", exact: true })).toBeVisible();
-    await expect(page.getByLabel("Nome / Responsável")).toHaveValue(NOVO);
-    await expect(page.getByLabel("CNPJ", { exact: true })).toHaveValue("");
-    await expect(page.getByLabel("Razão social")).toHaveValue("");
-    await page.getByLabel("CNPJ", { exact: true }).fill("11.444.777/0001-61");
-    await page.getByLabel("Razão social").fill(`${NOVO} LTDA`);
-    const criar = page.waitForResponse((r) => r.url().endsWith("/api/admin/administrativo/fornecedores/manual") && r.request().method() === "POST");
-    await page.getByRole("button", { name: "Cadastrar fornecedor" }).click();
-    expect((await criar).status()).toBe(201);
-    await expect(page.getByRole("heading", { name: "Fornecedor cadastrado com sucesso" })).toBeVisible();
-    await page.getByRole("button", { name: "Concluir" }).click();
-
-    // De volta à importação: o novo fornecedor resolve pelo próprio código; resta o resíduo.
-    await page.goto("/?section=importar");
-    await expect(contador).toHaveText("1 de 4 identidade(s) pendente(s)");
-    await expect(card(page, NOVO)).toContainText("Resolvido");
-    await expect(page.getByTestId("identidades-todas-resolvidas")).toHaveCount(0);
-    expect(posts, "nenhuma reimportação automática").toEqual([]);
+    // 6) Reimportação do mesmo arquivo: alias reconhecido, descarte respeitado, nada duplica.
+    await importar(page);
+    await expect(page.getByTestId("etl-resumo-identidades")).toContainText("0 cadastro(s) pendente(s) de vínculo");
+    await expect(page.getByTestId("etl-resumo-identidades")).toContainText("2 item(ns) descartado(s) (1 linha(s) sem PROJETISTA)");
+    expect(await somaMapa()).toBe(160);
+    expect(await prisma.medicao.count({ where: { ciclo: CICLO } })).toBe(4);
     await page.request.post("/api/auth/logout");
   });
 
-  test("tudo resolvido: pede reimportação, sem reimportar sozinho", async ({ page }) => {
-    const posts: string[] = [];
-    await simularEtlBloqueado(page, detalhes.filter((d) => d.valor === APELIDO || d.valor === ESCOLHA), posts);
-    await login(page, e2eUsers.admin);
-    await page.goto("/?section=importar");
-    await expect(page.getByTestId("identidades-contador")).toHaveText("0 de 2 identidade(s) pendente(s)");
-    await expect(page.getByTestId("identidades-todas-resolvidas")).toHaveText("Todas as identidades foram resolvidas. Reimporte a medição.");
-    expect(posts).toEqual([]);
-    await page.request.post("/api/auth/logout");
-  });
-
-  test("MEDICAO: vê as pendências sem ações; backend recusa vínculo e busca", async ({ page }) => {
-    await simularEtlBloqueado(page, detalhes, []);
+  test("MEDICAO: vê pendências, não resolve; backend recusa vínculo/descarte", async ({ page }) => {
+    const pendente = await prisma.importacaoIdentidade.create({
+      data: { ciclo: CICLO, tipo: "IDENTIDADE", chave: `OUTRO ${S} PENDENTE`, valorBruto: `OUTRO ${S} PENDENTE`, origem: "Documentos", status: "PENDENTE", ocorrencias: 1 },
+    });
     await login(page, e2eUsers.medicao);
-    await page.goto("/?section=importar");
-    await expect(page.getByTestId("identidades-contador")).toHaveText("1 de 4 identidade(s) pendente(s)");
-    await expect(page.getByText("Somente o perfil ADMIN pode vincular ou cadastrar fornecedores.")).toBeVisible();
-    await expect(page.getByRole("button", { name: /Vincular à sugestão|Escolher fornecedor|Confirmar como novo/ })).toHaveCount(0);
-    const alias = await page.request.post("/api/admin/importacao/identidades/alias", { data: { alias: `OUTRO ${S}`, profissionalId: alfaId } });
-    expect(alias.status()).toBe(403);
-    expect((await page.request.get(`/api/admin/importacao/identidades/fornecedores?q=${encodeURIComponent(ALFA)}`)).status()).toBe(403);
-    expect(await prisma.profissionalAlias.count({ where: { aliasNormalizado: `OUTRO ${S}` } })).toBe(0);
+    const lista = await page.request.get(`/api/admin/importacao/identidades?ciclo=${CICLO}`);
+    expect(lista.ok()).toBe(true);
+    expect((await lista.json()).podeResolver).toBe(false);
+    expect((await page.request.post(`/api/admin/importacao/identidades/${pendente.id}/vincular`, { data: { codigoCanonico: RESOLVIDO } })).status()).toBe(403);
+    expect((await page.request.post(`/api/admin/importacao/identidades/${pendente.id}/descartar`)).status()).toBe(403);
+    expect((await page.request.post("/api/admin/importacao/identidades/linhas/descartar", { data: { ciclo: CICLO, linhas: [{ chave: "b".repeat(64) }] } })).status()).toBe(403);
+    expect((await prisma.importacaoIdentidade.findUniqueOrThrow({ where: { id: pendente.id } })).status).toBe("PENDENTE");
     await page.request.post("/api/auth/logout");
   });
+
+  for (const largura of [375, 432, 768, 1024, 1280, 1440]) {
+    test(`responsivo ${largura}px: pendente, ações e diálogo de descarte sem overflow`, async ({ page }) => {
+      const pendente = await prisma.importacaoIdentidade.findFirstOrThrow({ where: { ciclo: CICLO, chave: `OUTRO ${S} PENDENTE` } });
+      const mapa = await prisma.mapaPagamentoItem.findFirst({ where: { ciclo: CICLO, identidadeImportacaoId: pendente.id } })
+        ?? await prisma.mapaPagamentoItem.create({ data: { ciclo: CICLO, ordem: 99, projetistaCodigo: pendente.valorBruto, responsavel: pendente.valorBruto, valor: 5, sourceRowHash: `e2e-ident-resp-${S}`, identidadeImportacaoId: pendente.id } });
+      await page.setViewportSize({ width: largura, height: 900 });
+      await login(page, e2eUsers.admin);
+      await page.goto(`/fornecedores?ciclo=${CICLO}`);
+      await expect(page.getByTestId("fornecedores-cadastros-pendentes")).toBeVisible();
+      await semOverflow(page);
+      const alvo = largura < 768
+        ? page.getByTestId("fornecedores-lista-mobile").locator("li", { hasText: pendente.valorBruto }).getByRole("button", { name: /Abrir detalhe/ })
+        : page.locator("tr", { hasText: pendente.valorBruto });
+      await alvo.click();
+      await expect(page.getByTestId("cadastro-pendente-detalhe").getByTestId("identidade-acoes")).toBeVisible();
+      await semOverflow(page);
+      await page.getByTestId("cadastro-pendente-detalhe").getByRole("button", { name: "Descartar" }).click();
+      await expect(page.getByTestId("identidade-descartar-dialog")).toBeVisible();
+      await semOverflow(page);
+      await page.getByTestId("identidade-descartar-dialog").getByRole("button", { name: "Cancelar" }).click();
+      await page.goto("/?section=importar");
+      await semOverflow(page);
+      expect(mapa.id).toBeTruthy();
+      await page.request.post("/api/auth/logout");
+    });
+  }
 });

@@ -864,7 +864,7 @@ function FiltrosPopover({
 
 type Painel =
   | { tipo: "fornecedor"; id: string; modo: "detalhe" | "edicao" }
-  | { tipo: "novo-fornecedor"; nomeInicial?: string }
+  | { tipo: "novo-fornecedor"; nomeInicial?: string; identidadeId?: string }
   | { tipo: "funcionario"; id: string }
   | { tipo: "novo-funcionario" }
   | { tipo: "importar" };
@@ -881,12 +881,12 @@ type Confirmacao = { titulo: string; mensagem: ReactNode; confirmar: string; ton
  */
 export function AdministrativoPanel({
   isAdmin = false,
-  novoFornecedorNome,
+  novoFornecedor,
   onNovoFornecedorAberto,
 }: {
   isAdmin?: boolean;
-  /** Nome vindo da resolução de identidades da importação: abre "Novo fornecedor" já com ele. */
-  novoFornecedorNome?: string | null;
+  /** Identidade pendente da importação: abre "Novo fornecedor" só com o nome e, ao salvar, vincula o registro pendente ao cadastro criado. */
+  novoFornecedor?: { nome: string; identidadeId: string } | null;
   onNovoFornecedorAberto?: () => void;
 }) {
   const [items, setItems] = useState<CadastroFornecedor[]>([]);
@@ -911,10 +911,10 @@ export function AdministrativoPanel({
 
   const [painel, setPainel] = useState<Painel | null>(null);
   useEffect(() => {
-    if (!novoFornecedorNome) return;
-    setPainel({ tipo: "novo-fornecedor", nomeInicial: novoFornecedorNome });
+    if (!novoFornecedor) return;
+    setPainel({ tipo: "novo-fornecedor", nomeInicial: novoFornecedor.nome, identidadeId: novoFornecedor.identidadeId });
     onNovoFornecedorAberto?.();
-  }, [novoFornecedorNome, onNovoFornecedorAberto]);
+  }, [novoFornecedor, onNovoFornecedorAberto]);
   const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   // Credencial (senha temporária) exibida SOMENTE logo após criar usuário ou redefinir senha —
@@ -1483,8 +1483,20 @@ export function AdministrativoPanel({
           nomeInicial={painel.nomeInicial}
           escEnabled={!algumModalAberto}
           onClose={() => setPainel(null)}
-          onCreated={async (usuarioCriado) => {
+          onCreated={async (usuarioCriado, cadastroCriado) => {
+            const identidadeId = painel.identidadeId;
             setPainel(null);
+            // Veio de um registro pendente da importação: vincula ao cadastro recém-criado (mesmo
+            // código oficial gerado pelo cadastro), sem reimportar. Falha não desfaz o cadastro.
+            if (identidadeId && cadastroCriado?.colaboradorCodigo) {
+              const res = await fetch(`/api/admin/importacao/identidades/${identidadeId}/vincular`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ codigoCanonico: cadastroCriado.colaboradorCodigo }),
+              }).catch(() => null);
+              const payload = res ? await res.json().catch(() => null) : null;
+              if (!res?.ok) setToast({ tone: "error", message: payload?.error ?? "Fornecedor cadastrado, mas o vínculo com o registro pendente falhou. Vincule pela importação." });
+            }
             if (usuarioCriado) {
               // Usuario novo (COLABORADOR) criado junto do cadastro — senha automática exibida uma vez.
               setCredencial({ titulo: "Fornecedor cadastrado com sucesso", nome: usuarioCriado.nome, email: usuarioCriado.email, usuario: usuarioCriado.usuario, senha: usuarioCriado.senha });

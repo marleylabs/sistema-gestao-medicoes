@@ -58,6 +58,8 @@ export type ItemEnvioBm = {
   bm: { status: string; statusConferencia: string | null; revisaoSolicitadaAt: Date | string | null } | null;
   /** Este BM já foi enviado pela MESMA confirmação (replay: duplo clique, "Tentar novamente"). */
   enviadoNestaOperacao?: boolean;
+  /** Linha de identidade PENDENTE da importação (sem cadastro). */
+  cadastroPendente?: boolean;
 };
 
 /** Resultado do service individual, no formato que a orquestração precisa. */
@@ -127,6 +129,7 @@ export async function processarEnvioBmEmLote(input: {
       statusConferencia: item.bm?.statusConferencia,
       revisaoSolicitadaAt: item.bm?.revisaoSolicitadaAt,
       itemAtualizadoEm: item.atualizadoEm,
+      cadastroPendente: item.cadastroPendente,
     });
     if (!elegibilidade.elegivel) {
       resultados.push({ id, nome, status: "IGNORADO", motivo: elegibilidade.mensagem });

@@ -22,13 +22,20 @@ export async function getDocumentosMedidos(params: { aliases: string[]; ciclo: s
   return prisma.medicao.findMany({
     where: {
       ciclo: params.ciclo,
-      profissional: {
-        OR: [
-          { codigo: { in: aliases, mode: "insensitive" } },
-          { nome: { in: aliases, mode: "insensitive" } },
-          { nomeCompleto: { in: aliases, mode: "insensitive" } },
-        ],
-      },
+      OR: [
+        {
+          profissional: {
+            OR: [
+              { codigo: { in: aliases, mode: "insensitive" } },
+              { nome: { in: aliases, mode: "insensitive" } },
+              { nomeCompleto: { in: aliases, mode: "insensitive" } },
+            ],
+          },
+        },
+        // Fornecedor com cadastro PENDENTE: medições sem Profissional, pelo nome da planilha
+        // (o mesmo `projetistaCodigo` da linha do mapa) — Equipe vê os documentos antes do vínculo.
+        { idProfissional: null, identidadeImportacao: { status: "PENDENTE", valorBruto: { in: aliases, mode: "insensitive" } } },
+      ],
     },
     select: {
       id: true,

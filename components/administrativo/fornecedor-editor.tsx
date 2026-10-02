@@ -263,7 +263,7 @@ export function FornecedorEditor(props: {
   /** Nome pré-preenchido (ex.: identidade da importação confirmada como novo fornecedor). Só o nome. */
   nomeInicial?: string;
   onClose: () => void;
-  onCreated: (usuarioCriado: UsuarioCriado) => void;
+  onCreated: (usuarioCriado: UsuarioCriado, cadastro: { colaboradorCodigo?: string | null } | null) => void;
   onError: (message: string) => void;
   escEnabled?: boolean;
 } | {
@@ -305,7 +305,7 @@ export function FornecedorEditor(props: {
           props.onError(payload.error ?? "Não foi possível cadastrar o fornecedor.");
           return;
         }
-        props.onCreated(payload.usuarioCriado ?? null);
+        props.onCreated(payload.usuarioCriado ?? null, payload.cadastro ?? null);
       } else {
         const res = await fetch(`/api/admin/administrativo/fornecedores/${props.item.id}`, {
           method: "PATCH",

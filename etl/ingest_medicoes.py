@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import unicodedata
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -615,12 +616,16 @@ def collect_import_collaborator_codes(
     canonical_codes: dict[str, str],
     fonte_medicao_map: dict[str, str],
     ciclo: str,
+    excluir: set[str] | None = None,
 ) -> set[str]:
     codes: set[str] = set()
+    # Nomes PENDENTES/DESCARTADOS não são identidades canônicas: a limpeza por fornecedor casa por
+    # nome parecido (`matches_any_collaborator`) e apagaria dados de OUTRO fornecedor semelhante.
+    excluir = excluir or set()
 
     def add_code(value: Any) -> None:
         cleaned = clean_text(value)
-        if not cleaned:
+        if not cleaned or normalize_person_name(cleaned) in excluir:
             return
         canonical = canonical_codes.get(normalize_for_compare(cleaned), cleaned)
         if not is_expense_professional_name(canonical):
@@ -1842,17 +1847,44 @@ def generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo: st
         ),
         {"ciclo": ciclo},
     ).mappings().all()
+    # Fornecedor com cadastro PENDENTE: medições sem Profissional, agrupadas pela identidade da
+    # importação. Compõem o ciclo e os totais; `projetista_codigo` é só o nome da planilha (nenhum
+    # Profissional tem esse código) e o BM fica bloqueado até o vínculo. Sem cadastro → sem fixo.
+    has_identities = conn.execute(text("select to_regclass('public.importacao_identidades') is not null")).scalar()
+    pending_rows = conn.execute(
+        text(
+            """
+            select
+                ii.id as identidade_id,
+                ii.valor_bruto as codigo,
+                pr.contrato as contrato,
+                m.tipo2 as tipo,
+                sum(coalesce(m.valor_medicao, 0)) as valor,
+                sum(coalesce(m.medido_horas, 0)) as horas
+            from medicoes m
+            join importacao_identidades ii on ii.id = m.identidade_importacao_id and ii.status = 'PENDENTE'
+            left join projetos pr on pr.id = m.id_projeto
+            where m.ciclo = :ciclo
+              and m.id_profissional is null
+            group by ii.id, ii.valor_bruto, pr.contrato, m.tipo2
+            """
+        ),
+        {"ciclo": ciclo},
+    ).mappings().all() if has_identities else []
+    rows = [*rows, *pending_rows]
 
     grouped: dict[str, dict[str, Any]] = {}
     for row in rows:
         codigo = clean_text(row.get("codigo"))
         if not codigo:
             continue
-        key = normalize_for_compare(codigo)
+        identidade_id = row.get("identidade_id")
+        key = f"pendente:{identidade_id}" if identidade_id else normalize_for_compare(codigo)
         item = grouped.setdefault(
             key,
             {
                 "codigo": codigo,
+                "identidade_id": str(identidade_id) if identidade_id else None,
                 "nome": clean_text(row.get("nome")),
                 "nome_completo": clean_text(row.get("nome_completo")),
                 "contratos": {
@@ -1882,7 +1914,8 @@ def generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo: st
     cadastros = latest_cadastros_by_collaborator(conn)
     loaded = 0
     for ordem, item in enumerate(grouped.values(), start=1):
-        cadastro = find_cadastro_for_generated_payment(cadastros, item, sugestoes)
+        # Pendente nunca herda cadastro "parecido" (nem condição fixa): só depois do vínculo humano.
+        cadastro = None if item["identidade_id"] else find_cadastro_for_generated_payment(cadastros, item, sugestoes)
         # CORREÇÃO ESTRUTURAL: existia uma tabela hardcoded por nome (FIXED_CONDITION_REFERENCE,
         # removida) usada via `max(cadastro_valor_fixo, referencia_valor_fixo)` — sempre que o valor
         # hardcoded fosse MAIOR que o cadastro real (ex.: depois de uma renegociação contratual que
@@ -1944,6 +1977,7 @@ def generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo: st
             "status": "PENDENTE",
             "raw_payload": raw_payload,
             "source_row_hash": source_hash({"ciclo": ciclo, "origem": "calculado_documentos", "codigo": item["codigo"]}),
+            "identidade_importacao_id": item["identidade_id"],
         }
         upsert_payment_map_item(conn, mapa_pagamento_itens, payment_item)
         loaded += 1
@@ -2088,7 +2122,8 @@ def upsert_payment_map_item(conn, mapa_pagamento_itens, data: dict[str, Any]) ->
             "status": stmt.excluded.status,
             "raw_payload": stmt.excluded.raw_payload,
             "updated_at": text("now()"),
-        },
+        }
+        | ({"identidade_importacao_id": stmt.excluded.identidade_importacao_id} if "identidade_importacao_id" in data else {}),
     )
     conn.execute(stmt)
 
@@ -2303,25 +2338,29 @@ def build_discount_only_base_measurement(row: pd.Series, ciclo: str) -> dict[str
 
 
 class UnresolvedIdentityError(ValueError):
-    """Identidades operacionais da planilha que não resolvem para exatamente um Profissional
-    canônico. Levantado ANTES de qualquer escrita — nada é criado nem alterado."""
+    """Erros ESTRUTURAIS de identidade da planilha (não um simples fornecedor sem cadastro — esse
+    vira PENDENTE e não bloqueia): linha com dados de medição sem PROJETISTA, PROJETISTA que não é
+    nome de fornecedor, alias ambíguo ou código que é alias de outra identidade. Levantado ANTES de
+    qualquer escrita — nada é criado nem alterado."""
 
     code = "UNRESOLVED_OPERATIONAL_IDENTITIES"
 
     def __init__(self, details: list[dict[str, Any]]):
         self.details = details
-        identidades = [d for d in details if d.get("status") != "SEM_PROJETISTA"]
         sem_projetista = sum(d.get("ocorrencias", 0) for d in details if d.get("status") == "SEM_PROJETISTA")
+        invalidos = [d for d in details if d.get("status") == "PROJETISTA_INVALIDO"]
+        conflitos = [d for d in details if d.get("status") in ("AMBIGUO", "CONFLITO_ALIAS")]
         partes = []
-        if identidades:
-            nomes = ", ".join(f'"{d["valor"]}"' for d in identidades[:12])
-            extra = f" (+{len(identidades) - 12})" if len(identidades) > 12 else ""
-            partes.append(
-                f"Identidade operacional não resolvida: {nomes}{extra}. Vincule cada nome a um Profissional "
-                "existente (alias) ou confirme-o como novo profissional antes de reimportar."
-            )
         if sem_projetista:
-            partes.append(f"{sem_projetista} linha(s) de medição sem PROJETISTA: preencha a coluna na planilha.")
+            partes.append(
+                f"{sem_projetista} linha(s) possuem dados de medição, mas não têm PROJETISTA válido. "
+                "Corrija a planilha ou descarte conscientemente essas ocorrências."
+            )
+        for grupo, rotulo in ((invalidos, "PROJETISTA que não é nome de fornecedor"), (conflitos, "Identidade ambígua ou em conflito")):
+            if grupo:
+                nomes = ", ".join(f'"{d["valor"]}"' for d in grupo[:12])
+                extra = f" (+{len(grupo) - 12})" if len(grupo) > 12 else ""
+                partes.append(f"{rotulo}: {nomes}{extra}.")
         super().__init__("Importação bloqueada. " + " ".join(partes) + " Nenhum dado foi alterado.")
 
     def to_dict(self) -> dict[str, Any]:
@@ -2334,8 +2373,12 @@ class OperationalIdentityResolver:
     resolve, 2+ é ambíguo; 3) Profissional SEM código com o mesmo nome (legado); 4) não resolvido.
     Nunca cria Profissional, nunca usa CNPJ/razão social, nunca compara nomes "parecidos"."""
 
-    def __init__(self, profissionais: list[dict[str, Any]], aliases: list[dict[str, Any]]):
+    def __init__(self, profissionais: list[dict[str, Any]], aliases: list[dict[str, Any]], candidatos: list[dict[str, Any]] | None = None):
         self.by_id = {str(p["id"]): p for p in profissionais}
+        # Cadastros ATIVOS com identidade canônica (Profissional com código) — únicos alvos possíveis
+        # de AUTO_MATCH. Nomes reconhecidos automaticamente nesta carga: normalizado -> id.
+        self.candidates = [c for c in (candidatos or []) if str(c["id"]) in self.by_id]
+        self.auto_matched: dict[str, str] = {}
         self.by_code: dict[str, list[str]] = {}
         self.legacy_by_name: dict[str, list[str]] = {}
         for p in profissionais:
@@ -2361,7 +2404,73 @@ class OperationalIdentityResolver:
         aliases = [dict(r) for r in conn.execute(text(
             "select profissional_id, alias, alias_normalizado from profissional_aliases where ativo"
         )).mappings().all()] if has_aliases else []
-        return cls(profissionais, aliases)
+        candidatos = [dict(r) for r in conn.execute(text(
+            """
+            select p.id, p.codigo, c.responsavel
+              from profissionais p
+              join cadastros_fornecedores c on c.colaborador_codigo = p.codigo
+             where p.deleted_at is null and p.codigo is not null and c.ativo
+            """
+        )).mappings().all()]
+        return cls(profissionais, aliases, candidatos)
+
+    def plan_auto_matches(self, valores: list[Any]) -> dict[str, dict[str, Any]]:
+        """AUTO_MATCH determinístico (nunca distância/fuzzy): o nome da planilha vira a identidade de
+        UM cadastro ativo quando
+          1. tem 2+ tokens (sem conectivos DA/DE/DO/DAS/DOS/E) e parece nome de fornecedor;
+          2. seus tokens aparecem, na mesma ordem e exatos (após normalização), no código ou no
+             responsável do cadastro, com o MESMO primeiro e o MESMO último token;
+          3. exatamente UM cadastro satisfaz 2;
+          4. nenhum OUTRO nome desta mesma planilha cabe no mesmo cadastro pelo primeiro token
+             (ex.: "ITALO VIANA" e "ITALO RUAN" → o mesmo cadastro → nenhum é automático).
+        Ex.: "MARINA COSTA" → "MARINA FERNANDA LIMA COSTA". Registra só em memória: o alias
+        é gravado depois, dentro da transação da carga (nada é gravado se a carga bloquear)."""
+        pendentes: dict[str, str] = {}
+        for valor in valores:
+            nome = clean_text(valor)
+            if not nome or not looks_like_supplier_name(nome):
+                continue
+            if self.resolve(nome)["status"] != "NAO_RESOLVIDO":
+                continue
+            pendentes.setdefault(normalize_person_name(nome), nome)
+
+        rotulos: list[tuple[str, list[str]]] = []
+        for c in self.candidates:
+            for rotulo in (c.get("codigo"), c.get("responsavel")):
+                tokens = match_tokens(rotulo)
+                if tokens:
+                    rotulos.append((str(c["id"]), tokens))
+
+        def compativeis(tokens: list[str], exigir_ultimo: bool) -> set[str]:
+            ids: set[str] = set()
+            if not tokens:
+                return ids
+            for pid, alvo in rotulos:
+                if tokens[0] != alvo[0] or not is_ordered_subsequence(tokens, alvo):
+                    continue
+                if exigir_ultimo and tokens[-1] != alvo[-1]:
+                    continue
+                ids.add(pid)
+            return ids
+
+        concorrencia = {norm: compativeis(match_tokens(nome), exigir_ultimo=False) for norm, nome in pendentes.items()}
+        resultado: dict[str, dict[str, Any]] = {}
+        for norm, nome in pendentes.items():
+            tokens = match_tokens(nome)
+            if len(tokens) < 2:
+                continue
+            ids = compativeis(tokens, exigir_ultimo=True)
+            if len(ids) != 1:
+                continue
+            pid = next(iter(ids))
+            if any(outro != norm and pid in alvos for outro, alvos in concorrencia.items()):
+                continue
+            resultado[norm] = {"valor": nome, "id": pid, "codigo": self.canonical_code(pid)}
+        for norm, item in resultado.items():
+            self.by_alias[norm] = {item["id"]}
+            self.alias_label.setdefault(norm, item["valor"])
+            self.auto_matched[norm] = item["id"]
+        return resultado
 
     def declare(self, codigo: Any) -> None:
         """Código canônico declarado pela planilha (aba Base / status do MAPA PAGTO): o próprio
@@ -2400,9 +2509,11 @@ class OperationalIdentityResolver:
             return {"status": "RESOLVIDO", "via": "CODIGO", "id": por_codigo[0], "codigo": self.canonical_code(por_codigo[0])}
         if len(por_codigo) > 1:
             return {"status": "AMBIGUO", "valor": valor, "candidatos": [self.canonical_code(i) for i in por_codigo]}
-        por_alias = sorted(self.by_alias.get(normalize_person_name(valor), set()))
+        chave_alias = normalize_person_name(valor)
+        por_alias = sorted(self.by_alias.get(chave_alias, set()))
         if len(por_alias) == 1:
-            return {"status": "RESOLVIDO", "via": "ALIAS", "id": por_alias[0], "codigo": self.canonical_code(por_alias[0])}
+            via = "AUTO_MATCH" if chave_alias in self.auto_matched else "ALIAS"
+            return {"status": "RESOLVIDO", "via": via, "id": por_alias[0], "codigo": self.canonical_code(por_alias[0])}
         if len(por_alias) > 1:
             return {"status": "AMBIGUO", "valor": valor, "candidatos": [self.canonical_code(i) for i in por_alias]}
         legados = self.legacy_by_name.get(valor.casefold(), [])
@@ -2423,13 +2534,73 @@ class OperationalIdentityResolver:
                 merged[normalize_for_compare(self.alias_label[alias_norm])] = self.canonical_code(next(iter(ids)))
         for key, value in list(merged.items()):
             resolved = self.resolve(value)
-            if resolved["status"] == "RESOLVIDO" and resolved["via"] == "ALIAS":
+            if resolved["status"] == "RESOLVIDO" and resolved["via"] in ("ALIAS", "AUTO_MATCH"):
                 merged[key] = resolved["codigo"]
         return merged
 
 
 def load_operational_identity_resolver(conn) -> OperationalIdentityResolver:
     return OperationalIdentityResolver.load(conn)
+
+
+# ─── Identidades da importação: pendente, correspondência automática e descarte ──────────────
+IMPORT_IDENTITY_TYPE = "IDENTIDADE"
+IMPORT_ROW_TYPE = "LINHA_SEM_PROJETISTA"
+NAME_CONNECTORS = {"DA", "DE", "DO", "DAS", "DOS", "E"}
+DOCUMENT_PREFIX = re.compile(r"^(GRD|ORC|DOC|MC|RT|LD|MD|PT)[-_./][A-Z0-9]*[-_./]", re.IGNORECASE)
+ALIAS_ORIGENS = {"documentos auxiliares": "DOCUMENTOS_AUXILIARES", "mapa pagto": "MAPA_PAGAMENTO"}
+
+
+def looks_like_supplier_name(value: Any) -> bool:
+    """Espelho de lib/identidade-plausivel.ts::pareceNomeDeFornecedor — o texto de PROJETISTA parece
+    nome de pessoa/empresa? Número de documento/GRD/orçamento ou descrição longa não é fornecedor
+    (erro estrutural, decisão humana); nunca descartado automaticamente."""
+    texto = clean_text(value) or ""
+    if len(texto) < 3 or len(texto) > 80:
+        return False
+    # Número de documento/GRD/orçamento/ano: prefixo de documento ou 4+ dígitos seguidos. Um dígito
+    # isolado é nome legítimo de empresa ("A1 ENGENHARIA", "3D PROJETOS", "ENGENHARIA 360").
+    if DOCUMENT_PREFIX.match(texto) or re.search(r"\d{4,}", texto):
+        return False
+    if sum(1 for c in texto if c.isalpha()) < 3:
+        return False
+    return len(texto.split()) <= 8
+
+
+def match_tokens(value: Any) -> list[str]:
+    return [token for token in normalize_person_name(value).split() if token not in NAME_CONNECTORS]
+
+
+def is_ordered_subsequence(small: list[str], big: list[str]) -> bool:
+    restante = iter(big)
+    return all(token in restante for token in small)
+
+
+def row_decision_key(row: pd.Series, ciclo: str) -> str:
+    """Chave estável de uma linha (conteúdo + ciclo, nunca o número da linha, que muda quando a
+    planilha é editada) — usada para descartar conscientemente uma linha sem PROJETISTA."""
+    linha = {str(k): clean_text(v) for k, v in row.items() if clean_text(v) and not str(k).startswith("unnamed_")}
+    return source_hash({"ciclo": ciclo, "linha": linha})
+
+
+def alias_origin(aba: str | None) -> str:
+    return ALIAS_ORIGENS.get(str(aba or "").strip().lower(), "DOCUMENTOS")
+
+
+def load_import_decisions(conn, ciclo: str) -> dict[str, Any]:
+    """Decisões humanas já tomadas para o ciclo (descartes de nome/linha) e identidades existentes."""
+    vazio: dict[str, Any] = {"nomes_descartados": {}, "linhas_descartadas": set(), "existentes": {}}
+    if not conn.execute(text("select to_regclass('public.importacao_identidades') is not null")).scalar():
+        return vazio
+    rows = conn.execute(
+        text("select id, tipo, chave, status, valor_bruto from importacao_identidades where ciclo = :ciclo"),
+        {"ciclo": ciclo},
+    ).mappings().all()
+    return {
+        "nomes_descartados": {r["chave"]: r["valor_bruto"] for r in rows if r["tipo"] == IMPORT_IDENTITY_TYPE and r["status"] == "DESCARTADO"},
+        "linhas_descartadas": {r["chave"] for r in rows if r["tipo"] == IMPORT_ROW_TYPE and r["status"] == "DESCARTADO"},
+        "existentes": {r["chave"]: dict(r) for r in rows if r["tipo"] == IMPORT_IDENTITY_TYPE},
+    }
 
 
 def cadastro_suggestions(cadastros: dict[str, dict[str, Any]], valor: str, limit: int = 3) -> list[str]:
@@ -2461,12 +2632,30 @@ def assert_operational_identities_resolved(
     base_sheet_name: str | None,
     bm_aux_sheet_name: str | None,
     payment_map_sheet_name: str | None,
+    decisoes: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Preflight sem escrita: toda identidade de fornecedor que a carga vai gravar (PROJETISTA em
-    Documentos, pessoas do BM AUX, projetista do MAPA PAGTO) precisa resolver para exatamente um
-    Profissional. Coordenadores seguem o comportamento anterior (não são fornecedores)."""
-    ocorrencias: dict[tuple[str, str], dict[str, Any]] = {}
+    """Preflight SEM escrita. Classifica cada identidade de fornecedor que a carga vai gravar
+    (PROJETISTA em Documentos, pessoas do BM AUX, projetista do MAPA PAGTO):
+      - RESOLVIDO: código, alias ou legado;
+      - AUTO_MATCH: correspondência determinística única (`plan_auto_matches`) — o alias só é gravado
+        na transação da carga;
+      - PENDENTE: nome plausível sem vínculo — NÃO bloqueia: entra no ciclo sem Profissional e o
+        envio de BM fica bloqueado até o vínculo;
+      - DESCARTADO: decisão humana já registrada para o ciclo — as linhas não entram;
+      - erro estrutural — BLOQUEIA (UnresolvedIdentityError): linha com dados de medição sem
+        PROJETISTA (sem descarte), PROJETISTA que não é nome de fornecedor, alias ambíguo, código
+        da Base que é alias de outra identidade.
+    Linha realmente vazia (sem chave de medição nem desconto) nunca é contada.
+    Coordenadores seguem o comportamento anterior (não são fornecedores). Devolve o resumo e o
+    `plano` usado pela gravação (removido do resultado público por `ingest`)."""
+    decisoes = decisoes or {}
+    nomes_descartados = set((decisoes.get("nomes_descartados") or {}).keys())
+    linhas_descartadas = set(decisoes.get("linhas_descartadas") or ())
+    bloqueios: dict[tuple[str, str], dict[str, Any]] = {}
     resolvidas: dict[str, dict[str, Any]] = {}
+    pendentes: dict[str, dict[str, Any]] = {}
+    auto_uso: dict[str, dict[str, Any]] = {}
+    descartes: dict[str, Any] = {"nomes": {}, "linhas": 0}
 
     for index, row in base_df.iterrows():
         base = build_base_professional(row)
@@ -2476,9 +2665,9 @@ def assert_operational_identities_resolved(
         if declarado["status"] == "RESOLVIDO" and declarado["via"] == "ALIAS":
             # A aba Base criaria um Profissional paralelo com o código de um alias de outra pessoa.
             chave = (normalize_person_name(base["codigo"]), base_sheet_name or "Base")
-            ocorrencias[chave] = {"valor": base["codigo"], "origem": base_sheet_name or "Base", "ciclo": ciclo,
-                                  "status": "CONFLITO_ALIAS", "candidatos": [declarado["codigo"]],
-                                  "ocorrencias": 1, "linhas": [int(index) + 2]}
+            bloqueios[chave] = {"valor": base["codigo"], "origem": base_sheet_name or "Base", "coluna": "Código", "ciclo": ciclo,
+                                "status": "CONFLITO_ALIAS", "candidatos": [declarado["codigo"]],
+                                "ocorrencias": 1, "linhas": [int(index) + 2]}
         else:
             resolver.declare(base["codigo"])
     for _, row in payment_map_items_df.iterrows():
@@ -2486,58 +2675,106 @@ def assert_operational_identities_resolved(
         if status and resolver.resolve(status["codigo"])["status"] != "RESOLVIDO":
             resolver.declare(status["codigo"])
 
+    excel_rows = df.attrs.get("excel_row_numbers", [])
+
+    def linhas_documentos():
+        for position, (index, row) in enumerate(df.iterrows()):
+            project_raw = extract(row, PROJECT_COLUMNS)
+            numero_medicao = clean_text(first_value(row, MEASUREMENT_COLUMNS["numero_medicao"]))
+            valid_measurement = is_valid_measurement_key(numero_medicao, clean_text(project_raw["codigo_projeto"]))
+            discount_only = not valid_measurement and has_discount_data(row)
+            if not valid_measurement and not discount_only:
+                continue  # linha vazia (ou sem chave de medição): nunca é ocorrência, erro ou pendência
+            # Linha real do Excel (mesma fonte da pré-validação de negativos); fallback índice + cabeçalho.
+            linha = excel_rows[position] if position < len(excel_rows) else int(index) + 2
+            yield row, linha, discount_only, clean_text(extract(row, PROFESSIONAL_COLUMNS)["nome"])
+
+    # 1) Correspondência automática ANTES de classificar: o código canônico passa a valer também
+    #    para mapa, BM AUX e fonte de medição desta carga.
+    nomes_da_planilha = [nome for _row, _linha, _desconto, nome in linhas_documentos() if nome]
+    for _, row in bm_aux_df.iterrows():
+        raw = extract(row, BM_AUX_COLUMNS)
+        nomes_da_planilha += [clean_text(raw[chave]) for chave in ("responsavel", "auxiliar")]
+    for index, row in payment_map_items_df.iterrows():
+        item = build_payment_map_item(row, index + 1, canonical_codes, ciclo=ciclo)
+        if item:
+            nomes_da_planilha.append(item["projetista_codigo"])
+    nomes_da_planilha = [
+        n for n in nomes_da_planilha
+        if n and normalize_person_name(n) not in nomes_descartados and not is_expense_professional_name(n)
+    ]
+    if resolver.plan_auto_matches(nomes_da_planilha):
+        canonical_codes.update(resolver.apply_to_canonical_codes(canonical_codes))
+
     def registrar(valor: Any, origem: str, linha: int, coluna: str) -> None:
         nome = clean_text(valor)
         if not nome or is_expense_professional_name(nome):
             return
+        norm = normalize_person_name(nome)
+        if norm in nomes_descartados:
+            item = descartes["nomes"].setdefault(norm, {"valor": nome, "ocorrencias": 0})
+            item["ocorrencias"] += 1
+            return
         resultado = resolver.resolve(nome)
         if resultado["status"] == "RESOLVIDO":
-            resolvidas.setdefault(normalize_person_name(nome), {"valor": nome, "via": resultado["via"], "codigo": resultado["codigo"]})
+            resolvidas.setdefault(norm, {"valor": nome, "via": resultado["via"], "codigo": resultado["codigo"], "id": resultado.get("id")})
+            if resultado["via"] == "AUTO_MATCH":
+                auto = auto_uso.setdefault(norm, {"valor": nome, "id": resultado["id"], "codigo": resultado["codigo"],
+                                                  "origem": origem, "ocorrencias": 0, "linhas": []})
+                auto["ocorrencias"] += 1
+                if len(auto["linhas"]) < 50:
+                    auto["linhas"].append(linha)
             return
-        chave = (normalize_person_name(nome), origem)
-        item = ocorrencias.setdefault(chave, {"valor": nome, "origem": origem, "coluna": coluna, "ciclo": ciclo, "status": resultado["status"],
-                                              "candidatos": resultado.get("candidatos", []), "ocorrencias": 0, "linhas": []})
+        if resultado["status"] == "NAO_RESOLVIDO" and looks_like_supplier_name(nome):
+            item = pendentes.setdefault(norm, {"valor": nome, "chave": norm, "origem": origem, "coluna": coluna, "ciclo": ciclo,
+                                               "ocorrencias": 0, "linhas": []})
+            if origem not in item["origem"].split(" / "):
+                item["origem"] = f'{item["origem"]} / {origem}'
+            item["ocorrencias"] += 1
+            if len(item["linhas"]) < 50:
+                item["linhas"].append(linha)
+            return
+        status = "PROJETISTA_INVALIDO" if resultado["status"] == "NAO_RESOLVIDO" else resultado["status"]
+        item = bloqueios.setdefault((norm, origem), {"valor": nome, "origem": origem, "coluna": coluna, "ciclo": ciclo, "status": status,
+                                                     "candidatos": resultado.get("candidatos", []), "ocorrencias": 0, "linhas": []})
         if coluna not in item["coluna"].split(" / "):
             item["coluna"] = f'{item["coluna"]} / {coluna}'
         item["ocorrencias"] += 1
         if len(item["linhas"]) < 10:
             item["linhas"].append(linha)
 
-    # Linha de medição (ou só de desconto) sem PROJETISTA: a carga gravaria a medição sem fornecedor.
-    # Bloqueia com a lista de linhas — nunca vira identidade, nunca oferece alias/cadastro.
+    # Linha com dados de medição (ou só de desconto) sem PROJETISTA: a carga gravaria a medição sem
+    # fornecedor. Bloqueia — a menos que um humano tenha descartado conscientemente esta linha.
     sem_projetista: dict[str, dict[str, Any]] = {}
 
     def registrar_sem_projetista(row: pd.Series, origem: str, linha: int) -> None:
+        chave = row_decision_key(row, ciclo)
+        if chave in linhas_descartadas:
+            descartes["linhas"] += 1
+            return
         item = sem_projetista.setdefault(origem, {"valor": "", "origem": origem, "coluna": IDENTITY_HEADER, "ciclo": ciclo,
                                                   "status": "SEM_PROJETISTA", "candidatos": [], "ocorrencias": 0, "linhas": [],
-                                                  "exemplos": []})
+                                                  "exemplos": [], "chaves": []})
         item["ocorrencias"] += 1
         if len(item["linhas"]) < 10:
             item["linhas"].append(linha)
+        info = {
+            "linha": linha,
+            "numeroDocumento": clean_text(first_value(row, MEASUREMENT_COLUMNS["numero_documento"])),
+            "evidencia": (clean_text(first_value(row, MEASUREMENT_COLUMNS["evidencia"])) or "")[:80] or None,
+        }
         if len(item["exemplos"]) < 5:
-            item["exemplos"].append({
-                "linha": linha,
-                "numeroDocumento": clean_text(first_value(row, MEASUREMENT_COLUMNS["numero_documento"])),
-                "evidencia": (clean_text(first_value(row, MEASUREMENT_COLUMNS["evidencia"])) or "")[:80] or None,
-            })
+            item["exemplos"].append(info)
+        if len(item["chaves"]) < 500:
+            item["chaves"].append({**info, "chave": chave})
 
-    excel_rows = df.attrs.get("excel_row_numbers", [])
-    for position, (index, row) in enumerate(df.iterrows()):
-        project_raw = extract(row, PROJECT_COLUMNS)
-        numero_medicao = clean_text(first_value(row, MEASUREMENT_COLUMNS["numero_medicao"]))
-        valid_measurement = is_valid_measurement_key(numero_medicao, clean_text(project_raw["codigo_projeto"]))
-        discount_only = not valid_measurement and has_discount_data(row)
-        if not valid_measurement and not discount_only:
+    for row, linha, discount_only, nome in linhas_documentos():
+        if uses_documentos_auxiliares(nome, canonical_codes, fonte_medicao_map) and not discount_only:
             continue
-        professional_raw = extract(row, PROFESSIONAL_COLUMNS)
-        if uses_documentos_auxiliares(professional_raw["nome"], canonical_codes, fonte_medicao_map) and not discount_only:
-            continue
-        # Linha real do Excel (mesma fonte da pré-validação de negativos); fallback índice + cabeçalho.
-        linha = excel_rows[position] if position < len(excel_rows) else int(index) + 2
-        if not clean_text(professional_raw["nome"]):
+        if not nome:
             registrar_sem_projetista(row, sheet_name, linha)
             continue
-        registrar(professional_raw["nome"], sheet_name, linha, IDENTITY_HEADER)
+        registrar(nome, sheet_name, linha, IDENTITY_HEADER)
 
     for index, row in bm_aux_df.iterrows():
         raw = extract(row, BM_AUX_COLUMNS)
@@ -2557,13 +2794,14 @@ def assert_operational_identities_resolved(
         if item:
             registrar(item["projetista_codigo"], payment_map_sheet_name or "MAPA PAGTO", int(index) + 2, IDENTITY_HEADER)
 
-    if ocorrencias or sem_projetista:
+    if bloqueios or sem_projetista:
         details = list(sem_projetista.values())
-        for item in sorted(ocorrencias.values(), key=lambda d: (-d["ocorrencias"], d["valor"])):
-            sugestoes = cadastro_suggestions(cadastros, item["valor"])
-            details.append({**item, "sugestoesCadastro": sugestoes})
+        for item in sorted(bloqueios.values(), key=lambda d: (-d["ocorrencias"], d["valor"])):
+            details.append({**item, "sugestoesCadastro": cadastro_suggestions(cadastros, item["valor"])})
         raise UnresolvedIdentityError(details)
 
+    for item in pendentes.values():
+        item["sugestoesCadastro"] = cadastro_suggestions(cadastros, item["valor"])
     via_count: dict[str, int] = {}
     for info in resolvidas.values():
         via_count[info["via"]] = via_count.get(info["via"], 0) + 1
@@ -2571,7 +2809,129 @@ def assert_operational_identities_resolved(
         "identidades_resolvidas": len(resolvidas),
         "identidades_por_via": via_count,
         "aliases_utilizados": sorted(f'{i["valor"]} -> {i["codigo"]}' for i in resolvidas.values() if i["via"] == "ALIAS"),
+        "correspondencias_automaticas": sorted(f'{a["valor"]} -> {a["codigo"]}' for a in auto_uso.values()),
+        "identidades_pendentes": [
+            {k: p[k] for k in ("valor", "origem", "ocorrencias", "sugestoesCadastro")} | {"linhas": p["linhas"][:10]}
+            for p in sorted(pendentes.values(), key=lambda d: (-d["ocorrencias"], d["valor"]))
+        ],
+        "identidades_descartadas": sorted(({"valor": d["valor"], "ocorrencias": d["ocorrencias"]} for d in descartes["nomes"].values()), key=lambda d: d["valor"]),
+        "linhas_descartadas": descartes["linhas"],
+        "plano": {
+            "auto": auto_uso,
+            "pendentes": pendentes,
+            "resolvidas": resolvidas,
+            "nomes_descartados": nomes_descartados,
+            "linhas_descartadas": linhas_descartadas,
+            "existentes": decisoes.get("existentes") or {},
+        },
     }
+
+
+def persist_import_identities(conn, ciclo: str, plano: dict[str, Any], importado_por: dict[str, Any] | None) -> dict[str, str]:
+    """Dentro da transação da carga (só roda se o preflight liberou): grava os aliases do AUTO_MATCH
+    (+ auditoria), registra as identidades PENDENTES do ciclo e limpa as medições pendentes antigas
+    dos mesmos nomes (reimportação idempotente). Devolve {nome normalizado: id} dos pendentes."""
+    if not (plano["pendentes"] or plano["auto"] or plano["existentes"]):
+        return {}
+    if not conn.execute(text("select to_regclass('public.importacao_identidades') is not null")).scalar():
+        raise RuntimeError("Tabela importacao_identidades ausente — aplique as migrations antes de importar.")
+
+    chaves_da_carga = set(plano["pendentes"]) | set(plano["resolvidas"])
+    ids_antigos = [
+        str(e["id"]) for chave, e in plano["existentes"].items()
+        if chave in chaves_da_carga and e["status"] != "DESCARTADO"
+    ]
+    if ids_antigos:
+        # Medições pendentes (sem Profissional) e linhas de mapa geradas para esses nomes são
+        # recriadas por esta carga — nunca duplicadas. Medições já vinculadas seguem a limpeza normal.
+        conn.execute(
+            text("delete from medicoes where ciclo = :ciclo and id_profissional is null and identidade_importacao_id in :ids")
+            .bindparams(bindparam("ids", expanding=True)),
+            {"ciclo": ciclo, "ids": ids_antigos},
+        )
+        conn.execute(
+            text("delete from mapa_pagamento_itens where ciclo = :ciclo and identidade_importacao_id in :ids")
+            .bindparams(bindparam("ids", expanding=True)),
+            {"ciclo": ciclo, "ids": ids_antigos},
+        )
+
+    autor_id = (importado_por or {}).get("id")
+    autor_usuario = (importado_por or {}).get("usuario")
+    autor_nome = (importado_por or {}).get("nome")
+
+    def upsert_identidade(chave: str, valor: str, origem: str, status: str, profissional_id: Any, ocorrencias: int, linhas: list[int], metadata: dict[str, Any]) -> str:
+        return str(conn.execute(
+            text(
+                """
+                insert into importacao_identidades
+                    (ciclo, tipo, chave, valor_bruto, origem, status, profissional_id, ocorrencias, linhas, metadata,
+                     resolvido_por_id, resolvido_por_nome, resolvido_at)
+                values (:ciclo, :tipo, :chave, :valor, :origem, :status, :pid, :ocorrencias, cast(:linhas as jsonb), cast(:metadata as jsonb),
+                        :autor_id, :autor_nome, case when :status = 'AUTO_VINCULADO' then now() end)
+                on conflict (ciclo, tipo, chave) do update set
+                    valor_bruto = excluded.valor_bruto,
+                    origem = excluded.origem,
+                    status = excluded.status,
+                    profissional_id = excluded.profissional_id,
+                    ocorrencias = excluded.ocorrencias,
+                    linhas = excluded.linhas,
+                    metadata = excluded.metadata,
+                    resolvido_por_id = case when excluded.status = 'PENDENTE' then null else coalesce(excluded.resolvido_por_id, importacao_identidades.resolvido_por_id) end,
+                    resolvido_por_nome = case when excluded.status = 'PENDENTE' then null else coalesce(excluded.resolvido_por_nome, importacao_identidades.resolvido_por_nome) end,
+                    resolvido_at = case when excluded.status = 'PENDENTE' then null else coalesce(importacao_identidades.resolvido_at, now()) end,
+                    updated_at = now()
+                returning id
+                """
+            ),
+            {"ciclo": ciclo, "tipo": IMPORT_IDENTITY_TYPE, "chave": chave, "valor": valor, "origem": origem, "status": status,
+             "pid": profissional_id, "ocorrencias": ocorrencias, "linhas": json.dumps(linhas), "metadata": json.dumps(metadata, ensure_ascii=False, default=str),
+             "autor_id": autor_id if status != "PENDENTE" else None, "autor_nome": autor_nome if status != "PENDENTE" else None},
+        ).scalar())
+
+    for chave, auto in plano["auto"].items():
+        origem = alias_origin(auto["origem"])
+        alias_id = conn.execute(
+            text(
+                """
+                insert into profissional_aliases (profissional_id, alias, alias_normalizado, origem, metadata, created_by_id, created_by_nome)
+                values (:pid, :alias, :norm, :origem, cast(:metadata as jsonb), :autor_id, :autor_nome)
+                on conflict (profissional_id, alias_normalizado) do update set ativo = true, updated_at = now()
+                returning id
+                """
+            ),
+            {"pid": auto["id"], "alias": auto["valor"], "norm": chave, "origem": origem,
+             "metadata": json.dumps({"fluxo": "AUTO_MATCH_IMPORTACAO", "ciclo": ciclo, "linhas": auto["linhas"][:10]}),
+             "autor_id": autor_id, "autor_nome": autor_nome},
+        ).scalar()
+        upsert_identidade(chave, auto["valor"], auto["origem"], "AUTO_VINCULADO", auto["id"], auto["ocorrencias"], auto["linhas"],
+                          {"codigoCanonico": auto["codigo"], "aliasId": str(alias_id)})
+        if autor_id:
+            conn.execute(
+                text(
+                    """
+                    insert into admin_audit_logs (action, admin_id, admin_usuario, admin_nome, target_type, target_id, target_codigo, reason, metadata)
+                    values ('PROFISSIONAL_ALIAS_AUTO_MATCH', :autor_id, :autor_usuario, :autor_nome, 'Profissional', :pid, :codigo,
+                            'Correspondência automática determinística na importação de medição', cast(:metadata as jsonb))
+                    """
+                ),
+                {"autor_id": autor_id, "autor_usuario": autor_usuario or "", "autor_nome": autor_nome or "", "pid": auto["id"], "codigo": auto["codigo"],
+                 "metadata": json.dumps({"aliasId": str(alias_id), "alias": auto["valor"], "origem": origem, "ciclo": ciclo}, ensure_ascii=False)},
+            )
+
+    # Nome que estava PENDENTE neste ciclo e agora resolve (alias criado em outro fluxo): registra o vínculo.
+    for chave, info in plano["resolvidas"].items():
+        existente = plano["existentes"].get(chave)
+        if existente and existente["status"] == "PENDENTE" and info.get("id") and chave not in plano["auto"]:
+            conn.execute(
+                text("update importacao_identidades set status = 'VINCULADO', profissional_id = :pid, resolvido_at = now(), updated_at = now() where id = :id"),
+                {"pid": info["id"], "id": existente["id"]},
+            )
+
+    ids: dict[str, str] = {}
+    for chave, pendente in plano["pendentes"].items():
+        ids[chave] = upsert_identidade(chave, pendente["valor"], pendente["origem"], "PENDENTE", None, pendente["ocorrencias"], pendente["linhas"],
+                                       {"coluna": pendente["coluna"], "sugestoesCadastro": pendente.get("sugestoesCadastro", [])})
+    return ids
 
 
 def update_professional_funcao(conn, profissional_id: str, funcao: Any) -> None:
@@ -2592,6 +2952,7 @@ def ingest(
     create_schema: bool,
     full_refresh: bool,
     ciclo: str | None = None,
+    importado_por: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     engine = create_engine(database_url, future=True)
     if create_schema:
@@ -2641,7 +3002,8 @@ def ingest(
         else build_generated_payment_context(df, bm_aux_df, ciclo=ciclo)
     )
     ciclo_efetivo = payment_context["ciclo"]
-    affected_collaborator_codes = collect_import_collaborator_codes(df, bm_aux_df, canonical_codes, fonte_medicao_map, ciclo_efetivo)
+    with engine.connect() as decisoes_conn:
+        decisoes = load_import_decisions(decisoes_conn, ciclo_efetivo)
 
     # Depois da normalização/classificação da origem e antes de engine.begin():
     # uma planilha inválida não inicia full_refresh nem upserts.
@@ -2657,7 +3019,16 @@ def ingest(
     identity_summary = assert_operational_identities_resolved(
         df, base_df, bm_aux_df, payment_map_items_df, positive_payment_codes, canonical_codes, fonte_medicao_map,
         ciclo_efetivo, identity_resolver, cadastros_sugestao, sheet_name, base_sheet_name, bm_aux_sheet_name,
-        payment_map_sheet_name,
+        payment_map_sheet_name, decisoes,
+    )
+    plano = identity_summary.pop("plano")
+    nomes_pendentes = set(plano["pendentes"])
+    nomes_descartados = plano["nomes_descartados"]
+    linhas_descartadas = plano["linhas_descartadas"]
+    # Depois do preflight: o AUTO_MATCH já atualizou canonical_codes; pendentes/descartados nunca
+    # entram na limpeza por fornecedor (casamento por nome parecido).
+    affected_collaborator_codes = collect_import_collaborator_codes(
+        df, bm_aux_df, canonical_codes, fonte_medicao_map, ciclo_efetivo, excluir=nomes_pendentes | nomes_descartados,
     )
 
     base_loaded = 0
@@ -2687,6 +3058,16 @@ def ingest(
         assert_import_identities_active(conn, identities)
         if full_refresh:
             clear_imported_collaborators(conn, ciclo_efetivo, affected_collaborator_codes)
+        identidades_pendentes = persist_import_identities(conn, ciclo_efetivo, plano, importado_por)
+
+        def identidade_da_planilha(nome: Any) -> tuple[str, str | None]:
+            """('DESCARTADO'|'PENDENTE'|'RESOLVIDO', id da identidade pendente)."""
+            norm = normalize_person_name(nome)
+            if norm in nomes_descartados:
+                return "DESCARTADO", None
+            if norm in identidades_pendentes:
+                return "PENDENTE", identidades_pendentes[norm]
+            return "RESOLVIDO", None
 
         upsert_payment_map_context(conn, mapa_pagamento_contexto, payment_context)
 
@@ -2704,7 +3085,7 @@ def ingest(
                 if not payment_status:
                     continue
                 status_identity = identity_resolver.resolve(payment_status.get("codigo") or payment_status.get("nome"))
-                if status_identity["status"] == "RESOLVIDO" and status_identity["via"] in ("CODIGO", "ALIAS"):
+                if status_identity["status"] == "RESOLVIDO" and status_identity["via"] in ("CODIGO", "ALIAS", "AUTO_MATCH"):
                     conn.execute(
                         text("update profissionais set status_colaborador = :s, nome_completo = coalesce(:nc, nome_completo), updated_at = now() where id = :id"),
                         {"s": payment_status.get("status_colaborador"), "nc": payment_status.get("nome_completo"), "id": status_identity["id"]},
@@ -2720,6 +3101,11 @@ def ingest(
                 payment_item = build_payment_map_item(row, index + 1, canonical_codes, ciclo=ciclo_efetivo)
                 if not payment_item:
                     continue
+                situacao, identidade_id = identidade_da_planilha(payment_item["projetista_codigo"])
+                if situacao == "DESCARTADO":
+                    skipped += 1
+                    continue
+                payment_item["identidade_importacao_id"] = identidade_id
                 upsert_payment_map_item(conn, mapa_pagamento_itens, payment_item)
                 payment_items_loaded += 1
                 # Só o legado (sem código) ganha o código do mapa, como antes; identidade canônica
@@ -2746,14 +3132,19 @@ def ingest(
                     continue
 
                 measurement, project = built
+                situacao, identidade_id = identidade_da_planilha(codigo)
+                if situacao == "DESCARTADO":
+                    continue
                 id_projeto = upsert_project(conn, projetos, project)
                 # Preflight garantiu a resolução — nunca cria Profissional a partir do BM AUX.
-                id_profissional = identity_resolver.require_id(codigo)
+                # Pendente: sem Profissional, ligado à identidade da importação.
+                id_profissional = None if situacao == "PENDENTE" else identity_resolver.require_id(codigo)
                 measurement.update(
                     {
                         "id_projeto": id_projeto,
                         "id_coordenador": None,
                         "id_profissional": id_profissional,
+                        "identidade_importacao_id": identidade_id,
                     }
                 )
 
@@ -2791,6 +3182,15 @@ def ingest(
             if uses_documentos_auxiliares(professional_raw["nome"], canonical_codes, fonte_medicao_map) and not discount_only:
                 skipped += 1
                 continue
+            nome_profissional = clean_text(professional_raw["nome"])
+            # Decisões humanas do ciclo: linha sem PROJETISTA descartada / nome descartado.
+            if not nome_profissional and row_decision_key(row, ciclo_efetivo) in linhas_descartadas:
+                skipped += 1
+                continue
+            situacao, identidade_id = identidade_da_planilha(nome_profissional) if nome_profissional else ("RESOLVIDO", None)
+            if situacao == "DESCARTADO":
+                skipped += 1
+                continue
 
             contrato = clean_text(project_raw["contrato"])
             if discount_only:
@@ -2808,10 +3208,12 @@ def ingest(
                 },
             )
 
-            # Fornecedor: SEMPRE o Profissional canônico resolvido no preflight (código/alias/legado) —
-            # nunca um INSERT por nome. Coordenador segue o comportamento anterior.
-            nome_profissional = clean_text(professional_raw["nome"])
-            if nome_profissional and not is_expense_professional_name(nome_profissional):
+            # Fornecedor: SEMPRE o Profissional canônico resolvido no preflight (código/alias/legado/
+            # AUTO_MATCH) — nunca um INSERT por nome. Pendente: sem Profissional (identidade da
+            # importação). Coordenador segue o comportamento anterior.
+            if situacao == "PENDENTE":
+                id_profissional = None
+            elif nome_profissional and not is_expense_professional_name(nome_profissional):
                 id_profissional = identity_resolver.require_id(nome_profissional)
                 update_professional_funcao(conn, id_profissional, professional_raw.get("funcao"))
             else:
@@ -2832,6 +3234,7 @@ def ingest(
                         "id_projeto": id_projeto,
                         "id_coordenador": id_coordenador,
                         "id_profissional": id_profissional,
+                        "identidade_importacao_id": identidade_id,
                     }
                 )
                 if measurement["source_row_hash"] in source_hashes:
@@ -2861,6 +3264,7 @@ def ingest(
                         "id_projeto": id_projeto,
                         "id_coordenador": id_coordenador,
                         "id_profissional": id_profissional,
+                        "identidade_importacao_id": identidade_id,
                     }
                 )
                 if discount_measurement["source_row_hash"] in source_hashes:
@@ -2906,6 +3310,7 @@ def ingest(
         "rows_unique_by_source_hash": len(source_hashes),
         "rows_duplicate_by_source_hash": duplicate_source_rows,
         "rows_skipped": skipped,
+        "ciclo": ciclo_efetivo,
     }
 
 

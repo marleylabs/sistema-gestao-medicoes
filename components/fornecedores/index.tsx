@@ -15,8 +15,10 @@ import { FornecedoresTable } from "./fornecedores-table";
 import { EnvioBmLoteDialog, type ItemEnvioBmPrevia } from "./envio-bm-lote-dialog";
 import { BulkSelectionBar } from "@/components/bulk-selection-bar";
 import { alternarTodosAptos, elegibilidadeDaLinha, estadoCabecalho, previaEnvioBm } from "@/lib/bm-envio-selecao";
+import { ResolverCadastroPendente, type NovoFornecedorDaImportacao } from "@/components/importacao/identidades-pendentes";
 
 const CICLO_GERAL = "GERAL";
+const FILTRO_CADASTRO_PENDENTE = "CADASTRO_PENDENTE";
 const ORDEM_STATUS: SgcDisplayStatus[] = ["AGUARDANDO_ENVIO", "AGUARDANDO", "DIVERGENCIA", "REVISAO_SOLICITADA", "AGUARDANDO_NF", "APROVADO", "PAGO", "CANCELADO"];
 
 function cicloOptionLabel(ciclo: string) {
@@ -55,6 +57,8 @@ export function FornecedoresPage({
   onCriarCiclo,
   onExcluirCiclo,
   onBmsEnviados,
+  podeResolverIdentidade = false,
+  onNovoFornecedorDaImportacao,
 }: {
   itens: MapaPagamentoItem[];
   contratos: ContratoResumo[];
@@ -84,6 +88,9 @@ export function FornecedoresPage({
   onExcluirCiclo?: (ciclo: string) => Promise<string | null>;
   /** Depois de um envio de BMs em lote: recarrega listagem e status (mesma tela, mesmo ciclo). */
   onBmsEnviados?: () => Promise<void> | void;
+  /** Vincular/cadastrar/descartar registro com cadastro pendente — somente ADMIN (o backend recusa os demais). */
+  podeResolverIdentidade?: boolean;
+  onNovoFornecedorDaImportacao?: NovoFornecedorDaImportacao;
 }) {
   const [gerenciandoCiclos, setGerenciandoCiclos] = useState(false);
   const podeGerenciarCiclos = isAdmin && !!onCriarCiclo && !!onExcluirCiclo;
@@ -128,7 +135,9 @@ export function FornecedoresPage({
     const q = search.trim().toLocaleLowerCase("pt-BR");
     const result = itens.filter((item) => {
       const matchContrato = contratoSelecionado ? contractParticipation(item, contratoSelecionado, contratos) > 0 : true;
-      const matchStatus = statusFiltro ? displayStatusOf(item, sgcStatus) === statusFiltro : true;
+      const matchStatus = statusFiltro === FILTRO_CADASTRO_PENDENTE
+        ? !!item.cadastroPendente
+        : statusFiltro ? displayStatusOf(item, sgcStatus) === statusFiltro : true;
       const matchAlocacao = alocacaoFiltro ? item.alocacao === alocacaoFiltro : true;
       const searchable = [item.ato, item.projetistaCodigo, item.responsavel, item.cpfCnpj, item.razaoSocial, item.fornecedor?.cpfCnpj, item.fornecedor?.razaoSocial]
         .filter(Boolean).join(" ").toLocaleLowerCase("pt-BR");
@@ -175,6 +184,9 @@ export function FornecedoresPage({
     return next;
   });
 
+  const cadastrosPendentes = itens.filter((item) => item.cadastroPendente).length;
+  // Último pendente resolvido (vínculo/descarte) com o filtro ativo: volta para "Todos".
+  if (statusFiltro === FILTRO_CADASTRO_PENDENTE && cadastrosPendentes === 0) setStatusFiltro("");
   const detalhe = detalheId ? itens.find((item) => item.id === detalheId) ?? null : null;
   // Modo do painel lateral: "details" (drawer compacto) ou "edit-payment" (editor largo do mesmo fornecedor).
   const editandoDoDetalhe = !!(editingItem && detalhe && editingItem.id === detalhe.id);
@@ -185,6 +197,15 @@ export function FornecedoresPage({
   };
   // Ações só no detalhe (drawer) — a tabela é leitura. Mesmas regras de sempre (MapaItemActions).
   const renderActions = (item: MapaPagamentoItem) => (
+    <div className="grid gap-3">
+      {item.cadastroPendente && item.identidadeImportacaoId && ciclo !== CICLO_GERAL && (
+        <ResolverCadastroPendente
+          ciclo={ciclo}
+          identidadeId={item.identidadeImportacaoId}
+          onNovoFornecedor={podeResolverIdentidade ? onNovoFornecedorDaImportacao : undefined}
+          onAlterado={async (mensagem) => { setToast(mensagem); setDetalheId(null); await onChanged(); }}
+        />
+      )}
     <MapaItemActions
       item={item}
       itens={itens}
@@ -201,6 +222,7 @@ export function FornecedoresPage({
       onOpenDropdownFor={setOpenDropdownId}
       ciclo={ciclo}
     />
+    </div>
   );
 
   return (
@@ -240,6 +262,16 @@ export function FornecedoresPage({
       </div>
 
       <FornecedoresKpis itens={itens} statuses={sgcStatus} />
+
+      {cadastrosPendentes > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#f2dbb7] bg-[var(--warning-soft)] px-4 py-3 text-[13px]" data-testid="fornecedores-cadastros-pendentes">
+          <p className="text-[var(--foreground)]">
+            <strong>{cadastrosPendentes === 1 ? "1 cadastro pendente de vínculo" : `${cadastrosPendentes} cadastros pendentes de vínculo`}</strong>
+            <span className="text-[var(--muted-foreground)]"> — estão no ciclo e nos totais; o envio de BM fica indisponível até o vínculo.</span>
+          </p>
+          <Button variant="secondary" className="h-8" onClick={() => setStatusFiltro(FILTRO_CADASTRO_PENDENTE)}>Ver pendentes</Button>
+        </div>
+      )}
 
       <Card className="min-w-0 overflow-hidden">
         <div className="flex flex-wrap items-center gap-1.5 border-b border-[var(--border)] bg-[#FAFAF8] px-5 py-3">
@@ -286,6 +318,7 @@ export function FornecedoresPage({
               {statusDisponiveis.map((status) => (
                 <option key={status} value={status}>{getSgcDisplayStatusMeta(status).label}</option>
               ))}
+              {cadastrosPendentes > 0 && <option value={FILTRO_CADASTRO_PENDENTE}>Cadastro pendente</option>}
             </Select>
           </label>
           <label className="grid gap-1.5 text-label text-[var(--muted-foreground)]">

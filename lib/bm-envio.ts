@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyBmAvailable } from "@/lib/email";
 import { resolveFornecedorEmail } from "@/lib/email/resolve-recipients";
 import { logBmAction } from "@/lib/bm-log";
-import { avaliarElegibilidadeEnvioBm, type MotivoInelegivelEnvioBm } from "@/lib/bm-envio-elegibilidade";
+import { avaliarElegibilidadeEnvioBm, MENSAGEM_CADASTRO_PENDENTE, type MotivoInelegivelEnvioBm } from "@/lib/bm-envio-elegibilidade";
 import { isCicloValido } from "@/lib/ciclo";
 
 export type EnviarBoletimInput = {
@@ -60,6 +60,15 @@ export async function enviarBoletimFornecedor(input: EnviarBoletimInput): Promis
   // Defesa em profundidade: as rotas já validam, mas o service nunca cria BM fora de um ciclo real.
   if (!isCicloValido(ciclo)) {
     return { ok: false, httpStatus: 400, error: ERRO_CICLO_INVALIDO, motivo: "CICLO_INVALIDO" };
+  }
+
+  // Identidade PENDENTE da importação (sem vínculo cadastral): recusada com o motivo real, antes de
+  // qualquer leitura/escrita do BM — nenhum status, log, e-mail ou revisaoNumero muda.
+  const pendente = await prisma.mapaPagamentoItem.count({
+    where: { ciclo, projetistaCodigo: colaboradorCodigo, identidadeImportacao: { status: "PENDENTE" } },
+  });
+  if (pendente > 0) {
+    return { ok: false, httpStatus: 409, error: MENSAGEM_CADASTRO_PENDENTE, motivo: "CADASTRO_PENDENTE" };
   }
 
   const profissionais = await prisma.profissional.findMany({

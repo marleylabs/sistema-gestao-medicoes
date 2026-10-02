@@ -11,6 +11,8 @@ export type LinhaEnvioBm = {
   id: string;
   projetistaCodigo?: string | null;
   updatedAt?: string | Date | null;
+  /** Identidade PENDENTE da importação (sem cadastro): checkbox desabilitado com o motivo. */
+  cadastroPendente?: boolean;
 };
 
 export type StatusBmDaLinha = { status?: string | null; statusConferencia?: string | null } | undefined;
@@ -27,6 +29,7 @@ export function elegibilidadeDaLinha(
     statusConferencia: bm?.statusConferencia,
     revisaoSolicitadaAt,
     itemAtualizadoEm: ultimaAlteracaoDoBm(linhasDoCiclo, item.projetistaCodigo) ?? item.updatedAt ?? null,
+    cadastroPendente: item.cadastroPendente,
   });
 }
 

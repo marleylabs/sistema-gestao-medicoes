@@ -27,7 +27,7 @@ import { ComentarioDropdown } from "@/components/mapa-pagamento-table";
 import { FornecedoresPage } from "@/components/fornecedores";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { AdministrativoPanel } from "@/components/administrativo-panel";
-import { IdentidadesPendentes, type EtlUnresolvedIdentity } from "@/components/importacao/identidades-pendentes";
+import { IdentidadesDoCicloPanel, PendenciasEstruturais, type EtlUnresolvedIdentity } from "@/components/importacao/identidades-pendentes";
 import { HistoricoWorkspace } from "@/components/historico/historico-workspace";
 import { EvidenciasWorkspace } from "@/components/evidencias/evidencias-workspace";
 import { useViewportAlign } from "@/components/use-viewport-align";
@@ -121,12 +121,12 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
   const section: Section = naRotaFornecedores
     ? (VALID_SECTIONS.includes("fornecedores") ? "fornecedores" : defaultSection)
     : sectionParam && VALID_SECTIONS.includes(sectionParam) ? sectionParam : defaultSection;
-  // Nome da importação confirmado como novo fornecedor: só em memória (nunca na URL) até o
-  // Painel Administrativo abrir o cadastro com ele.
-  const [novoFornecedorNome, setNovoFornecedorNome] = useState<string | null>(null);
-  const limparNovoFornecedorNome = useCallback(() => setNovoFornecedorNome(null), []);
-  function abrirNovoFornecedorDaImportacao(nome: string) {
-    setNovoFornecedorNome(nome);
+  // Identidade pendente da importação confirmada como novo fornecedor: só em memória (nunca na
+  // URL) até o Painel Administrativo abrir o cadastro oficial com o nome (e vincular ao salvar).
+  const [novoFornecedor, setNovoFornecedor] = useState<{ nome: string; identidadeId: string } | null>(null);
+  const limparNovoFornecedor = useCallback(() => setNovoFornecedor(null), []);
+  function abrirNovoFornecedorDaImportacao(nome: string, identidadeId: string) {
+    setNovoFornecedor({ nome, identidadeId });
     setSection("administrativo");
   }
 
@@ -818,6 +818,8 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
             onEnviarBm={enviarBm}
             onRetornarBm={retornarBm}
             onDivergenciaResolvida={loadAlertas}
+            podeResolverIdentidade={isFullAdmin}
+            onNovoFornecedorDaImportacao={isFullAdmin ? abrirNovoFornecedorDaImportacao : undefined}
             ciclosPortal={ciclos}
             onPublicarCiclo={publicarCicloPortal}
             podeExcluirCiclos={isFullAdmin}
@@ -849,6 +851,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
                   loadCiclos();
                   refreshAll();
                 }}
+                podeResolver={isFullAdmin}
                 onNovoFornecedor={isFullAdmin ? abrirNovoFornecedorDaImportacao : undefined}
               />
             </div>
@@ -873,8 +876,8 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
       {section === "administrativo" && (isFullAdmin || isAdministrativo || temAcessoAdministrativoExtra) && (
         <AdministrativoPanel
           isAdmin={isFullAdmin}
-          novoFornecedorNome={novoFornecedorNome}
-          onNovoFornecedorAberto={limparNovoFornecedorNome}
+          novoFornecedor={novoFornecedor}
+          onNovoFornecedorAberto={limparNovoFornecedor}
         />
       )}
 
@@ -1126,12 +1129,48 @@ function isUnresolvedIdentity(row: EtlInvalidRow | EtlUnresolvedIdentity): row i
 
 function identityBlockMessage(details: EtlUnresolvedIdentity[]) {
   const semProjetista = details.filter((d) => d.status === "SEM_PROJETISTA").reduce((n, d) => n + d.ocorrencias, 0);
-  const nomes = details.filter((d) => d.status !== "SEM_PROJETISTA").length;
+  const outros = details.filter((d) => d.status !== "SEM_PROJETISTA").length;
   const partes = ["Importação bloqueada."];
-  if (nomes) partes.push(`${nomes} identidade(s) da planilha não correspondem a um fornecedor cadastrado: vincule cada nome a um fornecedor existente ou confirme-o como novo antes de reimportar.`);
-  if (semProjetista) partes.push(`${semProjetista} linha(s) de medição estão sem PROJETISTA.`);
+  if (semProjetista) partes.push(`${semProjetista} linha(s) possuem dados de medição, mas não têm PROJETISTA válido. Corrija a planilha ou descarte conscientemente essas ocorrências.`);
+  if (outros) partes.push(`${outros} identidade(s) com erro estrutural (PROJETISTA que não é nome de fornecedor ou identidade ambígua) — corrija antes de reimportar.`);
   partes.push("Nenhum dado foi alterado.");
   return partes.join(" ");
+}
+
+/** Chaves do resultado do ETL que têm resumo próprio (não viram cartão numérico genérico). */
+const CHAVES_RESUMO_IDENTIDADE = new Set(["identidades_resolvidas", "linhas_descartadas"]);
+
+/** Resumo da importação concluída: reconhecidos, automáticos, pendentes de vínculo e descartados. */
+function ResumoIdentidadesImportacao({ resultado }: { resultado: Record<string, unknown> }) {
+  const lista = (chave: string) => (Array.isArray(resultado[chave]) ? (resultado[chave] as unknown[]) : []);
+  const automaticas = lista("correspondencias_automaticas") as string[];
+  const pendentes = lista("identidades_pendentes") as Array<{ valor: string; ocorrencias: number }>;
+  const descartadas = lista("identidades_descartadas") as Array<{ valor: string; ocorrencias: number }>;
+  const linhasDescartadas = typeof resultado.linhas_descartadas === "number" ? resultado.linhas_descartadas : 0;
+  // `identidades_resolvidas` do ETL inclui as automáticas — aqui "reconhecidos" são só os que já tinham código/alias.
+  const reconhecidas = Math.max(0, (typeof resultado.identidades_resolvidas === "number" ? resultado.identidades_resolvidas : 0) - automaticas.length);
+  return (
+    <div className="grid gap-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3 text-xs text-[#555555]" data-testid="etl-resumo-identidades">
+      <p className="text-sm font-semibold text-[#1A1A1A]">Importação concluída</p>
+      <ul className="grid gap-0.5">
+        <li><strong>{reconhecidas}</strong> fornecedor(es) reconhecido(s)</li>
+        <li><strong>{automaticas.length}</strong> correspondência(s) resolvida(s) automaticamente</li>
+        <li><strong>{pendentes.length}</strong> cadastro(s) pendente(s) de vínculo</li>
+        <li><strong>{descartadas.length + linhasDescartadas}</strong> item(ns) descartado(s){linhasDescartadas ? ` (${linhasDescartadas} linha(s) sem PROJETISTA)` : ""}</li>
+      </ul>
+      {pendentes.length > 0 && (
+        <p className="rounded-md bg-[var(--warning-soft)] p-2 text-[#92400E]">As medições pendentes permanecerão no ciclo, mas o envio de BM ficará indisponível até o vínculo cadastral.</p>
+      )}
+      {automaticas.length > 0 && (
+        <details>
+          <summary className="cursor-pointer font-semibold text-[#1A1A1A]">Resolvidos automaticamente</summary>
+          <ul className="mt-1 grid gap-0.5" data-testid="etl-correspondencias-automaticas">
+            {automaticas.map((a) => <li key={a}>{a.replace(" -> ", " → ")} · <span className="text-[var(--success)]">Resolvido automaticamente</span></li>)}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
 }
 
 const negativeMeasurementFieldLabels: Record<string, string> = {
@@ -1147,11 +1186,13 @@ const negativeMeasurementFieldLabels: Record<string, string> = {
 function ImportarPlanilhaSection({
   ciclos,
   onImported,
+  podeResolver,
   onNovoFornecedor,
 }: {
   ciclos: CicloEntry[];
   onImported: () => void;
-  onNovoFornecedor?: (nome: string) => void;
+  podeResolver: boolean;
+  onNovoFornecedor?: (nome: string, identidadeId: string) => void;
 }) {
   const [file, setFile]         = useState<File | null>(null);
   const [ciclo, setCiclo]       = useState("");
@@ -1376,10 +1417,10 @@ function ImportarPlanilhaSection({
                 </p>
                 {!!status.lastErrorDetails?.length && status.lastErrorDetails.every(isUnresolvedIdentity) && (
                   <div className="rounded-lg bg-white p-3">
-                    <IdentidadesPendentes
+                    <PendenciasEstruturais
                       detalhes={status.lastErrorDetails}
                       ciclo={status.lastErrorDetails.find((d) => d.ciclo)?.ciclo ?? null}
-                      onNovoFornecedor={onNovoFornecedor}
+                      podeResolver={podeResolver}
                     />
                   </div>
                 )}
@@ -1402,8 +1443,9 @@ function ImportarPlanilhaSection({
               </div>
             ) : status.lastResult ? (
               <div className="grid gap-4">
+                <ResumoIdentidadesImportacao resultado={status.lastResult} />
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {Object.entries(status.lastResult).filter(([, val]) => typeof val === "number").map(([key, val]) => (
+                  {Object.entries(status.lastResult).filter(([key, val]) => typeof val === "number" && !CHAVES_RESUMO_IDENTIDADE.has(key)).map(([key, val]) => (
                     <div key={key} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-[#9CA3AF]">{key.replace(/_/g, " ")}</p>
                       <p className="mt-1 text-lg font-bold text-[#1A1A1A]">{val as number}</p>
@@ -1416,6 +1458,11 @@ function ImportarPlanilhaSection({
                     <ul className="mt-1 grid gap-0.5">
                       {(status.lastResult.aliases_utilizados as string[]).map((a) => <li key={a}>{a.replace(" -> ", " → ")}</li>)}
                     </ul>
+                  </div>
+                )}
+                {typeof status.lastResult.ciclo === "string" && (
+                  <div className="rounded-lg border border-[#E5E7EB] p-3">
+                    <IdentidadesDoCicloPanel ciclo={status.lastResult.ciclo} onNovoFornecedor={onNovoFornecedor} />
                   </div>
                 )}
                 {Array.isArray(status.lastResult.sugestoes_cadastro_nao_aplicadas) && status.lastResult.sugestoes_cadastro_nao_aplicadas.length > 0 && (

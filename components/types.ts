@@ -73,6 +73,9 @@ export type MapaPagamentoItem = {
     observacoesContrato: string | null;
   };
   updatedAt: string | null;
+  /** Fornecedor com cadastro pendente de vínculo (identidade da importação): BM bloqueado. */
+  cadastroPendente?: boolean;
+  identidadeImportacaoId?: string | null;
 };
 
 export type Medicao = {

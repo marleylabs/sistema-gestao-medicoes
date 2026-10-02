@@ -9,6 +9,7 @@ import { getMapaPagamentoStatusMeta } from "@/lib/sgc-display-status";
  *  - qualquer outro status → o BM já está com o fornecedor (ou concluído/cancelado): não envia.
  * CANCELADO é aceito pela rota, mas nunca é oferecido pelo botão — o lote segue o botão.
  * Regra de status pelo enum real (nunca pelo rótulo "Aguardando envio"). Puro: tela e servidor.
+ * Antes de tudo: fornecedor com cadastro pendente de vínculo (identidade da importação) não envia.
  * Nada aqui vem do primeiro acesso — regras independentes.
  */
 
@@ -32,7 +33,10 @@ export function ultimaAlteracaoDoBm(
   return maisRecente;
 }
 
-export type MotivoInelegivelEnvioBm = "REVISAO_SEM_ALTERACAO" | "JA_ENVIADO" | "CANCELADO";
+export type MotivoInelegivelEnvioBm = "CADASTRO_PENDENTE" | "REVISAO_SEM_ALTERACAO" | "JA_ENVIADO" | "CANCELADO";
+
+/** Fornecedor do ciclo ainda sem vínculo cadastral (identidade PENDENTE da importação). */
+export const MENSAGEM_CADASTRO_PENDENTE = "Cadastro pendente de vínculo. Vincule este registro a um cadastro para liberar o envio do BM.";
 
 export type ElegibilidadeEnvioBm =
   | { elegivel: true; reenvio: boolean }
@@ -45,7 +49,10 @@ export function avaliarElegibilidadeEnvioBm(input: {
   revisaoSolicitadaAt?: string | Date | null;
   /** updatedAt do item do mapa de pagamento (a linha selecionada). */
   itemAtualizadoEm?: string | Date | null;
+  /** Linha de identidade PENDENTE da importação (sem cadastro): nunca recebe BM, qualquer que seja o status. */
+  cadastroPendente?: boolean;
 }): ElegibilidadeEnvioBm {
+  if (input.cadastroPendente) return { elegivel: false, motivo: "CADASTRO_PENDENTE", mensagem: MENSAGEM_CADASTRO_PENDENTE };
   const status = input.status ?? "AGUARDANDO_ENVIO";
   if (status === "AGUARDANDO_ENVIO") return { elegivel: true, reenvio: false };
   if (status === "REVISAO_SOLICITADA") {

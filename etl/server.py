@@ -14,6 +14,8 @@ from ingest_medicoes import InvalidMeasurementRowError, UnresolvedIdentityError,
 
 DATABASE_URL = os.environ.get("ETL_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
 PORT = int(os.environ.get("ETL_SERVER_PORT", "4000"))
+# Container: 0.0.0.0 (rede interna do compose). Suíte E2E local: 127.0.0.1.
+HOST = os.environ.get("ETL_SERVER_HOST", "0.0.0.0")
 ETL_TIMEOUT_SECONDS = int(os.environ.get("ETL_TIMEOUT_SECONDS", "1800"))  # 30 min padrão
 
 _lock = threading.Lock()
@@ -38,7 +40,7 @@ def _reset_running() -> None:
             _watchdog_timer = None
 
 
-def run_etl(file_bytes: bytes, ciclo: str | None) -> None:
+def run_etl(file_bytes: bytes, ciclo: str | None, importado_por: dict | None = None) -> None:
     global _running, _last_result, _last_error, _last_error_type, _last_error_details, _watchdog_timer
     tmp_path: Path | None = None
     try:
@@ -55,6 +57,7 @@ def run_etl(file_bytes: bytes, ciclo: str | None) -> None:
             create_schema=False,
             full_refresh=True,
             ciclo=ciclo or None,
+            importado_por=importado_por,
         )
         _last_result = result
         _last_error = None
@@ -200,12 +203,27 @@ class Handler(BaseHTTPRequestHandler):
             _watchdog_timer.daemon = True
             _watchdog_timer.start()
 
-        thread = threading.Thread(target=run_etl, args=(file_bytes, ciclo), daemon=True)
+        thread = threading.Thread(target=run_etl, args=(file_bytes, ciclo, importado_por_dos_headers(self.headers)), daemon=True)
         thread.start()
         self.send_json(202, {"ok": True, "message": "ETL iniciado.", "ciclo": ciclo})
 
 
+def importado_por_dos_headers(headers) -> dict | None:
+    """Quem disparou a importação (repassado pelo proxy autenticado pages/api/admin/etl.ts) — só
+    para a auditoria do AUTO_MATCH. Sem os headers (CLI/teste), o alias é gravado sem autor."""
+    from urllib.parse import unquote
+
+    usuario_id = (headers.get("X-Importado-Por-Id") or "").strip()
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", usuario_id):
+        return None
+    return {
+        "id": usuario_id,
+        "usuario": unquote(headers.get("X-Importado-Por-Usuario") or "")[:64],
+        "nome": unquote(headers.get("X-Importado-Por-Nome") or "")[:160],
+    }
+
+
 if __name__ == "__main__":
-    server = HTTPServer(("0.0.0.0", PORT), Handler)
+    server = HTTPServer((HOST, PORT), Handler)
     print(f"ETL server listening on port {PORT}", flush=True)
     server.serve_forever()

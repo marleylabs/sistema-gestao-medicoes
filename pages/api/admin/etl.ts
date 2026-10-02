@@ -98,6 +98,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const contentType = req.headers["content-type"];
   if (contentType) headers["content-type"] = contentType;
   headers["content-length"] = String(body.length);
+  // Autor da importação para a auditoria da correspondência automática de identidades no ETL
+  // (rede interna; o ETL valida o formato e nunca usa isso para autorizar nada).
+  headers["x-importado-por-id"] = user.id;
+  headers["x-importado-por-usuario"] = encodeURIComponent(user.usuario);
+  headers["x-importado-por-nome"] = encodeURIComponent(user.nome ?? "");
 
   try {
     const etlResponse = await fetch(`${ETL_URL}/run`, {
