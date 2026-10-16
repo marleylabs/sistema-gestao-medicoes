@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { detectXlsxMime, safeDownloadName } from "@/lib/file-security";
 import { prisma } from "@/lib/prisma";
 import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
-import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
+import { getColaboradorEscopo } from "@/lib/colaborador-alias";
 import { logBmAction } from "@/lib/bm-log";
 import { toNumber } from "@/lib/format";
 import { parseSimpleXlsx } from "@/lib/xlsx";
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
 
   // Ownership: ciclo e fornecedor vêm exclusivamente da sessão resolvida — nunca de parâmetro do cliente.
   const cicloAtivo = await getCicloAtivoMedicao();
-  const codigoAliases = await getColaboradorCodigoAliases(user.usuario, cicloAtivo);
+  const { aliases: codigoAliases, profissionalId } = await getColaboradorEscopo(user.usuario, cicloAtivo);
   const sgc = await prisma.sgcAprovacaoMedicao.findFirst({
     where: { colaboradorCodigo: { in: codigoAliases }, ciclo: cicloAtivo },
     orderBy: { createdAt: "desc" },
@@ -35,6 +35,11 @@ export async function POST(request: NextRequest) {
   }
   if (sgc.statusConferencia === "DIVERGENCIA") {
     return NextResponse.json({ error: "A conferência já está em andamento com divergências. Aguarde a Equipe de Medição resolver." }, { status: 409 });
+  }
+
+  // Sem Profissional único não há documentos da equipe para comparar (nunca casar por nome).
+  if (!profissionalId) {
+    return NextResponse.json({ error: "Cadastro do fornecedor sem vínculo com a medição. Fale com o Administrativo." }, { status: 409 });
   }
 
   const formData = await request.formData().catch(() => null);
@@ -67,16 +72,7 @@ export async function POST(request: NextRequest) {
   }
 
   const medicoesEquipe = await prisma.medicao.findMany({
-    where: {
-      ciclo: sgc.ciclo,
-      profissional: {
-        OR: codigoAliases.flatMap((codigo) => [
-          { codigo: { equals: codigo, mode: "insensitive" as const } },
-          { nome: { equals: codigo, mode: "insensitive" as const } },
-          { nomeCompleto: { equals: codigo, mode: "insensitive" as const } },
-        ]),
-      },
-    },
+    where: { ciclo: sgc.ciclo, idProfissional: profissionalId },
     select: { id: true, numeroDocumento: true, formato: true, equivalenteA1Horas: true, percentualEmissao: true, tipo2: true },
   });
 

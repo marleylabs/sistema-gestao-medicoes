@@ -5,7 +5,7 @@ import { toNumber } from "@/lib/format";
 import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
-import { getColaboradorCodigoAliases, getColaboradorEscopo } from "@/lib/colaborador-alias";
+import { getColaboradorEscopo } from "@/lib/colaborador-alias";
 import { getDocumentosMedidos } from "@/lib/documentos-medidos";
 
 function dateOnly(value: Date | null) {
@@ -18,7 +18,8 @@ export async function GET() {
   if (user.perfil !== "COLABORADOR") return NextResponse.json({ error: "Acesso restrito." }, { status: 403 });
 
   const codigo = toColaboradorCodigo(user.usuario);
-  const codigoAliases = await getColaboradorCodigoAliases(user.usuario);
+  // Escopo de todos os ciclos, montado uma vez: a lista já só tem valores da própria identidade.
+  const { aliases: codigoAliases, profissionalId } = await getColaboradorEscopo(user.usuario);
 
   const aprovacoes = await prisma.sgcAprovacaoMedicao.findMany({
     where: { colaboradorCodigo: { in: codigoAliases }, status: { in: ["APROVADO", "AGUARDANDO_NF", "PAGO"] } },
@@ -27,21 +28,22 @@ export async function GET() {
 
   if (!aprovacoes.length) return NextResponse.json({ medicoes: [] });
 
-  const profissional = await prisma.profissional.findFirst({
-    where: { codigo: { in: codigoAliases }, deletedAt: null },
-    select: { nomeCompleto: true, nome: true, cpf: true, cnpj: true, razaoSocial: true, funcao: true },
-  });
+  const profissional = profissionalId
+    ? await prisma.profissional.findFirst({
+        where: { id: profissionalId, deletedAt: null },
+        select: { nomeCompleto: true, nome: true, cpf: true, cnpj: true, razaoSocial: true, funcao: true },
+      })
+    : null;
 
   const medicoes = await Promise.all(
     aprovacoes.map(async (sgc) => {
-      const { aliases: cicloAliases, profissionalId } = await getColaboradorEscopo(user.usuario, sgc.ciclo);
       const [pagamento, contexto, documentos] = await Promise.all([
         prisma.mapaPagamentoItem.findFirst({
-          where: { ciclo: sgc.ciclo, projetistaCodigo: { in: cicloAliases } },
+          where: { ciclo: sgc.ciclo, projetistaCodigo: { in: codigoAliases } },
           orderBy: { ordem: "asc" },
         }),
         prisma.mapaPagamentoContexto.findUnique({ where: { ciclo: sgc.ciclo } }),
-        getDocumentosMedidos({ aliases: cicloAliases, ciclo: sgc.ciclo, profissionalId }),
+        getDocumentosMedidos({ aliases: codigoAliases, ciclo: sgc.ciclo, profissionalId }),
       ]);
       const pagamentoSerializado = pagamento ? serializeMapaPagamentoItem(pagamento) : null;
 

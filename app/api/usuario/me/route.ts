@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
 import { podeAlterarProprioNome, resolveNomeUpdate } from "@/lib/usuario-nome";
+import { getColaboradorEscopo } from "@/lib/colaborador-alias";
 import { prisma } from "@/lib/prisma";
 import { getEffectivePermissions } from "@/lib/permissoes-acesso";
 
@@ -27,16 +28,9 @@ export async function GET() {
   });
   if (!dbUser) return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
 
-  const dadosCadastrais = dbUser.perfil === "COLABORADOR"
-    ? await prisma.cadastroFornecedor.findFirst({
-        where: {
-          OR: [
-            { responsavel: { equals: dbUser.nome, mode: "insensitive" } },
-            { colaboradorCodigo: dbUser.nome },
-          ],
-        },
-      })
-    : null;
+  // Mesmo cadastro do escopo do portal (login ou nome exato, falha fechado com homônimos).
+  const cadastroId = dbUser.perfil === "COLABORADOR" ? (await getColaboradorEscopo(dbUser.usuario)).cadastroId : null;
+  const dadosCadastrais = cadastroId ? await prisma.cadastroFornecedor.findUnique({ where: { id: cadastroId } }) : null;
 
   // Permissões efetivas (perfil base + extras concedidas individualmente) — nunca substitui
   // `perfil`, só informa ao frontend o que este usuário específico pode acessar além do perfil.

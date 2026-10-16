@@ -16,13 +16,16 @@ export async function getColaboradorCodigoAliases(usuario: string | null | undef
   return (await getColaboradorEscopo(usuario, ciclo)).aliases;
 }
 
-/** Mesma regra, devolvendo também o Profissional da sessão (null sem identidade única). */
+/**
+ * Mesma regra, devolvendo também o Profissional da sessão (null sem identidade única) e o cadastro
+ * escolhido para o usuário (falha fechado com homônimos) — fonte única dos dados exibidos no portal.
+ */
 export async function getColaboradorEscopo(
   usuario: string | null | undefined,
   ciclo?: string | null,
-): Promise<{ aliases: string[]; profissionalId: string | null }> {
+): Promise<{ aliases: string[]; profissionalId: string | null; cadastroId: string | null }> {
   const login = toColaboradorCodigo(usuario);
-  if (!usuario || !login) return { aliases: [], profissionalId: null };
+  if (!usuario || !login) return { aliases: [], profissionalId: null, cadastroId: null };
   const usuarioUpper = usuario.trim().toUpperCase();
 
   const usuarioDb = await prisma.usuario.findUnique({ where: { usuario: usuarioUpper }, select: { nome: true } });
@@ -37,10 +40,15 @@ export async function getColaboradorEscopo(
     orderBy: { updatedAt: "desc" },
   });
   const cadastro = selectCadastroForAuthenticatedUser(cadastroCandidates, usuario, usuarioDb?.nome).cadastro;
+  const cadastroId = cadastro?.id ?? null;
 
-  const identidade = await resolverIdentidadeOperacional(cadastro?.colaboradorCodigo ?? login);
+  // O login é a identidade da sessão, mas só entra na lista se não for código/alias de nenhum
+  // Profissional (AMBIGUO ou de outro ficaria com os dados alheios).
+  const doLogin = await resolverIdentidadeOperacional(login);
+  const loginLivre = doLogin.status === "NAO_RESOLVIDO";
+  const identidade = cadastro?.colaboradorCodigo ? await resolverIdentidadeOperacional(cadastro.colaboradorCodigo) : doLogin;
   // Sem identidade única, o escopo é só o login da sessão (falha fechado).
-  if (identidade.status !== "RESOLVIDO") return { aliases: [login], profissionalId: null };
+  if (identidade.status !== "RESOLVIDO") return { aliases: loginLivre ? [login] : [], profissionalId: null, cadastroId };
   const { profissionalId } = identidade;
 
   const profissional = await prisma.profissional.findUnique({
@@ -74,8 +82,6 @@ export async function getColaboradorEscopo(
     (valor) => resolverIdentidadeOperacional(valor),
     profissionalId,
   );
-  // O login é a identidade da sessão: entra, a menos que seja o código de OUTRO Profissional.
-  const doLogin = await resolverIdentidadeOperacional(login);
-  if (doLogin.status !== "RESOLVIDO" || doLogin.profissionalId === profissionalId) aliases.unshift(login);
-  return { aliases: Array.from(new Set(aliases)), profissionalId };
+  if (loginLivre) aliases.unshift(login);
+  return { aliases: Array.from(new Set(aliases)), profissionalId, cadastroId };
 }

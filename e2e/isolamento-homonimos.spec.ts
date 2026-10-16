@@ -113,6 +113,7 @@ test.describe.serial("Isolamento entre fornecedores homônimos", () => {
     await entrar(page, A.login);
     const me = await (await page.request.get("/api/colaborador/me")).json();
     expect(me.sgc.id).toBe(sgcA);
+    expect(me.usuario.razaoSocial).toBe(`${A.nome} LTDA`); // cadastro do escopo, nunca o de B
     const texto = JSON.stringify(me);
     expect(texto).not.toContain(B.codigo);
     expect(texto).not.toContain(DOC_B);

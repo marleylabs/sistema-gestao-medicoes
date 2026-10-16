@@ -17,7 +17,7 @@ tags: [modulo]
 
 **Regras e armadilhas:**
 - Toda rota de `app/api/colaborador/**` exige COLABORADOR e filtra pela lista de aliases da sessão. O escopo nunca é por CNPJ.
-- **Escopo por identidade exata** ([spec](../specs/p1-escopo-fornecedor-por-identidade.md)): a identidade vem do cadastro do usuário (login ou nome exato, falhando fechado com homônimos) resolvido para um Profissional. Só entra na lista o valor que `resolverIdentidadeOperacional` liga a esse mesmo Profissional. Sem identidade única, o escopo é só o login. Não há busca por CNPJ nem linha inteira do mapa. Documentos Medidos do portal é buscado pelo id do Profissional (`getColaboradorEscopo`), nunca por nome.
+- **Escopo por identidade exata** ([spec](../specs/p1-escopo-fornecedor-por-identidade.md)): a identidade vem do cadastro do usuário (login ou nome exato, falhando fechado com homônimos) resolvido para um Profissional. Só entra na lista o valor que `resolverIdentidadeOperacional` liga a esse mesmo Profissional. Sem identidade única, o escopo é só o login. Não há busca por CNPJ nem linha inteira do mapa. `getColaboradorEscopo` devolve também o Profissional e o cadastro da sessão: Documentos Medidos, conferência, Minhas Medições e os dados cadastrais exibidos (`/api/colaborador/me`, `/api/usuario/me`) usam esses ids, nunca nome ou CNPJ. O login só entra na lista se não for código/alias de nenhum Profissional.
 - Não existe vínculo explícito login → Profissional (ver [pendências](../pendencias.md)). Por isso o fornecedor não altera o próprio nome ([decisão 011](../decisoes/011-nome-do-fornecedor-so-pelo-administrativo.md)).
 
 **Depende de:** [Autenticação](autenticacao.md), [Boletim](boletim-calculo.md), [Envio do BM](envio-bm.md)

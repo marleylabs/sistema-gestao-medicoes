@@ -95,7 +95,7 @@ test("escopo V3: nome de A que é o nomeCompleto de B não entra na lista de A",
   assert.ok(!(await getColaboradorCodigoAliases(loginA, ciclo)).includes(homonimo));
 });
 
-test("escopo V4: usuário cujo nome bate com dois cadastros fica só com o próprio login", async () => {
+test("escopo (não regressão, falha fechado): usuário cujo nome bate com dois cadastros fica só com o próprio login", async () => {
   const login = `P08${String(Date.now()).slice(-6)}`;
   const nome = `DUPLO ${sufixo}`;
   await db.usuario.create({ data: { usuario: login, nome, perfil: "COLABORADOR", senhaHash: "x" } });
@@ -133,5 +133,58 @@ test("escopo T4: Documentos Medidos do portal não traz medição de outro Profi
     await db.medicao.deleteMany({ where: { numeroMedicao: { startsWith: sufixo } } });
     await db.projeto.delete({ where: { id: projeto.id } });
     await db.profissional.delete({ where: { id: c.id } });
+  }
+});
+
+async function criarUsuario(login: string, nome: string) {
+  await db.usuario.create({ data: { usuario: login, nome, perfil: "COLABORADOR", senhaHash: "x" } });
+}
+
+test("escopo: login que é código de OUTRO Profissional não entra quando o cadastro do usuário não resolve", async () => {
+  const login = `P07${String(Date.now()).slice(-6)}`;
+  const nome = `SEM VINCULO ${sufixo}`;
+  await criarUsuario(login, nome);
+  await db.cadastroFornecedor.create({ data: { cnpjNormalizado: "11222333000181", colaboradorCodigo: `NAORES-${sufixo}`, responsavel: nome, razaoSocial: "X" } });
+  await db.profissional.create({ data: { codigo: login, nome: `DONO DO LOGIN ${sufixo}` } });
+  try {
+    assert.ok(!(await getColaboradorCodigoAliases(login, ciclo)).includes(login));
+  } finally {
+    await db.cadastroFornecedor.deleteMany({ where: { responsavel: nome } });
+    await db.usuario.deleteMany({ where: { usuario: login } });
+    await db.profissional.deleteMany({ where: { codigo: login } });
+  }
+});
+
+test("escopo: login AMBIGUO (código de dois Profissionais) não entra na lista", async () => {
+  const login = `P06${String(Date.now()).slice(-6)}`;
+  await criarUsuario(login, nomeUsuarioA.replace("FORNECEDOR A", "FORNECEDOR AMB"));
+  await db.cadastroFornecedor.create({ data: { cnpjNormalizado: "11222333000181", colaboradorCodigo: login, responsavel: `AMB ${sufixo}`, razaoSocial: "AMB" } });
+  await db.profissional.createMany({ data: [{ codigo: login, nome: `AMB 1 ${sufixo}` }, { codigo: login.toLowerCase(), nome: `AMB 2 ${sufixo}` }] });
+  try {
+    assert.deepEqual(await getColaboradorCodigoAliases(login, ciclo), []);
+  } finally {
+    await db.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: login } });
+    await db.usuario.deleteMany({ where: { usuario: login } });
+    await db.profissional.deleteMany({ where: { codigo: { in: [login, login.toLowerCase()] } } });
+  }
+});
+
+test("escopo V2: cadastro de outro com o mesmo CNPJ e nome que contém o do Profissional não entra", { skip: !process.env.DATA_ENCRYPTION_KEY }, async () => {
+  const { encryptSensitive } = await import("../lib/encryption");
+  const login = `P05${String(Date.now()).slice(-6)}`;
+  const nomeProfissional = `CNPJ DONO ${sufixo}`;
+  const codigoOutro = `PCNPJ-${sufixo}`;
+  await criarUsuario(login, `USUARIO CNPJ ${sufixo}`); // sem cadastro pelo login nem pelo nome
+  await db.profissional.create({ data: { codigo: login, nome: nomeProfissional, cnpj: encryptSensitive("11.222.333/0001-81") } });
+  await db.profissional.create({ data: { codigo: codigoOutro, nome: `CNPJ OUTRO ${sufixo}` } });
+  await db.cadastroFornecedor.create({ data: { cnpjNormalizado: "11222333000181", colaboradorCodigo: codigoOutro, responsavel: `${nomeProfissional} FILIAL`, razaoSocial: "OUTRO" } });
+  try {
+    const lista = await getColaboradorCodigoAliases(login, ciclo);
+    assert.ok(lista.includes(login), JSON.stringify(lista));
+    assert.ok(!lista.includes(codigoOutro), JSON.stringify(lista));
+  } finally {
+    await db.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: codigoOutro } });
+    await db.usuario.deleteMany({ where: { usuario: login } });
+    await db.profissional.deleteMany({ where: { codigo: { in: [login, codigoOutro] } } });
   }
 });

@@ -8,7 +8,6 @@ import { prisma } from "@/lib/prisma";
 import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
 import { getColaboradorEscopo } from "@/lib/colaborador-alias";
-import { onlyDigits } from "@/lib/cadastro-fornecedor";
 import { getDocumentosMedidos } from "@/lib/documentos-medidos";
 
 function dateOnly(value: Date | null) {
@@ -34,10 +33,10 @@ export async function GET() {
 
   const codigo = toColaboradorCodigo(user.usuario);
   const cicloAtivo = await getCicloAtivoMedicao();
-  const { aliases: codigoAliases, profissionalId } = await getColaboradorEscopo(user.usuario, cicloAtivo);
+  const { aliases: codigoAliases, profissionalId, cadastroId } = await getColaboradorEscopo(user.usuario, cicloAtivo);
   const [profissional, pagamento, documentos, sgc, currentUsuario, usuariosMedicaoOnline] = await Promise.all([
-    prisma.profissional.findFirst({
-      where: { codigo: { in: codigoAliases }, deletedAt: null },
+    profissionalId ? prisma.profissional.findFirst({
+      where: { id: profissionalId, deletedAt: null },
       select: {
         codigo: true,
         nome: true,
@@ -49,7 +48,7 @@ export async function GET() {
         funcao: true,
         statusColaborador: true,
       },
-    }),
+    }) : null,
     prisma.mapaPagamentoItem.findFirst({
       where: {
         ciclo: cicloAtivo,
@@ -103,61 +102,13 @@ export async function GET() {
   const mensagens = sgc ? buildSgcChatMessages(sgc, logs, { fornecedorAvatarUrl, medicaoAvatarUrlsByUsuarioId }) : [];
   const profissionalCpf = decryptSensitive(profissional?.cpf);
   const profissionalCnpj = decryptSensitive(profissional?.cnpj);
-  const cadastroLookupKeys = Array.from(
-    new Set(
-      [
-        ...codigoAliases,
-        codigo,
-        user.usuario,
-        user.nome,
-        profissional?.codigo,
-        profissional?.nome,
-        profissional?.nomeCompleto,
-        pagamento?.projetistaCodigo,
-        pagamento?.responsavel,
-      ]
-        .map((value) => value?.trim())
-        .filter((value): value is string => !!value),
-    ),
-  );
-  const cadastroFornecedorDireto = cadastroLookupKeys.length
-    ? await prisma.cadastroFornecedor.findFirst({
-        where: {
-          OR: [
-            { colaboradorCodigo: { in: cadastroLookupKeys } },
-            ...cadastroLookupKeys.map((key) => ({ responsavel: { equals: key, mode: "insensitive" as const } })),
-          ],
-        },
-        select: {
-          responsavel: true,
-          razaoSocial: true,
-          cargo: true,
-          cpf: true,
-          cnpj: true,
-          email: true,
-        },
-        orderBy: { updatedAt: "desc" },
+  // Cadastro escolhido pelo escopo (login ou nome exato, falha fechado) — nunca por nome parecido ou CNPJ.
+  const cadastroFornecedor = cadastroId
+    ? await prisma.cadastroFornecedor.findUnique({
+        where: { id: cadastroId },
+        select: { responsavel: true, razaoSocial: true, cargo: true, cpf: true, cnpj: true, email: true },
       })
     : null;
-  const cadastroCnpj = onlyDigits(profissionalCnpj || user.usuario);
-  const cadastroFornecedorPorCnpj = !cadastroFornecedorDireto && cadastroCnpj.length === 14
-    ? await prisma.cadastroFornecedor.findFirst({
-        where: {
-          cnpjNormalizado: cadastroCnpj,
-          responsavel: { equals: user.nome, mode: "insensitive" },
-        },
-        select: {
-          responsavel: true,
-          razaoSocial: true,
-          cargo: true,
-          cpf: true,
-          cnpj: true,
-          email: true,
-        },
-        orderBy: { updatedAt: "desc" },
-      })
-    : null;
-  const cadastroFornecedor = cadastroFornecedorDireto ?? cadastroFornecedorPorCnpj;
   const cadastroCpf = decryptSensitive(cadastroFornecedor?.cpf);
   const cadastroCnpjFormatado = decryptSensitive(cadastroFornecedor?.cnpj);
   const cadastroEmail = decryptSensitive(cadastroFornecedor?.email);
