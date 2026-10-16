@@ -23,5 +23,6 @@ backups/
 # Obsidian: estado pessoal da interface
 docs/brain/.obsidian/workspace.json
 docs/brain/.obsidian/workspace-mobile.json
+docs/brain/.obsidian/graph.json
 docs/brain/.obsidian/cache
 docs/brain/.trash/
