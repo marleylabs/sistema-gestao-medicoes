@@ -1,6 +1,6 @@
 ---
 atualizado: 2026-10-16
-status: aprovada em 2026-10-16
+status: aprovada em 2026-10-16 (revisada após o diagnóstico)
 tags: [spec]
 ---
 # Spec: escopo do fornecedor só por identidade exata
@@ -20,17 +20,17 @@ Hoje `getColaboradorCodigoAliases` (`lib/colaborador-alias.ts`) monta a lista de
 **Sucesso:** todo valor da lista resolve, pelo resolver oficial, para o **mesmo** Profissional do usuário logado. Um valor que resolve para outro Profissional, que é ambíguo ou que não resolve fica fora.
 
 ## Premissas (corrija se alguma estiver errada)
-1. O login do fornecedor é o código canônico (`P0XXXXXX`, `lib/usuario-format.ts`), e a identidade vem só da sessão.
+1. ~~O login do fornecedor é o código canônico.~~ **Falso na pré-produção** (ver Diagnóstico): nenhum login resolve para um Profissional. A identidade continua vindo só da sessão, mas pelo cadastro do usuário logado.
 2. O resolver oficial é `resolverIdentidadeOperacional` (`lib/profissional-identidade.ts`): código → alias ativo → nome legado. Ele já é o par TS do resolver do ETL (decisão 003).
 3. As rotas continuam recebendo uma lista de strings: a mudança fica dentro de `lib/colaborador-alias.ts`, sem alterar as 11 rotas, exceto onde um teste mostrar que uma rota compara nome com outro fornecedor.
 4. Sem mudança de schema nem de dependência.
 5. Dados antigos em que `colaboradorCodigo`/`projetistaCodigo` guardam um **nome** continuam visíveis **só** se esse nome resolver para o próprio fornecedor (alias formal ou nome legado único).
 
 ## Regra nova
-1. Identidade do usuário = `resolverIdentidadeOperacional(sessão.usuario)`. Se não estiver RESOLVIDO, o escopo é só o código da sessão (comportamento seguro, sem nomes).
+1. Identidade do usuário = Profissional ao qual resolve o `colaboradorCodigo` do cadastro escolhido por `selectCadastroForAuthenticatedUser` (`lib/cadastro-identity.ts`): primeiro pelo login; senão, pelo nome **exato** do usuário, falhando fechado se houver mais de um cadastro. Se não resolver para exatamente um Profissional, o escopo é só o código da sessão.
 2. Candidatos: código canônico, aliases ativos (`aliasesDaIdentidade`), `nome`/`nomeCompleto` do Profissional, `colaboradorCodigo`/`responsavel` do cadastro escolhido **pelo código** e valores do mapa do ciclo.
 3. Um candidato só entra na lista se `resolverIdentidadeOperacional(candidato)` devolver RESOLVIDO com o **mesmo** `profissionalId`. Nome que resolve para outro, AMBIGUO ou NAO_RESOLVIDO fica fora.
-4. Saem: a busca de cadastro por CNPJ (V2) e a escolha de cadastro por nome do usuário (V4). Do mapa (V1), só entra o valor que passa pela regra 3, nunca "a linha inteira".
+4. Sai a busca de cadastro por CNPJ (V2). A escolha de cadastro por nome do usuário (V4) **fica**, porque hoje é o único elo entre login e fornecedor; ela já é exata e falha fechado com homônimos. Do mapa (V1), só entra o valor que passa pela regra 3, nunca "a linha inteira".
 5. Valor descartado não é logado com dados de outro fornecedor (CLAUDE.md). No máximo, um contador sem nomes.
 
 ## Comandos
@@ -69,6 +69,14 @@ Cada vetor ganha um teste que falha no código atual:
 3. O E2E de isolamento passa.
 4. `tsc` e `test:targeted` verdes.
 5. Notas atualizadas: [portal do fornecedor](../modulos/portal-fornecedor.md) (regra nova) e [pendências](../pendencias.md) (P1 4 removida).
+
+## Diagnóstico da pré-produção (2026-10-16)
+`scripts/diagnose-escopo-fornecedor.ts` (7ea38eb), rodado só leitura na pré-produção (7482a2d):
+- 55 fornecedores ativos; **nenhum** login resolve para um Profissional e nenhum cadastro tem `colaboradorCodigo` igual ao login. Dos 61 Profissionais, 6 não têm código e nenhum tem código no formato do login.
+- Para os 55, a lista atual aponta para **exatamente um** Profissional (97 valores, todos resolvidos, nenhum ambíguo). **Não há vazamento hoje**; o risco é de homônimos futuros.
+- Consequência: a identidade da sessão vem hoje de nome do usuário = `responsavel` do cadastro (V4). A regra 1 e o item 4 foram revisados para manter esse elo.
+
+**Correção definitiva (fora desta spec):** um vínculo explícito login → Profissional (por exemplo, código canônico no cadastro igual ao login, ou um campo de vínculo no usuário). Exige decisão de dados e possivelmente migration; vira pendência própria.
 
 ## Decisões (aprovadas em 2026-10-16)
 1. **Dados legados:** antes de implementar, rodar um diagnóstico **só leitura** que conta, por fornecedor, quantos valores da lista atual a regra nova descartaria, sem exportar nomes. Quem tiver descarte legítimo recebe alias formal antes do deploy.
