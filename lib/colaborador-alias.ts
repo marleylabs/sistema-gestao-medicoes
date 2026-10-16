@@ -1,97 +1,73 @@
 import "server-only";
 
-import { normalizeCnpjDigits, onlyDigits } from "@/lib/cadastro-fornecedor";
-import { decryptSensitive } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
 import { selectCadastroForAuthenticatedUser } from "@/lib/cadastro-identity";
+import { aliasesDaIdentidade, resolverIdentidadeOperacional } from "@/lib/profissional-identidade";
+import { filtrarAliasesDaIdentidade } from "@/lib/colaborador-alias-filtro";
 
-function normalizeText(value: string | null | undefined) {
-  return (value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .toUpperCase();
-}
-
-function unique(values: Array<string | null | undefined>) {
-  return Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => !!value)));
-}
-
+/**
+ * Valores (códigos, nomes, aliases) que delimitam os dados do fornecedor logado. Regra da spec
+ * docs/brain/specs/p1-escopo-fornecedor-por-identidade.md: a identidade vem do cadastro do usuário
+ * (login ou nome exato, falhando fechado) e só entra na lista o valor que o resolver oficial liga ao
+ * MESMO Profissional — nunca CNPJ, nunca nome parecido, nunca a linha inteira do mapa.
+ */
 export async function getColaboradorCodigoAliases(usuario: string | null | undefined, ciclo?: string | null) {
-  const usuarioCnpj = normalizeCnpjDigits(usuario);
-  const usuarioDb = usuario
-    ? await prisma.usuario.findUnique({
-        where: { usuario: usuario.trim().toUpperCase() },
-        select: { nome: true },
-      })
-    : null;
-  const cadastroCandidates = usuario
-    ? await prisma.cadastroFornecedor.findMany({
-        where: {
-          OR: [
-            { colaboradorCodigo: usuario.trim().toUpperCase() },
-            ...(usuarioDb?.nome ? [{ responsavel: { equals: usuarioDb.nome, mode: "insensitive" as const } }] : []),
-            ...(usuarioCnpj.length === 14 && usuarioDb?.nome
-              ? [{ cnpjNormalizado: usuarioCnpj, responsavel: { equals: usuarioDb.nome, mode: "insensitive" as const } }]
-              : []),
-          ],
-        },
-        select: { id: true, colaboradorCodigo: true, responsavel: true, cnpjNormalizado: true },
-        orderBy: { updatedAt: "desc" },
-      })
-    : [];
-  const cadastroPorUsuario = selectCadastroForAuthenticatedUser(
-    cadastroCandidates,
-    usuario ?? "",
-    usuarioDb?.nome,
-  ).cadastro;
-  const codigo = cadastroPorUsuario?.colaboradorCodigo ?? toColaboradorCodigo(usuario);
-  const codigos = new Set<string>(codigo ? [codigo] : []);
+  const login = toColaboradorCodigo(usuario);
+  if (!usuario || !login) return [];
+  const usuarioUpper = usuario.trim().toUpperCase();
 
-  const profissional = codigo
-    ? await prisma.profissional.findUnique({
-        where: { codigo, deletedAt: null },
-        select: { codigo: true, nome: true, nomeCompleto: true, cnpj: true, aliases: { where: { ativo: true }, select: { alias: true } } },
-      })
-    : null;
-  // Aliases operacionais formais (ProfissionalAlias) — mesma identidade, grafias da origem externa.
-  profissional?.aliases.forEach((a) => codigos.add(a.alias));
-  const profissionalCnpj = onlyDigits(decryptSensitive(profissional?.cnpj));
+  const usuarioDb = await prisma.usuario.findUnique({ where: { usuario: usuarioUpper }, select: { nome: true } });
+  const cadastroCandidates = await prisma.cadastroFornecedor.findMany({
+    where: {
+      OR: [
+        { colaboradorCodigo: usuarioUpper },
+        ...(usuarioDb?.nome ? [{ responsavel: { equals: usuarioDb.nome, mode: "insensitive" as const } }] : []),
+      ],
+    },
+    select: { id: true, colaboradorCodigo: true, responsavel: true, cnpjNormalizado: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  const cadastro = selectCadastroForAuthenticatedUser(cadastroCandidates, usuario, usuarioDb?.nome).cadastro;
 
-  const cadastroDireto = cadastroPorUsuario ?? (codigo
-    ? await prisma.cadastroFornecedor.findFirst({
-        where: { OR: [{ colaboradorCodigo: codigo }, { responsavel: codigo }] },
-        select: { colaboradorCodigo: true, responsavel: true, cnpjNormalizado: true },
-      })
-    : null);
-  const cadastroPorCnpj = !cadastroDireto && profissionalCnpj.length === 14
-    ? await prisma.cadastroFornecedor.findFirst({
-        where: {
-          cnpjNormalizado: profissionalCnpj,
-          OR: [
-            ...(profissional?.nome ? [{ responsavel: { contains: profissional.nome, mode: "insensitive" as const } }] : []),
-            ...(profissional?.nomeCompleto ? [{ responsavel: { equals: profissional.nomeCompleto, mode: "insensitive" as const } }] : []),
-          ],
-        },
-        select: { colaboradorCodigo: true, responsavel: true, cnpjNormalizado: true },
-      })
-    : null;
-  const cadastro = cadastroDireto ?? cadastroPorCnpj;
+  const identidade = await resolverIdentidadeOperacional(cadastro?.colaboradorCodigo ?? login);
+  // Sem identidade única, o escopo é só o login da sessão (falha fechado).
+  if (identidade.status !== "RESOLVIDO") return [login];
+  const { profissionalId } = identidade;
 
-  unique([cadastro?.colaboradorCodigo, cadastro?.responsavel, profissional?.codigo, profissional?.nome, profissional?.nomeCompleto]).forEach((value) => codigos.add(value));
+  const profissional = await prisma.profissional.findUnique({
+    where: { id: profissionalId },
+    select: { codigo: true, nome: true, nomeCompleto: true },
+  });
+  const proprios = [
+    login,
+    cadastro?.colaboradorCodigo,
+    cadastro?.responsavel,
+    profissional?.codigo,
+    profissional?.nome,
+    profissional?.nomeCompleto,
+    ...(await aliasesDaIdentidade(profissionalId)),
+  ].filter((v): v is string => !!v);
 
-  const normalizedCadastroName = normalizeText(cadastro?.responsavel ?? profissional?.nomeCompleto ?? codigo);
-  if (normalizedCadastroName) {
-    const pagamentos = await prisma.mapaPagamentoItem.findMany({
-      where: ciclo ? { ciclo } : undefined,
-      select: { projetistaCodigo: true, responsavel: true },
-    });
-    pagamentos
-      .filter((item) => normalizeText(item.responsavel) === normalizedCadastroName || normalizeText(item.projetistaCodigo) === normalizedCadastroName)
-      .flatMap((item) => [item.projetistaCodigo, item.responsavel])
-      .forEach((value) => value && codigos.add(value));
-  }
+  // Grafias do mapa ligadas a um valor próprio; cada uma ainda passa pelo filtro.
+  const mapa = await prisma.mapaPagamentoItem.findMany({
+    where: {
+      ...(ciclo ? { ciclo } : {}),
+      OR: [
+        { projetistaCodigo: { in: proprios, mode: "insensitive" } },
+        { responsavel: { in: proprios, mode: "insensitive" } },
+      ],
+    },
+    select: { projetistaCodigo: true, responsavel: true },
+  });
 
-  return Array.from(codigos);
+  const aliases = await filtrarAliasesDaIdentidade(
+    [...proprios, ...mapa.flatMap((item) => [item.projetistaCodigo, item.responsavel])],
+    (valor) => resolverIdentidadeOperacional(valor),
+    profissionalId,
+  );
+  // O login é a identidade da sessão: entra, a menos que seja o código de OUTRO Profissional.
+  const doLogin = await resolverIdentidadeOperacional(login);
+  if (doLogin.status !== "RESOLVIDO" || doLogin.profissionalId === profissionalId) aliases.unshift(login);
+  return Array.from(new Set(aliases));
 }

@@ -25,17 +25,17 @@ A ordem é sequencial: o diagnóstico (1) usa o mesmo filtro (2), e 3–5 depend
 
 ## Tarefas
 
-- [ ] **T1: diagnóstico só leitura** — script pronto e validado no banco de teste (escrita barrada pela sessão somente leitura). Os removidos são classificados pelo resultado do resolver (OUTRO_FORNECEDOR, AMBIGUO, NAO_RESOLVIDO) em vez de V1–V4: é o que decide entre vazamento e legado que precisa de alias. Falta rodar na pré-produção.
+- [x] **T1: diagnóstico só leitura** — rodado na pré-produção em 2026-10-16 (resultado na spec): sem vazamento hoje, mas nenhum login resolve sozinho; a spec foi revisada.
   - Aceite: script `scripts/diagnose-escopo-fornecedor.ts` que, para cada usuário COLABORADOR ativo, compara a lista atual com a lista filtrada e imprime só contagens: total de usuários, quantos perdem valores, quantos valores por vetor (V1–V4) e o código do **próprio** usuário afetado. Nenhum nome e nenhum código de terceiro. Abre conexão só de leitura (`SET TRANSACTION READ ONLY`).
   - Verificar: roda no banco de teste semeado e no DEV local. **Em pré-produção, só com você executando ou acompanhando** (preciso saber como acessar, ver pergunta abaixo).
   - Arquivos: `scripts/diagnose-escopo-fornecedor.ts`, `lib/colaborador-alias-filtro.ts` (de T2).
 
-- [ ] **T2: filtro puro + testes dos vetores** — filtro e 4 testes unitários prontos (adiantados porque o diagnóstico usa a mesma regra); faltam os testes de integração dos vetores.
+- [x] **T2: filtro puro + testes dos vetores** — `tests/colaborador-alias.test.ts`: 4 unitários e 4 de integração. V1 e V3 falhavam no código antigo; V4 (falha fechado) já passava. V2 não tem teste próprio: o caminho por CNPJ foi removido.
   - Aceite: `filtrarAliasesDaIdentidade(candidatos, resolver, profissionalId)` mantém só valores que o resolver liga ao mesmo Profissional. Testes V1–V4 e de não regressão (alias formal, nome legado único, linha do mapa com o próprio nome).
   - Verificar: `npx tsx --test tests/colaborador-alias.test.ts`.
   - Arquivos: `lib/colaborador-alias-filtro.ts` (novo, sem `server-only`), `tests/colaborador-alias.test.ts` (novo).
 
-- [ ] **T3: `getColaboradorCodigoAliases` usa o filtro**
+- [x] **T3: `getColaboradorCodigoAliases` usa o filtro** — feito com a regra revisada (identidade pelo cadastro). `test:targeted` 473/473 e E2E completo 199/199.
   - Aceite: identidade da sessão via `resolverIdentidadeOperacional`; sem identidade, escopo = só o código da sessão; sai a busca por CNPJ (V2) e a escolha de cadastro por nome (V4); do mapa só entra o valor aprovado pelo filtro (V1). As 11 rotas, chat incluído, não mudam.
   - Verificar: teste de integração no banco de teste (`lib/prisma-test.ts`) chamando o filtro com o resolver real; `tsc`; `test:targeted`.
   - Arquivos: `lib/colaborador-alias.ts`, `tests/colaborador-alias.test.ts`.
