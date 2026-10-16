@@ -20,8 +20,8 @@ tags: [modulo]
 - **Reimportação e BM** ([decisão 010](../decisoes/010-reimportacao-preserva-bm.md)):
   - **BM bloqueado** (`STATUS_BM_BLOQUEADO`: AGUARDANDO_NF, APROVADO, PAGO). É travado com `FOR UPDATE` no início da transação. Nada dele é apagado ou regravado: BM, NF, comprovante, trilha, medições, linha do mapa (incluindo o REV manual) e BM AUX. Isso vale mesmo para fornecedor ausente da planilha ou que só casa por nome parecido.
   - **Divergência com a planilha:** vai para o resultado (`bms_preservados`, `divergencias_bm_bloqueado`) e aparece na tela de importação (`components/medicoes-app.tsx`). A comparação é por conteúdo do documento, não por `source_row_hash`, que muda quando as linhas são reordenadas.
-  - **BM não aprovado** (PENDENTE, REVISAO_SOLICITADA): é apagado e volta para "a enviar", como antes.
-  - **Teste:** `etl/test_reimport_preserves_bm.py`.
+  - **BM não aprovado** (PENDENTE, REVISAO_SOLICITADA): é apagado e volta para "a enviar", como antes. Antes de apagar, a limpeza trava os BMs (`FOR UPDATE`) e relê o status. Se algum foi aprovado depois da trava inicial, a importação aborta com `ValueError`, que vira um erro de validação no `server.py`.
+  - **Teste:** `etl/test_reimport_preserves_bm.py` cobre a aba Documentos com o mapa gerado, a aba MAPA PAGTO explícita, a aba Documentos Auxiliares, a atomicidade e a aprovação concorrente.
 - **Limpeza por nome aproximado:** a limpeza dos demais fornecedores ainda casa por nome aproximado (`same_person_name`).
 - **Uma transação:** trava, limpeza, carga e comparação rodam num único `engine.begin()`. Os passos anteriores só leem.
 - `status_colaborador` é recalculado só para os fornecedores presentes no arquivo.

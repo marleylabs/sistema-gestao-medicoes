@@ -182,6 +182,197 @@ def test_reimport_preserves_approved_bms() -> None:
                              {"ids": list(ids.values())})
 
 
+# ─── MAPA PAGTO explícito, Documentos Auxiliares e aprovação concorrente ─────────────────────
+# Nomes sem token em comum (além do sufixo): uses_documentos_auxiliares também casa por nome parecido.
+AUX_HEADERS = ["Projeto", "Num_Cliente", "Responsavel", "Auxiliar", "Formato", "Equivalente_Revisado", "Tipo_Doc", "Ciclo", "Valor De Medição"]
+
+
+def _conectar():
+    url_text = os.environ.get("ETL_DATABASE_URL") or os.environ.get("DATABASE_URL_TEST")
+    if not url_text:
+        print("SKIP: sem ETL_DATABASE_URL/DATABASE_URL_TEST")
+        return None, None
+    from sqlalchemy import create_engine
+    from sqlalchemy.engine import make_url
+
+    url = make_url(url_text).difference_update_query(["schema"])
+    assert url.host in ("localhost", "127.0.0.1") and "e2e" in (url.database or "")
+    db = url.render_as_string(hide_password=False)
+    return create_engine(db), db
+
+
+def _semear(engine, codigos: list[str], fonte_aux: set[str] = frozenset()) -> dict[str, str]:
+    from sqlalchemy import text
+
+    ids = {}
+    with engine.begin() as conn:
+        for codigo in codigos:
+            ids[codigo] = str(conn.execute(text("insert into profissionais (nome, codigo) values (:c, :c) returning id"), {"c": codigo}).scalar())
+            conn.execute(text("insert into cadastros_fornecedores (cnpj_normalizado, colaborador_codigo, responsavel, razao_social, fonte_medicao, raw_payload) "
+                              "values ('11222333000181', :c, :c, :c, :f, '{}')"),
+                         {"c": codigo, "f": "DOCUMENTOS_AUXILIARES" if codigo in fonte_aux else "DOCUMENTOS"})
+    return ids
+
+
+def _criar_bm(engine, ciclo: str, codigo: str, status: str) -> str:
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        sgc_id = str(conn.execute(text(
+            "insert into sgc_aprovacoes_medicao (colaborador_codigo, ciclo, status, nf_arquivo, comprovante_arquivo) "
+            "values (:k, :c, :st, :nf, :cp) returning id"),
+            {"k": codigo, "c": ciclo, "st": status,
+             "nf": b"%PDF-NF" if status in ("APROVADO", "PAGO") else None, "cp": b"COMP" if status == "PAGO" else None}).scalar())
+        conn.execute(text("insert into sgc_logs (sgc_id, colaborador_codigo, ciclo, acao) values (:i, :k, :c, 'ENVIAR')"),
+                     {"i": sgc_id, "k": codigo, "c": ciclo})
+    return sgc_id
+
+
+def _limpar(engine, ciclo: str, ids: dict[str, str]) -> None:
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        for tabela in ("sgc_logs", "sgc_aprovacoes_medicao", "medicoes", "mapa_pagamento_itens", "mapa_pagamento_contexto",
+                       "bm_aux_medicoes", "importacao_identidades"):
+            conn.execute(text(f"delete from {tabela} where ciclo = :c"), {"c": ciclo})
+        if ids:
+            conn.execute(text("delete from cadastros_fornecedores where colaborador_codigo in :c").bindparams(im.bindparam("c", expanding=True)),
+                         {"c": list(ids)})
+            conn.execute(text("delete from profissionais where id in :ids").bindparams(im.bindparam("ids", expanding=True)),
+                         {"ids": list(ids.values())})
+
+
+def _planilha(path: Path, ciclo: str, documentos: list[tuple[str, str, int]], mapa: list[tuple[str, int, int]],
+              aux: list[tuple[str, str, int]]) -> None:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Documentos"
+    ws.append(HEADERS)
+    for projetista, documento, valor in documentos:
+        ws.append(row_values(PROJETISTA=projetista, **{"Número do Documento": documento, "VALOR DE MEDIÇÃO": valor}))
+    if mapa:
+        ws_mapa = wb.create_sheet("MAPA PAGTO")
+        ws_mapa.append(["ATO", "PROJETISTA", "VALOR", "REV"])
+        for projetista, valor, rev in mapa:
+            ws_mapa.append(["PRODUÇÃO", projetista, valor, rev])
+    ws_aux = wb.create_sheet("Documentos Auxiliares")
+    ws_aux.append(AUX_HEADERS)
+    for responsavel, documento, valor in aux:
+        ws_aux.append(["PROJ-AUX-TESTE", documento, responsavel, None, "A1", 1, "DOC", ciclo, valor])
+    wb.save(path)
+
+
+def _ingest(path: Path, db: str, ciclo: str) -> dict:
+    return im.ingest(path, "Documentos", "Base", "MAPA PAGTO", "Documentos Auxiliares", db, False, True, ciclo)
+
+
+def test_reimport_preserves_payment_map_sheet_and_bm_aux() -> None:
+    engine, db = _conectar()
+    if not engine:
+        return
+    from sqlalchemy import text
+
+    ciclo, s = "2907", _sufixo()
+    docs, aux, livre = f"ALFAMA {s} BRUNO", f"CORVO {s} DIAS", f"ESTEVO {s} FARIAS"
+    ids: dict[str, str] = {}
+
+    def estado(conn, codigo: str) -> dict:
+        return {
+            "sgc": conn.execute(text("select id, status, nf_arquivo, comprovante_arquivo from sgc_aprovacoes_medicao where ciclo = :c and colaborador_codigo = :k"),
+                                {"c": ciclo, "k": codigo}).one_or_none(),
+            "logs": conn.execute(text("select count(*) from sgc_logs where ciclo = :c and colaborador_codigo = :k"), {"c": ciclo, "k": codigo}).scalar(),
+            "medido": float(conn.execute(text("select coalesce(sum(valor_medicao), 0) from medicoes where ciclo = :c and id_profissional = :p"),
+                                         {"c": ciclo, "p": ids[codigo]}).scalar()),
+            "mapa": conn.execute(text("select valor, rev from mapa_pagamento_itens where ciclo = :c and projetista_codigo = :k"),
+                                 {"c": ciclo, "k": codigo}).all(),
+            "bm_aux": conn.execute(text("select id, updated_at from bm_aux_medicoes where ciclo = :c and responsavel_codigo = :k order by id"),
+                                   {"c": ciclo, "k": codigo}).all(),
+        }
+
+    try:
+        ids = _semear(engine, [docs, aux, livre], fonte_aux={aux})
+        with tempfile.TemporaryDirectory() as d:
+            primeira, segunda = Path(d) / "primeira.xlsx", Path(d) / "segunda.xlsx"
+            _planilha(primeira, ciclo, [(docs, f"DOC-{s}-1", 100), (livre, f"DOC-{s}-3", 100)],
+                      [(docs, 100, 0), (aux, 100, 0), (livre, 100, 0)], [(aux, f"AUX-{s}-2", 100)])
+            _ingest(primeira, db, ciclo)
+            _criar_bm(engine, ciclo, docs, "APROVADO")
+            _criar_bm(engine, ciclo, aux, "PAGO")
+            _criar_bm(engine, ciclo, livre, "PENDENTE")
+            with engine.begin() as conn:
+                conn.execute(text("update mapa_pagamento_itens set rev = 15 where ciclo = :c and projetista_codigo = :k"), {"c": ciclo, "k": aux})
+                antes = {codigo: estado(conn, codigo) for codigo in (docs, aux)}
+            assert antes[aux]["bm_aux"] and antes[aux]["medido"] == 100.0, "fixture: BM AUX precisa ter carregado"
+
+            _planilha(segunda, ciclo, [(docs, f"DOC-{s}-1", 200), (livre, f"DOC-{s}-3", 200)],
+                      [(docs, 200, 5), (aux, 200, 5), (livre, 200, 5)], [(aux, f"AUX-{s}-2", 200)])
+            resultado = _ingest(segunda, db, ciclo)
+            with engine.connect() as conn:
+                for codigo in (docs, aux):
+                    assert estado(conn, codigo) == antes[codigo], f"{codigo}: BM bloqueado alterado pela aba MAPA PAGTO/Documentos Auxiliares"
+                depois_livre = estado(conn, livre)
+            assert depois_livre["sgc"] is None and depois_livre["medido"] == 200.0
+            assert [(float(v), float(r)) for v, r in depois_livre["mapa"]] == [(200.0, 5.0)]
+
+            divergentes = {d["colaborador_codigo"]: d for d in resultado["divergencias_bm_bloqueado"]}
+            assert set(divergentes) == {docs, aux}, sorted(divergentes)
+            assert divergentes[docs]["mapa"] == {"banco": {"valor": "100.0000", "rev": "0.0000"}, "planilha": {"valor": "200.0000", "rev": "5.0000"}}
+            assert divergentes[aux]["mapa"] == {"banco": {"valor": "100.0000", "rev": "15.0000"}, "planilha": {"valor": "200.0000", "rev": "5.0000"}}
+            assert [x["valor_medicao"] for x in divergentes[aux]["somente_planilha"]] == ["200.0000"]
+            assert [x["valor_medicao"] for x in divergentes[aux]["somente_banco"]] == ["100.0000"]
+    finally:
+        _limpar(engine, ciclo, ids)
+
+
+def test_bm_approved_during_import_aborts_instead_of_deleting() -> None:
+    engine, db = _conectar()
+    if not engine:
+        return
+    from sqlalchemy import text
+
+    ciclo, s = "2909", _sufixo()
+    codigo = f"GUSTAVO {s} HELENA"
+    ids: dict[str, str] = {}
+    original = im.assert_import_identities_active
+    try:
+        ids = _semear(engine, [codigo])
+        with tempfile.TemporaryDirectory() as d:
+            primeira, segunda = Path(d) / "primeira.xlsx", Path(d) / "segunda.xlsx"
+            _planilha(primeira, ciclo, [(codigo, f"DOC-{s}-1", 100)], [], [])
+            _ingest(primeira, db, ciclo)
+            sgc_id = _criar_bm(engine, ciclo, codigo, "PENDENTE")
+
+            # O fornecedor aprova (outra conexão, commit) depois da trava inicial e antes da limpeza.
+            def aprova_no_meio(conn, identities):
+                with engine.begin() as outra:
+                    outra.execute(text("update sgc_aprovacoes_medicao set status = 'AGUARDANDO_NF', aprovado_at = now() where id = :i"), {"i": sgc_id})
+                return original(conn, identities)
+
+            im.assert_import_identities_active = aprova_no_meio
+            _planilha(segunda, ciclo, [(codigo, f"DOC-{s}-1", 200)], [], [])
+            try:
+                _ingest(segunda, db, ciclo)
+                raise AssertionError("BM aprovado durante a importação deveria abortar a carga")
+            except ValueError as error:
+                assert "BM aprovado durante a importação" in str(error), error
+            finally:
+                im.assert_import_identities_active = original
+
+            with engine.connect() as conn:
+                status = conn.execute(text("select status from sgc_aprovacoes_medicao where id = :i"), {"i": sgc_id}).scalar()
+                logs = conn.execute(text("select count(*) from sgc_logs where sgc_id = :i"), {"i": sgc_id}).scalar()
+                medido = conn.execute(text("select coalesce(sum(valor_medicao), 0) from medicoes where ciclo = :c and id_profissional = :p"),
+                                      {"c": ciclo, "p": ids[codigo]}).scalar()
+            assert status == "AGUARDANDO_NF", f"BM aprovado no meio da importação foi apagado/alterado: {status}"
+            assert logs == 1 and float(medido) == 100.0, (logs, medido)
+    finally:
+        im.assert_import_identities_active = original
+        _limpar(engine, ciclo, ids)
+
+
 if __name__ == "__main__":
     test_reimport_preserves_approved_bms()
-    print("OK: reimportação preserva BMs aprovados/pagos, reporta divergência e é atômica.")
+    test_reimport_preserves_payment_map_sheet_and_bm_aux()
+    test_bm_approved_during_import_aborts_instead_of_deleting()
+    print("OK: reimportação preserva BMs aprovados/pagos (Documentos, MAPA PAGTO, Documentos Auxiliares), "
+          "reporta divergência, é atômica e não apaga BM aprovado durante a carga.")

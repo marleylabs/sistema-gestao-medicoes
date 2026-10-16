@@ -662,6 +662,11 @@ def collect_import_collaborator_codes(
     return codes
 
 
+# Decisão 010: BM aprovado pelo fornecedor (ENVIAR → AGUARDANDO_NF) ou adiante é imutável para a
+# importação. Mesmo conjunto de lib/minhas-medicoes.ts (STATUS_MINHAS_MEDICOES).
+STATUS_BM_BLOQUEADO = ("AGUARDANDO_NF", "APROVADO", "PAGO")
+
+
 def clear_imported_collaborators(
     conn,
     ciclo: str,
@@ -750,6 +755,19 @@ def clear_imported_collaborators(
     ]
 
     if sgc_ids:
+        # Trava os BMs que serão apagados e relê o status: o fornecedor pode ter aprovado depois de
+        # load_locked_bms. Nesse caso a importação aborta (rollback) em vez de apagar o BM aprovado.
+        travados = conn.execute(
+            text("select id, colaborador_codigo, status from sgc_aprovacoes_medicao where id in :ids for update")
+            .bindparams(bindparam("ids", expanding=True)),
+            {"ids": sgc_ids},
+        ).mappings().all()
+        aprovados = sorted({row["colaborador_codigo"] for row in travados if row["status"] in STATUS_BM_BLOQUEADO})
+        if aprovados:
+            raise ValueError(
+                f"BM aprovado durante a importação ({', '.join(aprovados)}). Nenhum dado foi alterado; importe novamente."
+            )
+        sgc_ids = [str(row["id"]) for row in travados]
         conn.execute(
             text("delete from sgc_logs where sgc_id in :ids").bindparams(bindparam("ids", expanding=True)),
             {"ids": sgc_ids},
@@ -778,9 +796,6 @@ def clear_imported_collaborators(
         )
 
 
-# Decisão 010: BM aprovado pelo fornecedor (ENVIAR → AGUARDANDO_NF) ou adiante é imutável para a
-# importação. Mesmo conjunto de lib/minhas-medicoes.ts (STATUS_MINHAS_MEDICOES).
-STATUS_BM_BLOQUEADO = ("AGUARDANDO_NF", "APROVADO", "PAGO")
 CAMPOS_COMPARACAO_BM = (
     "codigo_projeto", "numero_documento", "formato", "tipo2", "equivalente_a1_horas", "percentual_emissao", "valor_medicao",
 )

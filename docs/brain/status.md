@@ -7,9 +7,11 @@ atualizado: 2026-10-16
 - Branch atual `release/2026-10-02-import-identities` (HEAD 7482a2d, identidades pendentes na importação). `layout2.0` aponta para o mesmo commit.
 - `main` (13b7cd7) está 83 commits atrás: a integração real acontece em `layout2.0`/`release/*`, não em `main`.
 - Só `tooling/prod-identity-reconciliation` tem commit (1) que não está no HEAD; as demais branches locais já estão contidas nele.
-- **Ainda não commitados:**
-  - `CLAUDE.md` e `docs/brain/`;
-  - a implementação da [decisão 010](decisoes/010-reimportacao-preserva-bm.md): `etl/ingest_medicoes.py`, `etl/test_reimport_preserves_bm.py` e o bloco na UI em `components/medicoes-app.tsx`.
+- ecf5477: implementação da [decisão 010](decisoes/010-reimportacao-preserva-bm.md), junto com o `CLAUDE.md` e o cérebro. Ainda não foi enviado ao remoto.
+- As correções da revisão do ecf5477 (`/review` + `/ponytail-review`) ainda não foram commitadas:
+  - um BM aprovado durante a importação passa a abortar a carga, em vez de ser apagado;
+  - a linha de import em `components/medicoes-app.tsx` foi separada;
+  - os testes de MAPA PAGTO e Documentos Auxiliares foram criados.
 
 ## Próximos passos
 1. Definir o fluxo manual para corrigir valores de BM já aprovado ou pago. Pela decisão 010, a planilha não corrige mais esses BMs: ela só reporta a divergência.
@@ -24,7 +26,7 @@ atualizado: 2026-10-16
 - **`tests/documentos-medidos.test.ts` usa `DATABASE_URL` sem guarda:** sem esse env apontado para o banco de teste, ele cai no `.env`, que é o banco DEV, e grava fixtures lá (que ele mesmo limpa). Para rodar `test:targeted`, exporte `DATABASE_URL`, `DATABASE_URL_TEST` e `E2E_DATABASE_NAME` para um banco de teste migrado.
 - **O banco `medicoes_e2e` do container de teste está sem as migrations** de 2026-09-28 em diante. Os testes de 2026-10-16 rodaram num banco novo, `medicoes_e2e_bm`.
 - **Limpeza da reimportação, o que ainda casa por nome aproximado:** `clear_imported_collaborators` usa `same_person_name`, e um fornecedor **não bloqueado** ausente da planilha, com nome parecido com um presente, ainda pode ter as medições do ciclo apagadas. Os BMs bloqueados ficam protegidos por identidade exata.
-- **Ramos sem teste dedicado** na preservação do BM: a aba MAPA PAGTO explícita e a aba Documentos Auxiliares. O teste cobre a aba Documentos e o mapa gerado.
+- **BM aprovado com a importação em andamento:** se o fornecedor aprovar no meio da carga, depois que a limpeza já travou o BM, a requisição dele espera o commit da importação e então falha, porque o BM foi apagado. Não há perda de dados, mas a requisição pode ficar presa pelo tempo da carga.
 - Divergências entre o código e as regras do CLAUDE.md:
   - o boletim calcula com `number`, não com `Decimal` (`lib/boletim-calculo.ts`);
   - `logBmAction` grava a auditoria fora da transação e engole erros (`lib/bm-log.ts`);
