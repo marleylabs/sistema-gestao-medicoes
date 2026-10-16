@@ -144,6 +144,21 @@ test.describe.serial("Portal do Fornecedor — redesign da aprovação do BM", (
     expect(sgc.salvoAt).toBeTruthy(); // SALVAR foi real
   });
 
+  test("ENVIAR real é recusado pelo servidor enquanto a conferência não foi concluída", async ({ page }) => {
+    await definirStatus({ status: "PENDENTE", statusConferencia: "DIVERGENCIA", salvoAt: new Date() });
+    try {
+      await new LoginPage(page).goto();
+      await new LoginPage(page).login(USUARIO, SENHA); // só a sessão: com conferência aberta o portal não mostra o resumo do BM
+      const resposta = await page.request.post("/api/colaborador/sgc", { data: { action: "ENVIAR" } });
+      expect(resposta.status()).toBe(409);
+      const sgc = await prisma.sgcAprovacaoMedicao.findUniqueOrThrow({ where: { id: sgcId } });
+      expect(sgc.status).toBe("PENDENTE");
+      expect(sgc.aprovadoAt).toBeNull();
+    } finally {
+      await definirStatus({ statusConferencia: "CONCLUIDA" });
+    }
+  });
+
   test("solicitar revisão: campo rotulado, validação do servidor no diálogo, Esc fecha sem alterar nada", async ({ page }) => {
     await entrar(page);
     await page.getByRole("button", { name: "Solicitar revisão", exact: true }).click();

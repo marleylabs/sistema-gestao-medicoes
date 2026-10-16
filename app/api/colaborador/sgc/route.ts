@@ -6,6 +6,7 @@ import { notifyBmApproved, notifyBmRevisionRequested } from "@/lib/email";
 import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
 import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
+import { podeAprovarBm } from "@/lib/portal-fornecedor";
 
 type Action = "SALVAR" | "ENVIAR" | "SOLICITAR_REVISAO" | "RESPONDER_MEDICAO";
 
@@ -68,6 +69,9 @@ export async function POST(request: NextRequest) {
   if (action === "ENVIAR") {
     if (existing.status !== "PENDENTE") {
       return NextResponse.json({ error: "Somente medições pendentes podem ser enviadas." }, { status: 409 });
+    }
+    if (!podeAprovarBm(existing.status, existing.statusConferencia)) {
+      return NextResponse.json({ error: "A conferência da medição ainda não foi concluída." }, { status: 409 });
     }
     if (!existing.salvoAt) {
       return NextResponse.json({ error: "É necessário Salvar antes de Enviar." }, { status: 409 });

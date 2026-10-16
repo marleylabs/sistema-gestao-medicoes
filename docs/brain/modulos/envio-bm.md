@@ -24,6 +24,6 @@ tags: [modulo]
 - Uma falha de e-mail não desfaz a transição.
 - `logBmAction` engole erros e roda fora da transação, contrariando a regra "status + auditoria na mesma transação" do CLAUDE.md.
 - Só o envio tem lock. As ações de NF, pagamento e do fornecedor não fazem compare-and-swap.
-- A ação ENVIAR do fornecedor não checa `statusConferencia` no servidor (um BM em DIVERGENCIA poderia ser aprovado).
+- O ENVIAR do fornecedor só aprova BM PENDENTE com `statusConferencia` CONCLUIDA. A regra fica em `podeAprovarBm` (`lib/portal-fornecedor.ts`), usada pela rota `app/api/colaborador/sgc` (409 caso contrário) e espelhada na UI.
 
 **Depende de:** [Conferência](conferencia-divergencias.md), [Boletim](boletim-calculo.md), [Financeiro](financeiro.md), [E-mail](email.md)

@@ -3,7 +3,7 @@ import test from "node:test";
 import fs from "node:fs";
 import path from "node:path";
 import { calcularBoletim, isDocumentoDesconto, type DocumentoBoletim } from "../lib/boletim-calculo";
-import { getPortalStatusMeta, isFinancialFollowUpStatus } from "../lib/portal-fornecedor";
+import { getPortalStatusMeta, isFinancialFollowUpStatus, podeAprovarBm } from "../lib/portal-fornecedor";
 
 /**
  * Redesign do Portal do Fornecedor (aprovação do BM): só apresentação. Estes testes travam o que
@@ -106,4 +106,11 @@ test("portal: diálogos acessíveis e nenhuma terminologia interna", () => {
   const bm = app.slice(app.indexOf("Conteúdo visível após envio do BM"), app.indexOf("{/* ── Minhas Medições ── */}"));
   assert.doesNotMatch(bm, /em análise/i);
   assert.doesNotMatch(bm, /SISTEMA APROVAÇÃO/);
+});
+
+test("podeAprovarBm: ENVIAR só com BM PENDENTE e conferência CONCLUIDA", () => {
+  assert.equal(podeAprovarBm("PENDENTE", "CONCLUIDA"), true);
+  assert.equal(podeAprovarBm("PENDENTE", "DIVERGENCIA"), false);
+  assert.equal(podeAprovarBm("PENDENTE", "AGUARDANDO_UPLOAD"), false);
+  assert.equal(podeAprovarBm("REVISAO_SOLICITADA", "CONCLUIDA"), false);
 });

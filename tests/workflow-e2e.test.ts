@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test, { before } from "node:test";
 import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
 import { getEmailCcForEvent } from "../lib/email/cc-policy";
+import { podeAprovarBm } from "../lib/portal-fornecedor";
 import { WORKFLOW_TEST_CYCLES, WORKFLOW_TEST_CYCLE_VALUES, type WorkflowFixtureLabel } from "./fixtures/workflow-cycles";
 
 before(assertConnectedToE2eDatabase);
@@ -35,10 +36,8 @@ function podeEnviarBm(statusExistente: string | undefined): boolean {
   return statusExistente === undefined || CANCELAVEIS_PARA_REENVIO.includes(statusExistente);
 }
 
-/** POST /api/colaborador/sgc (ação ENVIAR) — só aprova quando PENDENTE + conferência CONCLUIDA. */
-function podeAprovar(status: string, statusConferencia: string): boolean {
-  return status === "PENDENTE" && statusConferencia === "CONCLUIDA";
-}
+/** POST /api/colaborador/sgc (ação ENVIAR) — a mesma regra que a rota aplica. */
+const podeAprovar = podeAprovarBm;
 
 /** POST /api/colaborador/sgc (ação SOLICITAR_REVISAO) — só quando PENDENTE. */
 function podeSolicitarRevisao(status: string): boolean {

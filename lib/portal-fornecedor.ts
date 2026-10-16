@@ -21,6 +21,11 @@ export function getPortalStatusMeta(status: string): PortalStatusMeta {
   return                                      { label: "Pendente de validação",  badge: "neutral" };
 }
 
+/** Regra única da aprovação (ENVIAR) do BM pelo fornecedor: a rota valida e a UI só espelha. */
+export function podeAprovarBm(status: string, statusConferencia: string) {
+  return status === "PENDENTE" && statusConferencia === "CONCLUIDA";
+}
+
 /** APROVADO/PAGO: o acompanhamento segue em "Minhas Medições" (composição e documentos ficam ocultos no portal). */
 export function isFinancialFollowUpStatus(status: string) {
   return status === "APROVADO" || status === "PAGO";

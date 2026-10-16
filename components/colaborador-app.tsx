@@ -43,7 +43,7 @@ import {
 import { Badge, Button, Card, IconButton, PageContainer, PageHeader } from "@/components/ui";
 import type { AuthUser } from "@/lib/session";
 import { calcularBoletim } from "@/lib/boletim-calculo";
-import { isFinancialFollowUpStatus } from "@/lib/portal-fornecedor";
+import { isFinancialFollowUpStatus, podeAprovarBm } from "@/lib/portal-fornecedor";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "@/lib/presence";
 
 type SgcChatMessage = {
@@ -205,7 +205,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   const previousMedicaoMessageIdsRef        = useRef<Set<string>>(new Set());
   const nfInputRef                          = useRef<HTMLInputElement | null>(null);
 
-  const canValidate = data?.sgc.status === "PENDENTE" && data?.sgc.statusConferencia === "CONCLUIDA";
+  const canValidate = !!data && podeAprovarBm(data.sgc.status, data.sgc.statusConferencia);
 
   // Cálculo canônico do BM (lib/boletim-calculo.ts): o MESMO total que o PDF, o Histórico, as
   // Evidências e o Financeiro mostram, e que o editor grava em mapaPagamentoItem.valor.
