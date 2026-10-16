@@ -1,18 +1,16 @@
 /**
  * Diagnóstico SÓ LEITURA da P1 de escopo do fornecedor (docs/brain/specs/p1-escopo-fornecedor-por-identidade.md).
  *
- * Para cada usuário COLABORADOR ativo, compara a lista de aliases atual (lib/colaborador-alias.ts)
- * com a lista que a regra nova manteria (só valores que o resolver oficial liga ao próprio
- * Profissional) e conta o que sairia. Não imprime nomes nem códigos de terceiros: só o login do
- * próprio usuário afetado e contagens.
+ * Para cada usuário COLABORADOR ativo, resolve cada valor da lista de aliases atual
+ * (lib/colaborador-alias.ts) pelo resolver oficial e conta para quantos Profissionais distintos a
+ * lista aponta, e quantos BMs/linhas do mapa vêm de cada um. Também mostra se o próprio login
+ * resolve. Não imprime nomes, ids nem códigos de terceiros: só o login do próprio usuário e contagens.
  *
  *   DATABASE_URL=... npx tsx scripts/diagnose-escopo-fornecedor.ts
  *
  * Leitura garantida pelo banco: uma única conexão com `default_transaction_read_only` ligado;
  * o script aborta se o Postgres não confirmar.
  */
-
-type Motivo = "OUTRO_FORNECEDOR" | "AMBIGUO" | "NAO_RESOLVIDO";
 
 function urlSomenteUmaConexao(raw: string | undefined): string {
   if (!raw) throw new Error("DATABASE_URL não configurada.");
@@ -47,42 +45,61 @@ async function main() {
     orderBy: { usuario: "asc" },
   });
 
-  const totais = { usuarios: usuarios.length, semIdentidade: 0, afetados: 0, valoresRemovidos: { OUTRO_FORNECEDOR: 0, AMBIGUO: 0, NAO_RESOLVIDO: 0 } };
-  const afetados: unknown[] = [];
+  // Por que o login não resolve? Contagens globais da tabela de Profissionais (sem nomes).
+  const [profissionais] = await prisma.$queryRaw<Array<Record<string, number>>>`
+    select count(*)::int as total,
+           count(*) filter (where codigo is null)::int as sem_codigo,
+           count(*) filter (where codigo ~ '^P[0-9]{7}$')::int as codigo_formato_login,
+           count(*) filter (where codigo is not null and codigo <> trim(codigo))::int as codigo_com_espacos,
+           count(*) filter (where upper(trim(codigo)) in (select upper(usuario) from usuarios where perfil = 'COLABORADOR'))::int as codigo_igual_a_login
+    from profissionais where deleted_at is null`;
+
+  const totais = {
+    usuarios: usuarios.length,
+    loginResolve: 0,
+    // Profissionais distintos para os quais a lista ATUAL aponta: 1 = provavelmente o próprio
+    // fornecedor; 2+ = a lista mistura identidades (vazamento real).
+    porQtdProfissionais: {} as Record<string, number>,
+    comCadastroPeloLogin: 0,
+    valores: { RESOLVIDO: 0, AMBIGUO: 0, NAO_RESOLVIDO: 0 },
+  };
+  const misturados: unknown[] = [];
 
   for (const { usuario } of usuarios) {
-    const identidade = await resolverIdentidadeOperacional(usuario);
-    if (identidade.status !== "RESOLVIDO") totais.semIdentidade += 1;
-    const atual = await getColaboradorCodigoAliases(usuario);
+    const login = await resolverIdentidadeOperacional(usuario);
+    if (login.status === "RESOLVIDO") totais.loginResolve += 1;
+    if (await prisma.cadastroFornecedor.count({ where: { colaboradorCodigo: usuario } })) totais.comCadastroPeloLogin += 1;
 
-    const removidos: Record<Motivo, number> = { OUTRO_FORNECEDOR: 0, AMBIGUO: 0, NAO_RESOLVIDO: 0 };
-    // Linhas que hoje aparecem para o usuário por causa do valor removido.
-    const expostasDeOutros = { bms: 0, mapa: 0 }; // valor é de outro fornecedor: vazamento atual
-    const deixamDeAparecer = { bms: 0, mapa: 0 }; // valor ambíguo/não resolvido: pode ser legado legítimo
+    const atual = await getColaboradorCodigoAliases(usuario);
+    // Linhas visíveis hoje (BMs e mapa) agrupadas pelo Profissional ao qual o valor resolve.
+    const grupos = new Map<string, { valores: number; bms: number; mapa: number }>();
     for (const valor of atual) {
       const r = await resolverIdentidadeOperacional(valor);
-      if (identidade.status === "RESOLVIDO" && r.status === "RESOLVIDO" && r.profissionalId === identidade.profissionalId) continue;
-      // Sem identidade, a regra nova mantém só o login da sessão.
-      if (identidade.status !== "RESOLVIDO" && valor.trim().toUpperCase() === usuario.trim().toUpperCase()) continue;
-      const motivo: Motivo = r.status === "RESOLVIDO" ? "OUTRO_FORNECEDOR" : r.status;
-      removidos[motivo] += 1;
+      totais.valores[r.status] += 1;
+      const chave = r.status === "RESOLVIDO" ? r.profissionalId : r.status;
       const [bms, mapa] = await Promise.all([
         prisma.sgcAprovacaoMedicao.count({ where: { colaboradorCodigo: valor } }),
         prisma.mapaPagamentoItem.count({ where: { projetistaCodigo: valor } }),
       ]);
-      const alvo = motivo === "OUTRO_FORNECEDOR" ? expostasDeOutros : deixamDeAparecer;
-      alvo.bms += bms;
-      alvo.mapa += mapa;
+      const g = grupos.get(chave) ?? { valores: 0, bms: 0, mapa: 0 };
+      grupos.set(chave, { valores: g.valores + 1, bms: g.bms + bms, mapa: g.mapa + mapa });
     }
-
-    const totalRemovido = removidos.OUTRO_FORNECEDOR + removidos.AMBIGUO + removidos.NAO_RESOLVIDO;
-    if (!totalRemovido) continue;
-    totais.afetados += 1;
-    for (const m of Object.keys(removidos) as Motivo[]) totais.valoresRemovidos[m] += removidos[m];
-    afetados.push({ usuario, identidade: identidade.status, removidos, expostasDeOutros, deixamDeAparecer });
+    const distintos = [...grupos.keys()].filter((k) => k !== "AMBIGUO" && k !== "NAO_RESOLVIDO");
+    const faixa = String(Math.min(distintos.length, 3)) + (distintos.length >= 3 ? "+" : "");
+    totais.porQtdProfissionais[faixa] = (totais.porQtdProfissionais[faixa] ?? 0) + 1;
+    if (distintos.length >= 2 || grupos.has("AMBIGUO")) {
+      misturados.push({
+        usuario,
+        login: login.status,
+        // Um item por identidade (sem ids nem nomes), do maior para o menor em linhas visíveis.
+        identidades: [...grupos.entries()]
+          .map(([k, g]) => ({ tipo: k === "AMBIGUO" || k === "NAO_RESOLVIDO" ? k : "PROFISSIONAL", ...g }))
+          .sort((a, b) => b.bms + b.mapa - (a.bms + a.mapa)),
+      });
+    }
   }
 
-  console.log(JSON.stringify({ geradoEm: new Date().toISOString(), totais, afetados }, null, 2));
+  console.log(JSON.stringify({ geradoEm: new Date().toISOString(), profissionais, totais, misturados }, null, 2));
   await prisma.$disconnect();
 }
 
