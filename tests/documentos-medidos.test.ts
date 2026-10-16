@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test, { after, before } from "node:test";
-import { prisma } from "../lib/prisma";
+import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
 
 /**
- * Testes de integração REAIS contra o banco configurado em DATABASE_URL — executam a MESMA query
+ * Testes de integração REAIS contra o banco de teste (DATABASE_URL_TEST, ver lib/prisma-test.ts) — executam a MESMA query
  * Prisma que `lib/documentos-medidos.ts` roda (copiada aqui verbatim, não uma reimplementação
  * divergente) porque esse módulo declara `import "server-only"`, que só resolve dentro do
  * bundler do Next.js e sempre lança erro num script/teste `tsx` standalone (mesma limitação já
@@ -40,6 +40,7 @@ let fixtureProjetoId = "";
 let fixtureProfissionalIds: string[] = [];
 
 before(async () => {
+  await assertConnectedToE2eDatabase();
   const projeto = await prisma.projeto.create({ data: { codigoProjeto: `${fixtureSuffix}-PROJ`, contrato: "TESTE" } });
   fixtureProjetoId = projeto.id;
   const alexandre = await prisma.profissional.create({

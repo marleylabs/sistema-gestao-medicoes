@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { before } from "node:test";
 import { validateUserDisplayName, normalizeUserDisplayName, resolveNomeUpdate } from "../lib/usuario-nome";
-import { prisma } from "../lib/prisma";
+import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
+
+before(assertConnectedToE2eDatabase);
 
 // ─── validateUserDisplayName ───────────────────────────────────────────────────────────────────
 
