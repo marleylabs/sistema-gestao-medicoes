@@ -36,6 +36,7 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [008 Exclusão preserva histórico](decisoes/008-exclusao-definitiva-preserva-historico.md): tombstone e anonimização
 - [009 ETL como serviço HTTP](decisoes/009-etl-como-servico-http.md): container Python atrás de proxy
 - [010 Reimportação preserva BM](decisoes/010-reimportacao-preserva-bm.md): BM aprovado/pago imutável na importação; divergência reportada
+- [011 Nome do fornecedor só pelo Administrativo](decisoes/011-nome-do-fornecedor-so-pelo-administrativo.md): o nome é o elo com o cadastro; o fornecedor não o altera
 
 ## Specs
 - [P1 escopo do fornecedor por identidade](specs/p1-escopo-fornecedor-por-identidade.md): lista de aliases do portal só com valores que resolvem para o próprio Profissional (implementada)

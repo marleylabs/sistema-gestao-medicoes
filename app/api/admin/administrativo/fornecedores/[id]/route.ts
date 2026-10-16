@@ -105,36 +105,53 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: fonteMedicaoResult.error }, { status: 400 });
   }
 
-  const updated = await prisma.cadastroFornecedor.update({
-    where: { id },
-    data: {
-      cnpjNormalizado,
-      responsavel,
-      razaoSocial,
-      statusContrato: text(body.statusContrato),
-      objetoContrato: text(body.objetoContrato),
-      cargo: text(body.cargo),
-      cpf: encryptSensitive(formatCpf(body.cpf)),
-      cnpj: encryptSensitive(formatCnpj(cnpjNormalizado)),
-      email: encryptSensitive(email),
-      telefone: encryptSensitive(formatPhone(body.telefone)),
-      tipoCt: text(body.tipoCt),
-      tipoContrato: text(body.tipoContrato),
-      valorHora: numberValue(body.valorHora),
-      valorA1Equivalente: numberValue(body.valorA1Equivalente),
-      valorDocumento: numberValue(body.valorDocumento),
-      valorCondicaoFixa: numberValue(body.valorCondicaoFixa),
-      tipoCondicaoFixa,
-      valorCondicaoFixaComProducao,
-      valorCondicaoFixaSemProducao,
-      fonteMedicao: fonteMedicaoResult.value,
-      inicio: dateValue(body.inicio),
-      final: dateValue(body.final),
-      statusCadastro: text(body.statusCadastro),
-      primeiroAditivo: text(body.primeiroAditivo),
-      segundoAditivo: text(body.segundoAditivo),
-      updatedAt: new Date(),
-    },
+  const anterior = await prisma.cadastroFornecedor.findUnique({ where: { id }, select: { responsavel: true } });
+  if (!anterior) return NextResponse.json({ error: "Cadastro não encontrado." }, { status: 404 });
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const cadastro = await tx.cadastroFornecedor.update({
+      where: { id },
+      data: {
+        cnpjNormalizado,
+        responsavel,
+        razaoSocial,
+        statusContrato: text(body.statusContrato),
+        objetoContrato: text(body.objetoContrato),
+        cargo: text(body.cargo),
+        cpf: encryptSensitive(formatCpf(body.cpf)),
+        cnpj: encryptSensitive(formatCnpj(cnpjNormalizado)),
+        email: encryptSensitive(email),
+        telefone: encryptSensitive(formatPhone(body.telefone)),
+        tipoCt: text(body.tipoCt),
+        tipoContrato: text(body.tipoContrato),
+        valorHora: numberValue(body.valorHora),
+        valorA1Equivalente: numberValue(body.valorA1Equivalente),
+        valorDocumento: numberValue(body.valorDocumento),
+        valorCondicaoFixa: numberValue(body.valorCondicaoFixa),
+        tipoCondicaoFixa,
+        valorCondicaoFixaComProducao,
+        valorCondicaoFixaSemProducao,
+        fonteMedicao: fonteMedicaoResult.value,
+        inicio: dateValue(body.inicio),
+        final: dateValue(body.final),
+        statusCadastro: text(body.statusCadastro),
+        primeiroAditivo: text(body.primeiroAditivo),
+        segundoAditivo: text(body.segundoAditivo),
+        updatedAt: new Date(),
+      },
+    });
+    // O nome do usuário fornecedor é o elo com este cadastro (lib/colaborador-alias.ts) e ele não
+    // pode alterá-lo: renomear o responsável renomeia o usuário junto. Com homônimos, não mexe.
+    if (anterior.responsavel !== responsavel) {
+      const usuarios = await tx.usuario.findMany({
+        where: { perfil: "COLABORADOR", excluidoAt: null, nome: { equals: anterior.responsavel, mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (usuarios.length === 1) {
+        await tx.usuario.update({ where: { id: usuarios[0].id }, data: { nome: responsavel, updatedAt: new Date() } });
+      }
+    }
+    return cadastro;
   });
 
   if (updated.colaboradorCodigo) {

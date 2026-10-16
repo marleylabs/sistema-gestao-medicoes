@@ -5,7 +5,7 @@ import { Camera, CheckCircle2, ChevronRight, Clock3, Eye, EyeOff, KeyRound, Lock
 import { clsx } from "clsx";
 import { Button, Input } from "@/components/ui";
 import type { AuthUser } from "@/lib/session";
-import { validateUserDisplayName } from "@/lib/usuario-nome";
+import { podeAlterarProprioNome, validateUserDisplayName } from "@/lib/usuario-nome";
 import { MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 
 type ProfileData = {
@@ -628,10 +628,14 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                   <section className="grid gap-4">
                     <div>
                       <h3 className="text-base font-bold text-[#111827]">Dados pessoais</h3>
-                      <p className="mt-1 text-sm text-[#4B5563]">Gerencie as informações da sua conta.</p>
+                      <p className="mt-1 text-sm text-[#4B5563]">
+                        {podeAlterarProprioNome(displayProfile.perfil)
+                          ? "Gerencie as informações da sua conta."
+                          : "Seu nome é atualizado pelo Painel Administrativo."}
+                      </p>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <NameField
+                      {podeAlterarProprioNome(displayProfile.perfil) ? <NameField
                         value={displayProfile.nome}
                         editing={nameEditing}
                         draft={nameDraft}
@@ -641,7 +645,7 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                         onDraftChange={setNameDraft}
                         onCancel={cancelNameEdit}
                         onSave={saveName}
-                      />
+                      /> : <ReadOnlyField label="Nome" value={displayProfile.nome} />}
                       <ReadOnlyField label="Permissão" value={roleLabel} />
                     </div>
                   </section>

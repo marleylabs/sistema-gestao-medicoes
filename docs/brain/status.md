@@ -12,7 +12,7 @@ atualizado: 2026-10-16
 
 ## Próximos passos
 1. (feito) Fast-forward de `layout2.0`.
-2. (feito) Pendências P1 resolvidas em 2026-10-16. Antes do merge da P1 4, rodar `/review` e `/ponytail-review`. Próxima frente: P2 de [pendências](pendencias.md), começando pelo vínculo explícito login → Profissional.
+2. P1 da lista original resolvidas em 2026-10-16. A revisão da P1 4 achou novas P1 (cadastro exibido em `/api/colaborador/me` e `/api/usuario/me`, conferência por nome); ver [pendências](pendencias.md). A troca de nome pelo fornecedor já foi bloqueada ([decisão 011](decisoes/011-nome-do-fornecedor-so-pelo-administrativo.md)).
 3. Fechar os itens abertos de `docs/plano-pre-deploy-producao.md` §7 (os checkboxes de §4 estão desatualizados: auditoria e ensaio feitos em 2026-09-30).
 4. Criar rotina de backup automática (hoje só há `pg_dump` manual nos runbooks).
 5. Definir o fluxo manual para corrigir valores de BM aprovado ou pago (a planilha só reporta a divergência).
@@ -30,8 +30,8 @@ atualizado: 2026-10-16
 - `npm run build` e o Playwright compartilham `.next`: rode `rm -rf .next` depois do build.
 
 ## Últimas mudanças (máx. 5, mais recente primeiro)
+- 2026-10-16: fornecedor não altera o próprio nome; a edição do cadastro pelo Administrativo renomeia o usuário (decisão 011). `test:targeted` 475/475, E2E 206/206.
 - 2026-10-16: E2E de isolamento entre homônimos (`e2e/isolamento-homonimos.spec.ts`); todas as P1 fechadas.
 - 2026-10-16: escopo do fornecedor só com valores que resolvem para o próprio Profissional (`lib/colaborador-alias.ts`); diagnóstico da pré-produção sem vazamento hoje. `test:targeted` 474/474, E2E 199/199 (com T4).
 - 2026-10-16: diagnóstico só leitura do escopo do fornecedor e filtro `lib/colaborador-alias-filtro.ts` (ainda sem uso no app). `test:targeted` 469/469.
 - 2026-10-16: limpeza da reimportação casa só identidade exata; fornecedor ausente com nome parecido não perde mais medições, mapa nem BM. 11 testes do ETL com banco e `test:targeted` 465/465.
-- 2026-10-16: ENVIAR do fornecedor recusa (409) BM com conferência não concluída; E2E em `e2e/portal-fornecedor-redesign.spec.ts` (11/11). `test:targeted` 464/465 (falha do `psycopg` ausente).

@@ -19,6 +19,14 @@ export function validateUserDisplayName(raw: string | null | undefined): string 
   return null;
 }
 
+/**
+ * O nome do fornecedor (COLABORADOR) é o elo com o cadastro que define o escopo do portal
+ * (lib/colaborador-alias.ts): só o Administrativo o altera, pela edição do cadastro.
+ */
+export function podeAlterarProprioNome(perfil: string): boolean {
+  return perfil !== "COLABORADOR";
+}
+
 export type NomeUpdateResult =
   | { ok: true; nome: string }
   | { ok: false; error: string; status: 400 | 403 };

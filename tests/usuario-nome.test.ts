@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test, { before } from "node:test";
-import { validateUserDisplayName, normalizeUserDisplayName, resolveNomeUpdate } from "../lib/usuario-nome";
+import { validateUserDisplayName, normalizeUserDisplayName, resolveNomeUpdate, podeAlterarProprioNome } from "../lib/usuario-nome";
 import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
 
 before(assertConnectedToE2eDatabase);
@@ -34,6 +34,14 @@ test("validateUserDisplayName: preserva acentos e nomes compostos", () => {
 test("normalizeUserDisplayName: aplica trim mas preserva espaços internos e caixa original", () => {
   assert.equal(normalizeUserDisplayName("  Anderson Marley  "), "Anderson Marley");
   assert.equal(normalizeUserDisplayName("joão da silva"), "joão da silva");
+});
+
+// ─── podeAlterarProprioNome: o nome do fornecedor é a identidade dele ─────────────────────────
+
+test("podeAlterarProprioNome: fornecedor não troca o próprio nome (escopo do portal depende dele)", () => {
+  assert.equal(podeAlterarProprioNome("COLABORADOR"), false);
+  assert.equal(podeAlterarProprioNome("ADMIN"), true);
+  assert.equal(podeAlterarProprioNome("MEDICAO"), true);
 });
 
 // ─── resolveNomeUpdate: proteção contra mass assignment ────────────────────────────────────────

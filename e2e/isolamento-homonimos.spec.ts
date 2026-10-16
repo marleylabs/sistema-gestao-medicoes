@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures/test-with-error-guard";
 import { LoginPage } from "./pages/login-page";
+import { e2eUsers } from "./fixtures";
 import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
 
 /**
@@ -40,14 +41,14 @@ async function limpar() {
   await prisma.medicao.deleteMany({ where: { numeroMedicao: { startsWith: `E2E-HOM-${SUF}` } } });
   if (projetoId) await prisma.projeto.deleteMany({ where: { id: projetoId } });
   await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: codigos } } });
-  await prisma.usuario.deleteMany({ where: { usuario: { in: [A.login, B.login] }, nome: { in: [A.nome, B.nome] } } });
+  await prisma.usuario.deleteMany({ where: { usuario: { in: [A.login, B.login] }, nome: { startsWith: "E2E Homonimo" } } });
   await prisma.profissional.deleteMany({ where: { codigo: { in: codigos } } });
 }
 
-async function entrar(page: Page, login: string) {
+async function entrar(page: Page, login: string, senha = SENHA) {
   const loginPage = new LoginPage(page);
   await loginPage.goto();
-  await loginPage.login(login, SENHA);
+  await loginPage.login(login, senha);
 }
 
 test.beforeAll(async ({ browser }) => {
@@ -142,5 +143,29 @@ test.describe.serial("Isolamento entre fornecedores homônimos", () => {
     await entrar(page, B.login);
     expect((await page.request.get(`/api/colaborador/nf/${sgcB}`)).status()).toBe(200);
     expect((await page.request.get(`/api/colaborador/comprovante/${sgcB}`)).status()).toBe(200);
+  });
+
+  test("A não troca o próprio nome para o de B (o nome é o elo com o cadastro)", async ({ page }) => {
+    await entrar(page, A.login);
+    const resposta = await page.request.patch("/api/usuario/me", { data: { nome: B.nome } });
+    expect(resposta.status()).toBe(403);
+    expect((await prisma.usuario.findUniqueOrThrow({ where: { usuario: A.login } })).nome).toBe(A.nome);
+    expect((await (await page.request.get("/api/colaborador/me")).json()).sgc.id).toBe(sgcA);
+  });
+
+  test("Administrativo renomeia o responsável de A: o usuário acompanha e A segue vendo o próprio BM", async ({ page, browser }) => {
+    const novoNome = `${A.nome} Renomeado`;
+    const cadastro = await prisma.cadastroFornecedor.findFirstOrThrow({ where: { colaboradorCodigo: A.codigo }, select: { id: true } });
+    await entrar(page, e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
+    const resposta = await page.request.patch(`/api/admin/administrativo/fornecedores/${cadastro.id}`, {
+      data: { cnpj: "11222333000181", responsavel: novoNome, razaoSocial: `${A.nome} LTDA` },
+    });
+    expect(resposta.status()).toBe(200);
+    expect((await prisma.usuario.findUniqueOrThrow({ where: { usuario: A.login } })).nome).toBe(novoNome);
+
+    const paginaA = await browser.newPage();
+    await entrar(paginaA, A.login);
+    expect((await (await paginaA.request.get("/api/colaborador/me")).json()).sgc.id).toBe(sgcA);
+    await paginaA.close();
   });
 });

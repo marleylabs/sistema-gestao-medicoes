@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
-import { resolveNomeUpdate } from "@/lib/usuario-nome";
+import { podeAlterarProprioNome, resolveNomeUpdate } from "@/lib/usuario-nome";
 import { prisma } from "@/lib/prisma";
 import { getEffectivePermissions } from "@/lib/permissoes-acesso";
 
@@ -51,7 +51,8 @@ export async function GET() {
 }
 
 /**
- * Conta própria: o único campo editável aqui é `nome` (identidade da própria sessão autenticada
+ * Conta própria: o único campo editável aqui é `nome`, e nunca para o fornecedor (o nome dele é o elo
+ * com o cadastro; ver podeAlterarProprioNome). Identidade da própria sessão autenticada
  * — nunca um userId vindo do corpo da requisição). Qualquer outro dado do perfil (ID de acesso,
  * perfil/role, dados cadastrais do CadastroFornecedor) continua gerenciado pelo Administrativo em
  * Gestão de Usuários (app/api/admin/usuarios/[id]/route.ts), um fluxo separado e mais permissivo
@@ -60,6 +61,9 @@ export async function GET() {
 export async function PATCH(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  if (!podeAlterarProprioNome(user.perfil)) {
+    return NextResponse.json({ error: "O nome do fornecedor é alterado pelo Painel Administrativo." }, { status: 403 });
+  }
 
   const body = await request.json().catch(() => null);
   const result = resolveNomeUpdate(body);
