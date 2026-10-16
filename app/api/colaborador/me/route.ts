@@ -7,7 +7,7 @@ import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
 import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
-import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
+import { getColaboradorEscopo } from "@/lib/colaborador-alias";
 import { onlyDigits } from "@/lib/cadastro-fornecedor";
 import { getDocumentosMedidos } from "@/lib/documentos-medidos";
 
@@ -34,7 +34,7 @@ export async function GET() {
 
   const codigo = toColaboradorCodigo(user.usuario);
   const cicloAtivo = await getCicloAtivoMedicao();
-  const codigoAliases = await getColaboradorCodigoAliases(user.usuario, cicloAtivo);
+  const { aliases: codigoAliases, profissionalId } = await getColaboradorEscopo(user.usuario, cicloAtivo);
   const [profissional, pagamento, documentos, sgc, currentUsuario, usuariosMedicaoOnline] = await Promise.all([
     prisma.profissional.findFirst({
       where: { codigo: { in: codigoAliases }, deletedAt: null },
@@ -58,7 +58,7 @@ export async function GET() {
       },
       orderBy: { ordem: "asc" },
     }),
-    getDocumentosMedidos({ aliases: codigoAliases, ciclo: cicloAtivo }),
+    getDocumentosMedidos({ aliases: codigoAliases, ciclo: cicloAtivo, profissionalId }),
     prisma.sgcAprovacaoMedicao.findFirst({
       where: { colaboradorCodigo: { in: codigoAliases }, ciclo: cicloAtivo },
       orderBy: { createdAt: "desc" },

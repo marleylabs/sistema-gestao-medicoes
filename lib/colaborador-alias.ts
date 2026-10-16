@@ -13,8 +13,16 @@ import { filtrarAliasesDaIdentidade } from "@/lib/colaborador-alias-filtro";
  * MESMO Profissional — nunca CNPJ, nunca nome parecido, nunca a linha inteira do mapa.
  */
 export async function getColaboradorCodigoAliases(usuario: string | null | undefined, ciclo?: string | null) {
+  return (await getColaboradorEscopo(usuario, ciclo)).aliases;
+}
+
+/** Mesma regra, devolvendo também o Profissional da sessão (null sem identidade única). */
+export async function getColaboradorEscopo(
+  usuario: string | null | undefined,
+  ciclo?: string | null,
+): Promise<{ aliases: string[]; profissionalId: string | null }> {
   const login = toColaboradorCodigo(usuario);
-  if (!usuario || !login) return [];
+  if (!usuario || !login) return { aliases: [], profissionalId: null };
   const usuarioUpper = usuario.trim().toUpperCase();
 
   const usuarioDb = await prisma.usuario.findUnique({ where: { usuario: usuarioUpper }, select: { nome: true } });
@@ -32,7 +40,7 @@ export async function getColaboradorCodigoAliases(usuario: string | null | undef
 
   const identidade = await resolverIdentidadeOperacional(cadastro?.colaboradorCodigo ?? login);
   // Sem identidade única, o escopo é só o login da sessão (falha fechado).
-  if (identidade.status !== "RESOLVIDO") return [login];
+  if (identidade.status !== "RESOLVIDO") return { aliases: [login], profissionalId: null };
   const { profissionalId } = identidade;
 
   const profissional = await prisma.profissional.findUnique({
@@ -69,5 +77,5 @@ export async function getColaboradorCodigoAliases(usuario: string | null | undef
   // O login é a identidade da sessão: entra, a menos que seja o código de OUTRO Profissional.
   const doLogin = await resolverIdentidadeOperacional(login);
   if (doLogin.status !== "RESOLVIDO" || doLogin.profissionalId === profissionalId) aliases.unshift(login);
-  return Array.from(new Set(aliases));
+  return { aliases: Array.from(new Set(aliases)), profissionalId };
 }

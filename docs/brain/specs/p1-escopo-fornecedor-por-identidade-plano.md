@@ -40,7 +40,7 @@ A ordem é sequencial: o diagnóstico (1) usa o mesmo filtro (2), e 3–5 depend
   - Verificar: teste de integração no banco de teste (`lib/prisma-test.ts`) chamando o filtro com o resolver real; `tsc`; `test:targeted`.
   - Arquivos: `lib/colaborador-alias.ts`, `tests/colaborador-alias.test.ts`.
 
-- [ ] **T4: Documentos Medidos sem casamento por nome de outro**
+- [x] **T4: Documentos Medidos sem casamento por nome de outro** — feito de forma mais exata que o previsto: o portal (`colaborador/me` e `colaborador/medicoes`) usa `getColaboradorEscopo` e busca as medições pelo `profissionalId`. As telas internas (`admin/bm`, `mapa-pagamento/documentos`) continuam casando por nome, porque a equipe já vê todos os fornecedores. Teste: `escopo T4` em `tests/colaborador-alias.test.ts` (falhava antes).
   - Aceite: `getDocumentosMedidos` casa `codigo` como hoje e `nome`/`nomeCompleto` só em Profissional **sem código**. O teste V3 (B homônimo com código) passa; o portal e o admin/BM continuam achando os documentos do próprio fornecedor.
   - Verificar: `tests/documentos-medidos.test.ts` ganha o caso do homônimo; `test:targeted`.
   - Arquivos: `lib/documentos-medidos.ts`, `tests/documentos-medidos.test.ts`.

@@ -43,6 +43,8 @@ const homonimo = `HOMONIMO ${sufixo}`;
 const aliasFormalA = `APELIDO A ${sufixo}`;
 const ciclo = `29${String(Date.now()).slice(-2)}`;
 let getColaboradorCodigoAliases: (usuario: string, ciclo?: string | null) => Promise<string[]>;
+let getColaboradorEscopo: typeof import("../lib/colaborador-alias").getColaboradorEscopo;
+let getDocumentosMedidos: typeof import("../lib/documentos-medidos").getDocumentosMedidos;
 
 before(async () => {
   await assertConnectedToE2eDatabase();
@@ -53,7 +55,8 @@ before(async () => {
   Module._load = function (request: string, ...args: unknown[]) {
     return request === "server-only" ? {} : originalLoad.call(this, request, ...args);
   };
-  ({ getColaboradorCodigoAliases } = await import("../lib/colaborador-alias"));
+  ({ getColaboradorCodigoAliases, getColaboradorEscopo } = await import("../lib/colaborador-alias"));
+  ({ getDocumentosMedidos } = await import("../lib/documentos-medidos"));
 
   const a = await db.profissional.create({ data: { codigo: codigoA, nome: homonimo } });
   // V3: `nome` é único, mas o nomeCompleto de B pode ser igual ao nome de A.
@@ -107,5 +110,28 @@ test("escopo V4: usuário cujo nome bate com dois cadastros fica só com o próp
   } finally {
     await db.cadastroFornecedor.deleteMany({ where: { responsavel: nome } });
     await db.usuario.deleteMany({ where: { usuario: login } });
+  }
+});
+
+test("escopo T4: Documentos Medidos do portal não traz medição de outro Profissional cujo nome é um alias de A", async () => {
+  // C (outro fornecedor, com código) tem `nome` igual ao alias formal de A — valor legítimo da lista de A.
+  const a = await db.profissional.findFirstOrThrow({ where: { codigo: codigoA }, select: { id: true } });
+  const c = await db.profissional.create({ data: { codigo: `PC-${sufixo}`, nome: aliasFormalA } });
+  const projeto = await db.projeto.create({ data: { codigoProjeto: `${sufixo}-PROJ`, contrato: "TESTE" } });
+  const medicao = (id: string, n: string) => ({
+    numeroMedicao: `${sufixo}-${n}`, idProjeto: projeto.id, idProfissional: id, ciclo,
+    equivalenteA1Horas: 1, percentualEmissao: 1, condicao: "100", sourceRowHash: `${sufixo}-med-${n}`,
+  });
+  await db.medicao.createMany({ data: [medicao(a.id, "A"), medicao(c.id, "C")] });
+  try {
+    const escopo = await getColaboradorEscopo(loginA, ciclo);
+    assert.ok(escopo.aliases.includes(aliasFormalA), "fixture: o alias de A precisa estar na lista");
+    const docs = await getDocumentosMedidos({ ...escopo, ciclo });
+    const donos = await db.medicao.findMany({ where: { id: { in: docs.map((d) => d.id) } }, select: { idProfissional: true } });
+    assert.deepEqual(donos.map((d) => d.idProfissional), [a.id]);
+  } finally {
+    await db.medicao.deleteMany({ where: { numeroMedicao: { startsWith: sufixo } } });
+    await db.projeto.delete({ where: { id: projeto.id } });
+    await db.profissional.delete({ where: { id: c.id } });
   }
 });

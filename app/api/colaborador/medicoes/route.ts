@@ -5,7 +5,7 @@ import { toNumber } from "@/lib/format";
 import { serializeMapaPagamentoItem } from "@/lib/mapa-pagamento";
 import { prisma } from "@/lib/prisma";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
-import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
+import { getColaboradorCodigoAliases, getColaboradorEscopo } from "@/lib/colaborador-alias";
 import { getDocumentosMedidos } from "@/lib/documentos-medidos";
 
 function dateOnly(value: Date | null) {
@@ -34,14 +34,14 @@ export async function GET() {
 
   const medicoes = await Promise.all(
     aprovacoes.map(async (sgc) => {
-      const cicloAliases = await getColaboradorCodigoAliases(user.usuario, sgc.ciclo);
+      const { aliases: cicloAliases, profissionalId } = await getColaboradorEscopo(user.usuario, sgc.ciclo);
       const [pagamento, contexto, documentos] = await Promise.all([
         prisma.mapaPagamentoItem.findFirst({
           where: { ciclo: sgc.ciclo, projetistaCodigo: { in: cicloAliases } },
           orderBy: { ordem: "asc" },
         }),
         prisma.mapaPagamentoContexto.findUnique({ where: { ciclo: sgc.ciclo } }),
-        getDocumentosMedidos({ aliases: cicloAliases, ciclo: sgc.ciclo }),
+        getDocumentosMedidos({ aliases: cicloAliases, ciclo: sgc.ciclo, profissionalId }),
       ]);
       const pagamentoSerializado = pagamento ? serializeMapaPagamentoItem(pagamento) : null;
 

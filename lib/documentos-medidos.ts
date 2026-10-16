@@ -14,13 +14,16 @@ import { prisma } from "@/lib/prisma";
  * Documentos Medidos visíveis para a Equipe mas "0 documentos" no Portal). Os aliases devem vir
  * de `getColaboradorCodigoAliases()` (ou, para o fluxo administrativo, do único identificador
  * já digitado/selecionado) — esta função não resolve identidade sozinha, só consulta.
+ *
+ * Portal do fornecedor: passa `profissionalId` (de `getColaboradorEscopo`) e a busca é só por ele —
+ * um nome legítimo do fornecedor pode ser o nome de OUTRO Profissional (spec do escopo, T4).
  */
-export async function getDocumentosMedidos(params: { aliases: string[]; ciclo: string }) {
+export async function getDocumentosMedidos(params: { aliases: string[]; ciclo: string; profissionalId?: string | null }) {
   const aliases = Array.from(new Set(params.aliases.map((a) => a?.trim()).filter((a): a is string => !!a)));
   if (!aliases.length || !params.ciclo) return [];
 
   return prisma.medicao.findMany({
-    where: {
+    where: params.profissionalId ? { ciclo: params.ciclo, idProfissional: params.profissionalId } : {
       ciclo: params.ciclo,
       OR: [
         {
