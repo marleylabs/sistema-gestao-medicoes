@@ -602,13 +602,11 @@ def clear_imported_database(conn, ciclo: str) -> None:
     conn.execute(text("delete from etl_execucoes where ciclo = :ciclo"), params)
 
 
-def matches_any_collaborator(value: Any, normalized_codes: set[str]) -> bool:
+def matches_any_collaborator(value: Any, identifiers: set[str]) -> bool:
+    # Decisão 003: só igualdade exata com código/nome/alias conhecido do fornecedor — nome
+    # "parecido" apagaria dados de OUTRO fornecedor na reimportação.
     normalized = normalize_for_compare(clean_text(value))
-    if not normalized:
-        return False
-    if normalized in normalized_codes:
-        return True
-    return any(same_person_name(normalized, candidate) for candidate in normalized_codes)
+    return bool(normalized) and normalized in identifiers
 
 
 def collect_import_collaborator_codes(
@@ -620,8 +618,8 @@ def collect_import_collaborator_codes(
     excluir: set[str] | None = None,
 ) -> set[str]:
     codes: set[str] = set()
-    # Nomes PENDENTES/DESCARTADOS não são identidades canônicas: a limpeza por fornecedor casa por
-    # nome parecido (`matches_any_collaborator`) e apagaria dados de OUTRO fornecedor semelhante.
+    # Nomes PENDENTES/DESCARTADOS não são identidades canônicas: entrar aqui faria a limpeza apagar
+    # dados de quem tiver esse nome cadastrado.
     excluir = excluir or set()
 
     def add_code(value: Any) -> None:
@@ -674,6 +672,8 @@ def clear_imported_collaborators(
     preservar_sgc_ids: set[str] = frozenset(),
     preservar_profissional_ids: set[str] = frozenset(),
     preservar_codigos: set[str] = frozenset(),
+    profissional_ids_presentes: set[str] = frozenset(),
+    canonical_codes: dict[str, str] | None = None,
 ) -> None:
     # Atualização incremental: remove somente os dados do ciclo pertencentes aos
     # fornecedores presentes na planilha atual. Fornecedores ausentes no arquivo
@@ -681,9 +681,15 @@ def clear_imported_collaborators(
     # BM aprovado pelo fornecedor ou pago (decisão 010) nunca é tocado: nem o BM/trilha, nem as
     # medições, mapa e BM AUX que compõem os valores dele — inclusive quando o fornecedor só
     # "casa por nome parecido" com outro presente na planilha. `preservar_codigos` vem normalizado.
+    # Os presentes são identificados pelo Profissional resolvido na carga (código, alias ou nome
+    # legado) e pelos nomes que a planilha/aliases ligam ao código canônico — nunca por semelhança.
     normalized_codes = {normalize_for_compare(code) for code in collaborator_codes if clean_text(code)}
     if not normalized_codes:
         return
+    identifiers = set(normalized_codes)
+    for nome, codigo in (canonical_codes or {}).items():
+        if normalize_for_compare(clean_text(codigo)) in normalized_codes:
+            identifiers.add(normalize_for_compare(nome))
 
     def preservado(value: Any) -> bool:
         return normalize_for_compare(clean_text(value)) in preservar_codigos
@@ -691,16 +697,17 @@ def clear_imported_collaborators(
     professional_rows = conn.execute(
         text("select id, nome, codigo, nome_completo from profissionais")
     ).mappings().all()
-    professional_ids = [
-        str(row["id"])
+    presentes = [
+        row
         for row in professional_rows
-        if str(row["id"]) not in preservar_profissional_ids
-        and (
-            matches_any_collaborator(row.get("codigo"), normalized_codes)
-            or matches_any_collaborator(row.get("nome"), normalized_codes)
-            or matches_any_collaborator(row.get("nome_completo"), normalized_codes)
-        )
+        if str(row["id"]) in profissional_ids_presentes
+        or matches_any_collaborator(row.get("codigo"), normalized_codes)
+        or (not clean_text(row.get("codigo")) and matches_any_collaborator(row.get("nome"), normalized_codes))
     ]
+    for row in presentes:
+        identifiers.update(normalize_for_compare(clean_text(row.get(campo))) for campo in ("codigo", "nome", "nome_completo"))
+    identifiers.discard("")
+    professional_ids = [str(row["id"]) for row in presentes if str(row["id"]) not in preservar_profissional_ids]
 
     payment_rows = conn.execute(
         text(
@@ -717,9 +724,9 @@ def clear_imported_collaborators(
         for row in payment_rows
         if not preservado(row.get("projetista_codigo"))
         and (
-            matches_any_collaborator(row.get("projetista_codigo"), normalized_codes)
-            or matches_any_collaborator(row.get("responsavel"), normalized_codes)
-            or matches_any_collaborator(row.get("razao_social"), normalized_codes)
+            matches_any_collaborator(row.get("projetista_codigo"), identifiers)
+            or matches_any_collaborator(row.get("responsavel"), identifiers)
+            or matches_any_collaborator(row.get("razao_social"), identifiers)
         )
     ]
 
@@ -731,7 +738,7 @@ def clear_imported_collaborators(
         str(row["id"])
         for row in bm_aux_rows
         if not preservado(row.get("responsavel_codigo"))
-        and matches_any_collaborator(row.get("responsavel_codigo"), normalized_codes)
+        and matches_any_collaborator(row.get("responsavel_codigo"), identifiers)
     ]
 
     sgc_rows = conn.execute(
@@ -749,8 +756,8 @@ def clear_imported_collaborators(
         for row in sgc_rows
         if str(row["id"]) not in preservar_sgc_ids
         and (
-            matches_any_collaborator(row.get("colaborador_codigo"), normalized_codes)
-            or matches_any_collaborator(row.get("colaborador_nome"), normalized_codes)
+            matches_any_collaborator(row.get("colaborador_codigo"), identifiers)
+            or matches_any_collaborator(row.get("colaborador_nome"), identifiers)
         )
     ]
 
@@ -1863,8 +1870,7 @@ def uses_documentos_auxiliares(value: Any, canonical_codes: dict[str, str], font
     consulta `fonte_medicao_map`. Nunca decide por nome diretamente: `value` só existe para chegar
     ao código canônico via `canonical_codes`.
 
-    Fallback fuzzy (mesma resolução de `matches_any_collaborator`/`same_person_name` já usada no
-    resto do pipeline, nunca uma segunda implementação): quando não há `Profissional.codigo` real
+    Fallback fuzzy (`same_person_name`, nunca uma segunda implementação): quando não há `Profissional.codigo` real
     ligando `CadastroFornecedor` ao nome que aparece na planilha, a identidade cadastrada no Painel
     Administrativo pode estar no nome completo (ex.: "CRISTIANO JEFERSON DA COSTA SILVA") enquanto a
     planilha usa a forma abreviada (ex.: "CRISTIANO JEFERSON") — bug real encontrado nesta auditoria:
@@ -3239,6 +3245,11 @@ def ingest(
                 preservar_sgc_ids={bm["id"] for bm in bms_bloqueados},
                 preservar_profissional_ids=set(bm_por_profissional),
                 preservar_codigos=set(bm_por_codigo),
+                profissional_ids_presentes={
+                    str(r["id"]) for r in map(identity_resolver.resolve, affected_collaborator_codes)
+                    if r["status"] == "RESOLVIDO" and r.get("id")
+                },
+                canonical_codes=canonical_codes,
             )
         identidades_pendentes = persist_import_identities(conn, ciclo_efetivo, plano, importado_por)
 

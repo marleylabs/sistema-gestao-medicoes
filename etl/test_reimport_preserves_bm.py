@@ -370,9 +370,50 @@ def test_bm_approved_during_import_aborts_instead_of_deleting() -> None:
         _limpar(engine, ciclo, ids)
 
 
+def test_reimport_keeps_absent_supplier_with_similar_name() -> None:
+    """Fornecedor ausente da planilha, com BM ainda não aprovado e nome "parecido" com um presente,
+    mantém medições, mapa e BM: a limpeza só casa identidade exata (decisão 003)."""
+    engine, db = _conectar()
+    if not engine:
+        return
+    from sqlalchemy import text
+
+    ciclo, s = "2908", _sufixo()
+    presente, parecido = f"ALFAMA {s} BRUNO", f"ALFAMA {s} BRUNO NETO"
+    assert im.same_person_name(presente, parecido), "fixture: os nomes precisam ser 'parecidos'"
+    ids: dict[str, str] = {}
+
+    def estado(conn, codigo: str) -> tuple:
+        return (
+            conn.execute(text("select status from sgc_aprovacoes_medicao where ciclo = :c and colaborador_codigo = :k"), {"c": ciclo, "k": codigo}).scalar(),
+            float(conn.execute(text("select coalesce(sum(valor_medicao), 0) from medicoes where ciclo = :c and id_profissional = :p"),
+                               {"c": ciclo, "p": ids[codigo]}).scalar()),
+            [float(v) for (v,) in conn.execute(text("select valor from mapa_pagamento_itens where ciclo = :c and projetista_codigo = :k"),
+                                                {"c": ciclo, "k": codigo}).all()],
+        )
+
+    try:
+        ids = _semear(engine, [presente, parecido])
+        with tempfile.TemporaryDirectory() as d:
+            primeira, segunda = Path(d) / "primeira.xlsx", Path(d) / "segunda.xlsx"
+            _planilha(primeira, ciclo, [(presente, f"DOC-{s}-1", 100), (parecido, f"DOC-{s}-2", 100)],
+                      [(presente, 100, 0), (parecido, 100, 0)], [])
+            _ingest(primeira, db, ciclo)
+            _criar_bm(engine, ciclo, parecido, "PENDENTE")
+
+            _planilha(segunda, ciclo, [(presente, f"DOC-{s}-1", 200)], [(presente, 200, 0)], [])
+            _ingest(segunda, db, ciclo)
+            with engine.connect() as conn:
+                assert estado(conn, parecido) == ("PENDENTE", 100.0, [100.0]), f"dados do fornecedor ausente apagados: {estado(conn, parecido)}"
+                assert estado(conn, presente) == (None, 200.0, [200.0]), estado(conn, presente)
+    finally:
+        _limpar(engine, ciclo, ids)
+
+
 if __name__ == "__main__":
     test_reimport_preserves_approved_bms()
     test_reimport_preserves_payment_map_sheet_and_bm_aux()
     test_bm_approved_during_import_aborts_instead_of_deleting()
+    test_reimport_keeps_absent_supplier_with_similar_name()
     print("OK: reimportação preserva BMs aprovados/pagos (Documentos, MAPA PAGTO, Documentos Auxiliares), "
           "reporta divergência, é atômica e não apaga BM aprovado durante a carga.")

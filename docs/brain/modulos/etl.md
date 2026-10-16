@@ -22,7 +22,8 @@ tags: [modulo]
   - **Divergência com a planilha:** vai para o resultado (`bms_preservados`, `divergencias_bm_bloqueado`) e aparece na tela de importação (`components/medicoes-app.tsx`). A comparação é por conteúdo do documento, não por `source_row_hash`, que muda quando as linhas são reordenadas.
   - **BM não aprovado** (PENDENTE, REVISAO_SOLICITADA): é apagado e volta para "a enviar", como antes. Antes de apagar, a limpeza trava os BMs (`FOR UPDATE`) e relê o status. Se algum foi aprovado depois da trava inicial, a importação aborta com `ValueError`, que vira um erro de validação no `server.py`.
   - **Teste:** `etl/test_reimport_preserves_bm.py` cobre a aba Documentos com o mapa gerado, a aba MAPA PAGTO explícita, a aba Documentos Auxiliares, a atomicidade e a aprovação concorrente.
-- **Limpeza por nome aproximado:** a limpeza dos demais fornecedores ainda casa por nome aproximado (`same_person_name`).
+- **Limpeza só por identidade exata** (`clear_imported_collaborators`): apaga dados do ciclo só de quem casa exatamente com o Profissional resolvido na carga, seus códigos/nomes cadastrados ou os nomes que a planilha e os aliases ligam ao código canônico ([decisão 003](../decisoes/003-identidade-por-codigo-e-alias.md)). Fornecedor ausente com nome parecido fica intacto (`test_reimport_keeps_absent_supplier_with_similar_name`). O `same_person_name` continua só no fallback de `uses_documentos_auxiliares`.
+- **Testes do ETL com banco:** exportar `DATABASE_URL_TEST`/`ETL_DATABASE_URL` e a `DATA_ENCRYPTION_KEY` do `.env`; sem banco, os testes de carga só imprimem SKIP.
 - **Uma transação:** trava, limpeza, carga e comparação rodam num único `engine.begin()`. Os passos anteriores só leem.
 - `status_colaborador` é recalculado só para os fornecedores presentes no arquivo.
 - O ETL não cria nem altera tabelas: o schema Prisma é a fonte da verdade.

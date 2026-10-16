@@ -4,7 +4,6 @@ atualizado: 2026-10-16
 # Pendências
 
 ## P1: segurança e perda de dados
-- Limpeza da reimportação casa por nome aproximado (`same_person_name` em `clear_imported_collaborators`): fornecedor não bloqueado, ausente da planilha e com nome parecido com um presente pode ter as medições do ciclo apagadas.
 - Escopo do fornecedor inclui nomes do mapa casados por nome (`lib/colaborador-alias.ts`): risco de um fornecedor ver dados de outro em caso de homônimos.
 
 ## P2: integridade e robustez
