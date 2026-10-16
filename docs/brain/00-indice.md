@@ -4,6 +4,7 @@ Leia esta lista e abra só o que a tarefa precisa.
 
 ## Essenciais
 - [Status](status.md): onde paramos, dúvidas abertas e próximos passos
+- [Pendências](pendencias.md): riscos e dívidas técnicas por prioridade (P1 a P3)
 - [Arquitetura](arquitetura.md): stack, pastas, fluxo principal e infra
 - [Glossário](glossario.md): termos do negócio (BM, ciclo, conferência, alias...)
 

@@ -12,8 +12,8 @@ Usuários: equipe interna dos três setores e fornecedores externos (acesso rest
 ## Comandos
 - Instalar: `npm ci` (ETL: `pip install -r etl/requirements.txt`)
 - Rodar: `npm run dev` (stack completa: `docker compose up -d`)
-- Testar: `npm run test:targeted`; E2E: `npm run test:e2e:seed` e `npm run test:e2e` (Playwright)
-- Lint/format: `npm run lint` (sem formatter configurado)
+- Testar: `npm run test:targeted`; E2E: `npm run test:e2e:seed` e `npm run test:e2e` (Playwright). Antes, exporte `DATABASE_URL`, `DATABASE_URL_TEST` e `E2E_DATABASE_NAME` apontando para um banco de teste migrado; nunca rode testes contra o `.env`.
+- Checagem de tipos: `npx tsc --noEmit` (sem ESLint configurado nem formatter)
 
 ## Cérebro do projeto (docs/brain/)
 Antes de explorar o código, consulte o cérebro:
@@ -30,7 +30,7 @@ Se uma nota contradizer o código, o código vale: corrija a nota e avise.
 - Fornecedor só vê e altera as próprias medições.
 - Cada setor só executa as ações da sua etapa do fluxo.
 - [Valores monetários: tipo/precisão usados, ex.: decimal, nunca float]
-- [Medição aprovada/paga pode ou não ser editada? Como se corrige?]
+- BM aprovado pelo fornecedor ou pago não é alterado pela importação (ver docs/brain/decisoes/010)
 - [Mudanças de status precisam de registro de quem/quando?]
 
 ## Regras de código
@@ -48,7 +48,7 @@ Se uma nota contradizer o código, o código vale: corrija a nota e avise.
 - ETL (Python): type hints, SQL sempre parametrizado (nunca concatenado). O schema do Prisma é a fonte da verdade: o ETL não cria nem altera tabelas.
 - Nova dependência (npm ou pip) só após perguntar.
 - Correção de bug vem com teste que reproduz o bug. Mudança no fluxo entre setores exige teste E2E.
-- Antes de concluir uma tarefa: `npm run lint` e `npm run test:targeted` passando.
+- Antes de concluir uma tarefa: `npx tsc --noEmit` e `npm run test:targeted` passando.
 - Commits no padrão Conventional Commits, mensagem em português.
 
 ## Plugins do agente
