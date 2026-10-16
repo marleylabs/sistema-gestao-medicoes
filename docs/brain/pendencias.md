@@ -4,7 +4,6 @@ atualizado: 2026-10-16
 # Pendências
 
 ## P1: segurança e perda de dados
-- Escopo do fornecedor inclui nomes do mapa casados por nome (`lib/colaborador-alias.ts`): risco de um fornecedor ver dados de outro em caso de homônimos.
 
 ## P2: integridade e robustez
 - Não há vínculo explícito entre o login do fornecedor e o Profissional: a identidade vem do nome exato do usuário igual ao `responsavel` do cadastro (diagnóstico de 2026-10-16 na [spec do escopo](specs/p1-escopo-fornecedor-por-identidade.md)). Homônimo novo bloqueia o acesso (falha fechado), mas o elo é frágil.

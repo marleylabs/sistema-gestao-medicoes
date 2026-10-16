@@ -1,6 +1,6 @@
 ---
 atualizado: 2026-10-16
-status: aprovada em 2026-10-16 (revisada após o diagnóstico)
+status: implementada em 2026-10-16 (revisada após o diagnóstico)
 tags: [spec]
 ---
 # Spec: escopo do fornecedor só por identidade exata

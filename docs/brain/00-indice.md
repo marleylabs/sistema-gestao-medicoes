@@ -38,5 +38,5 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [010 Reimportação preserva BM](decisoes/010-reimportacao-preserva-bm.md): BM aprovado/pago imutável na importação; divergência reportada
 
 ## Specs
-- [P1 escopo do fornecedor por identidade](specs/p1-escopo-fornecedor-por-identidade.md): lista de aliases do portal só com valores que resolvem para o próprio Profissional (aprovada)
-- [Plano da P1 escopo do fornecedor](specs/p1-escopo-fornecedor-por-identidade-plano.md): T1 diagnóstico só leitura → filtro → aliases → Documentos Medidos → E2E (aprovado)
+- [P1 escopo do fornecedor por identidade](specs/p1-escopo-fornecedor-por-identidade.md): lista de aliases do portal só com valores que resolvem para o próprio Profissional (implementada)
+- [Plano da P1 escopo do fornecedor](specs/p1-escopo-fornecedor-por-identidade-plano.md): T1 diagnóstico só leitura → filtro → aliases → Documentos Medidos → E2E (concluído)

@@ -1,6 +1,6 @@
 ---
 atualizado: 2026-10-16
-status: aprovado em 2026-10-16
+status: concluído em 2026-10-16
 tags: [spec, plano]
 ---
 # Plano: escopo do fornecedor só por identidade exata
@@ -45,12 +45,12 @@ A ordem é sequencial: o diagnóstico (1) usa o mesmo filtro (2), e 3–5 depend
   - Verificar: `tests/documentos-medidos.test.ts` ganha o caso do homônimo; `test:targeted`.
   - Arquivos: `lib/documentos-medidos.ts`, `tests/documentos-medidos.test.ts`.
 
-- [ ] **T5: E2E de isolamento**
+- [x] **T5: E2E de isolamento** — `e2e/isolamento-homonimos.spec.ts` (5 testes). Com o `lib/colaborador-alias.ts` anterior, o portal de A recebia o BM de B. O chat já tinha barreira própria (só importa log do próprio fornecedor); o teste fica como não regressão.
   - Aceite: dois fornecedores com o mesmo nome, cada um com BM, NF, comprovante e linha no mapa. A só vê os próprios dados no portal e em Minhas Medições; GET direto no comprovante e na NF de B devolve 403/404; o chat de A não lista conversa de B.
   - Verificar: `npx playwright test e2e/isolamento-homonimos.spec.ts`; o teste falha sem T3/T4.
   - Arquivos: `e2e/isolamento-homonimos.spec.ts` (novo).
 
-- [ ] **T6: fechamento**
+- [x] **T6: fechamento** — notas atualizadas. Falta rodar `/review` e `/ponytail-review` antes do merge.
   - Aceite: [portal do fornecedor](../modulos/portal-fornecedor.md) com a regra nova; P1 4 removida de [pendências](../pendencias.md); status atualizado; spec e plano como concluídos.
   - Verificar: `npx tsc --noEmit`, `npm run test:targeted`, E2E do portal e de isolamento verdes; `/review` e `/ponytail-review` antes do merge (CLAUDE.md).
   - Arquivos: notas do cérebro.
