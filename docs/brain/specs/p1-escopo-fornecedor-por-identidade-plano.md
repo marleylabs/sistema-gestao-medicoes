@@ -25,12 +25,12 @@ A ordem é sequencial: o diagnóstico (1) usa o mesmo filtro (2), e 3–5 depend
 
 ## Tarefas
 
-- [ ] **T1: diagnóstico só leitura**
+- [ ] **T1: diagnóstico só leitura** — script pronto e validado no banco de teste (escrita barrada pela sessão somente leitura). Os removidos são classificados pelo resultado do resolver (OUTRO_FORNECEDOR, AMBIGUO, NAO_RESOLVIDO) em vez de V1–V4: é o que decide entre vazamento e legado que precisa de alias. Falta rodar na pré-produção.
   - Aceite: script `scripts/diagnose-escopo-fornecedor.ts` que, para cada usuário COLABORADOR ativo, compara a lista atual com a lista filtrada e imprime só contagens: total de usuários, quantos perdem valores, quantos valores por vetor (V1–V4) e o código do **próprio** usuário afetado. Nenhum nome e nenhum código de terceiro. Abre conexão só de leitura (`SET TRANSACTION READ ONLY`).
   - Verificar: roda no banco de teste semeado e no DEV local. **Em pré-produção, só com você executando ou acompanhando** (preciso saber como acessar, ver pergunta abaixo).
   - Arquivos: `scripts/diagnose-escopo-fornecedor.ts`, `lib/colaborador-alias-filtro.ts` (de T2).
 
-- [ ] **T2: filtro puro + testes dos vetores**
+- [ ] **T2: filtro puro + testes dos vetores** — filtro e 4 testes unitários prontos (adiantados porque o diagnóstico usa a mesma regra); faltam os testes de integração dos vetores.
   - Aceite: `filtrarAliasesDaIdentidade(candidatos, resolver, profissionalId)` mantém só valores que o resolver liga ao mesmo Profissional. Testes V1–V4 e de não regressão (alias formal, nome legado único, linha do mapa com o próprio nome).
   - Verificar: `npx tsx --test tests/colaborador-alias.test.ts`.
   - Arquivos: `lib/colaborador-alias-filtro.ts` (novo, sem `server-only`), `tests/colaborador-alias.test.ts` (novo).
