@@ -7,8 +7,9 @@ import json
 import os
 import re
 import unicodedata
+from collections import Counter
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -661,13 +662,26 @@ def collect_import_collaborator_codes(
     return codes
 
 
-def clear_imported_collaborators(conn, ciclo: str, collaborator_codes: set[str]) -> None:
+def clear_imported_collaborators(
+    conn,
+    ciclo: str,
+    collaborator_codes: set[str],
+    preservar_sgc_ids: set[str] = frozenset(),
+    preservar_profissional_ids: set[str] = frozenset(),
+    preservar_codigos: set[str] = frozenset(),
+) -> None:
     # Atualização incremental: remove somente os dados do ciclo pertencentes aos
     # fornecedores presentes na planilha atual. Fornecedores ausentes no arquivo
     # permanecem preservados no ciclo.
+    # BM aprovado pelo fornecedor ou pago (decisão 010) nunca é tocado: nem o BM/trilha, nem as
+    # medições, mapa e BM AUX que compõem os valores dele — inclusive quando o fornecedor só
+    # "casa por nome parecido" com outro presente na planilha. `preservar_codigos` vem normalizado.
     normalized_codes = {normalize_for_compare(code) for code in collaborator_codes if clean_text(code)}
     if not normalized_codes:
         return
+
+    def preservado(value: Any) -> bool:
+        return normalize_for_compare(clean_text(value)) in preservar_codigos
 
     professional_rows = conn.execute(
         text("select id, nome, codigo, nome_completo from profissionais")
@@ -675,7 +689,8 @@ def clear_imported_collaborators(conn, ciclo: str, collaborator_codes: set[str])
     professional_ids = [
         str(row["id"])
         for row in professional_rows
-        if (
+        if str(row["id"]) not in preservar_profissional_ids
+        and (
             matches_any_collaborator(row.get("codigo"), normalized_codes)
             or matches_any_collaborator(row.get("nome"), normalized_codes)
             or matches_any_collaborator(row.get("nome_completo"), normalized_codes)
@@ -695,7 +710,8 @@ def clear_imported_collaborators(conn, ciclo: str, collaborator_codes: set[str])
     payment_ids = [
         str(row["id"])
         for row in payment_rows
-        if (
+        if not preservado(row.get("projetista_codigo"))
+        and (
             matches_any_collaborator(row.get("projetista_codigo"), normalized_codes)
             or matches_any_collaborator(row.get("responsavel"), normalized_codes)
             or matches_any_collaborator(row.get("razao_social"), normalized_codes)
@@ -709,7 +725,8 @@ def clear_imported_collaborators(conn, ciclo: str, collaborator_codes: set[str])
     bm_aux_ids = [
         str(row["id"])
         for row in bm_aux_rows
-        if matches_any_collaborator(row.get("responsavel_codigo"), normalized_codes)
+        if not preservado(row.get("responsavel_codigo"))
+        and matches_any_collaborator(row.get("responsavel_codigo"), normalized_codes)
     ]
 
     sgc_rows = conn.execute(
@@ -725,7 +742,8 @@ def clear_imported_collaborators(conn, ciclo: str, collaborator_codes: set[str])
     sgc_ids = [
         str(row["id"])
         for row in sgc_rows
-        if (
+        if str(row["id"]) not in preservar_sgc_ids
+        and (
             matches_any_collaborator(row.get("colaborador_codigo"), normalized_codes)
             or matches_any_collaborator(row.get("colaborador_nome"), normalized_codes)
         )
@@ -758,6 +776,118 @@ def clear_imported_collaborators(conn, ciclo: str, collaborator_codes: set[str])
             text("delete from bm_aux_medicoes where id in :ids").bindparams(bindparam("ids", expanding=True)),
             {"ids": bm_aux_ids},
         )
+
+
+# Decisão 010: BM aprovado pelo fornecedor (ENVIAR → AGUARDANDO_NF) ou adiante é imutável para a
+# importação. Mesmo conjunto de lib/minhas-medicoes.ts (STATUS_MINHAS_MEDICOES).
+STATUS_BM_BLOQUEADO = ("AGUARDANDO_NF", "APROVADO", "PAGO")
+CAMPOS_COMPARACAO_BM = (
+    "codigo_projeto", "numero_documento", "formato", "tipo2", "equivalente_a1_horas", "percentual_emissao", "valor_medicao",
+)
+CAMPOS_DECIMAIS_BM = {"equivalente_a1_horas", "percentual_emissao", "valor_medicao"}
+LIMITE_DOCUMENTOS_DIVERGENCIA = 50
+
+
+def load_locked_bms(conn, ciclo: str) -> list[dict[str, Any]]:
+    """BMs bloqueados do ciclo, travados (FOR UPDATE) até o fim da transação da importação para que
+    um envio/aprovação concorrente não mude o status no meio da carga."""
+    rows = conn.execute(
+        text(
+            "select id, colaborador_codigo, status from sgc_aprovacoes_medicao "
+            "where ciclo = :ciclo and status in :status for update"
+        ).bindparams(bindparam("status", expanding=True)),
+        {"ciclo": ciclo, "status": list(STATUS_BM_BLOQUEADO)},
+    ).mappings().all()
+    return [{"id": str(row["id"]), "colaborador_codigo": row["colaborador_codigo"], "status": row["status"]} for row in rows]
+
+
+def decimal_4(value: Any) -> str | None:
+    """Mesma escala/arredondamento das colunas numeric(…,4) do Postgres (meio para longe do zero)."""
+    numero = clean_decimal(value, default=None)
+    return None if numero is None else str(numero.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+
+
+def comparable_measurement(measurement: dict[str, Any], codigo_projeto: Any) -> tuple:
+    # Sem source_row_hash: ele inclui a ordem da linha e acusaria divergência só por reordenar.
+    dados = {**measurement, "codigo_projeto": codigo_projeto}
+    return tuple(
+        decimal_4(dados.get(campo)) if campo in CAMPOS_DECIMAIS_BM else clean_text(dados.get(campo))
+        for campo in CAMPOS_COMPARACAO_BM
+    )
+
+
+def comparable_row_measurements(row: pd.Series, discount_only: bool, codigo_projeto: str, ciclo: str) -> list[tuple]:
+    """As medições que a linha da aba Documentos gravaria (mesma regra do laço de carga)."""
+    base = build_discount_only_base_measurement(row, ciclo) if discount_only else build_measurement(row)
+    linhas = [] if discount_only else [base]
+    desconto = build_discount_measurement(row, base, ciclo)
+    if desconto:
+        linhas.append(desconto)
+    return [comparable_measurement(measurement, codigo_projeto) for measurement in linhas]
+
+
+def locked_bm_divergences(
+    conn,
+    ciclo: str,
+    bms: list[dict[str, Any]],
+    planilha: dict[str, list[tuple]],
+    mapa_planilha: dict[str, dict[str, Decimal]],
+) -> list[dict[str, Any]]:
+    """Diferenças entre a planilha e os BMs bloqueados presentes nela — reportadas, nunca gravadas."""
+    divergencias: list[dict[str, Any]] = []
+    for bm in bms:
+        codigo = bm["colaborador_codigo"]
+        if codigo not in planilha and codigo not in mapa_planilha:
+            continue  # ausente da planilha: só preservado
+        banco_rows = conn.execute(
+            text(
+                """
+                select pr.codigo_projeto, m.numero_documento, m.formato, m.tipo2,
+                       m.equivalente_a1_horas, m.percentual_emissao, m.valor_medicao
+                from medicoes m
+                join profissionais p on p.id = m.id_profissional
+                join projetos pr on pr.id = m.id_projeto
+                where m.ciclo = :ciclo and coalesce(p.codigo, p.nome) = :codigo
+                """
+            ),
+            {"ciclo": ciclo, "codigo": codigo},
+        ).mappings().all()
+        banco = Counter(comparable_measurement(dict(row), row["codigo_projeto"]) for row in banco_rows)
+        da_planilha = Counter(planilha.get(codigo, []))
+        somente_planilha = sorted((da_planilha - banco).elements(), key=str)
+        somente_banco = sorted((banco - da_planilha).elements(), key=str)
+
+        mapa_divergente = None
+        if codigo in mapa_planilha:
+            atual = conn.execute(
+                text("select count(*) as n, sum(valor) as valor, sum(rev) as rev from mapa_pagamento_itens where ciclo = :ciclo and projetista_codigo = :codigo"),
+                {"ciclo": ciclo, "codigo": codigo},
+            ).mappings().one()
+            no_banco = {"valor": decimal_4(atual["valor"]), "rev": decimal_4(atual["rev"])} if atual["n"] else None
+            na_planilha = {campo: decimal_4(valor) for campo, valor in mapa_planilha[codigo].items()}
+            if no_banco != na_planilha:
+                mapa_divergente = {"banco": no_banco, "planilha": na_planilha}
+
+        if not (somente_planilha or somente_banco or mapa_divergente):
+            continue
+
+        def total(itens: Counter) -> str | None:
+            indice = CAMPOS_COMPARACAO_BM.index("valor_medicao")
+            return decimal_4(sum((Decimal(item[indice]) for item in itens.elements() if item[indice] is not None), Decimal("0")))
+
+        def documentos(itens: list[tuple]) -> list[dict[str, Any]]:
+            return [dict(zip(CAMPOS_COMPARACAO_BM, item)) for item in itens[:LIMITE_DOCUMENTOS_DIVERGENCIA]]
+
+        divergencias.append({
+            "colaborador_codigo": codigo,
+            "status": bm["status"],
+            "total_banco": total(banco),
+            "total_planilha": total(da_planilha),
+            "somente_planilha": documentos(somente_planilha),
+            "somente_banco": documentos(somente_banco),
+            "mapa": mapa_divergente,
+        })
+    return divergencias
 
 
 def upsert_project(conn, projetos, data: dict[str, Any]) -> int:
@@ -1825,7 +1955,13 @@ def find_cadastro_for_generated_payment(
     return None
 
 
-def generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo: str, sugestoes: list[dict[str, Any]] | None = None) -> int:
+def generate_payment_map_from_measurements(
+    conn,
+    mapa_pagamento_itens,
+    ciclo: str,
+    sugestoes: list[dict[str, Any]] | None = None,
+    preservar_codigos: set[str] = frozenset(),
+) -> int:
     rows = conn.execute(
         text(
             """
@@ -1914,6 +2050,9 @@ def generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo: st
     cadastros = latest_cadastros_by_collaborator(conn)
     loaded = 0
     for ordem, item in enumerate(grouped.values(), start=1):
+        # BM bloqueado (decisão 010): a linha do mapa (valor, REV manual, rateio) não é regravada.
+        if not item["identidade_id"] and normalize_for_compare(item["codigo"]) in preservar_codigos:
+            continue
         # Pendente nunca herda cadastro "parecido" (nem condição fixa): só depois do vínculo humano.
         cadastro = None if item["identidade_id"] else find_cadastro_for_generated_payment(cadastros, item, sugestoes)
         # CORREÇÃO ESTRUTURAL: existia uma tabela hardcoded por nome (FIXED_CONDITION_REFERENCE,
@@ -3041,7 +3180,28 @@ def ingest(
     duplicate_source_rows = 0
     skipped = 0
 
+    # Uma única transação: trava dos BMs bloqueados, limpeza, carga e comparação — falha em qualquer
+    # ponto desfaz tudo (os passos anteriores só leem).
     with engine.begin() as conn:
+        bms_bloqueados = load_locked_bms(conn, ciclo_efetivo)
+        bm_por_codigo = {normalize_for_compare(bm["colaborador_codigo"]): bm for bm in bms_bloqueados}
+        bm_por_profissional: dict[str, dict[str, Any]] = {}
+        for bm in bms_bloqueados:
+            resolvido = identity_resolver.resolve(bm["colaborador_codigo"])
+            if resolvido["status"] == "RESOLVIDO" and resolvido.get("id"):
+                bm_por_profissional[str(resolvido["id"])] = bm
+        planilha_bloqueada: dict[str, list[tuple]] = {}
+        mapa_bloqueado: dict[str, dict[str, Decimal]] = {}
+
+        def bm_bloqueado(valor: Any) -> dict[str, Any] | None:
+            """BM bloqueado do fornecedor da linha (mesma resolução canônica da gravação)."""
+            if not bms_bloqueados or not clean_text(valor):
+                return None
+            resolvido = identity_resolver.resolve(valor)
+            if resolvido["status"] == "RESOLVIDO" and str(resolvido.get("id")) in bm_por_profissional:
+                return bm_por_profissional[str(resolvido["id"])]
+            return bm_por_codigo.get(normalize_for_compare(clean_text(valor)))
+
         identities = set(affected_collaborator_codes)
         for _, row in base_df.iterrows():
             candidate = build_base_professional(row)
@@ -3057,7 +3217,14 @@ def ingest(
                 identities.update(str(candidate.get(key) or "") for key in ("projetista_codigo", "responsavel"))
         assert_import_identities_active(conn, identities)
         if full_refresh:
-            clear_imported_collaborators(conn, ciclo_efetivo, affected_collaborator_codes)
+            clear_imported_collaborators(
+                conn,
+                ciclo_efetivo,
+                affected_collaborator_codes,
+                preservar_sgc_ids={bm["id"] for bm in bms_bloqueados},
+                preservar_profissional_ids=set(bm_por_profissional),
+                preservar_codigos=set(bm_por_codigo),
+            )
         identidades_pendentes = persist_import_identities(conn, ciclo_efetivo, plano, importado_por)
 
         def identidade_da_planilha(nome: Any) -> tuple[str, str | None]:
@@ -3105,6 +3272,12 @@ def ingest(
                 if situacao == "DESCARTADO":
                     skipped += 1
                     continue
+                bm = None if situacao == "PENDENTE" else bm_bloqueado(payment_item["projetista_codigo"])
+                if bm:
+                    acumulado = mapa_bloqueado.setdefault(bm["colaborador_codigo"], {"valor": Decimal("0"), "rev": Decimal("0")})
+                    acumulado["valor"] += clean_decimal(payment_item.get("valor"))
+                    acumulado["rev"] += clean_decimal(payment_item.get("rev"))
+                    continue
                 payment_item["identidade_importacao_id"] = identidade_id
                 upsert_payment_map_item(conn, mapa_pagamento_itens, payment_item)
                 payment_items_loaded += 1
@@ -3134,6 +3307,12 @@ def ingest(
                 measurement, project = built
                 situacao, identidade_id = identidade_da_planilha(codigo)
                 if situacao == "DESCARTADO":
+                    continue
+                bm = None if situacao == "PENDENTE" else bm_bloqueado(codigo)
+                if bm:
+                    planilha_bloqueada.setdefault(bm["colaborador_codigo"], []).append(
+                        comparable_measurement(measurement, project["codigo_projeto"])
+                    )
                     continue
                 id_projeto = upsert_project(conn, projetos, project)
                 # Preflight garantiu a resolução — nunca cria Profissional a partir do BM AUX.
@@ -3195,6 +3374,14 @@ def ingest(
             contrato = clean_text(project_raw["contrato"])
             if discount_only:
                 codigo_projeto = f"DESCONTO-{normalize_for_compare(contrato).upper() or 'GERAL'}"
+
+            bloqueavel = situacao != "PENDENTE" and nome_profissional and not is_expense_professional_name(nome_profissional)
+            bm = bm_bloqueado(nome_profissional) if bloqueavel else None
+            if bm:
+                planilha_bloqueada.setdefault(bm["colaborador_codigo"], []).extend(
+                    comparable_row_measurements(row, discount_only, codigo_projeto, ciclo_efetivo)
+                )
+                continue
 
             id_projeto = upsert_project(
                 conn,
@@ -3289,10 +3476,19 @@ def ingest(
 
         cadastro_sugestoes: list[dict[str, Any]] = []
         if payment_map_df.empty:
-            payment_items_loaded = generate_payment_map_from_measurements(conn, mapa_pagamento_itens, ciclo_efetivo, cadastro_sugestoes)
+            payment_items_loaded = generate_payment_map_from_measurements(
+                conn, mapa_pagamento_itens, ciclo_efetivo, cadastro_sugestoes, preservar_codigos=set(bm_por_codigo),
+            )
             payment_status_loaded = payment_items_loaded
 
+        divergencias_bm = locked_bm_divergences(conn, ciclo_efetivo, bms_bloqueados, planilha_bloqueada, mapa_bloqueado)
+
     return {
+        "bms_preservados": sorted(
+            ({"colaborador_codigo": bm["colaborador_codigo"], "status": bm["status"]} for bm in bms_bloqueados),
+            key=lambda bm: bm["colaborador_codigo"],
+        ),
+        "divergencias_bm_bloqueado": divergencias_bm,
         **identity_summary,
         "sugestoes_cadastro_nao_aplicadas": cadastro_sugestoes,
         "rows_read": len(df),

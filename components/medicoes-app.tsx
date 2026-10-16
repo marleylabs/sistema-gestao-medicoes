@@ -27,8 +27,7 @@ import { ComentarioDropdown } from "@/components/mapa-pagamento-table";
 import { FornecedoresPage } from "@/components/fornecedores";
 import { FinanceiroPanel } from "@/components/financeiro-panel";
 import { AdministrativoPanel } from "@/components/administrativo-panel";
-import { IdentidadesDoCicloPanel, PendenciasEstruturais, type EtlUnresolvedIdentity } from "@/components/importacao/identidades-pendentes";
-import { HistoricoWorkspace } from "@/components/historico/historico-workspace";
+import { IdentidadesDoCicloPanel, PendenciasEstruturais, type EtlUnresolvedIdentity } from "@/components/importacao/identidades-pendentes";import { HistoricoWorkspace } from "@/components/historico/historico-workspace";
 import { EvidenciasWorkspace } from "@/components/evidencias/evidencias-workspace";
 import { useViewportAlign } from "@/components/use-viewport-align";
 import { Badge, Button, Card, FilterButton, FilterChip, IconButton, PageContainer, PageHeader, Select } from "@/components/ui";
@@ -1472,6 +1471,19 @@ function ImportarPlanilhaSection({
                     <ul className="mt-1 grid gap-0.5">
                       {(status.lastResult.sugestoes_cadastro_nao_aplicadas as Array<{ codigo: string; cadastroSugerido: string }>).map((s) => (
                         <li key={s.codigo}>{s.codigo} → {s.cadastroSugerido}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {Array.isArray(status.lastResult.divergencias_bm_bloqueado) && status.lastResult.divergencias_bm_bloqueado.length > 0 && (
+                  <div className="rounded-lg bg-[var(--warning-soft)] p-3 text-xs text-[#92400E]" data-testid="etl-divergencias-bm-bloqueado">
+                    <p className="font-semibold">BMs aprovados ou pagos não foram alterados</p>
+                    <p>A planilha diverge destes BMs já aprovados pelo fornecedor. Os valores do sistema foram mantidos; a correção exige tratamento manual.</p>
+                    <ul className="mt-1 grid gap-0.5">
+                      {(status.lastResult.divergencias_bm_bloqueado as Array<{ colaborador_codigo: string; status: string; total_banco: string | null; total_planilha: string | null; somente_planilha: unknown[]; somente_banco: unknown[] }>).map((d) => (
+                        <li key={d.colaborador_codigo}>
+                          {d.colaborador_codigo} ({d.status}): sistema {currency.format(Number(d.total_banco ?? 0))} · planilha {currency.format(Number(d.total_planilha ?? 0))} · {d.somente_planilha.length} documento(s) só na planilha, {d.somente_banco.length} só no sistema
+                        </li>
                       ))}
                     </ul>
                   </div>
