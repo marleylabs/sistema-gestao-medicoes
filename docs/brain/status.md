@@ -12,7 +12,7 @@ atualizado: 2026-10-16
 
 ## Próximos passos
 1. (feito) Fast-forward de `layout2.0`.
-2. Resolver as pendências P1 de [pendências](pendencias.md). Próxima: escopo do fornecedor por nome em `lib/colaborador-alias.ts` (pede /spec).
+2. Resolver as pendências P1 de [pendências](pendencias.md). Próxima: escopo do fornecedor por nome em `lib/colaborador-alias.ts`; [spec](specs/p1-escopo-fornecedor-por-identidade.md) aprovada; [plano](specs/p1-escopo-fornecedor-por-identidade-plano.md) aprovado; em execução a partir da T1.
 3. Fechar os itens abertos de `docs/plano-pre-deploy-producao.md` §7 (os checkboxes de §4 estão desatualizados: auditoria e ensaio feitos em 2026-09-30).
 4. Criar rotina de backup automática (hoje só há `pg_dump` manual nos runbooks).
 5. Definir o fluxo manual para corrigir valores de BM aprovado ou pago (a planilha só reporta a divergência).
