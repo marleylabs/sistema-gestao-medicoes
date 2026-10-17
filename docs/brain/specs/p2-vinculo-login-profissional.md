@@ -1,5 +1,5 @@
 ---
-atualizado: 2026-10-16
+atualizado: 2026-10-17
 status: aprovada em 2026-10-16 (v2)
 tags: [spec]
 ---
@@ -67,10 +67,14 @@ A comparação é `upper(trim())`, como em `lib/ciclo-cleanup.ts`.
 ## Regra nova
 1. **Identidade da sessão** = `resolverIdentidadeOperacional(login)` RESOLVIDO. Sem isso, o escopo é mínimo, como hoje.
 2. **Cadastro do fornecedor** = cadastro com `colaboradorCodigo = login`. Com mais de um cadastro, falha fechado, como hoje. Some o ramo "nome do usuário = `responsavel`" de `selectCadastroForAuthenticatedUser` e da busca em `getColaboradorEscopo` e `validateFornecedorForNfUpload`.
-3. **Fornecedor novo:** o upsert administrativo gera o P0 **antes** e o usa como `colaboradorCodigo` e `Profissional.codigo`. O usuário é criado com esse mesmo P0. O ramo CREATE deixa de usar o nome como código.
-4. **Reimportação, reativação e `RECREATE_FROM_HISTORY`:**
-   - O código histórico é mantido. Depois da migração, ele já é o P0.
-   - O usuário é encontrado por `usuario = colaboradorCodigo`, nunca por nome.
+3. **Fornecedor novo:** o upsert administrativo gera o P0 **antes** e o usa como `colaboradorCodigo`, `Profissional.codigo` e `Profissional.nome`. O usuário é criado com esse mesmo P0, nunca reaproveitado pelo nome. O ramo CREATE deixa de usar o nome como código.
+   - O nome do responsável vira alias (origem `CADASTRO`), para a planilha, que traz o nome, resolver para o P0.
+   - Com um homônimo, o nome fica ambíguo e a importação pede decisão do ADMIN; nunca escolhe um dos dois.
+   - "Nenhuma dessas identidades" deixa de ser recusada por colisão de nome: a identidade nova tem P0 próprio.
+4. **Reimportação, reativação e `RECREATE_FROM_HISTORY`** (ajustado na T3, 2026-10-17):
+   - O usuário é o do login igual ao código. Depois da migração, o código já é o P0.
+   - Identidade de antes do P0 (por exemplo, fornecedor excluído antes da migração) ainda acha o usuário pelo nome, mas **nunca** o de outro fornecedor que já está em P0 (login igual ao código de outro Profissional).
+   - Nesse caso, o código passa para o P0 do login na mesma transação, pela mesma rotina da migração (`trocarCodigoParaP0` em `lib/codigo-p0.ts`): o código antigo vira alias e as tabelas são atualizadas. O Profissional e o histórico continuam os mesmos; só o código muda.
 5. **Inativação, exclusão definitiva e edição do cadastro:** acham o usuário pelo código (= login), não pelo nome. Renomear o `responsavel` não precisa mais renomear o usuário para manter o acesso (decisão 5).
 6. **Planilhas:** o nome da planilha resolve para o P0 pelo alias criado na migração. Nome novo sem alias continua virando identidade pendente (`ImportacaoIdentidade`), resolvida pelo ADMIN.
 7. O fornecedor nunca informa o próprio código: ele vem da sessão.

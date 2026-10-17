@@ -4,6 +4,10 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getColaboradorEscopo } from "@/lib/colaborador-alias";
 import { normalizarAlias, resolverIdentidadeOperacional } from "@/lib/profissional-identidade";
+import {
+  ACAO_CODIGO_P0, COLUNAS_CODIGO_FORNECEDOR, ProfissionalMudouError, TABELAS_CODIGO_FORNECEDOR, chaveCodigo as chave,
+  ondeCodigo as onde, trocarCodigoParaP0, type LinhasPorTabela, type TabelaCodigoFornecedor,
+} from "@/lib/codigo-p0";
 
 /**
  * Migração para o P0 como único ID do fornecedor (docs/brain/specs/p2-vinculo-login-profissional.md,
@@ -13,17 +17,7 @@ import { normalizarAlias, resolverIdentidadeOperacional } from "@/lib/profission
  * `reverterMigracaoP0` desfaz pela auditoria. `admin_audit_logs` fica fora de propósito (guarda o
  * código da época).
  */
-export const COLUNAS_CODIGO_FORNECEDOR = {
-  cadastros_fornecedores: "colaborador_codigo",
-  sgc_aprovacoes_medicao: "colaborador_codigo",
-  divergencias_medicao: "colaborador_codigo",
-  // Linha com identidade pendente guarda o nome da planilha, não um código: não migra.
-  mapa_pagamento_itens: "projetista_codigo",
-  bm_aux_medicoes: "responsavel_codigo",
-  sgc_logs: "colaborador_codigo",
-} as const;
-export type TabelaCodigoFornecedor = keyof typeof COLUNAS_CODIGO_FORNECEDOR;
-const TABELAS = Object.keys(COLUNAS_CODIGO_FORNECEDOR) as TabelaCodigoFornecedor[];
+const TABELAS = TABELAS_CODIGO_FORNECEDOR;
 
 export type ClasseMigracaoP0 = "MIGRAVEL" | "JA_E_P0" | "SEM_IDENTIDADE" | "CONFLITO";
 export type MotivoConflitoP0 = "LOGIN_EM_USO" | "PROFISSIONAL_COM_VARIOS_LOGINS" | "CADASTRO_MULTIPLO" | "ALIAS_EM_USO";
@@ -36,15 +30,10 @@ export type UsuarioMigracaoP0 = {
   codigoAtual: string | null;
   linhas: Record<TabelaCodigoFornecedor, number>;
 };
-type Linhas = Record<TabelaCodigoFornecedor, number>;
+type Linhas = LinhasPorTabela;
 
-const ACAO = "FORNECEDOR_CODIGO_P0";
+const ACAO = ACAO_CODIGO_P0;
 const ACAO_REVERTIDO = "FORNECEDOR_CODIGO_P0_REVERTIDO";
-const chave = (valor: string) => valor.trim().toUpperCase();
-// Identificadores vêm de COLUNAS_CODIGO_FORNECEDOR, nunca de entrada externa; os valores são parâmetros.
-const onde = (tabela: TabelaCodigoFornecedor, codigo: string) => Prisma.sql`
-  upper(trim(${Prisma.raw(COLUNAS_CODIGO_FORNECEDOR[tabela])})) = ${chave(codigo)}
-  ${tabela === "mapa_pagamento_itens" ? Prisma.sql`and identidade_importacao_id is null` : Prisma.empty}`;
 
 /** Linhas por código (comparação `upper(trim())`, como lib/ciclo-cleanup.ts), por tabela. */
 async function contarLinhas(codigos: string[]) {
@@ -133,10 +122,6 @@ type Falha = { login: string; erro: string };
 const codigoDoErro = (error: unknown) =>
   error instanceof Prisma.PrismaClientKnownRequestError ? error.code : error instanceof Error ? error.name : "ERRO";
 
-class ProfissionalMudouError extends Error {
-  name = "PROFISSIONAL_MUDOU";
-}
-
 /** Troca o código antigo pelo P0 nos fornecedores MIGRAVEL (todos, ou só os `logins` informados). */
 export async function aplicarMigracaoP0({ adminLogin, logins }: { adminLogin: string; logins?: string[] }) {
   const admin = await adminAtivo(adminLogin);
@@ -149,44 +134,10 @@ export async function aplicarMigracaoP0({ adminLogin, logins }: { adminLogin: st
     const profissionalId = u.profissionalId!;
     const codigoAnterior = u.codigoAtual!;
     try {
-      await prisma.$transaction(async (tx) => {
-        const [atual] = await tx.$queryRaw<Array<{ codigo: string | null; nome: string }>>`
-          select codigo, nome from profissionais where id = ${profissionalId}::uuid for update`;
-        if (!atual || (atual.codigo || atual.nome) !== codigoAnterior) throw new ProfissionalMudouError();
-
-        const aliasNormalizado = normalizarAlias(codigoAnterior);
-        const existente = await tx.profissionalAlias.findUnique({
-          where: { profissionalId_aliasNormalizado: { profissionalId, aliasNormalizado } },
-          select: { id: true, ativo: true },
-        });
-        let aliasCriadoId: string | null = null;
-        let aliasReativadoId: string | null = null;
-        if (!existente) {
-          aliasCriadoId = (await tx.profissionalAlias.create({
-            data: { profissionalId, alias: codigoAnterior, aliasNormalizado, origem: "MIGRACAO_P0", createdById: admin.id, createdByNome: admin.nome },
-            select: { id: true },
-          })).id;
-        } else if (!existente.ativo) {
-          await tx.profissionalAlias.update({ where: { id: existente.id }, data: { ativo: true, updatedAt: new Date() } });
-          aliasReativadoId = existente.id;
-        }
-
-        await tx.profissional.update({ where: { id: profissionalId }, data: { codigo: u.login, updatedAt: new Date() } });
-        const linhas = {} as Linhas;
-        for (const tabela of TABELAS) {
-          linhas[tabela] = await tx.$executeRaw`
-            update ${Prisma.raw(tabela)} set ${Prisma.raw(COLUNAS_CODIGO_FORNECEDOR[tabela])} = ${u.login}
-            where ${onde(tabela, codigoAnterior)}`;
-        }
-        await tx.adminAuditLog.create({
-          data: {
-            action: ACAO, adminId: admin.id, adminUsuario: admin.usuario, adminNome: admin.nome,
-            targetType: "Profissional", targetId: profissionalId, targetCodigo: u.login,
-            reason: "P0 como único ID do fornecedor (decisão 012)",
-            metadata: { codigoAnterior, codigoEraNulo: atual.codigo === null, codigoNovo: u.login, linhas, aliasCriadoId, aliasReativadoId },
-          },
-        });
-      }, { timeout: 60_000 });
+      await prisma.$transaction(
+        (tx) => trocarCodigoParaP0(tx, { profissionalId, codigoAnterior, aliasNormalizado: normalizarAlias(codigoAnterior), login: u.login, admin }),
+        { timeout: 60_000 },
+      );
       migrados.push(u.login);
     } catch (error) {
       falhas.push({ login: u.login, erro: codigoDoErro(error) });

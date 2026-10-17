@@ -45,6 +45,7 @@ async function main() {
   const profissional = await prismaTest.profissional.create({ data: { nome, nomeCompleto: nome, codigo, statusColaborador: "ATO", email: "exclusao@example.test", cpf: "123", cnpj: "456", razaoSocial: "Teste", funcao: "Teste" } });
   const projeto = await prismaTest.projeto.create({ data: { codigoProjeto: `TESTE-EXCLUSAO-${id}` } });
   const cadastro = await prismaTest.cadastroFornecedor.create({ data: { colaboradorCodigo: codigo, responsavel: nome, razaoSocial: "Teste", cnpjNormalizado: "00000000000000" } });
+  let loginReativado = "";
   const medicao = await prismaTest.medicao.create({ data: { numeroMedicao: id, idProjeto: projeto.id, idProfissional: profissional.id, idCoordenador: profissional.id, valorTotal: 4321, sourceRowHash: id } });
   try {
     // Falha da auditoria após os writes: a transação real deve reverter todos eles.
@@ -95,20 +96,23 @@ async function main() {
     const reimport = await upsertCadastroFornecedor({ responsavel: nome, cnpj: "00000000000000", cnpjNormalizado: "00000000000000", razaoSocial: "Teste", email: "reativado@example.test", rawPayload: {} });
     assert.equal(reimport.created, true);
     assert.equal(reimport.recreated, true);
-    assert.equal(reimport.colaboradorCodigo, codigo, "reativação nunca gera um novo código — reutiliza o codigo original");
     assert.ok(reimport.usuarioCriado, "não havia Usuario prévio para esta identidade — reativação cria um, como um fornecedor novo");
+    // Decisão 012: o MESMO Profissional volta, e o código passa a ser o P0 do login; o código antigo vira alias.
+    loginReativado = reimport.usuarioCriado.usuario;
+    assert.equal(reimport.colaboradorCodigo, loginReativado, "reativação reutiliza o Profissional e passa o código para o P0 do login");
     const reactivated = await prismaTest.profissional.findUniqueOrThrow({ where: { id: profissional.id } });
     assert.equal(reactivated.deletedAt, null);
     assert.equal(reactivated.deletedById, null);
-    assert.equal(reactivated.codigo, codigo, "nunca duplica nem troca o código técnico");
-    assert.equal(reactivated.nome, codigo, "convenção nome === codigo restaurada");
-    assert.equal(await prismaTest.profissional.count({ where: { codigo } }), 1, "nunca duplica Profissional");
-    assert.equal(await prismaTest.cadastroFornecedor.count({ where: { colaboradorCodigo: codigo } }), 1, "exatamente um CadastroFornecedor recriado");
+    assert.equal(reactivated.codigo, loginReativado, "código técnico vira o P0 do login");
+    assert.equal(reactivated.nome, codigo, "nome restaurado para o código antigo, que resolve pelo alias");
+    assert.equal(await prismaTest.profissionalAlias.count({ where: { profissionalId: profissional.id, alias: codigo, origem: "MIGRACAO_P0" } }), 1);
+    assert.equal(await prismaTest.profissional.count({ where: { codigo: loginReativado } }), 1, "nunca duplica Profissional");
+    assert.equal(await prismaTest.cadastroFornecedor.count({ where: { colaboradorCodigo: loginReativado } }), 1, "exatamente um CadastroFornecedor recriado");
 
     // E-mail volta a resolver normalmente para a identidade reativada — o bloqueio por
     // `isDeletedFornecedorIdentityName` (hash de auditoria PERMANENTE) não pode persistir depois de
     // uma reativação real; a checagem correta é o `Profissional.deletedAt` ATUAL, não o histórico.
-    const recipientDepoisDaReativacao = await resolveFornecedorEmail(codigo);
+    const recipientDepoisDaReativacao = await resolveFornecedorEmail(loginReativado);
     assert.equal(recipientDepoisDaReativacao.missing, false);
     assert.equal(recipientDepoisDaReativacao.email, "reativado@example.test");
 
@@ -117,8 +121,8 @@ async function main() {
     const reimportOutraVez = await upsertCadastroFornecedor({ responsavel: nome, cnpj: "00000000000000", cnpjNormalizado: "00000000000000", razaoSocial: "Teste", email: "reativado@example.test", rawPayload: {} });
     assert.equal(reimportOutraVez.created, false);
     assert.equal(reimportOutraVez.recreated, false);
-    assert.equal(await prismaTest.cadastroFornecedor.count({ where: { colaboradorCodigo: codigo } }), 1);
-    assert.equal(await prismaTest.profissional.count({ where: { codigo } }), 1);
+    assert.equal(await prismaTest.cadastroFornecedor.count({ where: { colaboradorCodigo: loginReativado } }), 1);
+    assert.equal(await prismaTest.profissional.count({ where: { codigo: loginReativado } }), 1);
 
     const repeated = await deleteFornecedoresDefinitivamente([cadastro.id], admin);
     assert.equal(repeated.administrativeDeleted, 0, "cadastro.id original já não existe mais (foi substituído pelo recriado) — exclusão desse id específico não encontra nada");
@@ -162,20 +166,21 @@ async function main() {
       const histReimport = await upsertCadastroFornecedor({ responsavel: histNome, cnpj: "00000000000000", cnpjNormalizado: "00000000000000", razaoSocial: "Teste Historico", rawPayload: {} });
       assert.equal(histReimport.created, true);
       assert.equal(histReimport.recreated, true);
-      assert.equal(histReimport.colaboradorCodigo, histCodigo, "RECREATE_FROM_HISTORY reutiliza o código histórico, nunca gera um novo");
+      assert.equal(histReimport.colaboradorCodigo, histUsuarioLogin, "RECREATE_FROM_HISTORY reaproveita o usuário, e o código passa a ser o login dele (decisão 012)");
       assert.ok(histReimport.usuarioReativado, "Usuario existente precisa ser REATIVADO, nunca duplicado/criado de novo");
       assert.equal(histReimport.usuarioCriado, null);
-      const histProfissional = await prismaTest.profissional.findUniqueOrThrow({ where: { codigo: histCodigo } });
+      const histProfissional = await prismaTest.profissional.findUniqueOrThrow({ where: { codigo: histUsuarioLogin } });
       assert.equal(histProfissional.deletedAt, null);
-      assert.equal(await prismaTest.profissional.count({ where: { codigo: histCodigo } }), 1, "nunca duplica Profissional");
+      assert.equal(histProfissional.nome, histCodigo, "código histórico continua no nome e resolve pelo alias");
+      assert.equal(await prismaTest.profissional.count({ where: { OR: [{ codigo: histUsuarioLogin }, { nome: histCodigo }] } }), 1, "nunca duplica Profissional");
       assert.equal(await prismaTest.usuario.count({ where: { id: histUsuario.id } }), 1, "nunca duplica Usuario — mesmo id reativado");
       assert.equal((await prismaTest.usuario.findUniqueOrThrow({ where: { id: histUsuario.id } })).ativo, true);
-      console.log("PASS: RECREATE_FROM_HISTORY — código histórico reutilizado, Profissional recriado, Usuario reativado sem duplicar.");
+      console.log("PASS: RECREATE_FROM_HISTORY — Profissional recriado com o código no P0 do usuário, Usuario reativado sem duplicar.");
     } finally {
-      await prismaTest.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: histCodigo } });
-      await prismaTest.profissional.deleteMany({ where: { codigo: histCodigo } });
+      await prismaTest.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: [histCodigo, histUsuarioLogin] } } });
+      await prismaTest.profissional.deleteMany({ where: { OR: [{ codigo: { in: [histCodigo, histUsuarioLogin] } }, { nome: histCodigo }] } });
       await prismaTest.usuario.deleteMany({ where: { id: histUsuario.id } });
-      await prismaTest.adminAuditLog.deleteMany({ where: { targetCodigo: histCodigo } });
+      await prismaTest.adminAuditLog.deleteMany({ where: { targetCodigo: { in: [histCodigo, histUsuarioLogin] } } });
     }
 
     // ─── CASO RONALD — colisão real de hash: duas identidades SEM_PROFISSIONAL_VINCULADO distintas
@@ -229,30 +234,30 @@ async function main() {
 
       // ADMIN escolhe o candidato A explicitamente — resolve SÓ essa linha, sem reimportar nada.
       const resolvido = await resolverIdentidadeManualmente(linhaRonald, { tipo: "USAR_CANDIDATO", codigo: codigoA }, admin);
-      assert.equal(resolvido.colaboradorCodigo, codigoA, "reutiliza exatamente o código escolhido pelo ADMIN, nunca gera outro");
+      assert.ok(resolvido.usuarioCriado);
+      assert.equal(resolvido.colaboradorCodigo, resolvido.usuarioCriado.usuario, "identidade escolhida pelo ADMIN passa a ter o P0 do login como código (decisão 012)");
       assert.equal(resolvido.recreated, true);
-      assert.equal(await prismaTest.cadastroFornecedor.count({ where: { colaboradorCodigo: codigoA } }), 1);
-      assert.equal(await prismaTest.profissional.count({ where: { codigo: codigoA } }), 1, "Profissional recriado com o código histórico escolhido");
+      assert.equal(await prismaTest.cadastroFornecedor.count({ where: { colaboradorCodigo: resolvido.colaboradorCodigo } }), 1);
+      assert.equal(await prismaTest.profissional.count({ where: { nome: codigoA, codigo: resolvido.colaboradorCodigo } }), 1, "Profissional recriado a partir do código histórico escolhido");
       assert.equal(await prismaTest.cadastroFornecedor.count({ where: { colaboradorCodigo: codigoB } }), 0, "candidato B rejeitado permanece intocado");
       assert.equal(await prismaTest.profissional.count({ where: { codigo: codigoB } }), 0);
       const auditoriaManual = await prismaTest.adminAuditLog.findFirstOrThrow({ where: { action: "IDENTITY_MANUAL_RESOLUTION", targetCodigo: codigoA, adminId: admin.id } });
       assert.equal((auditoriaManual.metadata as any)?.codigoEscolhido, codigoA);
       assert.ok(!JSON.stringify(auditoriaManual.metadata).match(/senha|password/i), "auditoria nunca guarda senha/segredo");
-      console.log("PASS: resolução manual — escolha do ADMIN reutiliza o código exato, código inválido é rejeitado, candidato rejeitado nunca é tocado.");
+      console.log("PASS: resolução manual — escolha do ADMIN reutiliza a identidade escolhida (código no P0 do login), código inválido é rejeitado, candidato rejeitado nunca é tocado.");
     } finally {
-      await prismaTest.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: [codigoA, codigoB] } } });
-      await prismaTest.profissional.deleteMany({ where: { codigo: { in: [codigoA, codigoB] } } });
+      await prismaTest.cadastroFornecedor.deleteMany({ where: { OR: [{ colaboradorCodigo: { in: [codigoA, codigoB] } }, { responsavel: nomeCompartilhado }] } });
+      await prismaTest.profissional.deleteMany({ where: { OR: [{ codigo: { in: [codigoA, codigoB] } }, { nome: { in: [codigoA, codigoB] } }] } });
       await prismaTest.adminAuditLog.deleteMany({ where: { targetCodigo: { in: [codigoA, codigoB] } } });
       await prismaTest.usuario.deleteMany({ where: { nome: nomeCompartilhado } });
     }
 
-    // ─── "NENHUMA DESSAS IDENTIDADES" — só é aceita quando o código que seria gerado não colide
-    // com nenhuma identidade histórica existente (nem os próprios candidatos rejeitados).
+    // ─── "NENHUMA DESSAS IDENTIDADES" — cria identidade nova com P0 próprio (decisão 012), que nunca
+    // colide com um candidato rejeitado, mesmo quando o nome da linha é o código histórico de um deles.
     const nenhumaId = randomUUID();
     const nomeConflitoNenhuma = `TESTE NENHUMA CONFLITO ${nenhumaId}`;
-    // Candidato C usa o PRÓPRIO nome como código (convenção nome-como-código) — reproduz o caso
-    // real de Ronald: o código que "Nenhuma dessas identidades" geraria para esta linha é
-    // EXATAMENTE um dos candidatos rejeitados, então precisa ser bloqueado.
+    // Candidato C usa o PRÓPRIO nome como código (convenção antiga nome-como-código): antes do P0, a
+    // identidade nova colidiria com ele; com o P0, ela ganha código próprio e C fica intocado.
     const codigoNenhumaC = nomeConflitoNenhuma;
     const codigoNenhumaD = `TESTE-NENHUMA-D-${nenhumaId}`;
     const cadastroC = await prismaTest.cadastroFornecedor.create({ data: { colaboradorCodigo: codigoNenhumaC, responsavel: nomeConflitoNenhuma, razaoSocial: "Teste C", cnpjNormalizado: "00000000000000" } });
@@ -261,18 +266,16 @@ async function main() {
       await deleteFornecedoresDefinitivamente([cadastroC.id], admin);
       await deleteFornecedoresDefinitivamente([cadastroD.id], admin);
 
-      // INSEGURO: o nome da linha em conflito É um dos próprios candidatos rejeitados (mesmo texto
-      // usado como responsavel/código histórico) — criar do zero colidiria com uma identidade real.
-      await assert.rejects(
-        () => resolverIdentidadeManualmente({ responsavel: nomeConflitoNenhuma, cnpj: "00000000000000", cnpjNormalizado: "00000000000000", razaoSocial: "Teste", rawPayload: {} }, { tipo: "NENHUMA_IDENTIDADE" }, admin),
-        (error: any) => { assert.ok(error instanceof FornecedorResolucaoInvalidaError); return true; },
-      );
-      assert.equal(await prismaTest.cadastroFornecedor.count({ where: { colaboradorCodigo: { in: [codigoNenhumaC, codigoNenhumaD] } } }), 0);
+      const nova = await resolverIdentidadeManualmente({ responsavel: nomeConflitoNenhuma, cnpj: "00000000000000", cnpjNormalizado: "00000000000000", razaoSocial: "Teste", rawPayload: {} }, { tipo: "NENHUMA_IDENTIDADE" }, admin);
+      assert.ok(nova.usuarioCriado);
+      assert.equal(nova.colaboradorCodigo, nova.usuarioCriado.usuario, "identidade nova nasce com o P0 do login");
+      assert.equal(await prismaTest.cadastroFornecedor.count({ where: { colaboradorCodigo: { in: [codigoNenhumaC, codigoNenhumaD] } } }), 0, "candidatos C/D rejeitados continuam intocados");
 
-      console.log("PASS: \"Nenhuma dessas identidades\" bloqueada quando o código geraria colisão com identidade real.");
+      console.log("PASS: \"Nenhuma dessas identidades\" cria identidade com P0 próprio, sem colidir com o código histórico de um candidato.");
     } finally {
-      await prismaTest.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: [codigoNenhumaC, codigoNenhumaD] } } });
-      await prismaTest.profissional.deleteMany({ where: { codigo: { in: [codigoNenhumaC, codigoNenhumaD] } } });
+      await prismaTest.cadastroFornecedor.deleteMany({ where: { OR: [{ colaboradorCodigo: { in: [codigoNenhumaC, codigoNenhumaD] } }, { responsavel: nomeConflitoNenhuma }] } });
+      await prismaTest.profissional.deleteMany({ where: { OR: [{ codigo: { in: [codigoNenhumaC, codigoNenhumaD] } }, { nomeCompleto: nomeConflitoNenhuma }] } });
+      await prismaTest.usuario.deleteMany({ where: { nome: nomeConflitoNenhuma } });
       await prismaTest.adminAuditLog.deleteMany({ where: { targetCodigo: { in: [codigoNenhumaC, codigoNenhumaD] } } });
     }
 
@@ -380,8 +383,8 @@ async function main() {
       assert.notEqual(depoisA.tipoCondicaoFixa, depoisB.tipoCondicaoFixa);
       console.log("PASS: RECREATE_FROM_HISTORY preserva fonteMedicao/tipoCondicaoFixa/valorCondicaoFixaComProducao/valorCondicaoFixaSemProducao por identidade, sem misturar entre fornecedores, sem sobrescrever dado cadastral novo.");
     } finally {
-      await prismaTest.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: [cfgNomeA, cfgNomeB] } } });
-      await prismaTest.profissional.deleteMany({ where: { codigo: { in: [cfgNomeA, cfgNomeB] } } });
+      await prismaTest.cadastroFornecedor.deleteMany({ where: { responsavel: { in: [cfgNomeA, cfgNomeB] } } });
+      await prismaTest.profissional.deleteMany({ where: { OR: [{ codigo: { in: [cfgNomeA, cfgNomeB] } }, { nome: { in: [cfgNomeA, cfgNomeB] } }] } });
       await prismaTest.usuario.deleteMany({ where: { nome: { in: [cfgNomeA, cfgNomeB] } } });
       await prismaTest.adminAuditLog.deleteMany({ where: { targetCodigo: { in: [cfgNomeA, cfgNomeB] } } });
     }
@@ -410,8 +413,9 @@ async function main() {
       assert.equal(legadoDepois.tipoCondicaoFixa, null);
       console.log("PASS: exclusão antiga sem snapshot — recriação cai no default e sinaliza administrativeConfigUnrecoverable, nunca inventa valor.");
     } finally {
-      await prismaTest.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: legadoSemSnapshotNome } });
-      await prismaTest.profissional.deleteMany({ where: { codigo: legadoSemSnapshotNome } });
+      await prismaTest.cadastroFornecedor.deleteMany({ where: { responsavel: legadoSemSnapshotNome } });
+      await prismaTest.profissional.deleteMany({ where: { OR: [{ codigo: legadoSemSnapshotNome }, { nome: legadoSemSnapshotNome }] } });
+      await prismaTest.usuario.deleteMany({ where: { nome: legadoSemSnapshotNome } });
       await prismaTest.adminAuditLog.deleteMany({ where: { targetCodigo: legadoSemSnapshotNome } });
     }
 
@@ -443,14 +447,16 @@ async function main() {
       assert.equal(malformadoDepois.fonteMedicao, null, "mesma proteção para fonteMedicao");
       console.log("PASS: snapshot administrativo malformado — nunca grava valor arbitrário no banco, cai no default legado seguro e sinaliza administrativeConfigSnapshotMalformed.");
     } finally {
-      await prismaTest.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: malformadoNome } });
-      await prismaTest.profissional.deleteMany({ where: { codigo: malformadoNome } });
+      await prismaTest.cadastroFornecedor.deleteMany({ where: { responsavel: malformadoNome } });
+      await prismaTest.profissional.deleteMany({ where: { OR: [{ codigo: malformadoNome }, { nome: malformadoNome }] } });
+      await prismaTest.usuario.deleteMany({ where: { nome: malformadoNome } });
       await prismaTest.adminAuditLog.deleteMany({ where: { targetCodigo: malformadoNome } });
     }
 
     console.log("PASS: serviços reais — exclusão, rollback, auditoria, snapshots, reimportação e e-mail.");
   } finally {
-    await prismaTest.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: codigo } });
+    await prismaTest.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: [codigo, loginReativado] } } });
+    await prismaTest.usuario.deleteMany({ where: { nome, perfil: "COLABORADOR" } });
     await prismaTest.medicao.deleteMany({ where: { id: medicao.id } });
     await prismaTest.profissional.deleteMany({ where: { id: profissional.id } });
     await prismaTest.projeto.deleteMany({ where: { id: projeto.id } });

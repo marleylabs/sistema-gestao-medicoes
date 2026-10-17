@@ -1,6 +1,6 @@
 ---
 atualizado: 2026-10-17
-status: em andamento (T1 e T2 feitas no banco de teste)
+status: em andamento (T1 a T3 feitas no banco de teste)
 tags: [spec, plano]
 ---
 # Plano: P0 como único ID do fornecedor
@@ -77,12 +77,19 @@ Nenhum passo vale rodar em paralelo.
   - Arquivos: `scripts/migrar-codigo-p0.ts`, `tests/migrar-codigo-p0.test.ts`, um teste novo em `etl/` (planilha com nome → P0).
   - `adminAuditLog` exige administrador: o script pede o login de um ADMIN ativo (`MIGRACAO_P0_ADMIN`).
 
-- [ ] **T3: fornecedor novo nasce com P0**
+- [x] **T3: fornecedor novo nasce com P0**: feita em 2026-10-17.
+  - Troca de código extraída para `lib/codigo-p0.ts` (`trocarCodigoParaP0`, `gerarP0Livre`), usada pela migração e pelo upsert.
+  - CREATE: P0 gerado antes, nome do responsável como alias `CADASTRO`, usuário nunca reaproveitado pelo nome. "Nenhuma dessas identidades" não é mais recusada por colisão de nome.
+  - Reativação e `RECREATE_FROM_HISTORY` de identidade antiga: o código passa para o P0 do login (o aceite abaixo dizia "mantêm o código histórico"; isso deixaria login e código diferentes, e a T4 cortaria o acesso).
+  - Usuário pelo nome só para identidade de antes do P0, e nunca o de outro fornecedor já em P0.
+  - `tests/fornecedor-novo-p0.test.ts` (5 testes, todos falhavam antes). `scripts/test-exclusao-services.ts` ajustado à regra nova; a limpeza dele agora também apaga os usuários que criava.
+  - `test:targeted` 498/498; `tsc` limpo.
+  - E2E: o cenário K de `e2e/administrativo-fornecedor-dedupe.spec.ts` foi ajustado à regra nova (cada homônimo com o próprio P0). As limpezas do `scripts/seed-e2e.ts` agora também acham o Profissional pelo `nome` e apagam BM e mapa pelo código atual. Os 6 specs de fornecedor, isolamento incluído, passaram 46/46 em duas rodadas seguidas.
   - Aceite:
     - No upsert administrativo (`resolveFornecedorIdentity`/`upsertCadastroFornecedor`), o ramo CREATE gera o P0 antes e o usa como `colaboradorCodigo`, `Profissional.codigo` e `usuario`.
     - Reativação e `RECREATE_FROM_HISTORY` mantêm o código histórico.
     - O usuário existente é achado por `usuario = colaboradorCodigo`, não por nome.
-    - O cadastro manual (`fornecedores/manual`) segue a mesma regra.
+    - O cadastro manual (`fornecedores/manual`) segue a mesma regra (ele chama o mesmo upsert).
   - Verificar:
     - teste em `tests/cadastro-fornecedor-identity.test.ts`: novo fornecedor com código = login; homônimo novo ganha outro P0 e não reusa o usuário do primeiro;
     - `e2e/administrativo-novo-fornecedor.spec.ts`.
@@ -92,6 +99,7 @@ Nenhum passo vale rodar em paralelo.
   - Aceite:
     - `selectCadastroForAuthenticatedUser` (só pelo código), `getColaboradorEscopo` e `validateFornecedorForNfUpload` deixam de buscar cadastro por `responsavel = nome`.
     - A inativação (`usuariosPorNome`), a exclusão definitiva (busca do usuário e checagem de cadastro legado) e a edição do cadastro (`fornecedores/[id]`) acham o usuário pelo código.
+    - A listagem do Administrativo (`findColaboradorUsuarios` em `lib/cadastro-fornecedor.ts`) também liga cadastro e usuário pelo nome: passa para o código. Achado na T3.
     - Decisão 011 mantida: a edição continua renomeando o usuário, agora achado pelo código.
   - Verificar:
     - regressão "homônimo novo": A em P0 e B criado com o mesmo `responsavel`; A mantém escopo, cadastro e NF (falha antes);

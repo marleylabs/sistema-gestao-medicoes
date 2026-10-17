@@ -199,27 +199,31 @@ async function main() {
   await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { startsWith: "E2E FORNECEDOR REDUNDANTE", mode: "insensitive" } } });
   await prisma.profissional.deleteMany({ where: { codigo: { startsWith: "E2E FORNECEDOR REDUNDANTE", mode: "insensitive" } } });
   await prisma.usuario.deleteMany({ where: { nome: { startsWith: "E2E Fornecedor Redundante" } } });
-  await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { startsWith: "HOMONIMO-PROF-CODIGO", mode: "insensitive" } } });
-  await prisma.profissional.deleteMany({ where: { codigo: { startsWith: "HOMONIMO-PROF-CODIGO", mode: "insensitive" } } });
+  await prisma.cadastroFornecedor.deleteMany({ where: { OR: [{ colaboradorCodigo: { startsWith: "HOMONIMO-PROF-CODIGO", mode: "insensitive" } }, { responsavel: { startsWith: "HOMONIMO-PROF-CODIGO", mode: "insensitive" } }] } });
+  // Decisão 012: o código passa para o P0 e o código antigo fica em `nome`.
+  await prisma.profissional.deleteMany({ where: { OR: [{ codigo: { startsWith: "HOMONIMO-PROF-CODIGO", mode: "insensitive" } }, { nome: { startsWith: "HOMONIMO-PROF-CODIGO", mode: "insensitive" } }] } });
   await prisma.usuario.deleteMany({ where: { nome: { startsWith: "HOMONIMO-PROF-CODIGO", mode: "insensitive" } } });
   await prisma.profissional.deleteMany({ where: { codigo: { startsWith: "E2E FORNECEDOR SELETOR EXCLUIDO", mode: "insensitive" } } });
   for (const prefixo of [
     "Fornecedor Dedupe E2E", "Fornecedor Repeticao E2E", "Fornecedor CNPJ Compartilhado", "E2E BulkDelete",
     "E2E Exclusao Reimportacao", "E2E Duplicado Legado", "E2E Sem Botao Exclusao", "E2E Cenario Completo L",
   ]) {
-    await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorCodigo: { startsWith: prefixo, mode: "insensitive" } } });
-    await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: prefixo, mode: "insensitive" } } });
+    // A exclusão definitiva anonimiza `nomeCompleto`, mas preserva o código técnico. Limpar também
+    // pelo código evita que tombstones de uma rodada bloqueiem a próxima. Com o P0 (decisão 012), o
+    // código antigo fica em `nome` e as linhas de BM/mapa usam o P0: apaga também por esses códigos.
+    const doPrefixo = {
+      OR: [
+        { codigo: { startsWith: prefixo, mode: "insensitive" as const } },
+        { nome: { startsWith: prefixo, mode: "insensitive" as const } },
+        { nomeCompleto: { startsWith: prefixo } },
+      ],
+    };
+    const codigosP0 = (await prisma.profissional.findMany({ where: doPrefixo, select: { codigo: true } }))
+      .map((p) => p.codigo).filter((c): c is string => !!c);
+    await prisma.sgcAprovacaoMedicao.deleteMany({ where: { OR: [{ colaboradorCodigo: { startsWith: prefixo, mode: "insensitive" } }, { colaboradorCodigo: { in: codigosP0 } }] } });
+    await prisma.mapaPagamentoItem.deleteMany({ where: { OR: [{ projetistaCodigo: { startsWith: prefixo, mode: "insensitive" } }, { projetistaCodigo: { in: codigosP0 } }] } });
     await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: prefixo } } });
-    // A exclusão definitiva anonimiza `nomeCompleto`, mas preserva o código técnico.
-    // Limpar também pelo código evita que tombstones de uma rodada bloqueiem a próxima.
-    await prisma.profissional.deleteMany({
-      where: {
-        OR: [
-          { codigo: { startsWith: prefixo, mode: "insensitive" } },
-          { nomeCompleto: { startsWith: prefixo } },
-        ],
-      },
-    });
+    await prisma.profissional.deleteMany({ where: doPrefixo });
     await prisma.usuario.deleteMany({ where: { nome: { startsWith: prefixo } } });
   }
 

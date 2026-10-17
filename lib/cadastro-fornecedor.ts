@@ -6,6 +6,7 @@ import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 import { excelSerialToDate, parseSimpleXlsx } from "@/lib/xlsx";
 import { selectCadastroForAuthenticatedUser } from "@/lib/cadastro-identity";
+import { gerarP0Livre, trocarCodigoParaP0 } from "@/lib/codigo-p0";
 
 export const CADASTRO_FORNECEDOR_SHEET = "CONTRATOS_ATIVOS";
 
@@ -782,10 +783,12 @@ export async function upsertCadastroFornecedor(
     );
   }
 
-  const colaboradorCodigo = resolution.colaboradorCodigo;
+  let colaboradorCodigo = resolution.colaboradorCodigo;
   const now = new Date();
 
   const result = await prisma.$transaction(async (tx) => {
+    // Fornecedor novo nasce com o P0 como código (decisão 012): login, Profissional e cadastro.
+    if (resolution.kind === "CREATE") colaboradorCodigo = await gerarP0Livre(tx);
     const data = {
       cnpjNormalizado: row.cnpjNormalizado,
       colaboradorCodigo,
@@ -908,7 +911,7 @@ export async function upsertCadastroFornecedor(
     // real. Buscar por `nome: colaboradorCodigo` nunca encontraria a linha tombstoned e faria o
     // upsert tentar CRIAR uma segunda linha, que colidiria na constraint única de `codigo` — bug
     // real que impedia a reimportação de recriar o cadastro depois de uma exclusão.
-    await tx.profissional.upsert({
+    const profissional = await tx.profissional.upsert({
       where: { codigo: colaboradorCodigo },
       create: {
         nome: colaboradorCodigo,
@@ -938,21 +941,42 @@ export async function upsertCadastroFornecedor(
 
     let usuarioCriado: { usuario: string; nome: string; senha: string; email: string | null } | null = null;
     let usuarioReativado: { usuario: string; nome: string; senha: string | null; email: string | null } | null = null;
-    // `findMany` (nunca `findFirst`) — condição 7/8 do RECREATE_FROM_HISTORY (Usuario precisa ser
-    // relacionado de forma INEQUÍVOCA): mais de um Usuario COLABORADOR não-excluído com o MESMO
-    // nome normalizado é uma identidade de acesso ambígua real, nunca resolvida escolhendo o
-    // primeiro encontrado.
-    const existingUsers = await tx.usuario.findMany({
-      where: { perfil: "COLABORADOR", nome: { equals: row.responsavel, mode: "insensitive" } },
-      select: { id: true, usuario: true, ativo: true, excluidoAt: true },
-    });
+    if (resolution.kind === "CREATE") {
+      // O nome do cadastro vira alias para a planilha (que traz o nome) resolver para o P0. Com um
+      // homônimo, o nome fica ambíguo e a importação pede decisão do ADMIN — nunca escolhe um.
+      const aliasNormalizado = normalizePersonName(row.responsavel);
+      await tx.profissionalAlias.upsert({
+        where: { profissionalId_aliasNormalizado: { profissionalId: profissional.id, aliasNormalizado } },
+        create: { profissionalId: profissional.id, alias: row.responsavel, aliasNormalizado, origem: "CADASTRO", createdById: admin?.id ?? null, createdByNome: admin?.nome ?? null },
+        update: {},
+      });
+    }
+
+    // O usuário do fornecedor é o do login igual ao código (P0). Fornecedor novo nunca herda usuário
+    // pelo nome. Identidade de antes do P0 ainda acha o usuário pelo nome, mas nunca o de outro
+    // fornecedor que já está em P0 (login = código de outro Profissional); `findMany` (nunca
+    // `findFirst`): dois usuários compatíveis é ambiguidade real, resolvida por humano.
+    const userSelect = { id: true, usuario: true, ativo: true, excluidoAt: true, perfil: true } as const;
+    const porLogin = await tx.usuario.findUnique({ where: { usuario: colaboradorCodigo.toUpperCase() }, select: userSelect });
+    let existingUsers = porLogin?.perfil === "COLABORADOR" ? [porLogin] : [];
+    if (!porLogin && resolution.kind !== "CREATE") {
+      const porNome = await tx.usuario.findMany({
+        where: { perfil: "COLABORADOR", nome: { equals: row.responsavel, mode: "insensitive" } },
+        select: userSelect,
+      });
+      const loginsDeOutros = new Set((await tx.profissional.findMany({
+        where: { id: { not: profissional.id }, codigo: { in: porNome.map((u) => u.usuario) } },
+        select: { codigo: true },
+      })).map((p) => p.codigo));
+      existingUsers = porNome.filter((u) => !loginsDeOutros.has(u.usuario));
+    }
     if (existingUsers.length > 1) {
       throw new FornecedorUsuarioAmbiguoError(`Identidade de acesso ambígua para "${row.responsavel}" — mais de um Usuario compatível encontrado. Resolva manualmente antes de importar esta linha.`);
     }
     const existingUser = existingUsers[0];
     if (!existingUser) {
       const senha = generateTempPassword();
-      const usuario = await generateUniqueInternalAccessCode(tx);
+      const usuario = resolution.kind === "CREATE" ? colaboradorCodigo : await gerarP0Livre(tx);
       await tx.usuario.create({
         data: {
           usuario,
@@ -1014,6 +1038,13 @@ export async function upsertCadastroFornecedor(
         where: { id: existingUser.id },
         data: { email: encryptSensitive(row.email) },
       });
+    }
+
+    // Identidade de antes do P0: o código passa a ser o login do usuário (tabelas, alias do código antigo, auditoria).
+    const login = existingUser?.usuario ?? usuarioCriado?.usuario;
+    if (login && login !== colaboradorCodigo) {
+      await trocarCodigoParaP0(tx, { profissionalId: profissional.id, codigoAnterior: colaboradorCodigo, aliasNormalizado: normalizePersonName(colaboradorCodigo), login, admin: admin ?? null });
+      colaboradorCodigo = login;
     }
 
     if (cadastroReativado && admin) {
@@ -1132,19 +1163,11 @@ export async function resolverIdentidadeManualmente(
     return resultado;
   }
 
-  // NENHUMA_IDENTIDADE — só é segura quando o código que SERIA gerado para esta linha não colide
-  // com nenhuma identidade já existente (ativa ou tombstoned), incluindo os próprios candidatos
-  // rejeitados — nunca inventa um código que já pertence a outra pessoa real.
-  const codigoNovo = codigoFromName(row.responsavel);
-  const codigoNovoKey = normalizePersonName(codigoNovo);
-  const candidatosRejeitados = new Set((resolution.kind === "CONFLICT" ? resolution.candidateCodigos ?? [] : []).map((c) => normalizePersonName(c)));
-  if (candidatosRejeitados.has(codigoNovoKey) || index.profissionalCodigosByName.has(codigoNovoKey) || index.deletedCodigos.has(codigoNovoKey)) {
-    throw new FornecedorResolucaoInvalidaError(
-      `Não é possível criar uma identidade nova para "${row.responsavel}" — o código que seria gerado (${codigoNovo}) já corresponde a uma identidade histórica existente. Escolha um dos candidatos apresentados.`,
-    );
-  }
-  const overrideResolution: FornecedorIdentityResolution = { kind: "CREATE", colaboradorCodigo: codigoNovo };
+  // NENHUMA_IDENTIDADE — identidade nova com P0 próprio (gerado no upsert, decisão 012): nunca
+  // colide com o código de outra pessoa, mesmo com o nome igual.
+  const overrideResolution: FornecedorIdentityResolution = { kind: "CREATE", colaboradorCodigo: codigoFromName(row.responsavel) };
   const resultado = await upsertCadastroFornecedor(row, index, overrideResolution, admin);
+  const codigoNovo = resultado.colaboradorCodigo;
   await prisma.adminAuditLog.create({
     data: {
       action: "IDENTITY_MANUAL_RESOLUTION",

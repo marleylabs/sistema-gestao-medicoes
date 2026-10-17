@@ -608,9 +608,12 @@ test.describe.serial("Validação direcionada — homônimo real na camada Profi
     const nomeCompleto = "Fornecedor Homônimo Profissional E2E";
     const codigoA = "HOMONIMO-PROF-CODIGO-X";
     const codigoB = "HOMONIMO-PROF-CODIGO-Y";
-    await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: [codigoA, codigoB] } } });
-    await prisma.profissional.deleteMany({ where: { codigo: { in: [codigoA, codigoB] } } });
-    await prisma.usuario.deleteMany({ where: { nome: { in: [codigoA, codigoB] } } });
+    const limpar = async () => {
+      await prisma.cadastroFornecedor.deleteMany({ where: { OR: [{ colaboradorCodigo: { in: [codigoA, codigoB] } }, { responsavel: { in: [codigoA, codigoB] } }] } });
+      await prisma.profissional.deleteMany({ where: { OR: [{ codigo: { in: [codigoA, codigoB] } }, { nome: { in: [codigoA, codigoB] } }] } });
+      await prisma.usuario.deleteMany({ where: { nome: { in: [codigoA, codigoB] } } });
+    };
+    await limpar();
 
     // Dois Profissional REAIS distintos com o MESMO nomeCompleto (nome de exibição), mas
     // codigo/nome (a identidade canônica de fato) diferentes — exatamente como o ETL de medições
@@ -636,8 +639,9 @@ test.describe.serial("Validação direcionada — homônimo real na camada Profi
     expect(payload1.criados).toBe(2);
     expect(payload1.conflitos ?? 0).toBe(0);
 
-    const cadastroA = await prisma.cadastroFornecedor.findFirstOrThrow({ where: { colaboradorCodigo: codigoA } });
-    const cadastroB = await prisma.cadastroFornecedor.findFirstOrThrow({ where: { colaboradorCodigo: codigoB } });
+    // Decisão 012: cada Profissional passa a ter o P0 do próprio usuário como código; o código antigo vira alias.
+    const cadastroA = await prisma.cadastroFornecedor.findFirstOrThrow({ where: { responsavel: codigoA } });
+    const cadastroB = await prisma.cadastroFornecedor.findFirstOrThrow({ where: { responsavel: codigoB } });
     expect(cadastroA.id).not.toBe(cadastroB.id);
     expect(cadastroA.cnpjNormalizado).not.toBe(cadastroB.cnpjNormalizado);
 
@@ -648,6 +652,10 @@ test.describe.serial("Validação direcionada — homônimo real na camada Profi
     expect(usuarioA, "Usuario de A precisa existir").toBeTruthy();
     expect(usuarioB, "Usuario de B precisa existir").toBeTruthy();
     expect(usuarioA!.id).not.toBe(usuarioB!.id);
+    expect(cadastroA.colaboradorCodigo).toBe(usuarioA!.usuario);
+    expect(cadastroB.colaboradorCodigo).toBe(usuarioB!.usuario);
+    expect((await prisma.profissional.findUniqueOrThrow({ where: { nome: codigoA } })).codigo).toBe(usuarioA!.usuario);
+    expect((await prisma.profissional.findUniqueOrThrow({ where: { nome: codigoB } })).codigo).toBe(usuarioB!.usuario);
 
     // Reimportar SÓ A (com um dado novo) atualiza SOMENTE A — B intocado.
     const wbSoA = buildConsultaPjWorkbook([
@@ -665,9 +673,7 @@ test.describe.serial("Validação direcionada — homônimo real na camada Profi
     expect(cadastroBIntocado.razaoSocial, "reimportar A nunca pode alterar B").toBe("Homonimo Y LTDA");
 
     await page.request.post("/api/auth/logout");
-    await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: [codigoA, codigoB] } } });
-    await prisma.profissional.deleteMany({ where: { codigo: { in: [codigoA, codigoB] } } });
-    await prisma.usuario.deleteMany({ where: { nome: { in: [codigoA, codigoB] } } });
+    await limpar();
   });
 });
 
