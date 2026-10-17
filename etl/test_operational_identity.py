@@ -60,6 +60,17 @@ def test_resolver_order_and_outcomes() -> None:
     assert r.require_id("novo da base") == "p-novo"
 
 
+def test_after_p0_migration_old_name_resolves_to_p0() -> None:
+    """Decisão 012: depois da migração, o código é o P0 e o código antigo (nome) vira alias MIGRACAO_P0.
+    A planilha que ainda traz o nome cai no P0, e o mapa grava o P0."""
+    migrado = {"id": "p-ronald", "codigo": "P0123456", "nome": "RONALD RAFAEL SILVA LEAL"}
+    alias = {"profissional_id": "p-ronald", "alias": "RONALD RAFAEL SILVA LEAL", "alias_normalizado": "RONALD RAFAEL SILVA LEAL"}
+    r = OperationalIdentityResolver([migrado, OUTRO], [alias])
+    assert r.resolve("Ronald Rafael Silva Leal") == {"status": "RESOLVIDO", "via": "ALIAS", "id": "p-ronald", "codigo": "P0123456"}
+    assert r.resolve("p0123456") == {"status": "RESOLVIDO", "via": "CODIGO", "id": "p-ronald", "codigo": "P0123456"}
+    assert r.apply_to_canonical_codes({"ronald": "RONALD RAFAEL SILVA LEAL"})["ronald"] == "P0123456"
+
+
 def test_aliases_merge_into_canonical_codes() -> None:
     merged = resolver().apply_to_canonical_codes({"ronaldleal": "RONALD LEAL", "outro": "RONALDO RAMOS"})
     assert merged["ronaldleal"] == "RONALD RAFAEL SILVA LEAL"  # valor que era alias vira o código canônico

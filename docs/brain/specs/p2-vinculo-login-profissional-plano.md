@@ -1,6 +1,6 @@
 ---
-atualizado: 2026-10-16
-status: em andamento (T1 feita no banco de teste)
+atualizado: 2026-10-17
+status: em andamento (T1 e T2 feitas no banco de teste)
 tags: [spec, plano]
 ---
 # Plano: P0 como único ID do fornecedor
@@ -8,12 +8,14 @@ tags: [spec, plano]
 Spec: [p2-vinculo-login-profissional](p2-vinculo-login-profissional.md). Decisão: [012](../decisoes/012-p0-como-id-do-fornecedor.md).
 
 ## Componentes e ordem
-1. **Inventário + dry-run** (só leitura): confirma onde o código está gravado e quantos fornecedores migram. Vem antes de tudo, porque o resultado na pré-produção pode mudar o plano.
+1. **Inventário + dry-run** (só leitura): confirma onde o código está gravado e quantos fornecedores migram.
 2. **Migração de dados** (`--aplicar`) no banco de teste, com testes.
 3. **Fornecedor novo nasce com P0** (upsert administrativo).
 4. **Fim da busca por nome** nos pontos do inventário da spec.
 5. **Seed e E2E**.
-6. **Pré-produção** (o usuário executa) e fechamento.
+6. **Ensaio com dados reais em base local** (restauração de um backup da pré-produção), depois **pré-produção e produção** e fechamento.
+
+**Ordem combinada em 2026-10-17:** tudo é feito e testado no ambiente local (T2 a T5) antes de qualquer ambiente real. O dry-run com os dados reais roda primeiro numa cópia local do backup da pré-produção; o servidor só é tocado na T6, uma vez, com tudo pronto.
 
 A ordem é sequencial:
 - T2 usa a classificação de T1.
@@ -39,7 +41,7 @@ Nenhum passo vale rodar em paralelo.
   - Motivos de `CONFLITO`: `LOGIN_EM_USO`, `PROFISSIONAL_COM_VARIOS_LOGINS`, `CADASTRO_MULTIPLO`.
   - `tests/migrar-codigo-p0.test.ts`: 7 testes. `test:targeted` 485/485; `tsc` limpo.
   - No banco de teste: 17 migráveis, 4 já em P0, 29 sem identidade (usuários de teste antigos sem cadastro), 0 conflitos.
-  - **Falta:** o dry-run na pré-produção, executado pelo usuário.
+  - O dry-run com dados reais ficou para a T6 (ordem combinada em 2026-10-17).
   - Aceite:
     - Lista final das colunas com código do fornecedor (schema, `$queryRaw`/`$executeRaw` em `lib` e `app`, SQL em `etl/`), registrada na spec.
     - `scripts/migrar-codigo-p0.ts` sem flag classifica cada usuário COLABORADOR ativo (`MIGRAVEL`, `JA_E_P0`, `SEM_IDENTIDADE`, `CONFLITO`).
@@ -49,9 +51,15 @@ Nenhum passo vale rodar em paralelo.
     - teste no banco de teste com A (migrável), B homônimo e um caso de conflito;
     - prova de que nada foi gravado.
   - Arquivos: `scripts/migrar-codigo-p0.ts` (novo), `tests/migrar-codigo-p0.test.ts` (novo).
-  - Ponto de verificação: **você roda o dry-run na pré-produção** e revisa as contagens antes de T2.
 
-- [ ] **T2: aplicar a migração (banco de teste)**
+- [x] **T2: aplicar a migração (banco de teste)**: feita em 2026-10-17.
+  - `aplicarMigracaoP0`, `medirMigracaoP0` e `reverterMigracaoP0` em `lib/migracao-codigo-p0.ts`; CLI com `--aplicar`, `--medir`, `--reverter` e `--login=` (o ADMIN da auditoria vem de `MIGRACAO_P0_ADMIN`).
+  - Novo motivo de conflito `ALIAS_EM_USO`: o código antigo já é alias de outro Profissional, e a planilha ficaria ambígua depois da troca.
+  - Cada fornecedor migra numa transação com `FOR UPDATE` no Profissional. Se o código mudou desde o planejamento, ele é pulado. A falha é reportada só pelo código do erro, sem a mensagem do Postgres.
+  - A medição confere: login resolve pelo código, escopo e cadastro únicos, linhas iguais às migradas e nenhuma sobra do código antigo.
+  - A reversão devolve o código nulo do Profissional legado. Linhas que tinham caixa ou espaço diferente voltam com o código antigo exato.
+  - ETL: sem mudança. A reimportação apaga as linhas do mapa do Profissional pelo código e pelo nome e regrava, então o `source_row_hash` novo não duplica. Teste novo em `etl/test_operational_identity.py`.
+  - `tests/migrar-codigo-p0.test.ts`: 15 testes. `test:targeted` 493/493; `pytest etl/` 44/44; `tsc` limpo.
   - Aceite: `--aplicar` faz, em uma transação por fornecedor `MIGRAVEL`:
     - cria o alias do código antigo (`MIGRACAO_P0`);
     - troca `profissionais.codigo` e as colunas do inventário (sem `admin_audit_logs`);
@@ -67,7 +75,7 @@ Nenhum passo vale rodar em paralelo.
     - o resolver TS (`lib/profissional-identidade.ts`) leva o nome e o código antigo ao P0;
     - `pytest etl/`: planilha com o nome antigo resolve para o P0.
   - Arquivos: `scripts/migrar-codigo-p0.ts`, `tests/migrar-codigo-p0.test.ts`, um teste novo em `etl/` (planilha com nome → P0).
-  - Antes: confirmar se `adminAuditLog` aceita registro sem administrador; senão, o script pede o login do ADMIN que executa.
+  - `adminAuditLog` exige administrador: o script pede o login de um ADMIN ativo (`MIGRACAO_P0_ADMIN`).
 
 - [ ] **T3: fornecedor novo nasce com P0**
   - Aceite:
@@ -100,8 +108,11 @@ Nenhum passo vale rodar em paralelo.
   - Verificar: `npm run test:e2e:seed` e o E2E completo verde (hoje 206/206).
   - Arquivos: `scripts/seed-e2e.ts`, specs E2E.
 
-- [ ] **T6: pré-produção e fechamento**
-  - Aceite (passos do usuário, com segredos):
+- [ ] **T6: ensaio local com dados reais, pré-produção e fechamento**
+  - Aceite:
+    0. Ensaio: restaurar um backup da pré-produção numa base **local** e rodar nela o dry-run, o `--aplicar` e a medição. Conflitos encontrados são resolvidos com o Administrativo antes de seguir.
+
+    Depois, na pré-produção e então na produção (passos do usuário, com segredos):
     1. backup;
     2. dry-run;
     3. janela sem importação;
@@ -114,7 +125,7 @@ Nenhum passo vale rodar em paralelo.
   - Arquivos: notas do cérebro; runbook do passo a passo na pré-produção (em `docs/`).
 
 ## Pontos de verificação
-- Depois de T1: suas contagens do dry-run na pré-produção. Com `CONFLITO` ou `SEM_IDENTIDADE`, resolvemos esses casos com o Administrativo antes de T2.
+- No ensaio local da T6: contagens do dry-run com os dados reais. Com `CONFLITO` ou `SEM_IDENTIDADE`, resolvemos esses casos com o Administrativo antes de tocar o servidor.
 - Depois de T2: a medição no banco de teste mostra os mesmos dados visíveis antes e depois.
 - Depois de T4: `test:targeted` verde e nenhuma busca de usuário ou cadastro por nome (grep).
 - Antes de T6: E2E completo verde.
