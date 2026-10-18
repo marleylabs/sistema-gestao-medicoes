@@ -50,7 +50,9 @@ test.describe.serial("Financeiro — redesign (resumo, lista, detalhe, pagamento
     await prisma.mapaPagamentoContexto.create({
       data: { ciclo: CICLO, mesReferencia: "E2E Financeiro", producaoInicio: new Date("2029-10-01"), producaoFim: new Date("2029-10-31"), atoCiclo: CICLO },
     });
-    const projeto = await prisma.projeto.findFirstOrThrow();
+    // Projeto próprio do spec: um projeto qualquer do banco podia se chamar "DESCONTO" e fazer todo
+    // documento virar desconto (isDocumentoDesconto em lib/boletim-calculo.ts).
+    const projeto = await prisma.projeto.create({ data: { codigoProjeto: `PRJ-FIN-RD-${S}`, contrato: "E2E" } });
     for (const f of [A, B, C]) {
       await prisma.profissional.create({ data: { nome: f.codigo, codigo: f.codigo, nomeCompleto: f.codigo, cnpj: "11.222.333/0001-81", razaoSocial: `${f.codigo} LTDA` } });
       await prisma.mapaPagamentoItem.create({
@@ -77,6 +79,7 @@ test.describe.serial("Financeiro — redesign (resumo, lista, detalhe, pagamento
   test.afterAll(async () => {
     const codigos = [A.codigo, B.codigo, C.codigo];
     await prisma.medicao.deleteMany({ where: { ciclo: CICLO, sourceRowHash: { startsWith: `e2e-fin-rd-` } } });
+    await prisma.projeto.deleteMany({ where: { codigoProjeto: `PRJ-FIN-RD-${S}` } });
     await prisma.sgcAprovacaoMedicao.deleteMany({ where: { ciclo: CICLO, colaboradorCodigo: { in: codigos } } });
     await prisma.mapaPagamentoItem.deleteMany({ where: { ciclo: CICLO, projetistaCodigo: { in: codigos } } });
     await prisma.profissional.deleteMany({ where: { codigo: { in: codigos } } });
