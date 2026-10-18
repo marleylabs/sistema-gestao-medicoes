@@ -4,17 +4,17 @@ atualizado: 2026-10-17
 # Status
 
 ## Em andamento
-- **P2 — P0 como único ID do fornecedor** ([spec](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)). T1 a T4 prontas e testadas no ambiente local; nada implantado.
+- **P2 — P0 como único ID do fornecedor** ([spec](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)). T1 a T5 prontas e testadas no ambiente local; nada implantado. Falta a T6.
   - Ordem combinada em 2026-10-17: tudo no ambiente local primeiro. O ensaio com dados reais roda numa cópia local de um backup da pré-produção; o servidor só é tocado na T6.
   - Commits locais em `release/2026-10-02-import-identities`, **ainda não enviados ao GitHub**: e500081 (spec), bf38665 (T1), 7412ab9 (T2), 0bf0157 (T3), 93a52cd (T4), 2263ccd (E2E do financeiro com projeto próprio) e a atualização do cérebro.
 - No GitHub, `layout2.0` e `release/2026-10-02-import-identities` estão em 58375bb (P1 fechadas).
 - Pré-produção roda 7482a2d (8 migrations). Rollback: imagens `projetocrud-medio-{web,etl}:pre-import-identities-3830ba4` + backup `pre_import_identities_7482a2d_20261002_155132`.
-- Testes em 2026-10-17, com a T4 no ambiente local: `test:targeted` 506/506, `pytest etl/` 44/44 e E2E 206/206 em duas rodadas seguidas, no `medicoes_e2e_bm`, depois de `npm run test:e2e:seed` nesse banco.
+- Testes em 2026-10-17, com a T5 no ambiente local: `test:targeted` 506/506, `pytest etl/` 44/44 e E2E 207/207 em duas rodadas seguidas, no `medicoes_e2e_bm`, depois de `npm run test:e2e:seed` nesse banco.
 - Integração em `layout2.0`/`release/*`; `main` (13b7cd7) está 85 commits atrás.
 
 ## Próximos passos
 1. (feito) Fast-forward de `layout2.0`.
-2. P1 resolvidas em 2026-10-16, incluindo os achados da revisão da P1 4 (cadastro exibido pelo escopo, conferência por `profissionalId`, login ambíguo, escopo único em Minhas Medições) e o bloqueio da troca de nome ([decisão 011](decisoes/011-nome-do-fornecedor-so-pelo-administrativo.md)). Próxima frente: P2 de [pendências](pendencias.md), começando pelo vínculo explícito login → Profissional (P0 como único ID: [spec aprovada](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md); T1 a T4 feitas no banco de teste; próximo: T5 (E2E de importação por nome) e T6 (ensaio local com dados reais, depois pré-produção e produção). Tudo local primeiro; a pré-produção e a produção ficam para a T6).
+2. P1 resolvidas em 2026-10-16, incluindo os achados da revisão da P1 4 (cadastro exibido pelo escopo, conferência por `profissionalId`, login ambíguo, escopo único em Minhas Medições) e o bloqueio da troca de nome ([decisão 011](decisoes/011-nome-do-fornecedor-so-pelo-administrativo.md)). Próxima frente: P2 de [pendências](pendencias.md), começando pelo vínculo explícito login → Profissional (P0 como único ID: [spec aprovada](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md); T1 a T4 feitas no banco de teste; próximo: T6 (ensaio local com um backup da pré-produção, depois pré-produção e produção). Tudo local primeiro; a pré-produção e a produção ficam para a T6).
 3. Fechar os itens abertos de `docs/plano-pre-deploy-producao.md` §7 (os checkboxes de §4 estão desatualizados: auditoria e ensaio feitos em 2026-09-30).
 4. Criar rotina de backup automática (hoje só há `pg_dump` manual nos runbooks).
 5. Definir o fluxo manual para corrigir valores de BM aprovado ou pago (a planilha só reporta a divergência).

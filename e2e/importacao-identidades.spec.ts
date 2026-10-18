@@ -24,6 +24,8 @@ const ROOT = path.join(__dirname, "..");
 const CICLO = "2806"; // ciclo real (YYMM) exclusivo deste spec
 const S = randomUUID().replace(/[^a-f]/g, "").slice(0, 6).toUpperCase().padEnd(6, "X");
 const RESOLVIDO = `FORNECEDOR E2E ${S} RESOLVIDO`;
+// Fornecedor já no P0 (decisão 012): o código é o login e o nome é só alias (origem CADASTRO).
+const P0_RESOLVIDO = `P08${String(Date.now()).slice(-5)}`;
 const MARIA_CANONICA = `MARIA ${S} FERNANDA LIMA COSTA`;
 const ROMERO_CANONICO = `ROMERO ${S} CARVALHO`;
 const ROMERO = `ROMERO ${S} PINTO`;
@@ -92,7 +94,12 @@ test.describe.serial("Importação — identidades pendentes, automáticas e des
     planilha = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "e2e-ident-")), "planilha-identidades.xlsx");
     execFileSync(process.env.PYTHON ?? "python", [path.join(ROOT, "e2e", "fixtures", "planilha_identidades.py"), planilha, S], { cwd: ROOT });
     await limparCiclo();
-    for (const codigo of [RESOLVIDO, MARIA_CANONICA, ROMERO_CANONICO]) {
+    const resolvido = await prisma.profissional.create({ data: { nome: P0_RESOLVIDO, codigo: P0_RESOLVIDO, nomeCompleto: RESOLVIDO } });
+    await prisma.profissionalAlias.create({ data: { profissionalId: resolvido.id, alias: RESOLVIDO, aliasNormalizado: RESOLVIDO, origem: "CADASTRO" } });
+    await prisma.cadastroFornecedor.create({
+      data: { cnpjNormalizado: "11222333000181", colaboradorCodigo: P0_RESOLVIDO, responsavel: RESOLVIDO, razaoSocial: `${RESOLVIDO} LTDA`, rawPayload: {} },
+    });
+    for (const codigo of [MARIA_CANONICA, ROMERO_CANONICO]) {
       await prisma.profissional.create({ data: { nome: codigo, codigo, nomeCompleto: codigo } });
       await prisma.cadastroFornecedor.create({
         data: { cnpjNormalizado: "11222333000181", colaboradorCodigo: codigo, responsavel: codigo, razaoSocial: `${codigo} LTDA`, email: `${codigo.replace(/\s+/g, "-").toLowerCase()}@example.test`, rawPayload: {} },
@@ -110,7 +117,7 @@ test.describe.serial("Importação — identidades pendentes, automáticas e des
   test.afterAll(async () => {
     etl?.kill();
     await limparCiclo();
-    const codigos = [RESOLVIDO, MARIA_CANONICA, ROMERO_CANONICO];
+    const codigos = [P0_RESOLVIDO, MARIA_CANONICA, ROMERO_CANONICO];
     const ids = (await prisma.profissional.findMany({ where: { codigo: { in: codigos } }, select: { id: true } })).map((p) => p.id);
     await prisma.adminAuditLog.deleteMany({ where: { OR: [{ targetId: { in: ids } }, { targetCodigo: { contains: S } }, { action: "IDENTIDADE_IMPORTACAO_DESCARTADA", targetType: "ImportacaoLinha", createdAt: { gte: new Date(Date.now() - 3_600_000) } }] } });
     await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: codigos } } });
@@ -148,6 +155,11 @@ test.describe.serial("Importação — identidades pendentes, automáticas e des
     // Linhas vazias nunca viraram ocorrência; pendentes estão no ciclo (sem Profissional) e no total.
     expect(await prisma.medicao.count({ where: { ciclo: CICLO } })).toBe(5);
     expect(await somaMapa()).toBe(190); // 100 + 10 + 50 + 30 (a linha descartada, 7, não entra)
+    // P0 (decisão 012): a planilha traz o nome; a linha cai no P0 pelo alias do cadastro, nunca no nome.
+    const p0 = await prisma.profissional.findUniqueOrThrow({ where: { codigo: P0_RESOLVIDO }, select: { id: true } });
+    expect(await prisma.medicao.count({ where: { ciclo: CICLO, numeroDocumento: `DOC-${S}-A`, idProfissional: p0.id } })).toBe(1);
+    expect(await prisma.mapaPagamentoItem.count({ where: { ciclo: CICLO, projetistaCodigo: P0_RESOLVIDO } })).toBeGreaterThan(0);
+    expect(await prisma.mapaPagamentoItem.count({ where: { ciclo: CICLO, projetistaCodigo: { equals: RESOLVIDO, mode: "insensitive" } } })).toBe(0);
     expect(await prisma.profissional.count({ where: { OR: [{ codigo: ROMERO }, { nome: ROMERO }] } })).toBe(0);
 
     const painel = page.getByTestId("identidades-do-ciclo");

@@ -1,6 +1,6 @@
 ---
 atualizado: 2026-10-17
-status: em andamento (T1 a T4 feitas no banco de teste; T5 parcialmente adiantada)
+status: em andamento (T1 a T5 feitas no ambiente local; falta a T6)
 tags: [spec, plano]
 ---
 # Plano: P0 como único ID do fornecedor
@@ -115,7 +115,11 @@ Nenhum passo vale rodar em paralelo.
     - `tsc` e `test:targeted`.
   - Arquivos: `lib/cadastro-identity.ts`, `lib/colaborador-alias.ts`, `lib/cadastro-fornecedor.ts`, `app/api/admin/administrativo/fornecedores/[id]/route.ts`, os testes.
 
-- [ ] **T5: seed e E2E**
+- [x] **T5: seed e E2E**: feita em 2026-10-17.
+  - O seed já usava código = login nos fornecedores A–D. A limpeza por prefixo (`limparFornecedorPorPrefixo`) entrou na T4.
+  - `e2e/isolamento-homonimos.spec.ts`: novo caso. O Administrativo renomeia B com o **mesmo nome** de A; os dois usuários ficam homônimos e cada um vê só o próprio BM e cadastro. O comprovante de B continua 403 para A e 200 para B.
+  - `e2e/importacao-identidades.spec.ts`: o fornecedor `RESOLVIDO` passa a estar no P0 (código = P0, nome como alias `CADASTRO`). Com o ETL real, a linha da planilha que traz o nome cai no Profissional do P0, e o mapa grava o P0, nunca o nome.
+  - E2E completo 207/207 em duas rodadas seguidas, com seed antes de cada uma.
   - Aceite:
     - `scripts/seed-e2e.ts` cria os fornecedores com código = login.
     - `e2e/isolamento-homonimos.spec.ts` ampliado: A e B homônimos, cada um com P0, veem só os próprios dados; GET direto ao comprovante e à NF do outro dá 403/404.

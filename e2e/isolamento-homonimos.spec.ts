@@ -147,7 +147,7 @@ test.describe.serial("Isolamento entre fornecedores homônimos", () => {
     expect((await page.request.get(`/api/colaborador/comprovante/${sgcB}`)).status()).toBe(200);
   });
 
-  test("A não troca o próprio nome para o de B (o nome é o elo com o cadastro)", async ({ page }) => {
+  test("A não troca o próprio nome para o de B (decisão 011)", async ({ page }) => {
     await entrar(page, A.login);
     const resposta = await page.request.patch("/api/usuario/me", { data: { nome: B.nome } });
     expect(resposta.status()).toBe(403);
@@ -169,5 +169,34 @@ test.describe.serial("Isolamento entre fornecedores homônimos", () => {
     await entrar(paginaA, A.login);
     expect((await (await paginaA.request.get("/api/colaborador/me")).json()).sgc.id).toBe(sgcA);
     await paginaA.close();
+  });
+
+  test("P0 (decisão 012): B renomeado com o MESMO nome de A — os dois usuários seguem isolados", async ({ page, browser }) => {
+    const nomeDeA = (await prisma.usuario.findUniqueOrThrow({ where: { usuario: A.login } })).nome;
+    const cadastroB = await prisma.cadastroFornecedor.findFirstOrThrow({ where: { colaboradorCodigo: B.codigo }, select: { id: true } });
+    await entrar(page, e2eUsers.administrativo.usuario, e2eUsers.administrativo.senha);
+    const resposta = await page.request.patch(`/api/admin/administrativo/fornecedores/${cadastroB.id}`, {
+      data: { cnpj: "11222333000181", responsavel: nomeDeA, razaoSocial: `${B.nome} LTDA` },
+    });
+    expect(resposta.status()).toBe(200);
+    // Agora há dois usuários fornecedores com o mesmo nome; cada um continua ligado só ao próprio P0.
+    expect((await prisma.usuario.findUniqueOrThrow({ where: { usuario: B.login } })).nome).toBe(nomeDeA);
+    expect((await prisma.usuario.findUniqueOrThrow({ where: { usuario: A.login } })).nome).toBe(nomeDeA);
+
+    const paginaA = await browser.newPage();
+    await entrar(paginaA, A.login);
+    const meA = await (await paginaA.request.get("/api/colaborador/me")).json();
+    expect(meA.sgc.id).toBe(sgcA);
+    expect(meA.usuario.razaoSocial).toBe(`${A.nome} LTDA`);
+    expect((await paginaA.request.get(`/api/colaborador/comprovante/${sgcB}`)).status()).toBe(403);
+    await paginaA.close();
+
+    const paginaB = await browser.newPage();
+    await entrar(paginaB, B.login);
+    const meB = await (await paginaB.request.get("/api/colaborador/me")).json();
+    expect(meB.usuario.razaoSocial).toBe(`${B.nome} LTDA`);
+    expect(JSON.stringify(meB)).not.toContain(sgcA);
+    expect((await paginaB.request.get(`/api/colaborador/comprovante/${sgcB}`)).status()).toBe(200);
+    await paginaB.close();
   });
 });
