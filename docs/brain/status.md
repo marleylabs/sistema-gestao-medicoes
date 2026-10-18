@@ -8,7 +8,7 @@ atualizado: 2026-10-18
   - M1 (fundação) commitado em a516126; M2 (login e dashboard) em ee6d375; correção da corrida do login no E2E em 29384c5. Nada enviado ao GitHub.
   - M3 (painéis dos setores) em andamento, sem commit: T1 (painel lateral com entrada e saída) e T2 (`Modal` único, 19 modais) feitas. `test:targeted` 533/533, E2E 208/208 em duas rodadas seguidas.
   - O E2E roda com `reducedMotion: "reduce"` (`playwright.config.ts`).
-  - Próximo: commit do M3 com o seu pedido (achados da revisão corrigidos). O M4 (portal do fornecedor) vem depois; ele inclui o overlay cru de `minhas-medicoes.tsx`.
+  - M3 commitado em 7fb1499 (sem push). Próximo: M4 (portal do fornecedor), começando pelo `/spec`; inclui o overlay cru de `minhas-medicoes.tsx`.
 - **P2 — P0 como único ID do fornecedor** ([spec](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)). T1 a T5 prontas e testadas no ambiente local; nada implantado. **Pré-produção migrada e implantada em 2026-10-18 (UTC)** com 2e1a9a4: 55/55 migrados, medição ok antes e depois do deploy, smoke ok ([plano, T6](specs/p2-vinculo-login-profissional-plano.md), [runbook](../runbook-p0-pre-producao.md)). Falta a produção: novo ensaio local com um backup dela, runbook ajustado, `/review` e `/ponytail-review` antes.
   - Ordem combinada em 2026-10-17: tudo no ambiente local primeiro. O ensaio com dados reais roda numa cópia local de um backup da pré-produção; o servidor só é tocado na T6.
   - Tudo enviado ao GitHub em 2026-10-17: `release/2026-10-02-import-identities` em 6fec06d (spec, T1 a T5, E2E do financeiro, ensaio e runbook). Candidato a `APPROVED_SHA` do runbook: este commit ou o seguinte, que só atualiza o status. `layout2.0` continua em 58375bb.
@@ -47,7 +47,7 @@ atualizado: 2026-10-18
 - `npm run build` e o Playwright compartilham `.next`: rode `rm -rf .next` depois do build.
 
 ## Últimas mudanças (máx. 5, mais recente primeiro)
-- 2026-10-18: M3 do layout (painéis, `Modal`, abas, `Toast`, `Skeleton`, realce da linha) com os achados da revisão corrigidos. Inclui: painéis e modais ficam `inert` durante a saída, e fechar o BM durante o carregamento não reabre mais (`useVisualizadorBm`). Não commitado.
+- 2026-10-18: M3 do layout (painéis, `Modal`, abas, `Toast`, `Skeleton`, realce da linha) com os achados da revisão corrigidos. Inclui: painéis e modais ficam `inert` durante a saída, e fechar o BM durante o carregamento não reabre mais (`useVisualizadorBm`). Commit 7fb1499 (sem push).
 - 2026-10-18: M2 do layout (login e dashboard) e correção da corrida do login nos testes E2E (`LoginPage.login` espera a navegação pós-login). `test:targeted` 531/531, E2E 208/208 em 2 de 3 rodadas. Sem commit.
 - 2026-10-18: M1 do layout completo (T1 a T5): modo escuro com contraste medido, alternador no menu da conta, cores fixas migradas para tokens, primitivas de motion (`components/motion.tsx`), títulos e troca de seção animados, entrada dos diálogos. Sem commit.
 - 2026-10-18: T6 da P2 na pré-produção: 55/55 fornecedores no P0, deploy de 2e1a9a4, medição e smoke ok.
