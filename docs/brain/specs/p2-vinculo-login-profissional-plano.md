@@ -151,7 +151,7 @@ Nenhum passo vale rodar em paralelo.
 
     Fechamento: notas atualizadas (portal, autenticação, cadastro, identidades, glossário com P0, revisão da 011, pendências sem a P2, status); spec e plano como concluídos.
   - Verificar: `tsc`, `test:targeted`, `pytest etl/` e E2E verdes; `/review` e `/ponytail-review` antes do merge (CLAUDE.md).
-  - Arquivos: notas do cérebro; runbook do passo a passo na pré-produção (em `docs/`).
+  - Arquivos: notas do cérebro; runbook [`docs/runbook-p0-pre-producao.md`](../../runbook-p0-pre-producao.md) (escrito em 2026-10-17). Ele cobre backup, código e imagens, janela sem importação (ETL e web parados), dry-run, aplicar, medir, deploy, smoke e rollback. Os comandos rodam pelo serviço `migrate` do compose, sem digitar senha; a rota foi validada localmente.
 
 ## Pontos de verificação
 - No ensaio local da T6: contagens do dry-run com os dados reais. Com `CONFLITO` ou `SEM_IDENTIDADE`, resolvemos esses casos com o Administrativo antes de tocar o servidor.

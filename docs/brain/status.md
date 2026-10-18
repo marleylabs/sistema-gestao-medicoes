@@ -4,7 +4,7 @@ atualizado: 2026-10-17
 # Status
 
 ## Em andamento
-- **P2 — P0 como único ID do fornecedor** ([spec](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)). T1 a T5 prontas e testadas no ambiente local; nada implantado. T6 em andamento: ensaio numa cópia local do backup da pré-produção com 55/55 migrados, medição ok, valores e status idênticos e reversão que volta exatamente ao original ([plano](specs/p2-vinculo-login-profissional-plano.md)). Falta a pré-produção e a produção.
+- **P2 — P0 como único ID do fornecedor** ([spec](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)). T1 a T5 prontas e testadas no ambiente local; nada implantado. T6 em andamento: ensaio numa cópia local do backup da pré-produção com 55/55 migrados, medição ok, valores e status idênticos e reversão que volta exatamente ao original ([plano](specs/p2-vinculo-login-profissional-plano.md)). Falta a pré-produção ([runbook](../runbook-p0-pre-producao.md); pré-requisito: push da release e SHA aprovado) e a produção.
   - Ordem combinada em 2026-10-17: tudo no ambiente local primeiro. O ensaio com dados reais roda numa cópia local de um backup da pré-produção; o servidor só é tocado na T6.
   - Commits locais em `release/2026-10-02-import-identities`, **ainda não enviados ao GitHub**: e500081 (spec), bf38665 (T1), 7412ab9 (T2), 0bf0157 (T3), 93a52cd (T4), 2263ccd (E2E do financeiro com projeto próprio) e a atualização do cérebro.
 - No GitHub, `layout2.0` e `release/2026-10-02-import-identities` estão em 58375bb (P1 fechadas).
