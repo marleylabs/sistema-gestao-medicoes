@@ -130,6 +130,16 @@ Nenhum passo vale rodar em paralelo.
 - [ ] **T6: ensaio local com dados reais, pré-produção e fechamento**
   - Aceite:
     0. Ensaio: restaurar um backup da pré-produção numa base **local** e rodar nela o dry-run, o `--aplicar` e a medição. Conflitos encontrados são resolvidos com o Administrativo antes de seguir.
+       - 2026-10-17: backup da pré-produção (`pg_dump`, 2026-10-18T01:00Z) restaurado na base local `medicoes_ensaio_p0`. Ela tem as mesmas 8 migrations do projeto, 55 fornecedores com login, 61 Profissionais e 55 cadastros.
+       - **Dry-run: 55/55 migráveis, 0 conflitos, 0 sem identidade.**
+       - Linhas a reescrever: 55 cadastros, 7 BMs, 62 divergências, 36 linhas do mapa, 8 do BM auxiliar e 91 logs.
+       - 6 Profissionais sem login, todos sem código; ficam como estão (decisão 2).
+       - `--aplicar` (auditoria por P0000001): 55 migrados, 0 falhas.
+       - `--medir`: 55/55 ok. Um novo dry-run mostra os 55 como `JA_E_P0`, ou seja, rodar de novo não muda nada.
+       - SQL direto: 55 aliases `MIGRACAO_P0`, 55 logins = código, 55 cadastros ligados pelo login, 0 BMs sem Profissional pelo código, 55 auditorias.
+       - O mesmo dump restaurado intacto em `medicoes_ensaio_p0_original` e comparado com a cópia migrada: contagens, totais (mapa, BM auxiliar, medições, cadastros, divergências) e status dos BMs **idênticos**. Só os códigos mudaram.
+       - `--reverter` (P0000001) na cópia migrada: 55 revertidos, 0 falhas; depois dele, `--medir` não acha nenhuma migração em vigor. A comparação por hash, linha a linha, com `medicoes_ensaio_p0_original` deu **idêntico** em Profissionais (código, nome, nome completo), aliases, cadastros, BMs, divergências, mapa, BM auxiliar, logs e usuários. Só sobram as 110 linhas de auditoria (55 da migração e 55 da reversão). A reversão vale como rollback até a primeira importação depois da migração.
+       - As duas bases do ensaio ficam no Postgres local até o fim da T6. O dump fica fora do repositório, em `C:/Users/Anderson Marley/backups-medicoes/`.
 
     Depois, na pré-produção e então na produção (passos do usuário, com segredos):
     1. backup;
