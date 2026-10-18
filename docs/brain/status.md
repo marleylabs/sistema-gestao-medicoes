@@ -42,7 +42,7 @@ atualizado: 2026-10-18
 
 ## Cuidados operacionais
 - `next dev` reescreve `tsconfig.json` (acrescenta `.next/dev/dev/types`): reverta com `git checkout -- tsconfig.json` antes de commitar. Para ver o app contra o banco de teste, use `.claude/launch.json` (`dev-banco-teste`, porta 3100), que carrega o `.env.test`.
-- O banco DEV local (`medicoes`, Docker na porta 3000) está num schema antigo, sem histórico do Prisma e sem `profissional_aliases`, `importacao_identidades` e `usuarios_permissoes`: não reconstrua o `web` dele sem migrar antes. Para ver o layout atual, use o container `medicoes-web-layout` (imagem `medicoes-web:layout-m3`, porta 3200, banco de teste `medicoes_e2e_bm`), que fica fora do compose.
+- Banco DEV local (`medicoes`, Docker na porta 3000): migrado em 2026-10-18 (baseline + `migrate deploy`, 8/8, `migrate diff` = 0; backup em `~/backups-medicoes/dev_20261018T212154Z/`; imagens `local/medicoes-{web,etl}-rollback:20261018T212154Z`). Web e etl reconstruídos com o código de f856767. Migração de códigos P0 aplicada nele em 2026-10-18 (1/1 migrado, `--medir` 1 ok; ADMIN de auditoria P0000001; backup antes em `~/backups-medicoes/dev_p0_20261018T212902Z/`, com os JSONs de aplicar e medir). O container `medicoes-web-layout` (porta 3200, banco de teste) fica fora do compose.
 - Nunca usar `docker compose down -v`, `docker volume rm` nem `prune`: apagam o banco.
 - `npm run build` e o Playwright compartilham `.next`: rode `rm -rf .next` depois do build.
 
