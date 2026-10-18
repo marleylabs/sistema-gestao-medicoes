@@ -59,7 +59,8 @@ test.describe.serial("Administrativo — envio em lote do primeiro acesso", () =
       usuarioIds[letra] = usuario.id;
       hashInicial[letra] = usuario.senhaHash;
       const cadastro = await prisma.cadastroFornecedor.create({
-        data: { responsavel: NOMES[letra], razaoSocial: `${NOMES[letra]} LTDA`, cnpjNormalizado: `9${base}${i}000101`.slice(0, 14), email: def[letra].email },
+        // Decisão 012: o cadastro se liga ao acesso pelo código = login (P0).
+        data: { colaboradorCodigo: usuario.usuario, responsavel: NOMES[letra], razaoSocial: `${NOMES[letra]} LTDA`, cnpjNormalizado: `9${base}${i}000101`.slice(0, 14), email: def[letra].email },
       });
       cadastroIds[letra] = cadastro.id;
     }

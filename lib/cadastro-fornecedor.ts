@@ -3,10 +3,11 @@ import { createHash } from "node:crypto";
 
 import { generateTempPassword, generateUniqueInternalAccessCode, hashPassword } from "@/lib/auth";
 import { decryptSensitive, encryptSensitive } from "@/lib/encryption";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { excelSerialToDate, parseSimpleXlsx } from "@/lib/xlsx";
 import { selectCadastroForAuthenticatedUser } from "@/lib/cadastro-identity";
-import { gerarP0Livre, trocarCodigoParaP0 } from "@/lib/codigo-p0";
+import { gerarP0Livre, trocarCodigoParaP0, usuariosDoFornecedor } from "@/lib/codigo-p0";
 
 export const CADASTRO_FORNECEDOR_SHEET = "CONTRATOS_ATIVOS";
 
@@ -706,35 +707,22 @@ export function resolveFornecedorIdentity(row: CadastroRow, index: IdentityIndex
 }
 
 /**
- * Resolve, em lote, o `Usuario` (perfil COLABORADOR) de cada `responsavel` informado — mesma regra
- * de vínculo fornecedor↔acesso usada dentro de `upsertCadastroFornecedor` (match por nome
- * case-insensitive; não há FK real entre `CadastroFornecedor`/`Profissional` e `Usuario`).
- * Consultada em lote (uma única query) pela listagem unificada do Painel Administrativo, para não
- * fazer N+1 nem duplicar a regra de resolução em dois lugares.
+ * Resolve, em lote, o `Usuario` (perfil COLABORADOR) de cada código de fornecedor informado: o do
+ * login igual ao código (P0, decisão 012), nunca pelo nome. Chave do mapa: o código em maiúsculas.
+ * Consultada em lote (uma única query) pela listagem unificada do Painel Administrativo.
  */
-export async function findColaboradorUsuarios(nomes: string[]) {
-  const wanted = new Set(nomes.map((n) => normalizePersonName(n)).filter(Boolean));
+export async function findColaboradorUsuarios(codigos: Array<string | null | undefined>) {
+  const wanted = [...new Set(codigos.map((c) => c?.trim().toUpperCase()).filter((c): c is string => !!c))];
   // DTO explícito do acesso (vai para a listagem do Administrativo, que ADMINISTRATIVO também lê):
   // nenhuma credencial — nem senha, nem hash, nem senha temporária.
   const map = new Map<string, { id: string; usuario: string; perfil: string; ativo: boolean; email: string | null; primeiroLogin: boolean }>();
-  if (wanted.size === 0) return map;
-  // `in` + `mode: insensitive` não é suportado pelo Prisma para filtro de string — carrega todos os
-  // COLABORADOR (mesmo padrão de `buildIdentityIndex`, abaixo) e casa em memória por nome normalizado.
+  if (wanted.length === 0) return map;
   const usuarios = await prisma.usuario.findMany({
-    where: { perfil: "COLABORADOR", excluidoAt: null },
-    select: { id: true, usuario: true, nome: true, perfil: true, ativo: true, email: true, primeiroLogin: true },
+    where: { perfil: "COLABORADOR", excluidoAt: null, usuario: { in: wanted } },
+    select: { id: true, usuario: true, perfil: true, ativo: true, email: true, primeiroLogin: true },
   });
   for (const u of usuarios) {
-    const key = normalizePersonName(u.nome);
-    if (!wanted.has(key)) continue;
-    map.set(key, {
-      id: u.id,
-      usuario: u.usuario,
-      perfil: u.perfil,
-      ativo: u.ativo,
-      email: decryptSensitive(u.email),
-      primeiroLogin: u.primeiroLogin,
-    });
+    map.set(u.usuario, { id: u.id, usuario: u.usuario, perfil: u.perfil, ativo: u.ativo, email: decryptSensitive(u.email), primeiroLogin: u.primeiroLogin });
   }
   return map;
 }
@@ -953,23 +941,13 @@ export async function upsertCadastroFornecedor(
     }
 
     // O usuário do fornecedor é o do login igual ao código (P0). Fornecedor novo nunca herda usuário
-    // pelo nome. Identidade de antes do P0 ainda acha o usuário pelo nome, mas nunca o de outro
-    // fornecedor que já está em P0 (login = código de outro Profissional); `findMany` (nunca
-    // `findFirst`): dois usuários compatíveis é ambiguidade real, resolvida por humano.
-    const userSelect = { id: true, usuario: true, ativo: true, excluidoAt: true, perfil: true } as const;
-    const porLogin = await tx.usuario.findUnique({ where: { usuario: colaboradorCodigo.toUpperCase() }, select: userSelect });
-    let existingUsers = porLogin?.perfil === "COLABORADOR" ? [porLogin] : [];
-    if (!porLogin && resolution.kind !== "CREATE") {
-      const porNome = await tx.usuario.findMany({
-        where: { perfil: "COLABORADOR", nome: { equals: row.responsavel, mode: "insensitive" } },
-        select: userSelect,
-      });
-      const loginsDeOutros = new Set((await tx.profissional.findMany({
-        where: { id: { not: profissional.id }, codigo: { in: porNome.map((u) => u.usuario) } },
-        select: { codigo: true },
-      })).map((p) => p.codigo));
-      existingUsers = porNome.filter((u) => !loginsDeOutros.has(u.usuario));
-    }
+    // pelo nome; identidade de antes do P0 ainda acha pelo nome, mas nunca o de outro fornecedor em P0.
+    // Dois usuários compatíveis é ambiguidade real, resolvida por humano.
+    const existingUsers = await usuariosDoFornecedor(tx, {
+      codigo: colaboradorCodigo,
+      nomeLegado: resolution.kind === "CREATE" ? null : row.responsavel,
+      incluirExcluidos: true,
+    });
     if (existingUsers.length > 1) {
       throw new FornecedorUsuarioAmbiguoError(`Identidade de acesso ambígua para "${row.responsavel}" — mais de um Usuario compatível encontrado. Resolva manualmente antes de importar esta linha.`);
     }
@@ -1086,6 +1064,16 @@ export async function upsertCadastroFornecedor(
 
   updateIdentityIndex(index, row, result);
   return result;
+}
+
+/**
+ * Decisão 011: o nome do usuário fornecedor espelha o `responsavel` do cadastro e só muda pela edição
+ * do Administrativo. O usuário é o do código (P0, decisão 012); com ambiguidade, não renomeia ninguém.
+ */
+export async function renomearUsuarioDoFornecedor(tx: Prisma.TransactionClient, colaboradorCodigo: string | null, responsavel: string, nomeAnterior?: string) {
+  if (!colaboradorCodigo) return;
+  const usuarios = await usuariosDoFornecedor(tx, { codigo: colaboradorCodigo, nomeLegado: nomeAnterior });
+  if (usuarios.length === 1) await tx.usuario.update({ where: { id: usuarios[0].id }, data: { nome: responsavel, updatedAt: new Date() } });
 }
 
 /** Lançada quando a resolução manual não pode prosseguir — código escolhido não é um dos
@@ -1315,18 +1303,12 @@ export async function importCadastrosFornecedores(buffer: Buffer, admin?: AdminA
   };
 }
 
-export async function validateFornecedorForNfUpload(colaboradorCodigo: string, usuarioNome?: string | null) {
+export async function validateFornecedorForNfUpload(colaboradorCodigo: string) {
   const cadastros = await prisma.cadastroFornecedor.findMany({
-    where: {
-      ativo: true,
-      OR: [
-        { colaboradorCodigo },
-        ...(usuarioNome ? [{ responsavel: { equals: usuarioNome, mode: "insensitive" as const } }] : []),
-      ],
-    },
+    where: { ativo: true, colaboradorCodigo: { equals: colaboradorCodigo, mode: "insensitive" } },
     orderBy: { updatedAt: "desc" },
   });
-  const selected = selectCadastroForAuthenticatedUser(cadastros, colaboradorCodigo, usuarioNome);
+  const selected = selectCadastroForAuthenticatedUser(cadastros, colaboradorCodigo);
   const cadastro = selected.cadastro;
   if (!cadastro) return { ok: false, error: selected.error, cadastro: null };
 
@@ -1503,17 +1485,17 @@ export async function getIdentityCandidateSummaries(codigos: string[]): Promise<
     : new Map<string, { id: string; usuario: string; ativo: boolean; excluidoAt: Date | null }>();
 
   // Para identidades ainda ATIVAS (Profissional sem deletedAt), o usuarioId da auditoria pode não
-  // existir (nunca foram excluídas) — resolve pelo nome, mesmo padrão usado no resto do módulo.
-  const nomesParaBuscar = uniq
+  // existir (nunca foram excluídas) — o usuário é o do login igual ao código (P0, decisão 012).
+  const codigosAtivos = uniq
     .map((codigo) => profPorCodigo.get(normalizePersonName(codigo)))
-    .filter((p): p is NonNullable<typeof p> => !!p && !p.deletedAt)
-    .map((p) => p.nomeCompleto || p.nome);
-  const usuariosPorNome = nomesParaBuscar.length > 0
+    .filter((p): p is NonNullable<typeof p> => !!p && !p.deletedAt && !!p.codigo)
+    .map((p) => p.codigo!.toUpperCase());
+  const usuariosPorLogin = codigosAtivos.length > 0
     ? new Map((await prisma.usuario.findMany({
-        where: { perfil: "COLABORADOR", nome: { in: nomesParaBuscar, mode: "insensitive" } },
-        select: { id: true, usuario: true, nome: true, ativo: true, excluidoAt: true },
-      })).map((u) => [normalizePersonName(u.nome), u]))
-    : new Map<string, { id: string; usuario: string; nome: string; ativo: boolean; excluidoAt: Date | null }>();
+        where: { perfil: "COLABORADOR", usuario: { in: codigosAtivos } },
+        select: { id: true, usuario: true, ativo: true, excluidoAt: true },
+      })).map((u) => [u.usuario, u]))
+    : new Map<string, { id: string; usuario: string; ativo: boolean; excluidoAt: Date | null }>();
 
   const sgcPorCodigo = new Map(sgcCounts.map((r) => [normalizePersonName(r.colaboradorCodigo), r._count._all]));
   const mapaPorCodigo = new Map(mapaCounts.filter((r) => r.projetistaCodigo).map((r) => [normalizePersonName(r.projetistaCodigo!), r._count._all]));
@@ -1536,8 +1518,8 @@ export async function getIdentityCandidateSummaries(codigos: string[]): Promise<
     const key = normalizePersonName(codigo);
     const profissional = profPorCodigo.get(key);
     const usuarioViaAuditoria = usuarioIdPorCodigo.has(key) ? usuariosPorId.get(usuarioIdPorCodigo.get(key)!) : undefined;
-    const usuarioViaNome = profissional && !profissional.deletedAt ? usuariosPorNome.get(normalizePersonName(profissional.nomeCompleto || profissional.nome)) : undefined;
-    const usuario = usuarioViaAuditoria ?? usuarioViaNome;
+    const usuarioViaCodigo = profissional && !profissional.deletedAt && profissional.codigo ? usuariosPorLogin.get(profissional.codigo.toUpperCase()) : undefined;
+    const usuario = usuarioViaAuditoria ?? usuarioViaCodigo;
 
     return {
       codigo,
@@ -1736,19 +1718,14 @@ export async function setFornecedoresAtivos(ids: string[], ativo: boolean, admin
     }
   }
 
-  const usuarios = await prisma.usuario.findMany({
-    where: { perfil: "COLABORADOR", excluidoAt: null },
-    select: { id: true, nome: true, ativo: true },
-  });
-  const usuariosPorNome = new Map<string, typeof usuarios>();
-  for (const usuario of usuarios) {
-    const key = normalizePersonName(usuario.nome);
-    const list = usuariosPorNome.get(key) ?? [];
-    list.push(usuario);
-    usuariosPorNome.set(key, list);
-  }
+  // Usuário do fornecedor pelo código (P0, decisão 012); nunca um homônimo pelo nome.
+  const usuarioPorCadastro = new Map<string, { id: string }>();
   for (const cadastro of cadastros) {
-    if ((usuariosPorNome.get(normalizePersonName(cadastro.responsavel)) ?? []).length > 1) {
+    const encontrados = cadastro.colaboradorCodigo
+      ? await usuariosDoFornecedor(prisma, { codigo: cadastro.colaboradorCodigo, nomeLegado: cadastro.responsavel })
+      : [];
+    if (encontrados[0]) usuarioPorCadastro.set(cadastro.id, encontrados[0]);
+    if (encontrados.length > 1) {
       throw new FornecedorInativacaoError(`Acesso ambíguo para "${cadastro.responsavel}". Nenhuma alteração foi feita.`);
     }
   }
@@ -1774,7 +1751,7 @@ export async function setFornecedoresAtivos(ids: string[], ativo: boolean, admin
         where: { id: cadastro.id },
         data: { ativo, inativadoAt: ativo ? null : now, updatedAt: now },
       });
-      const usuario = (usuariosPorNome.get(normalizePersonName(cadastro.responsavel)) ?? [])[0];
+      const usuario = usuarioPorCadastro.get(cadastro.id);
       const deveAlterarUsuario = ativo || !cadastro.colaboradorCodigo || !codigosAindaAtivos.has(normalizePersonName(cadastro.colaboradorCodigo));
       if (usuario && deveAlterarUsuario) {
         // Mantém excluidoAt, senha e política de primeiro acesso intactos.
@@ -1811,7 +1788,7 @@ export async function auditActiveCadastroIdentityInconsistencies(): Promise<Cada
   const [cadastros, profissionais, usuarios, audits] = await Promise.all([
     prisma.cadastroFornecedor.findMany({ where: { ativo: true, colaboradorCodigo: { not: null } }, select: { id: true, colaboradorCodigo: true, responsavel: true } }),
     prisma.profissional.findMany({ where: { deletedAt: null, codigo: { not: null } }, select: { id: true, codigo: true } }),
-    prisma.usuario.findMany({ where: { perfil: "COLABORADOR", excluidoAt: null }, select: { id: true, usuario: true, nome: true, ativo: true } }),
+    prisma.usuario.findMany({ where: { perfil: "COLABORADOR", excluidoAt: null }, select: { id: true, usuario: true, ativo: true } }),
     prisma.adminAuditLog.findMany({ where: { action: "FORNECEDOR_EXCLUSAO_DEFINITIVA" }, select: { targetCodigo: true } }),
   ]);
   const profByCode = new Map<string, { id: string; codigo: string | null }[]>();
@@ -1821,7 +1798,7 @@ export async function auditActiveCadastroIdentityInconsistencies(): Promise<Cada
     list.push(p);
     profByCode.set(key, list);
   }
-  const userByName = new Map(usuarios.map((u) => [normalizePersonName(u.nome), { id: u.id, usuario: u.usuario, ativo: u.ativo }]));
+  const userByLogin = new Map(usuarios.map((u) => [u.usuario, { id: u.id, usuario: u.usuario, ativo: u.ativo }]));
   const auditCount = new Map<string, number>();
   for (const a of audits) {
     const key = normalizePersonName(a.targetCodigo);
@@ -1834,7 +1811,7 @@ export async function auditActiveCadastroIdentityInconsistencies(): Promise<Cada
       cadastroId: c.id,
       colaboradorCodigo: codigo,
       responsavel: c.responsavel,
-      usuario: userByName.get(normalizePersonName(c.responsavel)) ?? null,
+      usuario: userByLogin.get(codigo.trim().toUpperCase()) ?? null,
       profissionaisAtivos,
       auditHistorico: auditCount.get(normalizePersonName(codigo)) ?? 0,
     }];
@@ -2158,12 +2135,9 @@ export async function deleteFornecedoresDefinitivamente(
             } });
         }
         // Usuario nunca é apagado fisicamente (ver docstring) — sempre desativado.
-        const nomeParaUsuario = profissionalNomeParaUsuario || responsavelPorCodigo.get(plan.codigoKey) || "";
-        if (!nomeParaUsuario) continue;
-        const usuarios = await tx.usuario.findMany({
-          where: { perfil: "COLABORADOR", nome: { equals: nomeParaUsuario, mode: "insensitive" }, excluidoAt: null },
-          select: { id: true },
-        });
+        // Usuário pelo código (P0, decisão 012); o nome só vale para identidade de antes do P0.
+        const nomeLegado = profissionalNomeParaUsuario || responsavelPorCodigo.get(plan.codigoKey) || null;
+        const usuarios = await usuariosDoFornecedor(tx, { codigo: profissionalCompleto?.codigo || codigoOriginal, nomeLegado });
         if (usuarios.length > 1) throw new Error("Identidade de acesso ambígua: exclusão cancelada para preservar outros usuários.");
         const usuario = usuarios[0];
         if (usuario) {

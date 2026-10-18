@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Medição não está aguardando NF." }, { status: 409 });
   }
 
-  const cadastroValidation = await validateFornecedorForNfUpload(sgc.colaboradorCodigo, user.nome);
+  const cadastroValidation = await validateFornecedorForNfUpload(sgc.colaboradorCodigo);
   if (!cadastroValidation.ok || !cadastroValidation.cadastro) {
     return NextResponse.json({ error: cadastroValidation.error }, { status: 409 });
   }

@@ -58,16 +58,38 @@ async function contarLinhasDe(codigo: string): Promise<Linhas> {
   return Object.fromEntries(TABELAS.map((t) => [t, mapas[t].get(chave(codigo)) ?? 0])) as Linhas;
 }
 
+const identidadeNormalizada = (valor: string | null | undefined) =>
+  (valor ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+
+/**
+ * Profissional do usuário pela cadeia de ANTES do P0: cadastro pelo código = login; senão, pelo nome
+ * exato do usuário = responsável (falha fechado com mais de um). Só a migração usa essa cadeia: é ela
+ * que diz qual Profissional cada login recebe. O app já não liga usuário e fornecedor pelo nome.
+ */
+async function profissionalAntesDoP0(login: string, nome: string) {
+  const candidatos = await prisma.cadastroFornecedor.findMany({
+    where: { OR: [{ colaboradorCodigo: { equals: login, mode: "insensitive" } }, { responsavel: { equals: nome, mode: "insensitive" } }] },
+    select: { colaboradorCodigo: true, responsavel: true },
+  });
+  const porCodigo = candidatos.filter((c) => identidadeNormalizada(c.colaboradorCodigo) === identidadeNormalizada(login));
+  const porNome = candidatos.filter((c) => identidadeNormalizada(c.responsavel) === identidadeNormalizada(nome));
+  const escolhidos = porCodigo.length ? porCodigo : porNome;
+  if (escolhidos.length > 1) return null;
+  const identidade = await resolverIdentidadeOperacional(escolhidos[0]?.colaboradorCodigo || login);
+  return identidade.status === "RESOLVIDO" ? identidade.profissionalId : null;
+}
+
 export async function planejarMigracaoP0() {
+  // Inativos também migram: ao serem reativados, o acesso já precisa estar no P0.
   const usuarios = await prisma.usuario.findMany({
-    where: { perfil: "COLABORADOR", ativo: true, excluidoAt: null },
-    select: { usuario: true },
+    where: { perfil: "COLABORADOR", excluidoAt: null },
+    select: { usuario: true, nome: true },
     orderBy: { usuario: "asc" },
   });
 
   const base: Array<Omit<UsuarioMigracaoP0, "linhas">> = [];
-  for (const { usuario: login } of usuarios) {
-    const { profissionalId } = await getColaboradorEscopo(login);
+  for (const { usuario: login, nome } of usuarios) {
+    const profissionalId = await profissionalAntesDoP0(login, nome);
     if (!profissionalId) {
       base.push({ login, classe: "SEM_IDENTIDADE", motivo: null, profissionalId: null, codigoAtual: null });
       continue;

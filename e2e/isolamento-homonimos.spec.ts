@@ -14,8 +14,9 @@ import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prism
 
 const SUF = randomBytes(3).toString("hex").toUpperCase();
 const SENHA = `E2e-${randomBytes(6).toString("hex")}`;
-const A = { login: "P0909971", nome: `E2E Homonimo A ${SUF}`, codigo: `E2E-HA-${SUF}` };
-const B = { login: "P0909972", nome: `E2E Homonimo B ${SUF}`, codigo: `E2E-HB-${SUF}` };
+// Decisão 012: o código do fornecedor é o login (P0).
+const A = { login: "P0909971", nome: `E2E Homonimo A ${SUF}`, codigo: "P0909971" };
+const B = { login: "P0909972", nome: `E2E Homonimo B ${SUF}`, codigo: "P0909972" };
 const NOME_PROFISSIONAL_A = `E2E HOMONIMO ${SUF}`;
 const DOC_B = `DOC-B-${SUF}`;
 const CHAT_B = `Mensagem privada de B ${SUF}`;

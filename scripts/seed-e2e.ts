@@ -29,6 +29,36 @@ function requireEnv(name: string): string {
   return value;
 }
 
+/**
+ * Limpa um fornecedor de teste pelo prefixo do nome. Com o P0 (decisão 012), o código gravado em
+ * BM/mapa é o login, não o nome: apaga também pelos códigos atuais dos Profissionais e cadastros do
+ * prefixo, além das grafias antigas (código = nome). A exclusão definitiva anonimiza `nomeCompleto`,
+ * mas preserva o código técnico; o código antigo fica em `nome`.
+ */
+async function limparFornecedorPorPrefixo(prefixo: string) {
+  const doPrefixo = {
+    OR: [
+      { codigo: { startsWith: prefixo, mode: "insensitive" as const } },
+      { nome: { startsWith: prefixo, mode: "insensitive" as const } },
+      { nomeCompleto: { startsWith: prefixo } },
+    ],
+  };
+  const [profissionais, cadastros] = await Promise.all([
+    prisma.profissional.findMany({ where: doPrefixo, select: { codigo: true } }),
+    prisma.cadastroFornecedor.findMany({ where: { responsavel: { startsWith: prefixo } }, select: { colaboradorCodigo: true } }),
+  ]);
+  const codigos = [...profissionais.map((p) => p.codigo), ...cadastros.map((c) => c.colaboradorCodigo)].filter((c): c is string => !!c);
+  await prisma.sgcAprovacaoMedicao.deleteMany({
+    where: { OR: [{ colaboradorCodigo: { startsWith: prefixo, mode: "insensitive" } }, { colaboradorCodigo: { in: codigos } }, { colaboradorNome: { startsWith: prefixo } }] },
+  });
+  await prisma.mapaPagamentoItem.deleteMany({
+    where: { OR: [{ projetistaCodigo: { startsWith: prefixo, mode: "insensitive" } }, { projetistaCodigo: { in: codigos } }, { responsavel: { startsWith: prefixo } }] },
+  });
+  await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: prefixo } } });
+  await prisma.profissional.deleteMany({ where: doPrefixo });
+  await prisma.usuario.deleteMany({ where: { nome: { startsWith: prefixo } } });
+}
+
 async function main() {
   await assertConnectedToE2eDatabase();
 
@@ -114,40 +144,22 @@ async function main() {
   // para nunca acumular lixo entre execuções).
   await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: "E2E-NP-001" } });
   await prisma.profissional.deleteMany({ where: { codigo: "E2E-NP-001" } });
-  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "E2E Fornecedor Manual" } } });
-  await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "E2E Fornecedor Manual" } } });
-  await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "E2E Fornecedor Manual" } } });
+  await limparFornecedorPorPrefixo("E2E Fornecedor Manual");
   // e2e/bm-available-fornecedor-manual.spec.ts — mesma lógica, prefixo diferente. Cenários de
   // regressão desse spec deliberadamente digitam texto SEM selecionar sugestão, então
   // colaboradorCodigo/projetistaCodigo podem não ter a grafia canônica nem "responsavel"
   // preenchido — limpa por `projetistaCodigo`/`colaboradorCodigo` case-insensitive também, nunca
   // só por "responsavel" (que é exatamente o campo que o bug original deixava vazio).
-  await prisma.sgcAprovacaoMedicao.deleteMany({ where: { OR: [{ colaboradorNome: { startsWith: "Fornecedor Manual Email" } }, { colaboradorCodigo: { startsWith: "Fornecedor Manual Email", mode: "insensitive" } }] } });
-  await prisma.mapaPagamentoItem.deleteMany({ where: { OR: [{ responsavel: { startsWith: "Fornecedor Manual Email" } }, { projetistaCodigo: { startsWith: "Fornecedor Manual Email", mode: "insensitive" } }] } });
-  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "Fornecedor Manual Email" } } });
-  await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "Fornecedor Manual Email" } } });
-  await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "Fornecedor Manual Email" } } });
+  await limparFornecedorPorPrefixo("Fornecedor Manual Email");
   await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: "CODIGO-QUE-NUNCA-EXISTIU", mode: "insensitive" } } });
   // e2e/bm-retornar-reenvio.spec.ts — fornecedor dedicado para o ciclo "Enviar BM" → "Retornar BM"
   // → "Enviar BM" de novo (bug: reenvio pós-retorno nunca notificava por e-mail), e o mesmo prefixo
   // para o cenário de concorrência real (duas chamadas simultâneas ao mesmo /api/sgc/enviar).
-  await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorCodigo: { startsWith: "Fornecedor Retorno BM", mode: "insensitive" } } });
-  await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: "Fornecedor Retorno BM", mode: "insensitive" } } });
-  await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "Fornecedor Retorno BM" } } });
-  await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "Fornecedor Retorno BM" } } });
-  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "Fornecedor Retorno BM" } } });
+  await limparFornecedorPorPrefixo("Fornecedor Retorno BM");
   // e2e/bm-email-lock-failure.spec.ts — injeção proposital de falha do advisory lock (nunca deve
   // cair para envio sem trava).
-  await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorCodigo: { startsWith: "Fornecedor Lock Falha", mode: "insensitive" } } });
-  await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: "Fornecedor Lock Falha", mode: "insensitive" } } });
-  await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "Fornecedor Lock Falha" } } });
-  await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "Fornecedor Lock Falha" } } });
-  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "Fornecedor Lock Falha" } } });
-  await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorCodigo: { startsWith: "Fornecedor Lock Recuperado", mode: "insensitive" } } });
-  await prisma.mapaPagamentoItem.deleteMany({ where: { projetistaCodigo: { startsWith: "Fornecedor Lock Recuperado", mode: "insensitive" } } });
-  await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: "Fornecedor Lock Recuperado" } } });
-  await prisma.profissional.deleteMany({ where: { nomeCompleto: { startsWith: "Fornecedor Lock Recuperado" } } });
-  await prisma.usuario.deleteMany({ where: { nome: { startsWith: "Fornecedor Lock Recuperado" } } });
+  await limparFornecedorPorPrefixo("Fornecedor Lock Falha");
+  await limparFornecedorPorPrefixo("Fornecedor Lock Recuperado");
   // e2e/minhas-medicoes.spec.ts — fornecedor dedicado de "Minhas Medições" (o spec também limpa).
   await prisma.sgcAprovacaoMedicao.deleteMany({ where: { colaboradorNome: { startsWith: "E2E Minhas Medicoes" } } });
   await prisma.mapaPagamentoItem.deleteMany({ where: { responsavel: { startsWith: "E2E Minhas Medicoes" } } });
@@ -208,23 +220,7 @@ async function main() {
     "Fornecedor Dedupe E2E", "Fornecedor Repeticao E2E", "Fornecedor CNPJ Compartilhado", "E2E BulkDelete",
     "E2E Exclusao Reimportacao", "E2E Duplicado Legado", "E2E Sem Botao Exclusao", "E2E Cenario Completo L",
   ]) {
-    // A exclusão definitiva anonimiza `nomeCompleto`, mas preserva o código técnico. Limpar também
-    // pelo código evita que tombstones de uma rodada bloqueiem a próxima. Com o P0 (decisão 012), o
-    // código antigo fica em `nome` e as linhas de BM/mapa usam o P0: apaga também por esses códigos.
-    const doPrefixo = {
-      OR: [
-        { codigo: { startsWith: prefixo, mode: "insensitive" as const } },
-        { nome: { startsWith: prefixo, mode: "insensitive" as const } },
-        { nomeCompleto: { startsWith: prefixo } },
-      ],
-    };
-    const codigosP0 = (await prisma.profissional.findMany({ where: doPrefixo, select: { codigo: true } }))
-      .map((p) => p.codigo).filter((c): c is string => !!c);
-    await prisma.sgcAprovacaoMedicao.deleteMany({ where: { OR: [{ colaboradorCodigo: { startsWith: prefixo, mode: "insensitive" } }, { colaboradorCodigo: { in: codigosP0 } }] } });
-    await prisma.mapaPagamentoItem.deleteMany({ where: { OR: [{ projetistaCodigo: { startsWith: prefixo, mode: "insensitive" } }, { projetistaCodigo: { in: codigosP0 } }] } });
-    await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: prefixo } } });
-    await prisma.profissional.deleteMany({ where: doPrefixo });
-    await prisma.usuario.deleteMany({ where: { nome: { startsWith: prefixo } } });
+    await limparFornecedorPorPrefixo(prefixo);
   }
 
   console.log("[seed-e2e] Criando usuários...");

@@ -98,15 +98,10 @@ async function main() {
   // (lib/cadastro-fornecedor.ts) — `selectCadastroForAuthenticatedUser` é importado real, não
   // reimplementado.
   const cadastros = await prisma.cadastroFornecedor.findMany({
-    where: {
-      OR: [
-        { colaboradorCodigo },
-        ...(nome ? [{ responsavel: { equals: nome, mode: "insensitive" as const } }] : []),
-      ],
-    },
+    where: { colaboradorCodigo: { equals: colaboradorCodigo, mode: "insensitive" } },
     orderBy: { updatedAt: "desc" },
   });
-  const selected = selectCadastroForAuthenticatedUser(cadastros, colaboradorCodigo, nome);
+  const selected = selectCadastroForAuthenticatedUser(cadastros, colaboradorCodigo);
   if (!selected.cadastro) {
     console.error(`[erro] ${selected.error}`);
     process.exit(1);

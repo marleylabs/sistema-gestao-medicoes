@@ -78,7 +78,7 @@ test("nenhuma rota GET devolve credencial (listagens de fornecedores, funcionár
   const inicio = lista.indexOf("export async function findColaboradorUsuarios");
   const corpo = lista.slice(inicio, lista.indexOf("\n}\n", inicio));
   assert.doesNotMatch(corpo, /senha/i, "DTO do acesso (listagem de fornecedores, lida também por ADMINISTRATIVO) sem credencial");
-  assert.match(corpo, /select: \{ id: true, usuario: true, nome: true, perfil: true, ativo: true, email: true, primeiroLogin: true \}/);
+  assert.match(corpo, /select: \{ id: true, usuario: true, perfil: true, ativo: true, email: true, primeiroLogin: true \}/);
 });
 
 test("tipos de DTO do frontend não carregam senha temporária; a senha de criação vem só da resposta da operação", () => {

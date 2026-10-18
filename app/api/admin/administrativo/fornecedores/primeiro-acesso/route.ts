@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { findColaboradorUsuarios, normalizePersonName } from "@/lib/cadastro-fornecedor";
+import { findColaboradorUsuarios } from "@/lib/cadastro-fornecedor";
 import { decryptSensitive } from "@/lib/encryption";
 import { isUuid } from "@/lib/file-security";
 import { rotateAndSendFirstAccess } from "@/lib/first-access";
@@ -34,14 +34,14 @@ export async function POST(request: NextRequest) {
   const resumo = await processarPrimeiroAcessoEmLote({
     ids: normalizados.ids,
     carregar: async (ids) => {
-      const cadastros = await prisma.cadastroFornecedor.findMany({ where: { id: { in: ids } }, select: { id: true, responsavel: true, email: true } });
-      // Mesmo vínculo fornecedor↔acesso da listagem (por nome normalizado; só COLABORADOR não excluído).
-      const acessos = await findColaboradorUsuarios(cadastros.map((c) => c.responsavel));
+      const cadastros = await prisma.cadastroFornecedor.findMany({ where: { id: { in: ids } }, select: { id: true, responsavel: true, email: true, colaboradorCodigo: true } });
+      // Mesmo vínculo fornecedor↔acesso da listagem (código = login, P0; só COLABORADOR não excluído).
+      const acessos = await findColaboradorUsuarios(cadastros.map((c) => c.colaboradorCodigo));
       const usuarioIds = [...acessos.values()].map((a) => a.id);
       const nomes = new Map((await prisma.usuario.findMany({ where: { id: { in: usuarioIds } }, select: { id: true, nome: true } })).map((u) => [u.id, u.nome]));
       return new Map(
         cadastros.map((c): [string, CadastroPrimeiroAcesso] => {
-          const acesso = acessos.get(normalizePersonName(c.responsavel));
+          const acesso = c.colaboradorCodigo ? acessos.get(c.colaboradorCodigo.trim().toUpperCase()) : undefined;
           return [c.id, {
             id: c.id,
             nome: c.responsavel,

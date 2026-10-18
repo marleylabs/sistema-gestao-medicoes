@@ -48,6 +48,28 @@ async function p0EmUso(tx: Tx, p0: string, exceto?: string) {
   return porCodigo + porAlias > 0;
 }
 
+type ClienteUsuario = Pick<Prisma.TransactionClient, "usuario" | "profissional">;
+const USUARIO_DO_FORNECEDOR = { id: true, usuario: true, nome: true, ativo: true, excluidoAt: true, perfil: true } as const;
+
+/**
+ * Usuário(s) COLABORADOR do fornecedor: o do login igual ao código (P0). Só quando nenhum login é
+ * o código (identidade de antes do P0) e há `nomeLegado`, cai no nome, e nunca no usuário de outro
+ * fornecedor já em P0 (login igual ao código de algum Profissional). Mais de um resultado é
+ * ambiguidade real: o chamador falha fechado.
+ */
+export async function usuariosDoFornecedor(
+  cliente: ClienteUsuario,
+  { codigo, nomeLegado, incluirExcluidos = false }: { codigo: string; nomeLegado?: string | null; incluirExcluidos?: boolean },
+) {
+  const excluido = incluirExcluidos ? {} : { excluidoAt: null };
+  const porLogin = await cliente.usuario.findMany({ where: { perfil: "COLABORADOR", usuario: chaveCodigo(codigo), ...excluido }, select: USUARIO_DO_FORNECEDOR });
+  if (porLogin.length || !nomeLegado) return porLogin;
+  const porNome = await cliente.usuario.findMany({ where: { perfil: "COLABORADOR", nome: { equals: nomeLegado, mode: "insensitive" }, ...excluido }, select: USUARIO_DO_FORNECEDOR });
+  if (!porNome.length) return porNome;
+  const emP0 = new Set((await cliente.profissional.findMany({ where: { codigo: { in: porNome.map((u) => u.usuario) } }, select: { codigo: true } })).map((p) => p.codigo));
+  return porNome.filter((u) => !emP0.has(u.usuario));
+}
+
 /** P0 novo: login livre e que não é código, nome legado nem alias de nenhum Profissional. */
 export async function gerarP0Livre(tx: Tx) {
   for (let tentativa = 0; tentativa < 20; tentativa += 1) {

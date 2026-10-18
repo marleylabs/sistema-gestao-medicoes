@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdministrativo } from "@/lib/admin";
-import { formatCnpj, normalizeCnpjDigits, onlyDigits, serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
+import { formatCnpj, normalizeCnpjDigits, onlyDigits, renomearUsuarioDoFornecedor, serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
 import { validateTipoCondicaoFixaForWrite } from "@/lib/condicao-fixa";
 import { validateFonteMedicaoForWrite } from "@/lib/fonte-medicao";
 import { encryptSensitive } from "@/lib/encryption";
@@ -140,16 +140,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         updatedAt: new Date(),
       },
     });
-    // O nome do usuário fornecedor é o elo com este cadastro (lib/colaborador-alias.ts) e ele não
-    // pode alterá-lo: renomear o responsável renomeia o usuário junto. Com homônimos, não mexe.
+    // Decisão 011: o nome do usuário fornecedor espelha o responsável e só muda por aqui.
     if (anterior.responsavel !== responsavel) {
-      const usuarios = await tx.usuario.findMany({
-        where: { perfil: "COLABORADOR", excluidoAt: null, nome: { equals: anterior.responsavel, mode: "insensitive" } },
-        select: { id: true },
-      });
-      if (usuarios.length === 1) {
-        await tx.usuario.update({ where: { id: usuarios[0].id }, data: { nome: responsavel, updatedAt: new Date() } });
-      }
+      await renomearUsuarioDoFornecedor(tx, cadastro.colaboradorCodigo, responsavel, anterior.responsavel);
     }
     return cadastro;
   });

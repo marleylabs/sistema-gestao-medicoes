@@ -66,7 +66,7 @@ test.describe.serial("Segurança — senha temporária (Redefinir senha)", () =>
       data: { usuario: login, nome: NOME, perfil: "COLABORADOR", ativo: true, primeiroLogin: false, senhaHash: `hash-anterior-${S}`, email: `senha-${S.toLowerCase()}@example.test` },
     });
     usuarioId = u.id;
-    await prisma.cadastroFornecedor.create({ data: { responsavel: NOME, razaoSocial: `${NOME} LTDA`, cnpjNormalizado: `7${String(Date.now()).slice(-13)}` } });
+    await prisma.cadastroFornecedor.create({ data: { colaboradorCodigo: login, responsavel: NOME, razaoSocial: `${NOME} LTDA`, cnpjNormalizado: `7${String(Date.now()).slice(-13)}` } });
   });
 
   test.afterAll(async () => {

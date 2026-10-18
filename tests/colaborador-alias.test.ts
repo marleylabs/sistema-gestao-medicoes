@@ -36,7 +36,8 @@ test("filtro: vazios e repetidos são ignorados", async () => {
 
 const sufixo = `ESCOPO${Date.now()}`;
 const loginA = `P09${String(Date.now()).slice(-6)}`;
-const codigoA = `PA-${sufixo}`;
+// Decisão 012: o código do fornecedor é o login (P0).
+const codigoA = loginA;
 const codigoB = `PB-${sufixo}`;
 const nomeUsuarioA = `FORNECEDOR A ${sufixo}`;
 const homonimo = `HOMONIMO ${sufixo}`;
@@ -140,18 +141,20 @@ async function criarUsuario(login: string, nome: string) {
   await db.usuario.create({ data: { usuario: login, nome, perfil: "COLABORADOR", senhaHash: "x" } });
 }
 
-test("escopo: login que é código de OUTRO Profissional não entra quando o cadastro do usuário não resolve", async () => {
+test("escopo: cadastro de outro fornecedor com o nome do usuário nunca é usado (decisão 012)", async () => {
   const login = `P07${String(Date.now()).slice(-6)}`;
   const nome = `SEM VINCULO ${sufixo}`;
   await criarUsuario(login, nome);
-  await db.cadastroFornecedor.create({ data: { cnpjNormalizado: "11222333000181", colaboradorCodigo: `NAORES-${sufixo}`, responsavel: nome, razaoSocial: "X" } });
-  await db.profissional.create({ data: { codigo: login, nome: `DONO DO LOGIN ${sufixo}` } });
+  await db.cadastroFornecedor.create({ data: { cnpjNormalizado: "11222333000181", colaboradorCodigo: `OUTRO-${sufixo}`, responsavel: nome, razaoSocial: "X" } });
+  await db.profissional.create({ data: { codigo: `OUTRO-${sufixo}`, nome: `OUTRO DONO ${sufixo}` } });
   try {
-    assert.ok(!(await getColaboradorCodigoAliases(login, ciclo)).includes(login));
+    const escopo = await getColaboradorEscopo(login, ciclo);
+    assert.deepEqual({ cadastroId: escopo.cadastroId, profissionalId: escopo.profissionalId }, { cadastroId: null, profissionalId: null });
+    assert.deepEqual(escopo.aliases, [login]);
   } finally {
     await db.cadastroFornecedor.deleteMany({ where: { responsavel: nome } });
     await db.usuario.deleteMany({ where: { usuario: login } });
-    await db.profissional.deleteMany({ where: { codigo: login } });
+    await db.profissional.deleteMany({ where: { codigo: `OUTRO-${sufixo}` } });
   }
 });
 

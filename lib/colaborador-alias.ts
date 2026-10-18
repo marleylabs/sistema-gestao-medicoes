@@ -8,8 +8,8 @@ import { filtrarAliasesDaIdentidade } from "@/lib/colaborador-alias-filtro";
 
 /**
  * Valores (códigos, nomes, aliases) que delimitam os dados do fornecedor logado. Regra da spec
- * docs/brain/specs/p1-escopo-fornecedor-por-identidade.md: a identidade vem do cadastro do usuário
- * (login ou nome exato, falhando fechado) e só entra na lista o valor que o resolver oficial liga ao
+ * docs/brain/specs/p1-escopo-fornecedor-por-identidade.md: a identidade vem do cadastro cujo código é
+ * o login (P0, decisão 012; falha fechado) e só entra na lista o valor que o resolver oficial liga ao
  * MESMO Profissional — nunca CNPJ, nunca nome parecido, nunca a linha inteira do mapa.
  */
 export async function getColaboradorCodigoAliases(usuario: string | null | undefined, ciclo?: string | null) {
@@ -28,18 +28,13 @@ export async function getColaboradorEscopo(
   if (!usuario || !login) return { aliases: [], profissionalId: null, cadastroId: null };
   const usuarioUpper = usuario.trim().toUpperCase();
 
-  const usuarioDb = await prisma.usuario.findUnique({ where: { usuario: usuarioUpper }, select: { nome: true } });
+  // P0 é o único ID do fornecedor (decisão 012): o cadastro é o do código igual ao login, nunca pelo nome.
   const cadastroCandidates = await prisma.cadastroFornecedor.findMany({
-    where: {
-      OR: [
-        { colaboradorCodigo: usuarioUpper },
-        ...(usuarioDb?.nome ? [{ responsavel: { equals: usuarioDb.nome, mode: "insensitive" as const } }] : []),
-      ],
-    },
+    where: { colaboradorCodigo: { equals: usuarioUpper, mode: "insensitive" } },
     select: { id: true, colaboradorCodigo: true, responsavel: true, cnpjNormalizado: true },
     orderBy: { updatedAt: "desc" },
   });
-  const cadastro = selectCadastroForAuthenticatedUser(cadastroCandidates, usuario, usuarioDb?.nome).cadastro;
+  const cadastro = selectCadastroForAuthenticatedUser(cadastroCandidates, usuario).cadastro;
   const cadastroId = cadastro?.id ?? null;
 
   // O login é a identidade da sessão, mas só entra na lista se não for código/alias de nenhum

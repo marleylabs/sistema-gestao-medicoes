@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findColaboradorUsuarios, importCadastrosFornecedores, normalizePersonName, serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
+import { findColaboradorUsuarios, importCadastrosFornecedores, serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
 import { requireAdministrativo } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { jsonNoStore } from "@/lib/no-store";
@@ -15,13 +15,13 @@ export async function GET(request: NextRequest) {
     orderBy: [{ responsavel: "asc" }],
   });
 
-  // Vínculo fornecedor↔acesso é por nome (não há FK real) — resolvido em lote para não fazer N+1.
-  const acessos = await findColaboradorUsuarios(cadastros.map((c) => c.responsavel));
+  // Vínculo fornecedor↔acesso pelo código = login (P0, decisão 012) — resolvido em lote, sem N+1.
+  const acessos = await findColaboradorUsuarios(cadastros.map((c) => c.colaboradorCodigo));
 
   return NextResponse.json(
     cadastros.map((cadastro) => ({
       ...serializeCadastroFornecedor(cadastro),
-      acesso: acessos.get(normalizePersonName(cadastro.responsavel)) ?? null,
+      acesso: (cadastro.colaboradorCodigo && acessos.get(cadastro.colaboradorCodigo.trim().toUpperCase())) || null,
     })),
   );
 }

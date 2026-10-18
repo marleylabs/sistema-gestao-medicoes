@@ -7,7 +7,7 @@ import { prismaTest as db, assertConnectedToE2eDatabase } from "../lib/prisma-te
 const sufixo = `MIGP0${Date.now()}`;
 const n = String(Date.now()).slice(-5);
 const login = (letra: number) => `P07${letra}${n}`;
-const L = { A: login(1), B: login(2), C: login(3), D: login(4), F1: login(5), F2: login(6), G: login(7), I: login(8), ADM: login(9) };
+const L = { A: login(1), B: login(2), C: login(3), D: login(4), F1: login(5), F2: login(6), G: login(7), I: login(8), ADM: login(9), J: login(0) };
 const codigo = (x: string) => `${x} ${sufixo}`;
 const ciclo = `28${n.slice(-2)}`;
 type Modulo = typeof import("../lib/migracao-codigo-p0");
@@ -80,6 +80,10 @@ before(async () => {
   await db.bmAuxMedicao.create({ data: { responsavelCodigo: codigo("G"), ciclo, valorMedicao: "123.4567", sourceRowHash: `${sufixo}-aux` } });
   await db.sgcLog.create({ data: { sgcId: sgc.id, colaboradorCodigo: codigo("G"), ciclo, acao: "TESTE" } });
   await db.mapaPagamentoItem.create({ data: { ciclo, ordem: 3, projetistaCodigo: codigo("G"), sourceRowHash: `${sufixo}-g` } });
+  // J: fornecedor inativo (cadastro e usuário inativos) também migra.
+  await db.profissional.create({ data: { codigo: codigo("J"), nome: codigo("J") } });
+  await fornecedor(L.J, `NOME J ${sufixo}`, codigo("J"));
+  await db.usuario.update({ where: { usuario: L.J }, data: { ativo: false } });
   // Profissional sem login.
   await db.profissional.create({ data: { codigo: codigo("SEM"), nome: codigo("SEM") } });
 
@@ -127,6 +131,10 @@ test("dry-run P0: dois logins para o mesmo Profissional são CONFLITO", () => {
 
 test("dry-run P0: código antigo que já é alias de outro Profissional é CONFLITO", () => {
   assert.deepEqual([doLogin(L.I)?.classe, doLogin(L.I)?.motivo], ["CONFLITO", "ALIAS_EM_USO"]);
+});
+
+test("dry-run P0: fornecedor inativo também é MIGRAVEL", () => {
+  assert.equal(doLogin(L.J)?.classe, "MIGRAVEL");
 });
 
 test("dry-run P0: conta Profissionais sem login", () => {
