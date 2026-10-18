@@ -30,7 +30,7 @@ Dependência só para baixo: M2, M3 e M4 dependem de M1 e não dependem entre si
 | M3 | Painéis dos setores | Planejamento, Administrativo e Financeiro: cabeçalhos animados, drawers e modais com transição, ajustes de hierarquia | M1 |
 | M4 | Portal do fornecedor | Telas do COLABORADOR com o mesmo padrão | M1 |
 
-Esta spec detalha o M1 e o M2. M3 e M4 ganham uma seção própria quando começarem.
+Esta spec detalha o M1, o M2 e o M3. O M4 ganha uma seção própria quando começar.
 
 ## M1: Fundação
 
@@ -157,6 +157,70 @@ Pronto quando:
   - o `DashboardKpiCard` tem `motion-reduce` no hover.
 - O E2E existente cobre o login e o dashboard (`data-testid="evolution-data-label"` precisa continuar existindo).
 - Conferência no navegador: login e dashboard nos dois temas; contador e cascata ao trocar para o dashboard e ao trocar o ciclo.
+
+## M3: Painéis dos setores (aprovada em 2026-10-18)
+
+Decisões do usuário em 2026-10-18:
+- Escopo: Fornecedores (Planejamento), Administrativo, Financeiro, Evidências e Histórico.
+- Painéis laterais e modais com animação de entrada e de saída.
+- Extras: abas com indicador deslizante, toasts animados, skeletons padronizados e realce da linha aberta.
+
+Pronto quando:
+- todo painel lateral e todo modal desses painéis entra e sai com animação nos dois temas;
+- com motion reduzido, abre e fecha na hora;
+- durante a saída, o overlay não bloqueia cliques;
+- `tsc`, `test:targeted` e E2E completo passam.
+
+### 1. Painel lateral (`components/administrativo/admin-side-panel.tsx`, 12 usos)
+- **Entrada e saída:**
+  - o painel desliza da direita (`x: 100%` → `0`, cerca de 280 ms, ease-out) e o overlay faz fade, com `motion.div` dentro do próprio `AdminSidePanel`;
+  - a saída é mais rápida (cerca de 180 ms) e exige `AnimatePresence` em volta de cada ponto que abre o painel (`{aberto && <X />}`), pois o React remove o componente na hora;
+  - os pontos de uso são `administrativo/detalhes.tsx`, `fornecedor-editor.tsx`, `importar-panel.tsx`, `evidencia-drawer.tsx`, `financeiro-drawer.tsx`, `gerenciar-ciclos.tsx`, `historico/drawers.tsx` e `minhas-medicoes.tsx` (este último é do M4 e entra junto por ser o mesmo componente).
+- `components/fornecedores/fornecedor-drawer.tsx` tem implementação própria e recebe o mesmo tratamento (ou passa a usar o `AdminSidePanel`, se o layout permitir sem mudar o conteúdo).
+- **Durante a saída:** o overlay e o painel ficam com `pointer-events-none`, para um clique logo após fechar não ser interceptado (isso protege o E2E, que clica na sequência).
+- O foco, o Esc e o `aria-modal` continuam como hoje.
+
+### 2. Modais (`ds-dialog`, cerca de 15 pontos em 10 arquivos)
+- Um componente novo, `Modal` em `components/ui.tsx`, junta o que cada arquivo repete: overlay `fixed inset-0` com `bg-black/40`, contêiner `ds-dialog`, `role`/`aria-modal`/`aria-labelledby` e as animações (`motion`; escala 0.97 → 1 e fade na entrada, cerca de 200 ms; saída de cerca de 140 ms).
+- Os pontos atuais passam a usar o `Modal`, com `AnimatePresence` onde abrem. A classe `starting:` do M1 sai desses pontos.
+- O conteúdo, os botões, os textos, os `data-testid` e o comportamento ficam iguais; muda só o invólucro.
+
+### 3. Abas com indicador (`role="tablist"`)
+- Financeiro (status), Administrativo (tipo de cadastro) e Histórico (perspectiva): a aba ativa ganha um sublinhado que desliza entre as abas (`motion.span` com `layoutId` próprio de cada lista).
+- O `aria-selected` e o teclado continuam como hoje.
+
+### 4. Toasts
+- Um componente, `Toast` em `components/ui.tsx` (`role="status"`, `aria-live="polite"`, tom sucesso/erro com os tokens), com entrada por slide de baixo + fade e saída por fade, via `AnimatePresence`.
+- Substitui os toasts fixos de `administrativo-panel.tsx`, `financeiro-panel.tsx` e `fornecedores/index.tsx`.
+- O aviso em linha de `importacao/identidades-pendentes.tsx` continua em linha, mas entra com fade.
+- O texto das mensagens e o tempo de exibição não mudam.
+
+### 5. Skeletons
+- Um componente, `Skeleton` em `components/ui.tsx` (bloco `animate-pulse` em `--surface-hover`, `aria-hidden`), e um contêiner de carregamento com `role="status"` e o texto atual em `sr-only`.
+- Troca os "Carregando…" com spinner por linhas de skeleton nas listas dos cinco painéis e nos painéis laterais (BM, divergências).
+- **Os textos atuais continuam no DOM** (`sr-only`), porque o E2E espera `getByText("Carregando cadastros...")` sumir antes de agir. Sem o texto, a espera passaria na hora e criaria instabilidade.
+- O ícone de recarregar (`RefreshCw` com `animate-spin`) fica como está.
+
+### 6. Realce da linha aberta
+- Nas tabelas de Fornecedores, Administrativo, Financeiro, Evidências e Histórico, a linha cujo detalhe está aberto fica com `bg-[var(--primary-soft)]` e uma borda à esquerda na cor primária (`shadow-[inset_3px_0_0_var(--primary)]`), com `transition-colors`.
+- Marcar com `aria-selected` quando a tabela já for interativa; senão, `data-aberta` só para o estilo.
+- Ao fechar o painel, o realce sai com a mesma transição.
+
+### Fora do escopo do M3
+- O portal do fornecedor (M4), exceto o `AdminSidePanel` e o `Modal`, que são compartilhados.
+- Mudar textos, ordem de colunas, filtros ou regras.
+- Animar linhas de tabela na entrada (regra da spec: tabelas sem animação de entrada).
+
+### Testes do M3
+- Guardas em `tests/tema-tokens.test.ts`:
+  - o `AdminSidePanel`, o `FornecedorDrawer` e o `Modal` têm `exit` e ficam `inert` na saída (sem clique, teclado nem leitor de tela; correção da revisão do M3, que antes usava só `pointer-events-none`);
+  - nenhum `ds-dialog` fora do `Modal`, e todo `<Modal>` tem nome acessível (`rotuloId` ou `rotulo`);
+  - todo ponto que renderiza `AdminSidePanel`/`Modal`/`FornecedorDrawer` condicionalmente está dentro de `AnimatePresence`;
+  - os toasts usam o `Toast`;
+  - as 3 listas de abas usam `layoutId`;
+  - os textos "Carregando…" atuais continuam presentes.
+- O E2E existente cobre abrir e fechar painéis e modais, os toasts e as abas, com motion reduzido. `e2e/motion-saida.spec.ts` liga o motion e confere que o modal e o painel ficam inertes durante a saída.
+- Conferência no navegador: abrir e fechar cada painel e cada modal nos dois temas; clicar logo após fechar; trocar abas; ver um toast; carregar uma lista.
 
 ## Comandos
 - Tipos: `npx tsc --noEmit`

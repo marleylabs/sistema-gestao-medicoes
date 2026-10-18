@@ -49,6 +49,9 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "off",
+    // Todo o motion do app respeita prefers-reduced-motion: os specs medem o estado final, sem corrida
+    // com animação (ex.: posição do painel lateral no meio da entrada). A animação tem guarda em tests/tema-tokens.test.ts.
+    contextOptions: { reducedMotion: "reduce" },
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },

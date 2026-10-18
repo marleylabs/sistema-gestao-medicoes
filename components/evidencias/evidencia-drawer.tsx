@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ArrowUpRight, FileText } from "lucide-react";
-import { Badge, BlurValue, Button } from "@/components/ui";
+import { Badge, BlurValue, Button, Carregando } from "@/components/ui";
 import type { BmData } from "@/components/boletim-medicao";
 import { ComposicaoBoletim } from "@/components/boletim-resumo";
 import { AdminSidePanel, DataItem, PanelSection } from "@/components/administrativo/admin-side-panel";
@@ -86,13 +86,13 @@ export function EvidenciaDrawer({
 
       <PanelSection title="Composição do BM">
         {bmErro ? <p className="text-sm text-[var(--error)]">{bmErro}</p>
-          : !bm ? <p className="text-sm text-[var(--muted-foreground)]">Carregando composição do BM…</p>
+          : !bm ? <Carregando texto="Carregando composição do BM…" linhas={4} altura="h-6" />
           : <ComposicaoBoletim bm={bm} testId="evidencia-composicao" />}
       </PanelSection>
 
       <PanelSection title={`Divergências${pendentes ? ` · ${pendentes} pendente(s)` : ""}`}>
         <div data-testid="evidencia-divergencias">
-          {divergencias === null ? <p className="text-sm text-[var(--muted-foreground)]">Carregando divergências…</p>
+          {divergencias === null ? <Carregando texto="Carregando divergências…" anunciar={false} linhas={2} altura="h-6" />
             : divErro ? <p className="text-sm text-[var(--muted-foreground)]">Não foi possível carregar as divergências.</p>
             : divergencias.length === 0 ? <p className="text-sm text-[var(--muted-foreground)]">Nenhuma divergência registrada na conferência do fornecedor.</p>
             : (
@@ -107,7 +107,7 @@ export function EvidenciaDrawer({
       </PanelSection>
 
       <PanelSection title={`Documentos medidos${documentos.length ? ` · ${documentos.length}` : ""}`}>
-        {!bm ? <p className="text-sm text-[var(--muted-foreground)]">{bmErro ? "Sem documentos para exibir." : "Carregando documentos…"}</p>
+        {!bm ? bmErro ? <p className="text-sm text-[var(--muted-foreground)]">Sem documentos para exibir.</p> : <Carregando texto="Carregando documentos…" anunciar={false} linhas={3} altura="h-6" />
           : documentos.length === 0 ? <p className="text-sm text-[var(--muted-foreground)]">Nenhum documento medido neste BM.</p>
           : (
             <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]" data-testid="evidencia-documentos">

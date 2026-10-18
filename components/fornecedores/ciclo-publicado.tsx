@@ -1,8 +1,9 @@
 "use client";
 
+import { AnimatePresence } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { Globe2 } from "lucide-react";
-import { Button, Select } from "@/components/ui";
+import { Button, Modal, Select } from "@/components/ui";
 import { formatCicloLabel } from "@/lib/ciclo";
 
 export type CicloPortalEntry = { ciclo: string; mesReferencia: string | null; ativoMedicao?: boolean };
@@ -104,9 +105,9 @@ export function CicloPublicadoControl({
         )}
       </div>
 
+      <AnimatePresence>
       {aberto && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-          <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[440px] sm:max-w-[90vw]" role="alertdialog" aria-modal="true" aria-label="Publicar ciclo no portal">
+        <Modal key="publicar-ciclo" role="alertdialog" rotulo="Publicar ciclo no portal" className="flex w-full flex-col overflow-hidden sm:w-[440px] sm:max-w-[90vw]">
             <div className="border-b border-[var(--border)] px-5 py-4">
               <h2 className="text-sm font-bold text-[var(--foreground)]">{novo ? `Publicar ciclo ${novo}?` : "Publicar ciclo"}</h2>
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
@@ -130,9 +131,9 @@ export function CicloPublicadoControl({
               <Button variant="secondary" onClick={() => setAberto(false)} disabled={publicando}>Cancelar</Button>
               <Button onClick={publicar} disabled={publicando || !novo}>{publicando ? "Publicando..." : "Publicar ciclo"}</Button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
+      </AnimatePresence>
     </>
   );
 }

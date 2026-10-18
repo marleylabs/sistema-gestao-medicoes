@@ -173,15 +173,6 @@ test("shell anima a troca de seção sem remontar o conteúdo e desliza o item a
   assert.match(shell, /layoutId=/);
 });
 
-test("todo ds-dialog tem animação de entrada só com classes (starting:)", () => {
-  for (const arquivo of fontes("components")) {
-    for (const m of read(arquivo).matchAll(/["`][^"`\n]*\bds-dialog\b[^"`\n]*["`]/g)) {
-      assert.match(m[0], /starting:opacity-0/, `${arquivo}: ds-dialog sem animação de entrada`);
-      assert.match(m[0], /motion-reduce:transition-none/, `${arquivo}: ds-dialog sem motion-reduce`);
-    }
-  }
-});
-
 /** M2 — login (T2). */
 
 test("login: seletor de tema, entrada só em CSS, painel decorativo e erro com tokens de erro", () => {
@@ -265,7 +256,9 @@ test("dashboard: gráficos sem cor fixa nem estilo inline, linha animada só sem
 test("motion.tsx: CountUp sem re-render por frame e Stagger só depois da hidratação", () => {
   const motion = read("components/motion.tsx");
   for (const nome of ["Stagger", "StaggerItem", "CountUp"]) assert.match(motion, new RegExp(`export function ${nome}\\b`));
-  const countUp = motion.slice(motion.indexOf("export function CountUp"));
+  const inicioCountUp = motion.indexOf("export function CountUp");
+  const fimCountUp = motion.indexOf("\nexport function", inicioCountUp + 1);
+  const countUp = motion.slice(inicioCountUp, fimCountUp === -1 ? undefined : fimCountUp);
   assert.match(countUp, /useMotionValue\(/);
   assert.match(countUp, /useTransform\(/);
   assert.doesNotMatch(countUp, /useState\(/, "setState por frame re-renderiza o card inteiro");
@@ -295,4 +288,166 @@ test("login: brilho só anima visível; botão de tema diz para qual tema vai e 
   assert.match(login, /`Tema: \$\{rotulo\}\. Mudar para \$\{rotuloProximo\}`/);
   assert.match(login, /aria-label=\{descricao\}/);
   assert.match(login, /h-10 w-10/);
+});
+
+/** M3 — painel lateral com entrada e saída (T1). */
+
+test("painéis laterais: saída animada sem bloquear clique e entrada só quando nada estava aberto", () => {
+  const motion = read("components/motion.tsx");
+  assert.match(motion, /export function usePainelSobreposto\(/);
+  assert.match(motion, /useIsPresent\(\)/);
+  for (const arquivo of ["components/administrativo/admin-side-panel.tsx", "components/fornecedores/fornecedor-drawer.tsx"]) {
+    const fonte = read(arquivo);
+    assert.match(fonte, /usePainelSobreposto\(\)/, arquivo);
+    assert.match(fonte, /inert={!presente}/, `${arquivo}: painel saindo precisa ficar inerte (mouse, teclado e leitor de tela)`);
+    assert.match(fonte, /\{\.\.\.fundo\}/, arquivo);
+    assert.match(fonte, /\{\.\.\.painel\}/, arquivo);
+  }
+  assert.match(motion.slice(motion.indexOf("export function usePainelSobreposto")), /exit: \{ x: "100%"/);
+});
+
+test("todo ponto que abre painel lateral está dentro de AnimatePresence", () => {
+  const pontos: Record<string, RegExp> = {
+    "components/administrativo-panel.tsx": /<(FornecedorDetalhe|FuncionarioDetalhe|FornecedorEditor|FuncionarioCreatePanel|ImportarConsultaPanel)\b/,
+    "components/evidencias/evidencias-workspace.tsx": /<EvidenciaDrawer\b/,
+    "components/financeiro-panel.tsx": /<FinanceiroDrawer\b/,
+    "components/fornecedores/index.tsx": /<(FornecedorDrawer|MapaPagamentoEditor|GerenciarCiclosPanel)\b/,
+    "components/historico/historico-workspace.tsx": /<(MedicaoDrawer|FornecedorHistoricoDrawer|ContratoHistoricoDrawer)\b/,
+  };
+  for (const [arquivo, painel] of Object.entries(pontos)) {
+    const fonte = read(arquivo);
+    for (const m of fonte.matchAll(new RegExp(painel, "g"))) {
+      const antes = fonte.slice(0, m.index);
+      const abertos = (antes.match(/<AnimatePresence\b/g) ?? []).length;
+      const fechados = (antes.match(/<\/AnimatePresence>/g) ?? []).length;
+      assert.ok(abertos > fechados, `${arquivo}: ${m[0]} fora de AnimatePresence`);
+    }
+  }
+});
+
+/** M3 — Modal único (T2). */
+
+test("modais: um só invólucro (Modal) com saída animada sem bloquear clique", () => {
+  const ui = read("components/ui.tsx");
+  const inicio = ui.indexOf("export function Modal(");
+  assert.ok(inicio > -1, "ui.tsx exporta Modal");
+  const modal = ui.slice(inicio, ui.indexOf("\nexport function", inicio + 1) === -1 ? undefined : ui.indexOf("\nexport function", inicio + 1));
+  assert.match(modal, /ds-dialog/);
+  assert.match(modal, /useIsPresent\(\)/);
+  assert.match(modal, /inert={!presente}/);
+  assert.match(modal, /exit=\{/);
+  for (const arquivo of fontes("components")) {
+    if (arquivo === "components/ui.tsx") continue;
+    assert.doesNotMatch(read(arquivo), /["`][^"`\n]*\bds-dialog\b/, `${arquivo}: ds-dialog fora do Modal`);
+    for (const uso of read(arquivo).match(/<Modal\b[^>]*>/g) ?? []) assert.match(uso, /\brotulo(Id)?=/, `${arquivo}: Modal sem nome acessível (rotuloId ou rotulo)`);
+  }
+  // Os três visualizadores de BM dos painéis internos usam o mesmo Modal de tela inteira.
+  for (const arquivo of ["components/financeiro-panel.tsx", "components/evidencias/evidencias-workspace.tsx", "components/historico/historico-workspace.tsx"]) {
+    assert.match(read(arquivo), /<Modal key="boletim" variante="tela" rotulo="Boletim de Medição"/, arquivo);
+  }
+});
+
+/** M3 — abas com indicador (T3). */
+
+test("abas: as 3 listas usam Aba com layoutId próprio e nenhum botão role=tab solto", () => {
+  const ui = read("components/ui.tsx");
+  const aba = ui.slice(ui.indexOf("export function Aba("), ui.indexOf("export function Modal("));
+  assert.match(aba, /role="tab"/);
+  assert.match(aba, /aria-selected=\{ativa\}/);
+  assert.match(aba, /layoutId=\{grupo\}/);
+  const grupos = new Set<string>();
+  for (const arquivo of ["components/financeiro-panel.tsx", "components/administrativo-panel.tsx", "components/historico/historico-workspace.tsx"]) {
+    const fonte = read(arquivo);
+    assert.doesNotMatch(fonte, /role="tab"/, `${arquivo}: aba fora do componente Aba`);
+    const grupo = fonte.match(/<Aba [^>]*grupo="([^"]+)"/)?.[1];
+    assert.ok(grupo, `${arquivo}: usa <Aba grupo=…>`);
+    grupos.add(grupo);
+  }
+  assert.equal(grupos.size, 3, "cada lista tem o próprio layoutId");
+});
+
+/** M3 — Toast (T4). */
+
+test("toasts: um só componente (Toast) com entrada e saída; aviso de identidades com fade", () => {
+  const ui = read("components/ui.tsx");
+  const toast = ui.slice(ui.indexOf("export function Toast("), ui.indexOf("export function Modal("));
+  assert.match(toast, /<AnimatePresence>/);
+  // Região viva sempre montada, fora do AnimatePresence: só o texto entra e sai.
+  assert.match(toast, /<div role="status" aria-live="polite">\s*<AnimatePresence>/);
+  assert.match(toast, /exit=\{/);
+  for (const arquivo of fontes("components")) {
+    if (arquivo === "components/ui.tsx") continue;
+    assert.doesNotMatch(read(arquivo), /fixed bottom-5 right-5 z-\[(60|80)\] rounded-lg/, `${arquivo}: toast fora do Toast`);
+  }
+  for (const arquivo of ["components/administrativo-panel.tsx", "components/financeiro-panel.tsx", "components/fornecedores/index.tsx"]) {
+    assert.match(read(arquivo), /<Toast mensagem=/, arquivo);
+  }
+  assert.equal(read("components/importacao/identidades-pendentes.tsx").match(/role="status"/g)?.length, read("components/importacao/identidades-pendentes.tsx").match(/starting:opacity-0[^"]*" role="status"/g)?.length);
+});
+
+/** M3 — Skeleton (T5). */
+
+test("carregamentos: Skeleton/Carregando nos painéis, com o texto em sr-only e role=status", () => {
+  const ui = read("components/ui.tsx");
+  const carregando = ui.slice(ui.indexOf("export function Carregando("), ui.indexOf("// ─── Toast"));
+  assert.match(carregando, /role=\{anunciar \? "status" : undefined\}/);
+  // Um só anúncio por painel: os carregamentos secundários do painel de Evidências ficam mudos.
+  const drawer = read("components/evidencias/evidencia-drawer.tsx");
+  assert.equal((drawer.match(/<Carregando /g)?.length ?? 0) - (drawer.match(/anunciar={false}/g)?.length ?? 0), 1);
+  assert.match(carregando, /className="sr-only">\{texto\}/);
+  assert.match(ui, /animate-pulse[^"]*motion-reduce:animate-none/);
+  // O E2E espera "Carregando cadastros..." sumir: o texto continua no código, agora lido só pelo leitor de tela.
+  assert.match(read("components/administrativo-panel.tsx"), /<Carregando texto="Carregando cadastros\.\.\."/);
+  for (const arquivo of [
+    "components/administrativo-panel.tsx", "components/financeiro-panel.tsx", "components/historico/historico-workspace.tsx",
+    "components/evidencias/evidencias-workspace.tsx", "components/historico/drawers.tsx", "components/financeiro/financeiro-drawer.tsx",
+    "components/evidencias/evidencia-drawer.tsx", "components/dashboard-pilot/index.tsx",
+  ]) {
+    const fonte = read(arquivo);
+    assert.doesNotMatch(fonte, />\s*Carregando[^<{]*</, `${arquivo}: carregamento em texto solto`);
+    assert.doesNotMatch(fonte, /animate-pulse/, `${arquivo}: skeleton fora do componente`);
+  }
+});
+
+/** M3 — realce da linha aberta (T6). */
+
+test("tabelas: a linha do item aberto fica realçada (classeLinha + data-aberta) nas 5 listas", () => {
+  const ui = read("components/ui.tsx");
+  const linha = ui.slice(ui.indexOf("export function classeLinha("), ui.indexOf("// ─── Aba"));
+  assert.match(linha, /\? "bg-\[var\(--primary-soft\)\] shadow-\[inset_3px_0_0_var\(--primary\)\] /);
+  // A linha aberta perde o fundo de foco; o anel mantém o foco visível (WCAG 2.4.7).
+  assert.match(linha, /focus-visible:shadow-\[inset_3px_0_0_var\(--primary\),inset_0_0_0_2px_var\(--primary\)\]/);
+  const tabelas = {
+    "components/administrativo/listagem.tsx": 2,
+    "components/financeiro/financeiro-table.tsx": 1,
+    "components/historico/listas.tsx": 1,
+    "components/evidencias/evidencias-workspace.tsx": 1,
+    "components/fornecedores/fornecedores-table.tsx": 1,
+  };
+  for (const [arquivo, linhas] of Object.entries(tabelas)) {
+    const fonte = read(arquivo);
+    assert.equal(fonte.match(/classeLinha\(/g)?.length, linhas, `${arquivo}: linhas com classeLinha`);
+    assert.equal(fonte.match(/data-aberta=\{/g)?.length, linhas, `${arquivo}: linhas com data-aberta`);
+  }
+  // Os pais passam o item aberto para a lista.
+  assert.match(read("components/administrativo-panel.tsx"), /abertoId=\{painel\?\.tipo === "fornecedor" \? painel\.id : null\}/);
+  assert.match(read("components/financeiro-panel.tsx"), /abertoId=\{detalheId\}/);
+  assert.match(read("components/fornecedores/index.tsx"), /abertoId=\{detalheId\}/);
+  assert.match(read("components/evidencias/evidencias-workspace.tsx"), /abertaKey=\{aberta\?\.key \?\? null\}/);
+  assert.equal(read("components/historico/historico-workspace.tsx").match(/aberto=\{painel\?\.tipo === /g)?.length, 3);
+});
+
+/** Visualizador do BM: fechar durante o carregamento não reabre (e2e/bm-fechar-carregando.spec.ts). */
+
+test("visualizador do BM: os três painéis usam useVisualizadorBm, que descarta resposta de BM fechado", () => {
+  const hook = read("components/boletim-medicao.tsx");
+  const corpo = hook.slice(hook.indexOf("export function useVisualizadorBm("), hook.indexOf("// ─── BoletimMedicao"));
+  assert.match(corpo, /if \(id === pedido\.current\) setBm\(estado\)/);
+  assert.match(corpo, /function fechar\(\) \{\s*pedido\.current\+\+;/);
+  for (const arquivo of ["components/historico/historico-workspace.tsx", "components/evidencias/evidencias-workspace.tsx", "components/financeiro-panel.tsx"]) {
+    const fonte = read(arquivo);
+    assert.match(fonte, /useVisualizadorBm\(/, arquivo);
+    assert.doesNotMatch(fonte, /fetch\(`\/api\/admin\/bm/, `${arquivo}: carregador de BM próprio`);
+    assert.match(fonte, /<IconButton onClick=\{fecharBm\} title="Fechar boletim">/, arquivo);
+  }
 });

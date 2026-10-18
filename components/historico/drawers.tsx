@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft, ChevronRight, FileText } from "lucide-react";
-import { Badge, BlurValue, Button } from "@/components/ui";
+import { Badge, BlurValue, Button, Carregando } from "@/components/ui";
 import { formatParticipacao } from "@/components/mapa-pagamento-table";
 import type { BmData } from "@/components/boletim-medicao";
 import { ComposicaoBoletim } from "@/components/boletim-resumo";
@@ -127,14 +127,14 @@ export function MedicaoDrawer({
 
       <PanelSection title="Composição do BM">
         {bmErro ? <p className="text-sm text-[var(--error)]">{bmErro}</p> : !bm ? (
-          <p className="text-sm text-[var(--muted-foreground)]">Carregando composição do BM…</p>
+          <Carregando texto="Carregando composição do BM…" linhas={4} altura="h-6" />
         ) : (
           <ComposicaoBoletim bm={bm} testId="historico-composicao" />
         )}
       </PanelSection>
 
       <PanelSection title="Nota fiscal e pagamento">
-        {fin === undefined ? <p className="text-sm text-[var(--muted-foreground)]">Carregando…</p> : fin === null ? (
+        {fin === undefined ? <Carregando texto="Carregando…" anunciar={false} linhas={2} altura="h-6" /> : fin === null ? (
           <p className="text-sm text-[var(--muted-foreground)]">Esta medição ainda não chegou à etapa financeira.</p>
         ) : (
           <div className="grid gap-3">

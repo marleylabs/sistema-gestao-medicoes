@@ -94,10 +94,12 @@ test("aprovação continua sendo a ação ENVIAR, com SALVAR antes, sem window.c
 
 test("portal: diálogos acessíveis e nenhuma terminologia interna", () => {
   const ui = readSource("components/portal-fornecedor.tsx");
-  assert.match(ui, /role=\{role\}/);
+  // O invólucro do diálogo é o Modal (components/ui.tsx): o portal passa role e título, o Modal aplica os atributos.
+  assert.match(ui, /<Modal role=\{role\} rotuloId=\{`\$\{id\}-titulo`\}/);
   assert.match(ui, /role="alertdialog"/);
-  assert.match(ui, /aria-modal="true"/);
-  assert.match(ui, /aria-labelledby=\{`\$\{id\}-titulo`\}/);
+  const modal = readSource("components/ui.tsx");
+  assert.match(modal, /aria-modal="true"/);
+  assert.match(modal, /aria-labelledby=\{rotuloId\}/);
   assert.match(ui, /htmlFor=\{campoId\}/);
   assert.match(ui, /aria-expanded=\{aberto\}/);
   assert.doesNotMatch(ui, /diverg/i);

@@ -1,9 +1,10 @@
 "use client";
 
+import { AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { AdminSidePanel } from "@/components/administrativo/admin-side-panel";
-import { Badge, Button, IconButton } from "@/components/ui";
+import { Badge, Button, IconButton, Modal } from "@/components/ui";
 import { formatCicloLabel } from "@/lib/ciclo";
 
 export type CicloGestaoEntry = { ciclo: string; mesReferencia: string | null; ativoMedicao?: boolean; updatedAt?: string };
@@ -145,8 +146,9 @@ export function GerenciarCiclosPanel({
         </div>
       </AdminSidePanel>
 
+      <AnimatePresence>
       {excluindo && (
-        <ConfirmarExclusao
+        <ConfirmarExclusao key="confirmar-exclusao"
           ciclo={excluindo}
           confirmando={confirmando}
           erro={erroExclusao}
@@ -154,6 +156,7 @@ export function GerenciarCiclosPanel({
           onConfirm={confirmarExclusao}
         />
       )}
+      </AnimatePresence>
     </>
   );
 }
@@ -178,8 +181,7 @@ function ConfirmarExclusao({
     return () => document.removeEventListener("keydown", onKey);
   }, [confirmando, onCancel]);
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[440px] sm:max-w-[90vw]" role="alertdialog" aria-modal="true" aria-label="Excluir ciclo">
+    <Modal role="alertdialog" rotulo="Excluir ciclo" className="flex w-full flex-col overflow-hidden sm:w-[440px] sm:max-w-[90vw]">
         <div className="border-b border-[var(--border)] px-5 py-4">
           <h2 className="text-sm font-bold text-[var(--foreground)]">Excluir o ciclo {ciclo}?</h2>
           <p className="mt-1 text-xs text-[var(--muted-foreground)]">
@@ -191,7 +193,6 @@ function ConfirmarExclusao({
           <Button variant="secondary" onClick={onCancel} disabled={confirmando}>Cancelar</Button>
           <Button variant="danger" onClick={onConfirm} disabled={confirmando}>{confirmando ? "Excluindo..." : "Excluir ciclo"}</Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { Badge, BlurValue } from "@/components/ui";
+import { Badge, BlurValue, classeLinha } from "@/components/ui";
 import { currency, fmtDate, mesmoTexto, statusInfo, valorAPagar, type FinanceiroItem } from "@/components/financeiro/shared";
 
 function NotaFiscalCell({ item }: { item: FinanceiroItem }) {
@@ -18,7 +18,7 @@ function NotaFiscalCell({ item }: { item: FinanceiroItem }) {
  * Fechamento financeiro do ciclo — tabela densa, sem coluna de botões: a linha abre o detalhe, onde
  * ficam Ver BM, NF, comprovante e "Marcar pago". Valor = mesma fonte do rodapé e dos KPIs.
  */
-export function FinanceiroTable({ itens, onOpen }: { itens: FinanceiroItem[]; onOpen: (item: FinanceiroItem) => void }) {
+export function FinanceiroTable({ itens, onOpen, abertoId }: { itens: FinanceiroItem[]; onOpen: (item: FinanceiroItem) => void; abertoId?: string | null }) {
   const total = itens.reduce((soma, item) => soma + valorAPagar(item), 0);
   return (
     <>
@@ -54,7 +54,8 @@ export function FinanceiroTable({ itens, onOpen }: { itens: FinanceiroItem[]; on
                     }
                   }}
                   aria-label={`Abrir pagamento de ${item.colaboradorNome}`}
-                  className="cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)] focus-visible:outline-none"
+                  data-aberta={item.id === abertoId || undefined}
+                  className={classeLinha(item.id === abertoId)}
                 >
                   <td className="px-3 py-3 xl:px-4">
                     <p className="max-w-[240px] truncate font-semibold text-[var(--foreground)] xl:max-w-[300px]">{item.colaboradorNome}</p>

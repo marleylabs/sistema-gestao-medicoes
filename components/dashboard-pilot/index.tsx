@@ -3,7 +3,7 @@
 import { AlertTriangle, Banknote, CircleCheckBig, Clock3 } from "lucide-react";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem } from "@/components/types";
 import { CountUp, Stagger, StaggerGrupo, StaggerItem } from "@/components/motion";
-import { BlurValue, Card } from "@/components/ui";
+import { BlurValue, Skeleton } from "@/components/ui";
 import { getMapaPagamentoDisplayStatus, type SgcStatusEntry } from "@/lib/sgc-display-status";
 import { DashboardContractDistribution } from "./dashboard-contract-distribution";
 import { DashboardEvolutionChart } from "./dashboard-evolution-chart";
@@ -33,7 +33,7 @@ export function DashboardPilot({
     return (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
-          <Card key={index} className="h-[112px] animate-pulse bg-[var(--surface-hover)]"><span /></Card>
+          <Skeleton key={index} className="h-[112px] rounded-xl" />
         ))}
       </div>
     );

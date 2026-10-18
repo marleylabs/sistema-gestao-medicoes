@@ -44,6 +44,7 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [Plano da P1 escopo do fornecedor](specs/p1-escopo-fornecedor-por-identidade-plano.md): T1 diagnóstico só leitura → filtro → aliases → Documentos Medidos → E2E (concluído)
 - [P2 P0 como único ID do fornecedor](specs/p2-vinculo-login-profissional.md): recodificar Profissional, cadastro e dados para o P0 do login; código antigo vira alias (aprovada)
 - [Plano da P2 P0 como ID](specs/p2-vinculo-login-profissional-plano.md): dry-run → migração → P0 no cadastro novo → fim da busca por nome → E2E → pré-produção
-- [Layout: tema claro/escuro e motion](specs/layout-tema-motion.md): mapa M1 fundação → M2 login/dashboard, M3 setores, M4 portal; spec do M1 (aprovada, feito) e do M2 (aprovada)
+- [Layout: tema claro/escuro e motion](specs/layout-tema-motion.md): mapa M1 fundação → M2 login/dashboard, M3 setores, M4 portal; spec do M1 e do M2 (feitos) e do M3 (aprovada)
 - [Plano do M1 tema e motion](specs/layout-tema-motion-plano.md): tokens escuros → alternador → codemod de cores → motion → shell (concluído em 2026-10-18)
-- [Plano do M2 login e dashboard](specs/layout-tema-motion-m2-plano.md): AnimatedText em CSS → login → gráficos no tema → KPIs e cascata (em execução)
+- [Plano do M2 login e dashboard](specs/layout-tema-motion-m2-plano.md): AnimatedText em CSS → login → gráficos no tema → KPIs e cascata (concluído em 2026-10-18)
+- [Plano do M3 painéis dos setores](specs/layout-tema-motion-m3-plano.md): painel lateral → Modal único → abas → Toast → Skeleton → realce de linha (em execução)

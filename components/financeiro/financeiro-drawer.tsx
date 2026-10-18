@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { CheckCircle2, FileText } from "lucide-react";
-import { Badge, BlurValue, Button } from "@/components/ui";
+import { Badge, BlurValue, Button, Carregando } from "@/components/ui";
 import { resumoBoletim, type BmData } from "@/components/boletim-medicao";
 import { AdminSidePanel, DataItem, PanelSection } from "@/components/administrativo/admin-side-panel";
 import { currency, fmtDate, mesmoTexto, statusInfo, valorAPagar, type FinanceiroItem } from "@/components/financeiro/shared";
@@ -142,7 +142,7 @@ export function FinanceiroDrawer({
         {bmErro ? (
           <p className="text-sm text-[var(--error)]">{bmErro}</p>
         ) : !resumo ? (
-          <p className="text-sm text-[var(--muted-foreground)]">Carregando composição do BM…</p>
+          <Carregando texto="Carregando composição do BM…" linhas={4} altura="h-6" />
         ) : (
           <div data-testid="financeiro-composicao">
             <Linha label="Condições fixas"><BlurValue>{currency.format(resumo.totalCondicoesFixas)}</BlurValue></Linha>

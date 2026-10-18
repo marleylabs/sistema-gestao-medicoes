@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, Fragment } from "react";
 import { AlertTriangle, Copy, Eye, EyeOff, FileSpreadsheet, KeyRound, Plus, RefreshCw, Search, Send, Trash2, X } from "lucide-react";
-import { Button, Card, FilterButton, FilterChip, IconButton, Input, PageContainer, PageHeader, Select } from "@/components/ui";
+import { Aba, Button, Card, Carregando, FilterButton, FilterChip, IconButton, Input, Modal, PageContainer, PageHeader, Select, Toast } from "@/components/ui";
 import { useViewportAlign } from "@/components/use-viewport-align";
 import { normalizeTipoCondicaoFixa } from "@/lib/condicao-fixa";
 import { normalizeFonteMedicao } from "@/lib/fonte-medicao";
@@ -86,10 +87,9 @@ function AlterarPerfilModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[380px] sm:max-w-[90vw]">
+    <Modal rotuloId="modal-perfil-titulo" className="flex w-full flex-col overflow-hidden sm:w-[380px] sm:max-w-[90vw]">
         <div className="border-b border-[var(--border)] px-5 py-4">
-          <h2 className="text-sm font-bold text-[var(--foreground)]">Alterar perfil</h2>
+          <h2 id="modal-perfil-titulo" className="text-sm font-bold text-[var(--foreground)]">Alterar perfil</h2>
           <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">{target.nome}</p>
         </div>
         <div className="p-5">
@@ -109,8 +109,7 @@ function AlterarPerfilModal({
             {saving ? "Salvando..." : "Salvar"}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -166,10 +165,9 @@ function PermissoesExtrasModal({
   const inalterado = selecionadas.size === target.permissoesAtuais.length && target.permissoesAtuais.every((p) => selecionadas.has(p));
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
+    <Modal rotuloId="modal-permissoes-titulo" className="flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
         <div className="border-b border-[var(--border)] px-5 py-4">
-          <h2 className="text-sm font-bold text-[var(--foreground)]">Acessos adicionais</h2>
+          <h2 id="modal-permissoes-titulo" className="text-sm font-bold text-[var(--foreground)]">Acessos adicionais</h2>
           <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">{target.nome} — perfil {PERFIL_LABEL[target.perfil] ?? target.perfil}</p>
         </div>
         <div className="grid gap-4 p-5">
@@ -212,8 +210,7 @@ function PermissoesExtrasModal({
             {saving ? "Salvando..." : "Salvar"}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -245,8 +242,7 @@ function CredencialModal({
   const [copiado, setCopiado] = useState(false);
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="credencial-titulo" data-testid="credencial-modal" className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
+    <Modal rotuloId="credencial-titulo" testId="credencial-modal" className="flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
         <div className="border-b border-[var(--border)] px-5 py-4">
           <h2 id="credencial-titulo" className="text-sm font-bold text-[var(--foreground)]">{titulo}</h2>
         </div>
@@ -299,8 +295,7 @@ function CredencialModal({
         <div className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
           <Button onClick={onClose}>Concluir</Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -316,10 +311,9 @@ function ConfirmResetSenhaModal({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[380px] sm:max-w-[90vw]">
+    <Modal rotuloId="modal-reset-senha-titulo" className="flex w-full flex-col overflow-hidden sm:w-[380px] sm:max-w-[90vw]">
         <div className="border-b border-[var(--border)] px-5 py-4">
-          <h2 className="text-sm font-bold text-[var(--foreground)]">Redefinir senha</h2>
+          <h2 id="modal-reset-senha-titulo" className="text-sm font-bold text-[var(--foreground)]">Redefinir senha</h2>
           <p className="mt-1 text-xs text-[var(--muted-foreground)]">
             Gerar uma nova senha temporária para <strong className="text-[var(--muted-foreground)]">{nome}</strong>? A senha atual deixa de funcionar imediatamente.
           </p>
@@ -331,8 +325,7 @@ function ConfirmResetSenhaModal({
             {confirming ? "Redefinindo..." : "Redefinir senha"}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -352,10 +345,9 @@ function ConfirmPrimeiroAcessoModal({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
+    <Modal rotuloId="modal-primeiro-acesso-titulo" className="flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
         <div className="border-b border-[var(--border)] px-5 py-4">
-          <h2 className="text-sm font-bold text-[var(--foreground)]">Enviar primeiro acesso</h2>
+          <h2 id="modal-primeiro-acesso-titulo" className="text-sm font-bold text-[var(--foreground)]">Enviar primeiro acesso</h2>
           <p className="mt-1 text-xs text-[var(--muted-foreground)]">
             Será gerada uma nova senha temporária para este usuário e enviada para o e-mail cadastrado.
           </p>
@@ -384,8 +376,7 @@ function ConfirmPrimeiroAcessoModal({
             {confirming ? "Enviando..." : "Enviar acesso"}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -448,10 +439,9 @@ function DeleteConfirmModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[90vw]">
+    <Modal rotuloId="modal-excluir-titulo" className="flex w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[90vw]">
         <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
-          <h2 className="text-sm font-bold text-[var(--foreground)]">
+          <h2 id="modal-excluir-titulo" className="text-sm font-bold text-[var(--foreground)]">
             {isBulk ? `Excluir ${items.length} fornecedores definitivamente?` : "Excluir fornecedor definitivamente?"}
           </h2>
           <IconButton onClick={onClose} title="Fechar" disabled={deleting}><X size={16} /></IconButton>
@@ -489,8 +479,7 @@ function DeleteConfirmModal({
             {deleting ? "Excluindo..." : "Excluir definitivamente"}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -580,11 +569,10 @@ function ResolverIdentidadeModal({
   const podeConfirmarNenhuma = selecionado?.tipo !== "NENHUMA_IDENTIDADE" || confirmText.trim().toUpperCase() === confirmPhraseNenhuma;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex max-h-[90vh] w-full flex-col overflow-hidden sm:w-[640px] sm:max-w-[92vw]">
+    <Modal rotuloId="modal-resolver-identidade-titulo" className="flex max-h-[90vh] w-full flex-col overflow-hidden sm:w-[640px] sm:max-w-[92vw]">
         <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
           <div>
-            <h2 className="text-sm font-bold text-[var(--foreground)]">{confirmando ? "Usar esta identidade?" : "Resolver identidade"}</h2>
+            <h2 id="modal-resolver-identidade-titulo" className="text-sm font-bold text-[var(--foreground)]">{confirmando ? "Usar esta identidade?" : "Resolver identidade"}</h2>
             {!confirmando && <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">Encontramos mais de uma identidade histórica compatível com este registro. Selecione qual pessoa corresponde ao fornecedor importado.</p>}
           </div>
           <IconButton onClick={onClose} title="Fechar" disabled={resolving}><X size={16} /></IconButton>
@@ -603,7 +591,7 @@ function ResolverIdentidadeModal({
             </div>
           )}
 
-          {!confirmando && loading && <p className="text-xs text-[var(--muted-foreground)]">Carregando candidatos…</p>}
+          {!confirmando && loading && <Carregando texto="Carregando candidatos…" linhas={2} altura="h-10" />}
           {!confirmando && loadError && <p className="rounded-lg bg-[var(--error-soft)] px-3 py-2 text-xs font-semibold text-[var(--error)]">{loadError}</p>}
 
           {!confirmando && !loading && !loadError && (
@@ -686,8 +674,7 @@ function ResolverIdentidadeModal({
             </button>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -726,8 +713,7 @@ function ConfirmAcaoModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [confirming, onCancel]);
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]" role="alertdialog" aria-modal="true" aria-label={titulo}>
+    <Modal role="alertdialog" rotulo={titulo} className="flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
         <div className="border-b border-[var(--border)] px-5 py-4">
           <h2 className="text-sm font-bold text-[var(--foreground)]">{titulo}</h2>
           <div className="mt-1 text-xs text-[var(--muted-foreground)]">{mensagem}</div>
@@ -738,8 +724,7 @@ function ConfirmAcaoModal({
             {confirming ? "Aguarde..." : confirmar}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1325,16 +1310,9 @@ export function AdministrativoPanel({
               ["fornecedores", "Fornecedores", items.length],
               ["funcionarios", "Funcionários", funcionarios.length],
             ] as const).map(([value, label, count]) => (
-              <button
-                key={value}
-                type="button"
-                role="tab"
-                aria-selected={aba === value}
-                onClick={() => { setAba(value); clearSelection(); }}
-                className={`border-b-2 pb-2.5 pt-1 text-sm transition xl:-mb-3 ${aba === value ? "border-[var(--primary)] font-semibold text-[var(--foreground)]" : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
-              >
+              <Aba key={value} grupo="aba-cadastro" ativa={aba === value} onClick={() => { setAba(value); clearSelection(); }}>
                 {label} <span className="font-technical text-[11px] text-[var(--muted-foreground)]">{count}</span>
-              </button>
+              </Aba>
             ))}
           </div>
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
@@ -1410,7 +1388,7 @@ export function AdministrativoPanel({
         )}
 
         {loading && totalAba === 0 ? (
-          <div className="px-6 py-14 text-center text-sm text-[var(--muted-foreground)]">Carregando cadastros...</div>
+          <Carregando texto="Carregando cadastros..." className="px-5 py-5" />
         ) : totalAba === 0 ? (
           <div className="grid justify-items-center gap-3 px-6 py-14 text-center">
             <p className="text-sm text-[var(--muted-foreground)]">{aba === "fornecedores" ? "Nenhum fornecedor cadastrado." : "Nenhum funcionário cadastrado."}</p>
@@ -1433,9 +1411,10 @@ export function AdministrativoPanel({
             onToggleSelected={toggleSelected}
             onToggleAll={toggleSelectAllFiltered}
             onOpen={(item) => setPainel({ tipo: "fornecedor", id: item.id, modo: "detalhe" })}
+            abertoId={painel?.tipo === "fornecedor" ? painel.id : null}
           />
         ) : (
-          <FuncionariosTable itens={filteredFuncionarios} onOpen={(item) => setPainel({ tipo: "funcionario", id: item.id })} />
+          <FuncionariosTable itens={filteredFuncionarios} onOpen={(item) => setPainel({ tipo: "funcionario", id: item.id })} abertoId={painel?.tipo === "funcionario" ? painel.id : null} />
         )}
 
         <div className="flex items-center justify-between border-t border-[var(--border)] px-5 py-3 text-[12px] text-[var(--muted-foreground)]">
@@ -1446,7 +1425,11 @@ export function AdministrativoPanel({
         </div>
       </Card>
 
-      {painel?.tipo === "fornecedor" && fornecedorAberto && painel.modo === "detalhe" && (
+      {/* Filho único e estável no AnimatePresence: trocar modo ou item é instantâneo; só fechar anima a saída. */}
+      <AnimatePresence>
+      {painel && (
+      <Fragment key="painel-admin">
+      {painel.tipo === "fornecedor" && fornecedorAberto && painel.modo === "detalhe" && (
         <FornecedorDetalhe
           item={fornecedorAberto}
           isAdmin={isAdmin}
@@ -1460,7 +1443,7 @@ export function AdministrativoPanel({
         />
       )}
 
-      {painel?.tipo === "fornecedor" && fornecedorAberto && painel.modo === "edicao" && (
+      {painel.tipo === "fornecedor" && fornecedorAberto && painel.modo === "edicao" && (
         <FornecedorEditor
           key={fornecedorAberto.id}
           mode="edit"
@@ -1477,7 +1460,7 @@ export function AdministrativoPanel({
         />
       )}
 
-      {painel?.tipo === "novo-fornecedor" && (
+      {painel.tipo === "novo-fornecedor" && (
         <FornecedorEditor
           mode="create"
           nomeInicial={painel.nomeInicial}
@@ -1509,7 +1492,7 @@ export function AdministrativoPanel({
         />
       )}
 
-      {painel?.tipo === "funcionario" && funcionarioAberto && (
+      {painel.tipo === "funcionario" && funcionarioAberto && (
         <FuncionarioDetalhe
           item={funcionarioAberto}
           isAdmin={isAdmin}
@@ -1524,7 +1507,7 @@ export function AdministrativoPanel({
         />
       )}
 
-      {painel?.tipo === "novo-funcionario" && isAdmin && (
+      {painel.tipo === "novo-funcionario" && isAdmin && (
         <FuncionarioCreatePanel
           escEnabled={!algumModalAberto}
           onClose={() => setPainel(null)}
@@ -1541,7 +1524,7 @@ export function AdministrativoPanel({
         />
       )}
 
-      {painel?.tipo === "importar" && (
+      {painel.tipo === "importar" && (
         <ImportarConsultaPanel
           file={file}
           onFileChange={setFile}
@@ -1555,9 +1538,14 @@ export function AdministrativoPanel({
           onClose={() => setPainel(null)}
         />
       )}
+      </Fragment>
+      )}
+      </AnimatePresence>
 
+      {/* Modais: cada um com key própria para a saída animada (Modal em components/ui.tsx). */}
+      <AnimatePresence>
       {confirmacao && (
-        <ConfirmAcaoModal
+        <ConfirmAcaoModal key="modal-confirmacao"
           titulo={confirmacao.titulo}
           mensagem={confirmacao.mensagem}
           confirmar={confirmacao.confirmar}
@@ -1569,7 +1557,7 @@ export function AdministrativoPanel({
       )}
 
       {credencial && (
-        <CredencialModal
+        <CredencialModal key="modal-credencial"
           titulo={credencial.titulo}
           nome={credencial.nome}
           email={credencial.email}
@@ -1580,11 +1568,11 @@ export function AdministrativoPanel({
       )}
 
       {resetSenhaTarget && (
-        <ConfirmResetSenhaModal nome={resetSenhaTarget.nome} confirming={resettingSenha} onCancel={() => setResetSenhaTarget(null)} onConfirm={confirmarResetSenha} />
+        <ConfirmResetSenhaModal key="modal-reset-senha" nome={resetSenhaTarget.nome} confirming={resettingSenha} onCancel={() => setResetSenhaTarget(null)} onConfirm={confirmarResetSenha} />
       )}
 
       {primeiroAcessoTarget && (
-        <ConfirmPrimeiroAcessoModal
+        <ConfirmPrimeiroAcessoModal key="modal-primeiro-acesso"
           nome={primeiroAcessoTarget.nome}
           email={primeiroAcessoTarget.email}
           usuario={primeiroAcessoTarget.usuario}
@@ -1595,7 +1583,7 @@ export function AdministrativoPanel({
       )}
 
       {perfilTarget && (
-        <AlterarPerfilModal
+        <AlterarPerfilModal key="modal-perfil"
           target={perfilTarget}
           onClose={() => setPerfilTarget(null)}
           onSaved={async () => {
@@ -1608,7 +1596,7 @@ export function AdministrativoPanel({
       )}
 
       {permissoesTarget && (
-        <PermissoesExtrasModal
+        <PermissoesExtrasModal key="modal-permissoes"
           target={permissoesTarget}
           onClose={() => setPermissoesTarget(null)}
           onSaved={async () => {
@@ -1620,10 +1608,10 @@ export function AdministrativoPanel({
         />
       )}
 
-      {deleteTargets && <DeleteConfirmModal items={deleteTargets} onClose={() => setDeleteTargets(null)} onDone={handleDeletionDone} />}
+      {deleteTargets && <DeleteConfirmModal key="modal-excluir" items={deleteTargets} onClose={() => setDeleteTargets(null)} onDone={handleDeletionDone} />}
 
       {primeiroAcessoLote && (
-        <PrimeiroAcessoLoteDialog
+        <PrimeiroAcessoLoteDialog key="modal-primeiro-acesso-lote"
           itens={primeiroAcessoLote}
           onClose={() => setPrimeiroAcessoLote(null)}
           onProcessado={() => {
@@ -1635,13 +1623,10 @@ export function AdministrativoPanel({
         />
       )}
 
-      {resolverItem && <ResolverIdentidadeModal item={resolverItem} onClose={() => setResolverItem(null)} onResolved={handleIdentidadeResolvida} />}
+      {resolverItem && <ResolverIdentidadeModal key="modal-resolver-identidade" item={resolverItem} onClose={() => setResolverItem(null)} onResolved={handleIdentidadeResolvida} />}
+      </AnimatePresence>
 
-      {toast && (
-        <div className={`fixed bottom-5 right-5 z-[80] rounded-lg px-4 py-3 text-sm font-semibold text-[var(--on-solid)] shadow-lg ${toast.tone === "success" ? "bg-[var(--success)]" : "bg-[var(--error)]"}`}>
-          {toast.message}
-        </div>
-      )}
+      <Toast mensagem={toast?.message ?? null} tom={toast?.tone} />
     </PageContainer>
   );
 }

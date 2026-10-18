@@ -3,7 +3,7 @@
 import { AlertTriangle, ChevronRight } from "lucide-react";
 import { formatParticipacao, money } from "@/components/mapa-pagamento-table";
 import type { ContratoResumo, MapaPagamentoItem } from "@/components/types";
-import { Badge, BlurValue } from "@/components/ui";
+import { Badge, BlurValue, classeLinha } from "@/components/ui";
 import { getMapaPagamentoStatusMeta, type SgcStatusEntry } from "@/lib/sgc-display-status";
 import type { ElegibilidadeEnvioBm } from "@/lib/bm-envio-elegibilidade";
 
@@ -112,12 +112,14 @@ export function FornecedoresTable({
   sgcStatus,
   onOpen,
   selecao,
+  abertoId,
 }: {
   itens: MapaPagamentoItem[];
   contratos: ContratoResumo[];
   sgcStatus: Record<string, SgcStatusEntry>;
   onOpen: (item: MapaPagamentoItem) => void;
   selecao?: SelecaoEnvioBm;
+  abertoId?: string | null;
 }) {
   if (!itens.length) {
     return <div className="px-6 py-14 text-center text-sm text-[var(--muted-foreground)]">Nenhum fornecedor encontrado com os filtros aplicados.</div>;
@@ -163,7 +165,8 @@ export function FornecedoresTable({
                     }
                   }}
                   data-cadastro-pendente={item.cadastroPendente ? "true" : undefined}
-                  className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)] focus-visible:outline-none ${item.cadastroPendente ? "bg-[var(--surface-muted)] text-[var(--muted-foreground)]" : ""} ${selecao?.selecionados.has(item.id) ? "bg-[var(--primary-soft)]" : ""}`}
+                  data-aberta={item.id === abertoId || undefined}
+                  className={`${classeLinha(item.id === abertoId)} ${item.cadastroPendente ? `text-[var(--muted-foreground)] ${item.id === abertoId ? "" : "bg-[var(--surface-muted)]"}` : ""} ${selecao?.selecionados.has(item.id) ? "bg-[var(--primary-soft)]" : ""}`}
                 >
                   {selecao && (
                     // O clique no checkbox nunca abre o detalhe da linha.

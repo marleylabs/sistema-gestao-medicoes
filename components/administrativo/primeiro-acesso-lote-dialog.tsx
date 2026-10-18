@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Minus, Send } from "lucide-react";
-import { Button } from "@/components/ui";
+import { Button, Modal } from "@/components/ui";
 import type { CadastroFornecedor } from "@/components/administrativo/shared";
 import { avaliarElegibilidadePrimeiroAcesso } from "@/lib/primeiro-acesso-elegibilidade";
 import { LIMITE_PRIMEIRO_ACESSO_LOTE, type ResumoPrimeiroAcessoLote, type StatusPrimeiroAcessoLote } from "@/lib/primeiro-acesso-lote";
@@ -104,16 +104,7 @@ export function PrimeiroAcessoLoteDialog({
   const enviando = fase === "enviando";
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:items-center sm:p-4">
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby={`${id}-t`}
-        aria-describedby={`${id}-d`}
-        aria-busy={enviando}
-        data-testid="primeiro-acesso-lote-dialog"
-        className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]"
-      >
+    <Modal role="alertdialog" rotuloId={`${id}-t`} descricaoId={`${id}-d`} ocupado={enviando} testId="primeiro-acesso-lote-dialog" sobreposicao="z-[70] items-end sm:items-center" className="flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]">
         {fase === "resultado" && resumo ? (
           <>
             <div className="border-b border-[var(--border)] px-5 py-4">
@@ -233,7 +224,6 @@ export function PrimeiroAcessoLoteDialog({
           </>
         )}
         {enviando && <span className="sr-only" role="status">Enviando primeiros acessos…</span>}
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,9 +1,10 @@
 "use client";
 
+import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Banknote, CircleCheckBig, Clock3, Download, FileClock, RefreshCw, Search, X } from "lucide-react";
-import { BlurValue, Button, Card, IconButton, Input, PageContainer, PageHeader, Select } from "@/components/ui";
-import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
+import { Aba, BlurValue, Button, Card, Carregando, IconButton, Input, Modal, PageContainer, PageHeader, Select, Toast } from "@/components/ui";
+import { BoletimMedicao, useVisualizadorBm } from "@/components/boletim-medicao";
 import { DashboardKpiCard } from "@/components/dashboard-pilot/dashboard-kpi-card";
 import { FinanceiroDrawer } from "@/components/financeiro/financeiro-drawer";
 import { FinanceiroTable } from "@/components/financeiro/financeiro-table";
@@ -38,9 +39,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
   const [uploadingId, setUploadingId]     = useState<string | null>(null);
   const [comprovanteFile, setComprovanteFile] = useState<File | null>(null);
   const [uploadError, setUploadError]     = useState<string | null>(null);
-  const [bmData, setBmData]               = useState<BmData | null>(null);
-  const [bmLoading, setBmLoading]         = useState(false);
-  const [bmError, setBmError]             = useState<string | null>(null);
+  const { bm, abrir: abrirBm, fechar: fecharBm } = useVisualizadorBm();
   const [toast, setToast]                 = useState<string | null>(null);
 
   useEffect(() => {
@@ -89,21 +88,6 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
     load();
   }
 
-  async function openBm(item: FinanceiroItem) {
-    setBmLoading(true);
-    setBmData(null);
-    setBmError(null);
-    const res = await fetch(`/api/admin/bm?codigo=${encodeURIComponent(item.colaboradorCodigo)}&ciclo=${encodeURIComponent(selectedCiclo)}`);
-    if (res.ok) {
-      setBmData(await res.json());
-    } else {
-      // Resposta não-ok nunca é descartada em silêncio — a pessoa vê o motivo.
-      const payload = await res.json().catch(() => ({}));
-      setBmError(payload.error ?? "Não foi possível carregar o boletim de medição.");
-    }
-    setBmLoading(false);
-  }
-
   function exportarPagamentosConcluidos() {
     if (!selectedCiclo) return;
     window.open(`/api/admin/financeiro/exportar?ciclo=${encodeURIComponent(selectedCiclo)}`, "_blank", "noopener,noreferrer");
@@ -135,7 +119,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
   const totalCiclo = items.reduce((soma, item) => soma + valorAPagar(item), 0);
   const detalhe = detalheId ? items.find((item) => item.id === detalheId) ?? null : null;
   const cicloAtual = ciclos.find((c) => c.ciclo === selectedCiclo);
-  const modalAberto = Boolean(bmData || bmLoading || bmError);
+  const modalAberto = Boolean(bm);
 
   const cicloSelect = (
     <label className="flex items-center gap-2 text-[12px] text-[var(--muted-foreground)]">
@@ -219,16 +203,9 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
                   const ativo = filterStatus === valor;
                   const count = valor === "todos" ? items.length : porStatus[valor]?.n ?? 0;
                   return (
-                    <button
-                      key={valor}
-                      type="button"
-                      role="tab"
-                      aria-selected={ativo}
-                      onClick={() => setFilterStatus(valor)}
-                      className={`border-b-2 pb-2.5 pt-1 text-sm transition xl:-mb-3 ${ativo ? "border-[var(--primary)] font-semibold text-[var(--foreground)]" : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
-                    >
+                    <Aba key={valor} grupo="aba-status-financeiro" ativa={ativo} onClick={() => setFilterStatus(valor)}>
                       {valor === "todos" ? "Todos" : STATUS_FILTRO_LABEL[valor]} <span className="font-technical text-[11px] text-[var(--muted-foreground)]">{count}</span>
-                    </button>
+                    </Aba>
                   );
                 })}
               </div>
@@ -248,18 +225,20 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
             </div>
 
             {loading && !carregado ? (
-              <div className="px-6 py-14 text-center text-sm text-[var(--muted-foreground)]">Carregando…</div>
+              <Carregando texto="Carregando…" className="px-5 py-5" />
             ) : filtered.length === 0 ? (
               <div className="px-6 py-14 text-center text-sm text-[var(--muted-foreground)]">Nenhum pagamento encontrado para este ciclo e filtro.</div>
             ) : (
-              <FinanceiroTable itens={filtered} onOpen={(item) => { setDetalheId(item.id); fecharPagamento(); }} />
+              <FinanceiroTable itens={filtered} onOpen={(item) => { setDetalheId(item.id); fecharPagamento(); }} abertoId={detalheId} />
             )}
           </Card>
         </>
       )}
 
+      <AnimatePresence>
       {!exportOnly && detalhe && (
         <FinanceiroDrawer
+          key="financeiro-detalhe"
           item={detalhe}
           ciclo={selectedCiclo}
           podeRegistrarPagamento={!exportOnly}
@@ -271,40 +250,36 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
           onCancelarPagamento={fecharPagamento}
           onArquivo={(file) => { setComprovanteFile(file); setUploadError(null); }}
           onConfirmarPagamento={() => enviarComprovante(detalhe.id)}
-          onVerBm={() => openBm(detalhe)}
+          onVerBm={() => abrirBm(detalhe.colaboradorCodigo, selectedCiclo)}
           onClose={() => { setDetalheId(null); fecharPagamento(); }}
         />
       )}
+      </AnimatePresence>
 
       {/* Modal BM — boletim completo (mesmo componente/endpoint de sempre), acima do detalhe. */}
+      <AnimatePresence>
       {modalAberto && (
-        <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:p-4 sm:pt-10">
-          <div className="min-h-screen w-full max-w-5xl rounded-none bg-[var(--surface)] shadow-2xl sm:min-h-0 sm:rounded-xl">
+        <Modal key="boletim" variante="tela" rotulo="Boletim de Medição" sobreposicao="z-[70]" className="min-h-screen w-full max-w-5xl rounded-none bg-[var(--surface)] shadow-2xl sm:min-h-0 sm:rounded-xl">
             <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
               <p className="text-sm font-semibold text-[var(--foreground)]">Boletim de Medição</p>
-              <IconButton onClick={() => { setBmData(null); setBmLoading(false); setBmError(null); }} title="Fechar boletim">
+              <IconButton onClick={fecharBm} title="Fechar boletim">
                 <X size={16} />
               </IconButton>
             </div>
             <div className="p-4 sm:p-5">
-              {bmLoading ? (
-                <div className="flex items-center justify-center gap-3 py-10 text-sm text-[var(--muted-foreground)]">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--primary)]" />
-                  Carregando boletim…
-                </div>
-              ) : bmError ? (
-                <div className="rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-4 py-3 text-sm font-medium text-[var(--error)]">{bmError}</div>
-              ) : bmData ? (
-                <BoletimMedicao data={bmData} />
+              {bm?.loading ? (
+                <Carregando texto="Carregando boletim…" linhas={6} altura="h-8" />
+              ) : bm?.erro ? (
+                <div className="rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-4 py-3 text-sm font-medium text-[var(--error)]">{bm.erro}</div>
+              ) : bm?.data ? (
+                <BoletimMedicao data={bm.data} />
               ) : null}
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
+      </AnimatePresence>
 
-      {toast && (
-        <div className="fixed bottom-5 right-5 z-[80] rounded-lg bg-[var(--success)] px-4 py-3 text-sm font-semibold text-[var(--on-solid)] shadow-lg">{toast}</div>
-      )}
+      <Toast mensagem={toast} />
     </PageContainer>
   );
 }

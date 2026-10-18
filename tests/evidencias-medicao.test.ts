@@ -54,11 +54,10 @@ test("Evidências não reconstrói o Map por colaboradorCodigo que sobrescrevia 
 
 test("Evidências: BM e divergências usam colaboradorCodigo/ciclo do PRÓPRIO item — nunca reconstroem a busca por nome", () => {
   const workspace = readSource(WORKSPACE);
-  const fnIndex = workspace.indexOf("async function verBm(e: Evidencia)");
-  assert.ok(fnIndex > -1, "esperava encontrar verBm(e: Evidencia)");
-  const block = workspace.slice(fnIndex, workspace.indexOf("\n  }\n", fnIndex));
-  assert.match(block, /e\.colaboradorCodigo/);
-  assert.match(block, /e\.ciclo/);
+  // O visualizador do BM (useVisualizadorBm) busca por código e ciclo; o workspace passa os do item aberto.
+  assert.match(workspace, /abrirBm\(aberta\.colaboradorCodigo, aberta\.ciclo\)/);
+  const hook = readSource("components/boletim-medicao.tsx");
+  assert.match(hook, /codigo=\$\{encodeURIComponent\(codigo\)\}&ciclo=\$\{encodeURIComponent\(ciclo\)\}/);
   const drawer = readSource(DRAWER);
   assert.match(drawer, /encodeURIComponent\(evidencia\.colaboradorCodigo\)/);
   assert.match(drawer, /encodeURIComponent\(evidencia\.ciclo\)/);

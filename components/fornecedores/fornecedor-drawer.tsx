@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
+import { motion } from "framer-motion";
 import { AlertTriangle, ChevronDown, X } from "lucide-react";
 import { formatParticipacao, money } from "@/components/mapa-pagamento-table";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem } from "@/components/types";
+import { usePainelSobreposto } from "@/components/motion";
 import { Badge, BlurValue, IconButton } from "@/components/ui";
 import { formatCicloLabel } from "@/lib/ciclo";
 import { getMapaPagamentoStatusMeta, type SgcStatusEntry } from "@/lib/sgc-display-status";
@@ -59,11 +61,13 @@ export function FornecedorDrawer({
   actions: ReactNode;
   onClose: () => void;
 }) {
+  const { presente, fundo, painel } = usePainelSobreposto();
   useEffect(() => {
+    if (!presente) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, presente]);
 
   const codigo = item.projetistaCodigo ?? "";
   const meta = getMapaPagamentoStatusMeta(sgcEntry?.status ?? "AGUARDANDO_ENVIO", sgcEntry?.statusConferencia);
@@ -73,9 +77,9 @@ export function FornecedorDrawer({
     : [];
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={`Detalhe de ${nome}`}>
-      <button type="button" aria-label="Fechar detalhe" className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <aside className="relative flex h-full w-full max-w-md flex-col bg-[var(--surface)] shadow-2xl">
+    <div className="fixed inset-0 z-50 flex justify-end" inert={!presente} role="dialog" aria-modal="true" aria-label={`Detalhe de ${nome}`}>
+      <motion.button {...fundo} type="button" aria-label="Fechar detalhe" className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <motion.aside {...painel} className="relative flex h-full w-full max-w-md flex-col bg-[var(--surface)] shadow-2xl">
         <header className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-6 py-5">
           <div className="min-w-0">
             <p className="text-eyebrow mb-1 text-[var(--primary)]">Fornecedor</p>
@@ -157,7 +161,7 @@ export function FornecedorDrawer({
           <p className="text-label mb-2 text-[var(--muted-foreground)]">Ações</p>
           {actions}
         </footer>
-      </aside>
+      </motion.aside>
     </div>
   );
 }

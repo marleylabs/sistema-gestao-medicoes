@@ -2,7 +2,7 @@
 
 import type { KeyboardEvent, ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
-import { Badge, BlurValue } from "@/components/ui";
+import { Badge, BlurValue, classeLinha } from "@/components/ui";
 import { formatParticipacao } from "@/components/mapa-pagamento-table";
 import type { ContratoHistorico, FornecedorHistorico, MedicaoHistorico } from "@/components/historico/dados";
 
@@ -19,14 +19,15 @@ function Th({ children, className = "" }: { children?: ReactNode; className?: st
   return <th className={`text-table-header border-b border-[var(--border)] px-3 py-2.5 text-left text-[var(--muted-foreground)] xl:px-4 ${className}`}>{children}</th>;
 }
 
-function Linha({ label, onOpen, children }: { label: string; onOpen: () => void; children: ReactNode }) {
+function Linha({ label, onOpen, aberta, children }: { label: string; onOpen: () => void; aberta: boolean; children: ReactNode }) {
   return (
     <tr
       tabIndex={0}
       aria-label={label}
       onClick={onOpen}
       onKeyDown={(e) => onKey(e, onOpen)}
-      className="cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)] focus-visible:outline-none"
+      data-aberta={aberta || undefined}
+      className={classeLinha(aberta)}
     >
       {children}
       <td className="w-8 px-2 py-3 text-[var(--muted-foreground)]"><ChevronRight size={15} /></td>
@@ -67,7 +68,7 @@ function Contratos({ participacoes, nomes, max = 2 }: { participacoes: Record<st
 }
 
 /** Medições: uma linha por BM (fornecedor × ciclo). */
-export function MedicoesLista({ itens, nomesContrato, onOpen }: { itens: MedicaoHistorico[]; nomesContrato: Map<string, string>; onOpen: (m: MedicaoHistorico) => void }) {
+export function MedicoesLista({ itens, nomesContrato, onOpen, aberto }: { itens: MedicaoHistorico[]; nomesContrato: Map<string, string>; onOpen: (m: MedicaoHistorico) => void; aberto: string | null }) {
   return (
     <>
       <div className="hidden max-w-full overflow-x-auto md:block">
@@ -84,7 +85,7 @@ export function MedicoesLista({ itens, nomesContrato, onOpen }: { itens: Medicao
           </thead>
           <tbody>
             {itens.map((m) => (
-              <Linha key={m.key} label={`Abrir medição de ${m.nome} no ciclo ${m.ciclo}`} onOpen={() => onOpen(m)}>
+              <Linha key={m.key} aberta={m.key === aberto} label={`Abrir medição de ${m.nome} no ciclo ${m.ciclo}`} onOpen={() => onOpen(m)}>
                 <td className="px-3 py-3 font-technical text-[12.5px] text-[var(--foreground)] xl:px-4">{m.ciclo}</td>
                 <td className="px-3 py-3 xl:px-4">
                   <p className="max-w-[300px] truncate font-semibold text-[var(--foreground)]">{m.nome}</p>
@@ -116,7 +117,7 @@ export function MedicoesLista({ itens, nomesContrato, onOpen }: { itens: Medicao
 }
 
 /** Fornecedores: trajetória histórica por identidade canônica. */
-export function FornecedoresLista({ itens, onOpen }: { itens: FornecedorHistorico[]; onOpen: (f: FornecedorHistorico) => void }) {
+export function FornecedoresLista({ itens, onOpen, aberto }: { itens: FornecedorHistorico[]; onOpen: (f: FornecedorHistorico) => void; aberto: string | null }) {
   return (
     <>
       <div className="hidden max-w-full overflow-x-auto md:block">
@@ -133,7 +134,7 @@ export function FornecedoresLista({ itens, onOpen }: { itens: FornecedorHistoric
           </thead>
           <tbody>
             {itens.map((f) => (
-              <Linha key={f.codigo} label={`Abrir histórico de ${f.nome}`} onOpen={() => onOpen(f)}>
+              <Linha key={f.codigo} aberta={f.codigo === aberto} label={`Abrir histórico de ${f.nome}`} onOpen={() => onOpen(f)}>
                 <td className="px-3 py-3 xl:px-4">
                   <p className="max-w-[320px] truncate font-semibold text-[var(--foreground)]">{f.nome}</p>
                   <p className="mt-0.5 max-w-[320px] truncate text-[12px] text-[var(--muted-foreground)]">{f.empresa ?? "–"}</p>
@@ -165,7 +166,7 @@ export function FornecedoresLista({ itens, onOpen }: { itens: FornecedorHistoric
 }
 
 /** Contratos: o contrato como eixo histórico (somente consulta). */
-export function ContratosLista({ itens, onOpen }: { itens: ContratoHistorico[]; onOpen: (c: ContratoHistorico) => void }) {
+export function ContratosLista({ itens, onOpen, aberto }: { itens: ContratoHistorico[]; onOpen: (c: ContratoHistorico) => void; aberto: string | null }) {
   return (
     <>
       <div className="hidden max-w-full overflow-x-auto md:block">
@@ -182,7 +183,7 @@ export function ContratosLista({ itens, onOpen }: { itens: ContratoHistorico[]; 
           </thead>
           <tbody>
             {itens.map((c) => (
-              <Linha key={c.id} label={`Abrir contrato ${c.nome}`} onOpen={() => onOpen(c)}>
+              <Linha key={c.id} aberta={c.id === aberto} label={`Abrir contrato ${c.nome}`} onOpen={() => onOpen(c)}>
                 <td className="px-3 py-3 font-semibold text-[var(--foreground)] xl:px-4">{c.nome}</td>
                 <td className="whitespace-nowrap px-3 py-3 text-right font-semibold tabular-nums text-[var(--foreground)] xl:px-4"><BlurValue>{brl.format(c.valorAtribuido)}</BlurValue></td>
                 <td className="px-3 py-3 text-right tabular-nums text-[var(--foreground)] xl:px-4">{c.fornecedores.length}</td>

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence } from "framer-motion";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, CalendarRange, Plus, Search, Send } from "lucide-react";
 import { contractParticipation, MapaItemActions, MapaPagamentoEditor, type Revisao } from "@/components/mapa-pagamento-table";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
-import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
+import { Button, Card, Input, PageHeader, Select, Toast } from "@/components/ui";
 import { formatCicloLabel } from "@/lib/ciclo";
 import { CicloPublicadoControl, type CicloPortalEntry } from "@/components/fornecedores/ciclo-publicado";
 import { GerenciarCiclosPanel, type CicloGestaoEntry } from "@/components/fornecedores/gerenciar-ciclos";
@@ -367,6 +368,7 @@ export function FornecedoresPage({
           contratos={contratos}
           sgcStatus={sgcStatus}
           onOpen={(item) => setDetalheId(item.id)}
+          abertoId={detalheId}
           selecao={podeSelecionar ? {
             selecionados,
             elegibilidade: elegibilidadeDe,
@@ -383,6 +385,10 @@ export function FornecedoresPage({
         </div>
       </Card>
 
+      {/* Detalhe e editor no mesmo filho estável: Editar ↔ Voltar troca na hora (sem um painel saindo por cima do outro); fechar anima. */}
+      <AnimatePresence>
+      {((detalhe && !editandoDoDetalhe) || (isAdmin && (isCreating || editingItem))) && (
+      <Fragment key="fornecedor-painel">
       {detalhe && !editandoDoDetalhe && (
         <FornecedorDrawer
           item={detalhe}
@@ -394,7 +400,6 @@ export function FornecedoresPage({
           onClose={() => { setDetalheId(null); setOpenDropdownId(null); }}
         />
       )}
-
       {isAdmin && (isCreating || editingItem) && (
         <MapaPagamentoEditor
           item={editingItem}
@@ -424,9 +429,13 @@ export function FornecedoresPage({
           onDivergenciaResolvida={onDivergenciaResolvida}
         />
       )}
+      </Fragment>
+      )}
+      </AnimatePresence>
 
+      <AnimatePresence>
       {previaLote && (
-        <EnvioBmLoteDialog
+        <EnvioBmLoteDialog key="envio-bm-lote"
           ciclo={ciclo}
           cicloLabel={cicloOptionLabel(ciclo).split(" · ")[0]}
           previa={previaLote}
@@ -439,15 +448,14 @@ export function FornecedoresPage({
           }}
         />
       )}
+      </AnimatePresence>
 
-      {toast && (
-        <div className="fixed bottom-5 right-5 z-[60] rounded-lg bg-[var(--success)] px-4 py-3 text-sm font-semibold text-[var(--on-solid)] shadow-lg">
-          {toast}
-        </div>
-      )}
+      <Toast mensagem={toast} camada="z-[60]" />
 
+      <AnimatePresence>
       {gerenciandoCiclos && podeGerenciarCiclos && (
         <GerenciarCiclosPanel
+          key="gerenciar-ciclos"
           ciclos={ciclosPortal}
           cicloSelecionado={ciclo}
           podeExcluir={podeExcluirCiclos}
@@ -457,6 +465,7 @@ export function FornecedoresPage({
           onClose={() => setGerenciandoCiclos(false)}
         />
       )}
+      </AnimatePresence>
     </div>
   );
 }

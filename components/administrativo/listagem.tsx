@@ -3,7 +3,7 @@
 import type { KeyboardEvent, ReactNode } from "react";
 import { AlertTriangle, ChevronRight, FileStack, Layers, UserCheck, UserX } from "lucide-react";
 import { DashboardKpiCard } from "@/components/dashboard-pilot/dashboard-kpi-card";
-import { Badge, BlurValue } from "@/components/ui";
+import { Badge, BlurValue, classeLinha } from "@/components/ui";
 import { normalizeTipoCondicaoFixa } from "@/lib/condicao-fixa";
 import { normalizeFonteMedicao } from "@/lib/fonte-medicao";
 import { PERFIL_LABEL_LOOSE as PERFIL_LABEL } from "@/lib/perfis";
@@ -77,6 +77,7 @@ export function FornecedoresCadastroTable({
   onToggleSelected,
   onToggleAll,
   onOpen,
+  abertoId,
 }: {
   itens: CadastroFornecedor[];
   isAdmin: boolean;
@@ -87,6 +88,7 @@ export function FornecedoresCadastroTable({
   onToggleSelected: (id: string) => void;
   onToggleAll: () => void;
   onOpen: (item: CadastroFornecedor) => void;
+  abertoId?: string | null;
 }) {
   return (
     <>
@@ -123,7 +125,8 @@ export function FornecedoresCadastroTable({
                 onClick={() => onOpen(item)}
                 onKeyDown={(event) => openOnKey(event, () => onOpen(item))}
                 aria-label={`Abrir cadastro de ${item.responsavel}`}
-                className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)] focus-visible:outline-none ${selectedIds.has(item.id) ? "bg-[var(--primary-soft)]" : ""}`}
+                data-aberta={item.id === abertoId || undefined}
+                className={`${classeLinha(item.id === abertoId)} ${selectedIds.has(item.id) ? "bg-[var(--primary-soft)]" : ""}`}
               >
                 {isAdmin && (
                   <td className="w-10 py-3 pl-3 pr-0 xl:pl-4" onClick={(event) => event.stopPropagation()}>
@@ -212,7 +215,7 @@ export function FornecedoresCadastroTable({
 }
 
 /** Usuários internos — mesma listagem (antes em cards), linha abre o detalhe. */
-export function FuncionariosTable({ itens, onOpen }: { itens: Funcionario[]; onOpen: (item: Funcionario) => void }) {
+export function FuncionariosTable({ itens, onOpen, abertoId }: { itens: Funcionario[]; onOpen: (item: Funcionario) => void; abertoId?: string | null }) {
   return (
     <>
       <div className="hidden max-w-full overflow-x-auto md:block">
@@ -234,7 +237,8 @@ export function FuncionariosTable({ itens, onOpen }: { itens: Funcionario[]; onO
                 onClick={() => onOpen(item)}
                 onKeyDown={(event) => openOnKey(event, () => onOpen(item))}
                 aria-label={`Abrir cadastro de ${item.nome}`}
-                className="cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)] focus-visible:outline-none"
+                data-aberta={item.id === abertoId || undefined}
+                className={classeLinha(item.id === abertoId)}
               >
                 <td className="px-3 py-3 xl:px-4">
                   <p className="max-w-[280px] truncate font-semibold text-[var(--foreground)]">{item.nome}</p>

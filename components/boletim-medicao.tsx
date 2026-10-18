@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui";
 import { calcularBoletim } from "@/lib/boletim-calculo";
@@ -139,6 +139,43 @@ export function resumoBoletim(data: BmData) {
     ccDesenhos, ccDoc, ccHh, ccDesenhosMc,
     isPj, ccFixoPj, ccFixoClt, ccGarClt: 0, ccGarPj: 0,
   };
+}
+
+// ─── Visualizador ─────────────────────────────────────────────────────────────
+
+export type EstadoVisualizadorBm = { data: BmData | null; erro: string | null; loading: boolean };
+
+/**
+ * Estado do visualizador do BM (Histórico, Evidências, Financeiro). Fechar, ou abrir outro BM, descarta
+ * a resposta que ainda não chegou: sem isso, o fim do fetch reabria o visualizador já fechado.
+ * `validar` devolve uma mensagem quando a resposta ok não serve para exibir.
+ */
+export function useVisualizadorBm({ erroPadrao = "Não foi possível carregar o boletim de medição.", validar }: { erroPadrao?: string; validar?: (data: BmData) => string | null } = {}) {
+  const [bm, setBm] = useState<EstadoVisualizadorBm | null>(null);
+  const pedido = useRef(0);
+
+  async function abrir(codigo: string, ciclo: string) {
+    const id = ++pedido.current;
+    setBm({ data: null, erro: null, loading: true });
+    let estado: EstadoVisualizadorBm;
+    try {
+      const res = await fetch(`/api/admin/bm?codigo=${encodeURIComponent(codigo)}&ciclo=${encodeURIComponent(ciclo)}`);
+      const payload: unknown = await res.json().catch(() => ({}));
+      const corpo = (payload ?? {}) as { error?: string };
+      const erro = res.ok ? validar?.(payload as BmData) ?? null : corpo.error ?? erroPadrao;
+      estado = erro ? { data: null, erro, loading: false } : { data: payload as BmData, erro: null, loading: false };
+    } catch {
+      estado = { data: null, erro: erroPadrao, loading: false };
+    }
+    if (id === pedido.current) setBm(estado);
+  }
+
+  function fechar() {
+    pedido.current++;
+    setBm(null);
+  }
+
+  return { bm, abrir, fechar };
 }
 
 // ─── BoletimMedicao ───────────────────────────────────────────────────────────

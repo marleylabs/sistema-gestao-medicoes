@@ -1,8 +1,9 @@
 "use client";
 
+import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, Link2, Search, Trash2, UserPlus } from "lucide-react";
-import { Badge, Button, Card, Input } from "@/components/ui";
+import { Badge, Button, Card, Input, Modal } from "@/components/ui";
 import { pareceNomeDeFornecedor } from "@/lib/identidade-plausivel";
 
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -76,16 +77,13 @@ function DialogShell({ titulo, children, footer, onClose, busy = false, testId }
     return () => document.removeEventListener("keydown", onKey);
   }, [busy, onClose]);
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:items-center sm:p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby={`${id}-t`} aria-busy={busy} data-testid={testId}
-        className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]">
+    <Modal rotuloId={`${id}-t`} ocupado={busy} testId={testId} sobreposicao="z-[70] items-end sm:items-center" className="flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]">
         <div className="border-b border-[var(--border)] px-5 py-4">
           <h2 id={`${id}-t`} className="text-section-title break-words text-[var(--foreground)]">{titulo}</h2>
         </div>
         <div className="grid min-h-0 gap-2 overflow-y-auto px-5 py-4 text-[13px] text-[var(--foreground)]">{children}</div>
         <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--border)] px-5 py-3">{footer}</div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -264,11 +262,12 @@ export function AcoesIdentidade({ identidade, sugestao, onNovoFornecedor, onAlte
         {plausivel && onNovoFornecedor && <Button variant="ghost" className="h-8" onClick={() => setDialogo("novo")}><UserPlus size={13} /> Cadastrar novo</Button>}
         <Button variant="ghost" className="h-8 text-[var(--error)]" onClick={() => setDialogo("descartar")}><Trash2 size={13} /> Descartar</Button>
       </div>
-      {dialogo === "sugestao" && sugestao && <VincularDialog identidade={identidade} sugestao={sugestao} onClose={() => setDialogo(null)} onConcluido={concluir} />}
-      {dialogo === "vincular" && <VincularDialog identidade={identidade} sugestao={null} onClose={() => setDialogo(null)} onConcluido={concluir} />}
-      {dialogo === "descartar" && <DescartarDialog identidade={identidade} onClose={() => setDialogo(null)} onConcluido={concluir} />}
+      <AnimatePresence>
+      {dialogo === "sugestao" && sugestao && <VincularDialog key="sugestao" identidade={identidade} sugestao={sugestao} onClose={() => setDialogo(null)} onConcluido={concluir} />}
+      {dialogo === "vincular" && <VincularDialog key="vincular" identidade={identidade} sugestao={null} onClose={() => setDialogo(null)} onConcluido={concluir} />}
+      {dialogo === "descartar" && <DescartarDialog key="descartar" identidade={identidade} onClose={() => setDialogo(null)} onConcluido={concluir} />}
       {dialogo === "novo" && onNovoFornecedor && (
-        <DialogShell titulo="Cadastrar novo fornecedor" onClose={() => setDialogo(null)} testId="identidade-novo-dialog"
+        <DialogShell key="novo" titulo="Cadastrar novo fornecedor" onClose={() => setDialogo(null)} testId="identidade-novo-dialog"
           footer={(
             <>
               <Button variant="secondary" onClick={() => setDialogo(null)}>Cancelar</Button>
@@ -281,6 +280,7 @@ export function AcoesIdentidade({ identidade, sugestao, onNovoFornecedor, onAlte
           <p className="text-[var(--muted-foreground)]">Se for alguém já cadastrado com outro nome, use &quot;Vincular cadastro&quot;.</p>
         </DialogShell>
       )}
+      </AnimatePresence>
     </>
   );
 }
@@ -379,7 +379,7 @@ export function IdentidadesDoCicloPanel({ ciclo, onNovoFornecedor }: { ciclo: st
       </div>
       {!podeResolver && !carregando && <p className="text-[11px] text-[var(--muted-foreground)]">Somente o perfil ADMIN pode vincular, cadastrar ou descartar.</p>}
       {erro && <p className="rounded-lg bg-[var(--error-soft)] p-3 text-xs text-[var(--error)]">{erro}</p>}
-      {toast && <p className="rounded-lg bg-[var(--success-soft)] p-3 text-xs text-[var(--success)]" role="status">{toast}</p>}
+      {toast && <p className="rounded-lg bg-[var(--success-soft)] p-3 text-xs text-[var(--success)] transition-opacity duration-300 starting:opacity-0 motion-reduce:transition-none" role="status">{toast}</p>}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[180px] flex-1">
@@ -486,7 +486,7 @@ export function PendenciasEstruturais({ detalhes, ciclo, podeResolver }: { detal
   return (
     <div className="grid gap-2 text-[var(--foreground)]" data-testid="pendencias-estruturais">
       {mensagem && (
-        <p className="flex items-center gap-2 rounded-lg border border-[var(--success)]/30 bg-[var(--success-soft)] p-3 text-xs font-semibold text-[var(--success)]" role="status">
+        <p className="flex items-center gap-2 rounded-lg border border-[var(--success)]/30 bg-[var(--success-soft)] p-3 text-xs font-semibold text-[var(--success)] transition-opacity duration-300 starting:opacity-0 motion-reduce:transition-none" role="status">
           <Check size={14} /> {mensagem}
         </p>
       )}
@@ -523,14 +523,16 @@ export function PendenciasEstruturais({ detalhes, ciclo, podeResolver }: { detal
           </div>
         );
       })}
+      <AnimatePresence>
       {descartando && ciclo && (
-        <DescartarLinhasDialog grupo={descartando} ciclo={ciclo} onClose={() => setDescartando(null)}
+        <DescartarLinhasDialog key="descartar-linhas" grupo={descartando} ciclo={ciclo} onClose={() => setDescartando(null)}
           onConcluido={(msg) => {
             setDescartados((prev) => new Set(prev).add(`${descartando.status}-${descartando.origem}-${descartando.valor}`));
             setDescartando(null);
             setMensagem(msg);
           }} />
       )}
+      </AnimatePresence>
     </div>
   );
 }

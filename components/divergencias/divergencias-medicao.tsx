@@ -1,8 +1,9 @@
 "use client";
 
+import { AnimatePresence } from "framer-motion";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, Check, ChevronDown, CircleSlash, FileSpreadsheet, MinusCircle, Search } from "lucide-react";
-import { Badge, Button, Textarea } from "@/components/ui";
+import { Badge, Button, Modal, Textarea } from "@/components/ui";
 import {
   STATUS_CAMPO_LABEL,
   agruparPorDocumento,
@@ -129,8 +130,7 @@ function ConfirmarDecisaoDialog({
   const linhas = criaDocumento ? campos.filter((c) => c.chave !== "nrVale") : divergentes;
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:items-center sm:p-4">
-      <div role="alertdialog" aria-modal="true" aria-labelledby={`${id}-t`} aria-describedby={`${id}-d`} className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[520px] sm:max-w-[92vw]">
+    <Modal role="alertdialog" rotuloId={`${id}-t`} descricaoId={`${id}-d`} sobreposicao="z-[90] items-end sm:items-center" className="flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[520px] sm:max-w-[92vw]">
         <div className="border-b border-[var(--border)] px-5 py-4">
           <h2 id={`${id}-t`} className="text-section-title text-[var(--foreground)]">{acao.label}</h2>
           <p id={`${id}-d`} className="mt-1 text-[12px] text-[var(--muted-foreground)]">{acao.consequencia}</p>
@@ -171,8 +171,7 @@ function ConfirmarDecisaoDialog({
             {enviando ? "Registrando..." : acao.label}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -445,8 +444,9 @@ export function DivergenciasMedicao({
         </ul>
       )}
 
+      <AnimatePresence>
       {confirmacao && confirmando && (
-        <ConfirmarDecisaoDialog
+        <ConfirmarDecisaoDialog key="confirmar-decisao"
           divergencia={confirmando}
           acao={confirmacao.acao}
           observacao={observacoes[confirmacao.id] ?? ""}
@@ -456,6 +456,7 @@ export function DivergenciasMedicao({
           onConfirmar={() => void confirmar()}
         />
       )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useId, useRef, type ReactNode } from "react";
+import { motion } from "framer-motion";
 import { X } from "lucide-react";
+import { usePainelSobreposto } from "@/components/motion";
 import { IconButton } from "@/components/ui";
 
 /**
@@ -41,6 +43,7 @@ export function AdminSidePanel({
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLElement>(null);
+  const { presente, fundo, painel } = usePainelSobreposto();
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -53,21 +56,21 @@ export function AdminSidePanel({
   }, []);
 
   useEffect(() => {
-    if (!escEnabled) return;
+    if (!escEnabled || !presente) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !closeDisabled) (onEscape ?? onClose)();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [escEnabled, closeDisabled, onEscape, onClose]);
+  }, [escEnabled, presente, closeDisabled, onEscape, onClose]);
 
   const width = size === "wide" ? "sm:w-[88vw] lg:w-[clamp(720px,62vw,900px)]" : "sm:w-[520px]";
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid={testId}>
+    <div className="fixed inset-0 z-50 flex justify-end" inert={!presente} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid={testId}>
       {/* Backdrop só para clique do mouse; fechamento acessível = botão Fechar e Esc. */}
-      <div aria-hidden="true" className="absolute inset-0 bg-black/30" onClick={() => { if (!closeDisabled) onClose(); }} />
-      <aside ref={panelRef} tabIndex={-1} className={`relative flex h-full w-full max-w-full flex-col bg-[var(--surface)] shadow-2xl outline-none ${width}`}>
+      <motion.div {...fundo} aria-hidden="true" className="absolute inset-0 bg-black/30" onClick={() => { if (!closeDisabled) onClose(); }} />
+      <motion.aside {...painel} ref={panelRef} tabIndex={-1} className={`relative flex h-full w-full max-w-full flex-col bg-[var(--surface)] shadow-2xl outline-none ${width}`}>
         <header className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-5 sm:px-6">
           <div className="min-w-0">
             {eyebrow && <p className="text-eyebrow mb-1 text-[var(--primary)]">{eyebrow}</p>}
@@ -79,7 +82,7 @@ export function AdminSidePanel({
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
         {footer && <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] px-5 py-4 sm:px-6">{footer}</footer>}
-      </aside>
+      </motion.aside>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronDown, Clock, MessageCircle, XCircle } from "lucide-react";
-import { Badge, Button, Card, Textarea } from "@/components/ui";
+import { Badge, Button, Card, Modal, Textarea } from "@/components/ui";
 import { formatCicloLabel } from "@/lib/ciclo";
 import type { CalculoBoletim, DocumentoBoletim } from "@/lib/boletim-calculo";
 import { getPortalStatusMeta } from "@/lib/portal-fornecedor";
@@ -434,22 +434,14 @@ function PortalDialog({
   }, [busy, onClose]);
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:items-center sm:p-4">
-      <div
-        role={role}
-        aria-modal="true"
-        aria-labelledby={`${id}-titulo`}
-        aria-describedby={`${id}-descricao`}
-        className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]"
-      >
+    <Modal role={role} rotuloId={`${id}-titulo`} descricaoId={`${id}-descricao`} sobreposicao="z-[80] items-end sm:items-center" className="flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]">
         <div className="border-b border-[var(--border)] px-5 py-4">
           <h2 id={`${id}-titulo`} className="text-section-title text-[var(--foreground)]">{titulo}</h2>
           <p id={`${id}-descricao`} className="mt-1 text-[12px] text-[var(--muted-foreground)]">{descricao}</p>
         </div>
         {children && <div className="grid min-h-0 gap-4 overflow-y-auto px-5 py-4">{children}</div>}
         <div className="flex flex-col-reverse gap-2 border-t border-[var(--border)] px-5 py-4 sm:flex-row sm:justify-end">{footer}</div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

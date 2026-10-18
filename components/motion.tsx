@@ -1,16 +1,16 @@
 "use client";
 
-import { animate, motion, useAnimationControls, useMotionValue, useReducedMotion, useTransform, type Variants } from "framer-motion";
-import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { animate, motion, useAnimationControls, useIsPresent, useMotionValue, useReducedMotion, useTransform, type Transition, type Variants } from "framer-motion";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 
 // Primitivas de motion (spec docs/brain/specs/layout-tema-motion.md). Com prefers-reduced-motion,
 // todas renderizam o estado final na hora. Nunca usar em linhas de tabela nem com overshoot em valores.
 
-const EASE_SAIDA = [0.22, 1, 0.36, 1] as const;
+export const EASE_SAIDA = [0.22, 1, 0.36, 1] as const;
 
 const semInscricao = () => () => {};
 /** false no servidor e na hidratação, true em montagens depois dela: só o que monta no cliente parte do estado inicial. */
-function useMontadoAposHidratacao() {
+export function useMontadoAposHidratacao() {
   return useSyncExternalStore(semInscricao, () => true, () => false);
 }
 
@@ -121,4 +121,36 @@ export function CountUp({ valor, formatar }: { valor: number; formatar: (n: numb
       <span className="sr-only">{formatar(valor)}</span>
     </span>
   );
+}
+
+// Painéis laterais montados agora, incluindo o que está saindo. Troca de modo ou de item no mesmo lugar
+// monta o novo antes de desmontar o anterior: com outro painel montado, a entrada não se repete.
+let paineisMontados = 0;
+
+/**
+ * Animação dos painéis laterais (AdminSidePanel, FornecedorDrawer): desliza da direita na entrada e
+ * volta na saída (exige AnimatePresence no ponto que abre). `presente` é false durante a saída: o painel
+ * fica inerte (`inert`: sem clique, teclado nem leitor de tela) e desliga o Esc para não interceptar a próxima ação.
+ */
+export function usePainelSobreposto() {
+  const reduzir = useReducedMotion();
+  const montado = useMontadoAposHidratacao();
+  const [entrar] = useState(() => montado && paineisMontados === 0);
+  const presente = useIsPresent();
+
+  useLayoutEffect(() => {
+    paineisMontados++;
+    return () => {
+      paineisMontados--;
+    };
+  }, []);
+
+  const animar = entrar && !reduzir;
+  const entrada: Transition = { duration: reduzir ? 0 : 0.28, ease: EASE_SAIDA };
+  const saida: Transition = { duration: reduzir ? 0 : 0.18, ease: "easeIn" };
+  return {
+    presente,
+    fundo: { initial: animar ? { opacity: 0 } : false, animate: { opacity: 1, transition: entrada }, exit: { opacity: 0, transition: saida } },
+    painel: { initial: animar ? { x: "100%" } : false, animate: { x: 0, transition: entrada }, exit: { x: "100%", transition: saida } },
+  } as const;
 }

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { AnimatePresence } from "framer-motion";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, Fragment } from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, Clock3, FileCheck2, RefreshCw, Search, X } from "lucide-react";
-import { Badge, BlurValue, Card, FilterButton, FilterChip, IconButton, Input, PageHeader, Select } from "@/components/ui";
+import { Badge, BlurValue, Card, classeLinha, Carregando, FilterButton, FilterChip, IconButton, Input, Modal, PageHeader, Select } from "@/components/ui";
 import { useViewportAlign } from "@/components/use-viewport-align";
 import { DashboardKpiCard } from "@/components/dashboard-pilot/dashboard-kpi-card";
-import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
+import { BoletimMedicao, type BmData, useVisualizadorBm } from "@/components/boletim-medicao";
 import { getMapaPagamentoDisplayStatus } from "@/lib/sgc-display-status";
 import { type Evidencia, useEvidencias, useFornecedoresComEvidencia } from "@/components/evidencias/dados";
 import { EvidenciaDrawer } from "@/components/evidencias/evidencia-drawer";
@@ -44,7 +45,7 @@ export function EvidenciasWorkspace({
   const filtrosPainelRef = useRef<HTMLDivElement>(null);
   const filtrosPosicao = useViewportAlign(filtrosRef, filtrosPainelRef, filtrosAbertos, "right");
   const [aberta, setAberta] = useState<Evidencia | null>(null);
-  const [bm, setBm] = useState<{ data: BmData | null; erro: string | null; loading: boolean } | null>(null);
+  const { bm, abrir: abrirBm, fechar: fecharBm } = useVisualizadorBm({ erroPadrao: "Erro ao buscar boletim.", validar: semMedicao });
 
   useEffect(() => {
     const fora = (e: MouseEvent) => { if (filtrosRef.current && !filtrosRef.current.contains(e.target as Node)) setFiltrosAbertos(false); };
@@ -82,15 +83,6 @@ export function EvidenciasWorkspace({
   const chips: { key: string; label: string; onRemove: () => void }[] = [];
   if (fornecedor) chips.push({ key: "fornecedor", label: `Fornecedor: ${fornecedor.nome}`, onRemove: () => setFornecedor(null) });
   if (status) chips.push({ key: "status", label: `Status: ${status}`, onRemove: () => setStatus("") });
-
-  async function verBm(e: Evidencia) {
-    setBm({ data: null, erro: null, loading: true });
-    const res = await fetch(`/api/admin/bm?codigo=${encodeURIComponent(e.colaboradorCodigo)}&ciclo=${encodeURIComponent(e.ciclo)}`);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) setBm({ data: null, erro: data.error ?? "Erro ao buscar boletim.", loading: false });
-    else if (!data.pagamento && !data.documentos?.length) setBm({ data: null, erro: "Nenhuma medição encontrada para este fornecedor e ciclo.", loading: false });
-    else setBm({ data: data as BmData, erro: null, loading: false });
-  }
 
   const total = filtradas.reduce((s, e) => s + (e.valor ?? 0), 0);
 
@@ -184,15 +176,13 @@ export function EvidenciasWorkspace({
         {itens === null ? (
           <div className="px-6 py-14 text-center text-sm text-[var(--muted-foreground)]">Selecione um ciclo ou um fornecedor para visualizar as evidências.</div>
         ) : loading && !itens.length ? (
-          <div className="grid gap-2 px-5 py-5" aria-label="Carregando evidências">
-            {[0, 1, 2].map((i) => <div key={i} className="h-11 animate-pulse rounded-lg bg-[var(--surface-muted)]" />)}
-          </div>
+          <Carregando texto="Carregando evidências" className="px-5 py-5" />
         ) : erro ? (
           <div className="px-6 py-14 text-center text-sm text-[var(--error)]">{erro}</div>
         ) : filtradas.length === 0 ? (
           <div className="px-6 py-14 text-center text-sm text-[var(--muted-foreground)]" data-testid="evidencias-vazio">Nenhuma evidência encontrada para este ciclo e filtro.</div>
         ) : (
-          <EvidenciasLista itens={filtradas} onOpen={setAberta} />
+          <EvidenciasLista itens={filtradas} onOpen={setAberta} abertaKey={aberta?.key ?? null} />
         )}
 
         {itens !== null && (
@@ -203,34 +193,44 @@ export function EvidenciasWorkspace({
         )}
       </Card>
 
+      {/* Filho estável: trocar de evidência é instantâneo (sem dois painéis ao mesmo tempo); fechar anima. */}
+      <AnimatePresence>
       {aberta && (
+        <Fragment key="evidencia-painel">
         <EvidenciaDrawer
           key={aberta.key}
           evidencia={aberta}
           escEnabled={!bm}
-          onVerBm={() => verBm(aberta)}
+          onVerBm={() => abrirBm(aberta.colaboradorCodigo, aberta.ciclo)}
           onClose={() => setAberta(null)}
         />
+        </Fragment>
       )}
+      </AnimatePresence>
 
+      <AnimatePresence>
       {bm && (
-        <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:p-4 sm:pt-10">
-          <div className="min-h-screen w-full max-w-5xl rounded-none bg-[var(--surface)] shadow-2xl sm:min-h-0 sm:rounded-xl">
+        <Modal key="boletim" variante="tela" rotulo="Boletim de Medição" sobreposicao="z-[70]" className="min-h-screen w-full max-w-5xl rounded-none bg-[var(--surface)] shadow-2xl sm:min-h-0 sm:rounded-xl">
             <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
               <p className="text-sm font-semibold text-[var(--foreground)]">Boletim de Medição{aberta ? ` — ${aberta.nome} (${aberta.ciclo})` : ""}</p>
-              <IconButton onClick={() => setBm(null)} title="Fechar boletim"><X size={16} /></IconButton>
+              <IconButton onClick={fecharBm} title="Fechar boletim"><X size={16} /></IconButton>
             </div>
             {/* Sem overflow-x-auto aqui: BoletimMedicao já rola horizontalmente por conta própria. */}
             <div className="min-w-0 max-w-full p-4 sm:p-5">
-              {bm.loading ? <p className="py-10 text-center text-sm text-[var(--muted-foreground)]">Carregando boletim…</p>
+              {bm.loading ? <Carregando texto="Carregando boletim…" linhas={6} altura="h-8" />
                 : bm.erro ? <div className="rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-4 py-3 text-sm text-[var(--error)]">{bm.erro}</div>
                 : bm.data ? <BoletimMedicao data={bm.data} /> : null}
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
+      </AnimatePresence>
     </div>
   );
+}
+
+/** Evidência sem pagamento nem documento medido: não há BM para mostrar. */
+function semMedicao(data: BmData) {
+  return !data.pagamento && !data.documentos?.length ? "Nenhuma medição encontrada para este fornecedor e ciclo." : null;
 }
 
 function onKey(event: KeyboardEvent<HTMLElement>, open: () => void) {
@@ -241,7 +241,7 @@ function onKey(event: KeyboardEvent<HTMLElement>, open: () => void) {
 }
 
 /** Uma linha por BM (fornecedor × ciclo); a linha abre o detalhe — sem coluna de ações. */
-function EvidenciasLista({ itens, onOpen }: { itens: Evidencia[]; onOpen: (e: Evidencia) => void }) {
+function EvidenciasLista({ itens, onOpen, abertaKey }: { itens: Evidencia[]; onOpen: (e: Evidencia) => void; abertaKey: string | null }) {
   const th = "text-table-header border-b border-[var(--border)] px-3 py-2.5 text-left text-[var(--muted-foreground)] xl:px-4";
   return (
     <>
@@ -265,7 +265,8 @@ function EvidenciasLista({ itens, onOpen }: { itens: Evidencia[]; onOpen: (e: Ev
                 aria-label={`Abrir evidência de ${e.nome} no ciclo ${e.ciclo}`}
                 onClick={() => onOpen(e)}
                 onKeyDown={(ev) => onKey(ev, () => onOpen(e))}
-                className="cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)] focus-visible:outline-none"
+                data-aberta={e.key === abertaKey || undefined}
+                className={classeLinha(e.key === abertaKey)}
               >
                 <td className="px-3 py-3 xl:px-4">
                   <p className="max-w-[340px] truncate font-semibold text-[var(--foreground)]">{e.nome}</p>
