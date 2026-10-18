@@ -1,6 +1,6 @@
 ---
 atualizado: 2026-10-17
-status: em andamento (T1 a T5 feitas no ambiente local; falta a T6)
+status: em andamento (T1 a T5 feitas; T6 concluída na pré-produção; falta a produção)
 tags: [spec, plano]
 ---
 # Plano: P0 como único ID do fornecedor
@@ -141,7 +141,16 @@ Nenhum passo vale rodar em paralelo.
        - `--reverter` (P0000001) na cópia migrada: 55 revertidos, 0 falhas; depois dele, `--medir` não acha nenhuma migração em vigor. A comparação por hash, linha a linha, com `medicoes_ensaio_p0_original` deu **idêntico** em Profissionais (código, nome, nome completo), aliases, cadastros, BMs, divergências, mapa, BM auxiliar, logs e usuários. Só sobram as 110 linhas de auditoria (55 da migração e 55 da reversão). A reversão vale como rollback até a primeira importação depois da migração.
        - As duas bases do ensaio ficam no Postgres local até o fim da T6. O dump fica fora do repositório, em `C:/Users/Anderson Marley/backups-medicoes/`.
 
-    Depois, na pré-produção e então na produção (passos do usuário, com segredos):
+    Pré-produção: **feita em 2026-10-18 (UTC)** pelo [runbook](../../runbook-p0-pre-producao.md), executado pelo usuário e conferido passo a passo.
+       - Saiu de 7482a2d para 2e1a9a4 (`APPROVED_SHA`). Rollback: imagens `local/medicoes-{web,etl}-rollback:20261018T011856Z` e o dump `medicoes_pre_p0_20261018T011856Z.dump` (22 tabelas), em `~/backups-medicoes/p0_20261018T011856Z/` no servidor, junto com os JSONs e os logs de cada passo.
+       - O diff local do `docker-compose.yml` (porta padrão 3020) foi preservado; o compose e os Dockerfiles não mudaram entre os dois SHAs.
+       - Dry-run igual ao ensaio: 55/55 `MIGRAVEL`, 0 conflitos, as mesmas linhas a reescrever. `--aplicar` (P0000001): 55 migrados, 0 falhas. `--medir`: 55/55 ok, antes e depois do deploy.
+       - Deploy: ETL e web `healthy`, `/api/health` ok, logs sem `P2002`, erro, traceback ou 5xx.
+       - Smoke no navegador: o Administrativo mostra os acessos em P0; um fornecedor de teste criado com medição vê só o próprio BM; o Financeiro abre os BMs sem diferença.
+       - Não testado: login de um fornecedor real migrado (o smoke usou um fornecedor de teste). O fornecedor de teste e a medição dele ficaram na pré-produção.
+       - Rollback daqui em diante: depois da primeira importação, vale o passo 8, item B, do runbook.
+
+    Produção (passos do usuário, com segredos), com novo ensaio local a partir de um backup da produção:
     1. backup;
     2. dry-run;
     3. janela sem importação;
