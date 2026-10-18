@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures/test-with-error-guard";
 import { LoginPage } from "./pages/login-page";
+import { fecharEMedir } from "./fixtures/saida-animada";
 import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
 
 /**
@@ -174,4 +175,18 @@ test.describe.serial("Minhas Medições — acompanhamento do fornecedor", () =>
       expect((await botao.boundingBox())!.height).toBeGreaterThanOrEqual(40);
     });
   }
+
+  test.describe("com motion ligado", () => {
+    test.use({ contextOptions: { reducedMotion: "no-preference" } });
+
+    test("saída do painel: fica inerte enquanto some (sem teclado nem leitor de tela)", async ({ page }) => {
+      await abrirMinhasMedicoes(page);
+      await page.getByRole("row", { name: `Abrir medição do ciclo ${CICLO_ANTIGO}` }).click();
+      const detalhe = page.getByTestId("minhas-medicoes-detalhe");
+      await expect(detalhe).toBeVisible();
+      await detalhe.getByRole("button", { name: "Fechar" }).focus();
+      expect(await fecharEMedir(page, '[data-testid="minhas-medicoes-detalhe"] [title="Fechar"]', '[data-testid="minhas-medicoes-detalhe"]')).toEqual({ saindo: true, inerte: true, focoDentro: false });
+      await expect(detalhe).toHaveCount(0);
+    });
+  });
 });

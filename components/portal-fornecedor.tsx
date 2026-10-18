@@ -1,8 +1,10 @@
 "use client";
 
+import { useIsPresent } from "framer-motion";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronDown, Clock, MessageCircle, XCircle } from "lucide-react";
 import { Badge, Button, Card, Modal, Textarea } from "@/components/ui";
+import { AnimatedText, ENTRADA_FADE } from "@/components/motion";
 import { formatCicloLabel } from "@/lib/ciclo";
 import type { CalculoBoletim, DocumentoBoletim } from "@/lib/boletim-calculo";
 import { getPortalStatusMeta } from "@/lib/portal-fornecedor";
@@ -141,7 +143,7 @@ export function PortalFeedback({ message }: { message: { text: string; type: "su
   return (
     <div
       role="status"
-      className={`mt-4 flex items-start gap-2 rounded-lg border px-3.5 py-2.5 text-[13px] font-medium ${
+      className={`mt-4 flex items-start gap-2 rounded-lg border px-3.5 py-2.5 text-[13px] font-medium ${ENTRADA_FADE} ${
         message.type === "success"
           ? "border-[var(--success)]/30 bg-[var(--success-soft)] text-[var(--success)]"
           : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--foreground)]"
@@ -173,7 +175,7 @@ export function EstadoConcluido({
         <Icone size={18} aria-hidden />
       </span>
       <div className="min-w-0 flex-1">
-        <h2 className="text-card-title text-[var(--foreground)]">{titulo}</h2>
+        <AnimatedText as="h2" texto={titulo} className="text-card-title text-[var(--foreground)]" />
         {detalhe && <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">{detalhe}</p>}
         {children}
       </div>
@@ -427,11 +429,14 @@ function PortalDialog({
   footer: ReactNode;
 }) {
   const id = useId();
+  // Durante a saída animada o diálogo ainda está montado: o Esc fica desligado para não agir duas vezes.
+  const presente = useIsPresent();
   useEffect(() => {
+    if (!presente) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [busy, onClose]);
+  }, [busy, onClose, presente]);
 
   return (
     <Modal role={role} rotuloId={`${id}-titulo`} descricaoId={`${id}-descricao`} sobreposicao="z-[80] items-end sm:items-center" className="flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]">

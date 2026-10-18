@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { AnimatePresence } from "framer-motion";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, ChevronRight, Circle, FileText, RotateCcw, Search, Trash2, UploadCloud, X } from "lucide-react";
 import { AdminSidePanel, PanelSection } from "@/components/administrativo/admin-side-panel";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { ComposicaoPortal, PortalStatusBadge } from "@/components/portal-fornecedor";
-import { Button, Card, IconButton } from "@/components/ui";
+import { Button, Card, Carregando, classeLinha, IconButton, Modal } from "@/components/ui";
+import { ENTRADA_FADE } from "@/components/motion";
 import {
   competenciaCiclo,
   eventosMedicao,
@@ -70,10 +72,7 @@ export function MinhasMedicoes({
     return (
       <div aria-busy="true" data-testid="minhas-medicoes-carregando">
         <Card className="p-5">
-          <p className="sr-only" role="status">Carregando medições…</p>
-          <div className="grid gap-3" aria-hidden>
-            {[0, 1, 2].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-[var(--surface-hover)]" />)}
-          </div>
+          <Carregando texto="Carregando medições…" altura="h-14" className="gap-3" />
         </Card>
       </div>
     );
@@ -147,7 +146,8 @@ export function MinhasMedicoes({
                     aria-label={`Abrir medição do ciclo ${m.ciclo}`}
                     onClick={() => setAbertaId(m.id)}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setAbertaId(m.id); } }}
-                    className="cursor-pointer border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)]"
+                    data-aberta={m.id === abertaId || undefined}
+                    className={classeLinha(m.id === abertaId)}
                     data-ciclo={m.ciclo}
                   >
                     <td className="px-4 py-3 font-technical font-semibold text-[var(--foreground)]">{m.ciclo}{m.revisaoLabel && <span className="ml-2 font-sans text-[11px] font-medium text-[var(--muted-foreground)]">{m.revisaoLabel}</span>}</td>
@@ -187,9 +187,14 @@ export function MinhasMedicoes({
         </Card>
       )}
 
-      {aberta && (
-        <DetalheMedicao medicao={aberta} fornecedorNome={fornecedorNome} onClose={() => setAbertaId(null)} onRecarregar={onRecarregar} />
-      )}
+      {/* Filho estável: trocar de medição é instantâneo; fechar anima a saída do painel. */}
+      <AnimatePresence>
+        {aberta && (
+          <Fragment key="minhas-medicoes-painel">
+            <DetalheMedicao key={aberta.id} medicao={aberta} fornecedorNome={fornecedorNome} onClose={() => setAbertaId(null)} onRecarregar={onRecarregar} />
+          </Fragment>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -228,14 +233,15 @@ function DetalheMedicao({ medicao: m, fornecedorNome, onClose, onRecarregar }: {
             <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">Total da medição</dt><dd className="tabular-nums text-[var(--foreground)]" data-testid="minhas-medicoes-total-medicao">{brl.format(v.totalMedicao)}</dd></div>
             {v.rev !== 0 && <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">REV / Ajustes</dt><dd className="tabular-nums text-[var(--foreground)]" data-testid="minhas-medicoes-rev">{v.rev > 0 ? "+ " : ""}{brl.format(v.rev)}</dd></div>}
           </dl>
-          {passo && <p role="note" className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-[13px] text-[var(--foreground)]" data-testid="minhas-medicoes-proximo-passo">{passo}</p>}
+          {/* Em AGUARDANDO_NF o próximo passo é do fornecedor (enviar a NF): fica em destaque. */}
+          {passo && <p role="note" className={`rounded-lg border px-3 py-2 text-[13px] text-[var(--foreground)] ${m.status === "AGUARDANDO_NF" ? "border-[var(--primary)] bg-[var(--primary-soft)] font-semibold" : "border-[var(--border)] bg-[var(--surface-muted)]"}`} data-testid="minhas-medicoes-proximo-passo">{passo}</p>}
         </PanelSection>
 
         <PanelSection title="Nota fiscal">
           {m.status === "AGUARDANDO_NF" ? (
             <EnvioNotaFiscal onEnviada={onRecarregar} />
           ) : m.nfArquivoNome ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--border)] px-3.5 py-3">
+            <div className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--border)] px-3.5 py-3 ${ENTRADA_FADE}`}>
               <div className="min-w-0 text-[13px]">
                 <p className="font-medium text-[var(--foreground)]">Recebida</p>
                 <p className="break-all text-[12px] text-[var(--muted-foreground)]">{m.nfArquivoNome}{fmtDataHora(m.nfCarregadoAt) ? ` · ${fmtDataHora(m.nfCarregadoAt)}` : ""}</p>
@@ -281,9 +287,9 @@ function DetalheMedicao({ medicao: m, fornecedorNome, onClose, onRecarregar }: {
         </div>
       </AdminSidePanel>
 
-      {bmAberto && (
-        <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:p-4 sm:pt-10" role="dialog" aria-modal="true" aria-label="Boletim de Medição">
-          <div className="min-h-screen w-full max-w-5xl rounded-none bg-[var(--surface)] shadow-2xl sm:min-h-0 sm:rounded-xl">
+      <AnimatePresence>
+        {bmAberto && (
+          <Modal key="boletim" variante="tela" rotulo="Boletim de Medição" sobreposicao="z-[70]" className="min-h-screen w-full max-w-5xl rounded-none bg-[var(--surface)] shadow-2xl sm:min-h-0 sm:rounded-xl">
             <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
               <p className="text-sm font-semibold text-[var(--foreground)]">Boletim de Medição · Ciclo {m.ciclo}</p>
               <IconButton onClick={() => setBmAberto(false)} title="Fechar boletim" aria-label="Fechar boletim"><X size={16} /></IconButton>
@@ -291,9 +297,9 @@ function DetalheMedicao({ medicao: m, fornecedorNome, onClose, onRecarregar }: {
             <div className="p-4 sm:p-5">
               <BoletimMedicao data={m} />
             </div>
-          </div>
-        </div>
-      )}
+          </Modal>
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -392,7 +398,7 @@ function EnvioNotaFiscal({ onEnviada }: { onEnviada: () => void }) {
         <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">PDF pesquisável</p>
       </div>
       {nfFile && (
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+        <div className={`rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 ${ENTRADA_FADE}`}>
           <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13px] font-semibold text-[var(--foreground)]">{nfFile.name}</p>
@@ -415,7 +421,7 @@ function EnvioNotaFiscal({ onEnviada }: { onEnviada: () => void }) {
           </div>
         </div>
       )}
-      {nfError && !nfFile && <p className="text-[12px] text-[var(--error)]">{nfError}</p>}
+      {nfError && !nfFile && <p role="alert" className={`text-[12px] text-[var(--error)] ${ENTRADA_FADE}`}>{nfError}</p>}
     </div>
   );
 }

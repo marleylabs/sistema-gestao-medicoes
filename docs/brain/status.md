@@ -8,7 +8,7 @@ atualizado: 2026-10-18
   - M1 (fundação) commitado em a516126; M2 (login e dashboard) em ee6d375; correção da corrida do login no E2E em 29384c5. Nada enviado ao GitHub.
   - M3 (painéis dos setores) em andamento, sem commit: T1 (painel lateral com entrada e saída) e T2 (`Modal` único, 19 modais) feitas. `test:targeted` 533/533, E2E 208/208 em duas rodadas seguidas.
   - O E2E roda com `reducedMotion: "reduce"` (`playwright.config.ts`).
-  - M3 commitado em 7fb1499 (sem push). Próximo: M4 (portal do fornecedor), começando pelo `/spec`; inclui o overlay cru de `minhas-medicoes.tsx`.
+  - M3 (7fb1499) e M4 (portal do fornecedor) commitados na release, sem push. As quatro etapas do layout (M1 a M4) estão concluídas.
 - **P2 — P0 como único ID do fornecedor** ([spec](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)). T1 a T5 prontas e testadas no ambiente local; nada implantado. **Pré-produção migrada e implantada em 2026-10-18 (UTC)** com 2e1a9a4: 55/55 migrados, medição ok antes e depois do deploy, smoke ok ([plano, T6](specs/p2-vinculo-login-profissional-plano.md), [runbook](../runbook-p0-pre-producao.md)). Falta a produção: novo ensaio local com um backup dela, runbook ajustado, `/review` e `/ponytail-review` antes.
   - Ordem combinada em 2026-10-17: tudo no ambiente local primeiro. O ensaio com dados reais roda numa cópia local de um backup da pré-produção; o servidor só é tocado na T6.
   - Tudo enviado ao GitHub em 2026-10-17: `release/2026-10-02-import-identities` em 6fec06d (spec, T1 a T5, E2E do financeiro, ensaio e runbook). Candidato a `APPROVED_SHA` do runbook: este commit ou o seguinte, que só atualiza o status. `layout2.0` continua em 58375bb.
@@ -20,6 +20,8 @@ atualizado: 2026-10-18
   - Resultado: 208/208, 207/208 e 208/208 em três rodadas seguidas. A falha que sobrou é outra: `ECONNRESET` num `page.request.post("/api/auth/logout")` (`hotfix-mascara-grafico-filtros.spec.ts:168`).
   - O `next dev` do webServer registra de 7 a 28 `uncaughtException: Error: aborted` (ECONNRESET) por rodada, vindos de requisições canceladas nas trocas de página (polling). Suspeita, não confirmada: o servidor de dev sob carga. Rodar o E2E contra `next build` + `next start` resolveria. Não investigado.
   - 2026-10-18: `tests/migrar-codigo-p0.test.ts` falhou uma vez no `test:targeted` (3 testes: aplicar, medir e reverter P0). Passou isolado (16/16) e em duas rodadas seguidas da suíte (537/537). Suspeita, não confirmada: o `tsx --test` roda os arquivos em paralelo e outro teste de banco mexe nas mesmas linhas. Não investigado.
+  - 2026-10-18: `hotfix-mascara-grafico-filtros.spec.ts:152` (popovers de filtro dentro da viewport) falhou uma vez na suíte completa e passou isolado (4/4) e de novo junto do happy path. Na mesma rodada, `workflow-happy-path` falhou por um localizador ambíguo (`getByText(/BOLETIM DE MEDIÇÃO/i)` também casava com o título do visualizador); trocado pela célula do BM, como o outro passo do mesmo spec já fazia.
+  - 2026-10-18 (checkpoint B do M4): falhas intermitentes isoladas em `portal-fornecedor-redesign:162` e `importacao-identidades:128`, uma em cada rodada; repetidos isolados, passaram (44/44 e 16/16).
 - Intermitência vista em 2026-10-18: numa rodada de `test:targeted` logo depois do E2E, 2 testes de `tests/migrar-codigo-p0.test.ts` (medir e reverter) falharam. Passaram isolados (16/16) e em duas rodadas completas seguidas (520/520). Suspeita: estado residual do E2E no banco compartilhado. Não investigado.
 - Testes em 2026-10-17, com a T5 no ambiente local: `test:targeted` 506/506, `pytest etl/` 44/44 e E2E 207/207 em duas rodadas seguidas, no `medicoes_e2e_bm`, depois de `npm run test:e2e:seed` nesse banco.
 - Integração em `layout2.0`/`release/*`; `main` (13b7cd7) está 85 commits atrás.
@@ -47,8 +49,8 @@ atualizado: 2026-10-18
 - `npm run build` e o Playwright compartilham `.next`: rode `rm -rf .next` depois do build.
 
 ## Últimas mudanças (máx. 5, mais recente primeiro)
+- 2026-10-18: M4 do layout (portal do fornecedor): Minhas Medições com Modal, painel animado e realce; diálogos com saída inerte; ação pendente em destaque; títulos animados e cascata; chat com entrada animada. Achados da revisão corrigidos (valores do BM sem contagem, Esc desligado na saída).
 - 2026-10-18: M3 do layout (painéis, `Modal`, abas, `Toast`, `Skeleton`, realce da linha) com os achados da revisão corrigidos. Inclui: painéis e modais ficam `inert` durante a saída, e fechar o BM durante o carregamento não reabre mais (`useVisualizadorBm`). Commit 7fb1499 (sem push).
 - 2026-10-18: M2 do layout (login e dashboard) e correção da corrida do login nos testes E2E (`LoginPage.login` espera a navegação pós-login). `test:targeted` 531/531, E2E 208/208 em 2 de 3 rodadas. Sem commit.
 - 2026-10-18: M1 do layout completo (T1 a T5): modo escuro com contraste medido, alternador no menu da conta, cores fixas migradas para tokens, primitivas de motion (`components/motion.tsx`), títulos e troca de seção animados, entrada dos diálogos. Sem commit.
 - 2026-10-18: T6 da P2 na pré-produção: 55/55 fornecedores no P0, deploy de 2e1a9a4, medição e smoke ok.
-- 2026-10-17: E2E do financeiro com projeto próprio. O projeto arbitrário podia se chamar "DESCONTO" e transformar documentos em desconto; o E2E completo agora passa 206/206 em duas rodadas seguidas.

@@ -133,7 +133,7 @@ test.describe.serial("Happy path — MEDICAO envia BM → FORNECEDOR conclui →
     await financeiro.goto();
     await financeiro.expectStatusBadge(FORNECEDOR_NOME, "Aguardando pgto.");
     await financeiro.verBm(FORNECEDOR_NOME);
-    await expect(page.getByText(/BOLETIM DE MEDIÇÃO/i)).toBeVisible();
+    await expect(page.getByRole("cell", { name: "BOLETIM DE MEDIÇÃO" })).toBeVisible();
     // exact: a linha da lista atrás do modal também contém o nome ("Nome P09…")
     await expect(page.getByRole("cell", { name: FORNECEDOR_NOME, exact: true })).toBeVisible();
     // Navegação nova fecha o modal de forma confiável (o próprio botão "X" mostrou flakiness real
@@ -192,7 +192,7 @@ test.describe.serial("Happy path — MEDICAO envia BM → FORNECEDOR conclui →
     await evidencias.expectFornecedorDisponivel(FORNECEDOR_NOME);
     await evidencias.selectFornecedor(FORNECEDOR_NOME);
     await evidencias.verBoletim(FORNECEDOR_NOME);
-    await expect(page.getByText(/BOLETIM DE MEDIÇÃO/i)).toBeVisible();
+    await expect(page.getByRole("cell", { name: "BOLETIM DE MEDIÇÃO" })).toBeVisible();
     // exact: a linha da lista atrás do modal também contém o nome ("Nome P09…")
     await expect(page.getByRole("cell", { name: FORNECEDOR_NOME, exact: true })).toBeVisible();
 

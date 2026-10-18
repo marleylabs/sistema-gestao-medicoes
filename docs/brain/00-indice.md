@@ -47,4 +47,5 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [Layout: tema claro/escuro e motion](specs/layout-tema-motion.md): mapa M1 fundação → M2 login/dashboard, M3 setores, M4 portal; spec do M1 e do M2 (feitos) e do M3 (aprovada)
 - [Plano do M1 tema e motion](specs/layout-tema-motion-plano.md): tokens escuros → alternador → codemod de cores → motion → shell (concluído em 2026-10-18)
 - [Plano do M2 login e dashboard](specs/layout-tema-motion-m2-plano.md): AnimatedText em CSS → login → gráficos no tema → KPIs e cascata (concluído em 2026-10-18)
-- [Plano do M3 painéis dos setores](specs/layout-tema-motion-m3-plano.md): painel lateral → Modal único → abas → Toast → Skeleton → realce de linha (em execução)
+- [Plano do M3 painéis dos setores](specs/layout-tema-motion-m3-plano.md): painel lateral → Modal único → abas → Toast → Skeleton → realce de linha (concluído em 7fb1499)
+- [Plano do M4 portal do fornecedor](specs/layout-tema-motion-m4-plano.md): Minhas Medições e NF → diálogos → ação principal em destaque → motion expressivo → chat (concluído)

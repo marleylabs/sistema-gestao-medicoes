@@ -3,6 +3,7 @@
 import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Download, FileText, ImageIcon, MessageCircle, Mic, Paperclip, Search, Send, StopCircle, Users, X } from "lucide-react";
 import { Button } from "@/components/ui";
+import { ENTRADA_FADE, ENTRADA_JANELA, ENTRADA_MENSAGEM } from "@/components/motion";
 import { shouldSendOnEnter } from "@/lib/chat-composer";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 
@@ -160,7 +161,7 @@ function ChatMessage({
   onOpenImage: (message: ChatMensagem) => void;
 }) {
   return (
-    <div className={`flex items-end gap-2 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
+    <div className={`flex items-end gap-2 ${isOwn ? "flex-row-reverse" : `flex-row ${ENTRADA_MENSAGEM}`}`}>
       <div className="w-7 shrink-0">{showHeader && <Avatar name={message.autorNome} src={message.autorAvatarUrl} className="h-7 w-7 text-[10px]" />}</div>
       <div className={`flex min-w-0 max-w-[70%] flex-col ${isOwn ? "items-end" : "items-start"}`}>
         {showHeader && (
@@ -258,7 +259,7 @@ function ChatImageViewer({ message, onClose }: { message: ChatMensagem; onClose:
   const downloadUrl = `${message.arquivoUrl}?download=1`;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/72 p-4" onClick={onClose}>
+    <div className={`fixed inset-0 z-[70] flex items-center justify-center bg-black/72 p-4 ${ENTRADA_FADE}`} onClick={onClose}>
       <div className="flex max-h-full max-w-full flex-col items-center" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex w-full items-center justify-end gap-2">
           <a
@@ -692,7 +693,7 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     return (
       <button
         ref={bubbleRef}
-        className={`fixed z-30 inline-flex h-10 touch-none select-none items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold text-[var(--on-solid)] shadow-lg transition-colors ${bubblePosition ? "" : `right-4 ${className || "bottom-4"}`} ${unreadCount ? "bg-[var(--success)] hover:bg-[var(--success)]/90" : "bg-[var(--primary)] hover:bg-[var(--primary-hover)]"}`}
+        className={`fixed z-30 inline-flex h-10 touch-none select-none items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold text-[var(--on-solid)] shadow-lg ${ENTRADA_JANELA} ${bubblePosition ? "" : `right-4 ${className || "bottom-4"}`} ${unreadCount ? "bg-[var(--success)] hover:bg-[var(--success)]/90" : "bg-[var(--primary)] hover:bg-[var(--primary-hover)]"}`}
         style={bubblePosition ? { right: bubblePosition.right, bottom: bubblePosition.bottom } : undefined}
         onPointerDown={handleBubblePointerDown}
         onPointerMove={handleBubblePointerMove}
@@ -714,7 +715,7 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
 
   return (
     <div
-      className={`fixed right-4 z-30 grid h-[min(720px,80vh)] min-h-0 w-[min(1000px,calc(100vw-32px))] grid-cols-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl md:grid-cols-[300px_1fr] ${className || "bottom-4"}`}
+      className={`fixed right-4 z-30 grid h-[min(720px,80vh)] min-h-0 w-[min(1000px,calc(100vw-32px))] grid-cols-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl md:grid-cols-[300px_1fr] ${ENTRADA_JANELA} ${className || "bottom-4"}`}
     >
       <aside className={`min-h-0 min-w-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] ${selected ? "hidden" : "flex"} md:flex`}>
         <div className="border-b border-[var(--border)] px-4 py-3">

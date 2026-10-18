@@ -30,7 +30,7 @@ Dependência só para baixo: M2, M3 e M4 dependem de M1 e não dependem entre si
 | M3 | Painéis dos setores | Planejamento, Administrativo e Financeiro: cabeçalhos animados, drawers e modais com transição, ajustes de hierarquia | M1 |
 | M4 | Portal do fornecedor | Telas do COLABORADOR com o mesmo padrão | M1 |
 
-Esta spec detalha o M1, o M2 e o M3. O M4 ganha uma seção própria quando começar.
+Esta spec detalha o M1, o M2, o M3 e o M4.
 
 ## M1: Fundação
 
@@ -221,6 +221,60 @@ Pronto quando:
   - os textos "Carregando…" atuais continuam presentes.
 - O E2E existente cobre abrir e fechar painéis e modais, os toasts e as abas, com motion reduzido. `e2e/motion-saida.spec.ts` liga o motion e confere que o modal e o painel ficam inertes durante a saída.
 - Conferência no navegador: abrir e fechar cada painel e cada modal nos dois temas; clicar logo após fechar; trocar abas; ver um toast; carregar uma lista.
+
+## M4 — Portal do fornecedor
+
+Decisões do usuário (2026-10-18): as quatro telas entram; motion expressivo como o do login; e a ação principal do fornecedor fica mais evidente.
+
+### Telas e o que muda
+1. **Aprovação do BM** (`colaborador-app.tsx` e `portal-fornecedor.tsx`):
+   - o título da etapa com `AnimatedText`;
+   - os valores do resumo do BM ficam fixos, sem `CountUp` (revisão do M4: o leitor de tela leria um valor intermediário); a entrada vem da cascata;
+   - os blocos (resumo, ação, composição e documentos) entram em cascata (`Stagger`);
+   - o carregamento inicial ("Carregando ambiente do fornecedor…") vira skeleton com o texto em `sr-only`;
+   - o `PortalFeedback` entra com fade.
+2. **Ação principal em destaque:**
+   - o card "O que você precisa fazer" (`data-testid="portal-acao"`) sobe para logo abaixo do resumo, com borda e fundo `--primary-soft`;
+   - o passo atual (salvar → aprovar; enviar NF) recebe realce e o passo concluído recebe o check em verde;
+   - os textos e as regras continuam iguais (Aprovar só habilita depois de Salvar; ENVIAR exige `podeAprovarBm`).
+3. **Minhas Medições** (`minhas-medicoes.tsx`):
+   - o painel lateral ganha `AnimatePresence` (a saída hoje não anima);
+   - o visualizador do BM passa a usar o `Modal variante="tela"` (o BM já vem nos dados da lista, sem fetch próprio);
+   - os skeletons passam a ser o `Carregando`;
+   - a linha aberta recebe o realce `classeLinha`.
+4. **NF e comprovante** (`EnvioNotaFiscal`, em `minhas-medicoes.tsx`):
+   - envio com estado de progresso no botão e confirmação por `Toast` ou feedback com fade;
+   - o próximo passo ("Enviar NF") fica em destaque quando a medição está em AGUARDANDO_NF.
+5. **Chat do fornecedor** (`RevisionChatWidget`, em `colaborador-app.tsx`; `GeneralChatWidget`, compartilhado com o painel interno):
+   - a janela abre e fecha com escala e fade a partir do botão flutuante;
+   - mensagens novas entram com fade curto;
+   - o visualizador de imagem (`ChatImageViewer`) passa a usar o `Modal`.
+   - Como o `GeneralChatWidget` também aparece para o ADMIN interno, a mudança vale para os dois.
+6. Os diálogos do portal (`PortalDialog`) ganham `AnimatePresence` nos pontos que os abrem.
+
+### Regras que não mudam
+- O fornecedor só vê os próprios dados.
+- O cálculo do BM é o canônico (`lib/boletim-calculo.ts`).
+- Os rótulos de status vêm de `getPortalStatusMeta`.
+- Nenhuma terminologia interna aparece ("divergência", "em análise").
+- A proteção contra duplo envio continua.
+- Os guardas de `tests/portal-fornecedor.test.ts` continuam passando.
+- Com motion reduzido, tudo aparece no estado final.
+
+### Fora do escopo do M4
+- Mudança de fluxo, textos ou regras de negócio do portal.
+- Novas telas.
+- O chat interno além do que o `GeneralChatWidget` compartilha.
+
+### Testes do M4
+- Guardas em `tests/tema-tokens.test.ts`, ampliando os de `portal-fornecedor.test.ts`:
+  - pontos com `AnimatePresence`;
+  - Minhas Medições com o `Modal`;
+  - nenhum overlay `fixed inset-0` cru no portal;
+  - `portal-acao` com o destaque.
+- O E2E existente do portal (`portal-fornecedor-redesign`, `minhas-medicoes`, `workflow-*`) continua passando com motion reduzido.
+- `e2e/motion-saida.spec.ts` ganha um caso do portal.
+- Conferência no navegador com um fornecedor de teste, nos dois temas e a 375 px.
 
 ## Comandos
 - Tipos: `npx tsc --noEmit`

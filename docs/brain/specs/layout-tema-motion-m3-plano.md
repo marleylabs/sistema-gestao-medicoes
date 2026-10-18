@@ -1,6 +1,6 @@
 ---
 atualizado: 2026-10-18
-status: aprovado em 2026-10-18, em execução
+status: concluído em 2026-10-18 (7fb1499)
 tags: [spec, plano]
 ---
 # Plano: M3 Painéis dos setores

@@ -313,6 +313,8 @@ test("todo ponto que abre painel lateral está dentro de AnimatePresence", () =>
     "components/financeiro-panel.tsx": /<FinanceiroDrawer\b/,
     "components/fornecedores/index.tsx": /<(FornecedorDrawer|MapaPagamentoEditor|GerenciarCiclosPanel)\b/,
     "components/historico/historico-workspace.tsx": /<(MedicaoDrawer|FornecedorHistoricoDrawer|ContratoHistoricoDrawer)\b/,
+    "components/minhas-medicoes.tsx": /<(DetalheMedicao|Modal)\b/,
+    "components/colaborador-app.tsx": /<(AprovarBoletimDialog|SolicitarRevisaoDialog|ResponderMedicaoDialog)\b/,
   };
   for (const [arquivo, painel] of Object.entries(pontos)) {
     const fonte = read(arquivo);
@@ -450,4 +452,76 @@ test("visualizador do BM: os três painéis usam useVisualizadorBm, que descarta
     assert.doesNotMatch(fonte, /fetch\(`\/api\/admin\/bm/, `${arquivo}: carregador de BM próprio`);
     assert.match(fonte, /<IconButton onClick=\{fecharBm\} title="Fechar boletim">/, arquivo);
   }
+});
+
+/** M4 — Minhas Medições, NF e comprovante (T1). */
+
+test("portal: Minhas Medições usa as peças do M3 (Modal, Carregando, realce da linha) sem overlay próprio", () => {
+  const fonte = read("components/minhas-medicoes.tsx");
+  assert.doesNotMatch(fonte, /fixed inset-0/, "visualizador do BM fora do Modal");
+  assert.match(fonte, /<Modal key="boletim" variante="tela" rotulo="Boletim de Medição"/);
+  assert.match(fonte, /<Carregando texto="Carregando medições…"/);
+  assert.doesNotMatch(fonte, /animate-pulse/);
+  assert.match(fonte, /data-aberta=\{m\.id === abertaId \|\| undefined\}/);
+  assert.match(fonte, /className=\{classeLinha\(m\.id === abertaId\)\}/);
+  // Próximo passo do fornecedor em destaque quando a NF é dele.
+  assert.match(fonte, /m\.status === "AGUARDANDO_NF" \? "border-\[var\(--primary\)\] bg-\[var\(--primary-soft\)\]/);
+});
+
+/** M4 — ação principal em destaque (T3). */
+
+test("portal: a ação pendente do fornecedor fica em destaque e o passo atual é marcado", () => {
+  const app = read("components/colaborador-app.tsx");
+  assert.match(app, /const acaoPendente = canValidate \|\| data\?\.sgc\.status === "AGUARDANDO_NF";/);
+  assert.match(app, /acaoPendente \? "border-\[var\(--primary\)\]! bg-\[var\(--primary-soft\)\]!"/);
+  assert.match(app, /data-testid="portal-acao" data-acao-pendente=\{acaoPendente \|\| undefined\}/);
+  // Salvar é o passo atual até a validação ser salva; depois, Aprovar.
+  assert.match(app, /aria-current=\{salvoAt \? undefined : "step"\}/);
+  assert.match(app, /aria-current=\{salvoAt \? "step" : undefined\}/);
+  // As telas do portal ficam sobre a superfície do tema: nenhum branco translúcido (claro no tema escuro).
+  for (const arquivo of ["components/colaborador-app.tsx", "components/minhas-medicoes.tsx", "components/portal-fornecedor.tsx"]) {
+    assert.doesNotMatch(read(arquivo), /bg-white\//, arquivo);
+  }
+});
+
+/** M4 — motion expressivo na aprovação do BM (T4). */
+
+test("portal: títulos animados, blocos em cascata, carregamento em skeleton e valores do BM sempre finais", () => {
+  const app = read("components/colaborador-app.tsx");
+  const portal = read("components/portal-fornecedor.tsx");
+  for (const titulo of ["Aguardando o envio do BM", "Conferência da Medição", "Análise em andamento", "O que você precisa fazer"]) {
+    assert.match(app, new RegExp(`<AnimatedText as="h2" texto="${titulo}"`), titulo);
+  }
+  assert.match(portal, /<AnimatedText as="h2" texto=\{titulo\}/, "EstadoConcluido");
+  // Valores em dinheiro do BM sem contagem: o leitor de tela e quem copia leem sempre o valor final
+  // (revisão do M4); a entrada fica com a cascata.
+  assert.doesNotMatch(portal, /<CountUp\b/);
+  assert.match(portal, /data-testid="portal-bm-valor">\s*\{brl\.format\(totalMedicao\)\}/);
+  assert.match(app, /<Stagger className="grid gap-5">/);
+  assert.ok((app.match(/<StaggerItem>/g) ?? []).length >= 5, "resumo, ação, composição, descartados e documentos");
+  assert.match(app, /<span className="sr-only">Carregando ambiente do fornecedor…<\/span>/);
+  assert.doesNotMatch(app, /animate-spin/);
+  assert.match(portal, /\$\{ENTRADA_FADE\}/, "PortalFeedback com fade");
+  // O Esc do diálogo do portal fica desligado durante a saída animada.
+  assert.match(portal, /const presente = useIsPresent\(\);\s*useEffect\(\(\) => \{\s*if \(!presente\) return;/);
+});
+
+/** M4 — chat (T5). */
+
+test("chat: janela e botão entram com escala e fade; mensagens novas e visualizador de imagem com fade", () => {
+  const motion = read("components/motion.tsx");
+  assert.match(motion, /export const ENTRADA_JANELA = "[^"]*starting:scale-95 starting:opacity-0 motion-reduce:transition-none"/);
+  assert.match(motion, /export const ENTRADA_MENSAGEM = "[^"]*starting:opacity-0 motion-reduce:transition-none"/);
+  for (const arquivo of ["components/colaborador-app.tsx", "components/general-chat-widget.tsx"]) {
+    const fonte = read(arquivo);
+    assert.equal(fonte.match(/\$\{ENTRADA_JANELA\}/g)?.length, 2, `${arquivo}: botão e janela`);
+    assert.equal(fonte.match(/\$\{ENTRADA_MENSAGEM\}/g)?.length, 1, `${arquivo}: mensagem`);
+  }
+  // Só a mensagem do outro lado entra com fade: a própria aparece na hora (sem piscar ao trocar a otimista pela real).
+  assert.match(read("components/colaborador-app.tsx"), /isFornecedor \? "justify-end" : `justify-start \$\{ENTRADA_MENSAGEM\}`/);
+  assert.match(read("components/general-chat-widget.tsx"), /isOwn \? "flex-row-reverse" : `flex-row \$\{ENTRADA_MENSAGEM\}`/);
+  // Uma só string de fade (ENTRADA_FADE) para os blocos que aparecem no lugar.
+  assert.match(motion, /export const ENTRADA_FADE = "transition-opacity duration-300 starting:opacity-0 motion-reduce:transition-none"/);
+  assert.match(read("components/general-chat-widget.tsx"), /bg-black\/72 p-4 \$\{ENTRADA_FADE\}/);
+  assert.equal(read("components/minhas-medicoes.tsx").match(/\$\{ENTRADA_FADE\}/g)?.length, 3);
 });

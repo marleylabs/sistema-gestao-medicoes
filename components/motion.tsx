@@ -36,7 +36,18 @@ export function FadeIn({ children, chave }: { children: React.ReactNode; chave?:
   );
 }
 
+/**
+ * Entrada só com CSS (`@starting-style`) para o que monta na hora, sem AnimatePresence: a janela de chat
+ * e o botão flutuante que a substitui. Inclui `background-color` para não perder o hover do botão.
+ */
+export const ENTRADA_JANELA = "origin-bottom-right transition-[opacity,scale,background-color] duration-200 ease-out starting:scale-95 starting:opacity-0 motion-reduce:transition-none";
+/** Mensagem de chat que chega: sobe de leve e aparece. */
+export const ENTRADA_MENSAGEM = "transition-[opacity,translate] duration-200 ease-out starting:translate-y-1 starting:opacity-0 motion-reduce:transition-none";
+/** Aviso ou bloco que aparece no lugar (retorno de envio, feedback, visualizador de imagem). */
+export const ENTRADA_FADE = "transition-opacity duration-300 starting:opacity-0 motion-reduce:transition-none";
+
 // Classes estáticas: o Tailwind só gera o que encontra escrito no código. Palavras além da lista usam o último atraso.
+
 const ATRASO_PALAVRA = ["delay-0", "delay-[50ms]", "delay-[100ms]", "delay-[150ms]", "delay-[200ms]", "delay-[250ms]", "delay-[300ms]", "delay-[350ms]"];
 
 /**

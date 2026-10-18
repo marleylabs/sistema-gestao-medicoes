@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import {
@@ -40,7 +41,8 @@ import {
   ResponderMedicaoDialog,
   SolicitarRevisaoDialog,
 } from "@/components/portal-fornecedor";
-import { Badge, Button, Card, IconButton, PageContainer, PageHeader } from "@/components/ui";
+import { Badge, Button, Card, IconButton, PageContainer, PageHeader, Skeleton } from "@/components/ui";
+import { AnimatedText, ENTRADA_JANELA, ENTRADA_MENSAGEM, Stagger, StaggerItem } from "@/components/motion";
 import type { AuthUser } from "@/lib/session";
 import { calcularBoletim } from "@/lib/boletim-calculo";
 import { isFinancialFollowUpStatus, podeAprovarBm } from "@/lib/portal-fornecedor";
@@ -111,6 +113,9 @@ function dateLabel(v: string | null) {
 function chatTime(value: string) {
   return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
+
+/** Passo da validação que o fornecedor deve fazer agora (salvar, depois aprovar). */
+const PASSO_ATUAL = "border-[var(--primary)] shadow-[inset_0_0_0_1px_var(--primary)]";
 
 function readableFileSize(size: number) {
   if (size < 1024) return `${size} B`;
@@ -206,6 +211,8 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   const nfInputRef                          = useRef<HTMLInputElement | null>(null);
 
   const canValidate = !!data && podeAprovarBm(data.sgc.status, data.sgc.statusConferencia);
+  // Ação pendente do fornecedor (aprovar o BM ou enviar a NF): o card de ação fica em destaque.
+  const acaoPendente = canValidate || data?.sgc.status === "AGUARDANDO_NF";
 
   // Cálculo canônico do BM (lib/boletim-calculo.ts): o MESMO total que o PDF, o Histórico, as
   // Evidências e o Financeiro mostram, e que o editor grava em mapaPagamentoItem.valor.
@@ -582,9 +589,11 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
     if (loading || !loadError) {
       return (
         <div className="flex min-h-screen items-center justify-center bg-[var(--background)]">
-          <div role="status" className="flex items-center gap-3 text-[13px] text-[var(--muted-foreground)]">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--primary)]" aria-hidden />
-            Carregando ambiente do fornecedor…
+          {/* Esqueleto do portal (resumo e ação) enquanto os dados chegam; o texto fica para o leitor de tela. */}
+          <div role="status" className="grid w-full max-w-[1040px] gap-5 px-4">
+            <span className="sr-only">Carregando ambiente do fornecedor…</span>
+            <Skeleton className="h-40 rounded-[10px]" />
+            <Skeleton className="h-56 rounded-[10px]" />
           </div>
         </div>
       );
@@ -641,7 +650,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--surface-hover)] text-[var(--muted-foreground)]">
               <Clock size={30} />
             </div>
-            <h2 className="text-section-title text-[var(--foreground)]">Aguardando o envio do BM</h2>
+            <AnimatedText as="h2" texto="Aguardando o envio do BM" className="text-section-title text-[var(--foreground)]" />
             <p className="mt-2 text-sm text-[var(--muted-foreground)]">
               Sua medição ainda não foi disponibilizada pela equipe de Medição.
               <br />
@@ -657,7 +666,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
         {section === "portal" && precisaConferencia && data.sgc.statusConferencia === "AGUARDANDO_UPLOAD" && (
           <Card className="p-6">
             <p className="text-eyebrow mb-1 text-[var(--primary)]">Fornecedor</p>
-            <h2 className="text-section-title text-[var(--foreground)]">Conferência da Medição</h2>
+            <AnimatedText as="h2" texto="Conferência da Medição" className="text-section-title text-[var(--foreground)]" />
             <p className="mt-2 text-sm text-[var(--muted-foreground)]">
               Antes de visualizar e aprovar seu BM, informe os documentos correspondentes a este ciclo. Baixe a máscara, preencha os dados e envie o arquivo para conferência.
             </p>
@@ -692,7 +701,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                 setDraggingConferencia(false);
                 handleConferenciaFileSelect(e.dataTransfer.files?.[0] ?? null);
               }}
-              className={`rounded-xl border border-dashed px-4 py-5 text-center transition ${draggingConferencia ? "border-[var(--primary)] bg-[var(--primary-soft)]" : "border-[var(--border-strong)] bg-white/65 hover:bg-[var(--surface)]"}`}
+              className={`rounded-xl border border-dashed px-4 py-5 text-center transition ${draggingConferencia ? "border-[var(--primary)] bg-[var(--primary-soft)]" : "border-[var(--border-strong)] bg-[var(--surface)]/65 hover:bg-[var(--surface)]"}`}
             >
               {!conferenciaFile ? (
                 <>
@@ -748,7 +757,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--surface-hover)] text-[var(--muted-foreground)]">
               <Clock size={30} />
             </div>
-            <h2 className="text-section-title text-[var(--foreground)]">Análise em andamento</h2>
+            <AnimatedText as="h2" texto="Análise em andamento" className="text-section-title text-[var(--foreground)]" />
             <p className="mt-2 text-sm text-[var(--muted-foreground)]">
               As informações enviadas estão sendo analisadas pela Equipe de Medição.
               <br />
@@ -765,7 +774,8 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
              Hierarquia: resumo (quem, ciclo, valor, status) → ação do fornecedor → composição →
              documentos. Ações e regras são as mesmas de antes (SALVAR → ENVIAR, SOLICITAR_REVISAO,
              upload de NF); só a apresentação mudou. */}
-        {section === "portal" && !aguardando && !precisaConferencia && <>
+        {section === "portal" && !aguardando && !precisaConferencia && <Stagger className="grid gap-5">
+        <StaggerItem>
         <BoletimResumoPortal
           nome={data.usuario.nome}
           codigo={data.usuario.codigo}
@@ -779,20 +789,23 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
           razaoSocial={data.usuario.razaoSocial || data.pagamento?.razaoSocial || null}
           email={displayEmail(data.usuario.email)}
         />
+        </StaggerItem>
 
-        <Card className="p-5 sm:p-6">
-          <section aria-label="Ação do fornecedor" data-testid="portal-acao">
+        {/* A ação pendente do fornecedor (aprovar o BM ou enviar a NF) fica em destaque logo abaixo do resumo. */}
+        <StaggerItem>
+        <Card className={`p-5 sm:p-6 ${acaoPendente ? "border-[var(--primary)]! bg-[var(--primary-soft)]!" : ""}`}>
+          <section aria-label="Ação do fornecedor" data-testid="portal-acao" data-acao-pendente={acaoPendente || undefined}>
           {canValidate ? (
             <>
-              <h2 className="text-card-title text-[var(--foreground)]">O que você precisa fazer</h2>
+              <AnimatedText as="h2" texto="O que você precisa fazer" className="text-card-title text-[var(--foreground)]" />
               <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">
                 Confira o valor, a composição e os documentos. Se estiver tudo certo, salve sua validação e aprove o boletim.
               </p>
               <PortalFeedback message={message} />
               <ol className="mt-4 grid gap-3 md:grid-cols-2">
-                <li className="flex flex-col gap-3 rounded-lg border border-[var(--border)] p-4">
+                <li className={`flex flex-col gap-3 rounded-lg border bg-[var(--surface)] p-4 transition-[border-color,box-shadow] ${salvoAt ? "border-[var(--border)]" : PASSO_ATUAL}`} aria-current={salvoAt ? undefined : "step"}>
                   <div className="flex items-start gap-3">
-                    <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${salvoAt ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--surface-hover)] text-[var(--foreground)]"}`} aria-hidden>
+                    <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${salvoAt ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--primary)] text-[var(--on-solid)]"}`} aria-hidden>
                       {salvoAt ? <Check size={13} /> : "1"}
                     </span>
                     <div className="min-w-0">
@@ -806,9 +819,9 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                     {savingAction === "SALVAR" ? "Salvando..." : "Salvar validação"}
                   </Button>
                 </li>
-                <li className="flex flex-col gap-3 rounded-lg border border-[var(--border)] p-4">
+                <li className={`flex flex-col gap-3 rounded-lg border bg-[var(--surface)] p-4 transition-[border-color,box-shadow] ${salvoAt ? PASSO_ATUAL : "border-[var(--border)]"}`} aria-current={salvoAt ? "step" : undefined}>
                   <div className="flex items-start gap-3">
-                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--primary-soft)] text-[11px] font-bold text-[var(--primary)]" aria-hidden>2</span>
+                    <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${salvoAt ? "bg-[var(--primary)] text-[var(--on-solid)]" : "bg-[var(--surface-hover)] text-[var(--muted-foreground)]"}`} aria-hidden>2</span>
                     <div className="min-w-0">
                       <p className="text-[13px] font-semibold text-[var(--foreground)]">Aprovar boletim</p>
                       <p className="text-[12px] text-[var(--muted-foreground)]">
@@ -865,7 +878,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                   role="button"
                   tabIndex={0}
                   aria-label="Escolher arquivo da Nota Fiscal"
-                  className={`rounded-lg border border-dashed px-4 py-5 text-center transition ${draggingNf ? "border-[var(--warning)] bg-[var(--surface)]" : "border-[var(--warning)]/35 bg-white/70 hover:bg-[var(--surface)]"}`}
+                  className={`rounded-lg border border-dashed px-4 py-5 text-center transition ${draggingNf ? "border-[var(--warning)] bg-[var(--surface)]" : "border-[var(--warning)]/35 bg-[var(--surface)]/70 hover:bg-[var(--surface)]"}`}
                   onClick={() => nfInputRef.current?.click()}
                   onKeyDown={(event) => {
                     if (event.key !== "Enter" && event.key !== " ") return;
@@ -980,9 +993,13 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
           )}
           </section>
         </Card>
+        </StaggerItem>
 
+        {/* Diálogos do portal: entram e saem com animação (inertes durante a saída, pelo Modal). */}
+        <AnimatePresence>
         {aprovarOpen && canValidate && (
           <AprovarBoletimDialog
+            key="dialogo-aprovar"
             fornecedor={data.usuario.nome}
             ciclo={data.cicloAtivo}
             totalMedicao={calculo?.totalMedicao ?? 0}
@@ -997,6 +1014,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
 
         {actionModal === "revisao" && canValidate && (
           <SolicitarRevisaoDialog
+            key="dialogo-revisao"
             value={pontos}
             onChange={setPontos}
             respostaAdmin={data.sgc.respostaAdmin}
@@ -1009,6 +1027,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
 
         {actionModal === "resposta" && (
           <ResponderMedicaoDialog
+            key="dialogo-resposta"
             value={respostaFornecedor}
             onChange={setRespostaFornecedor}
             respostaAdmin={data.sgc.respostaAdmin}
@@ -1020,14 +1039,16 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             onConfirm={() => void sendSgc("RESPONDER_MEDICAO")}
           />
         )}
+        </AnimatePresence>
 
         {/* Composição e documentos: ocultos no acompanhamento financeiro (APROVADO/PAGO), como antes. */}
-        {!isFinancialFollowUpStatus(data.sgc.status) && calculo && <ComposicaoPortal calculo={calculo} />}
+        {!isFinancialFollowUpStatus(data.sgc.status) && calculo && <StaggerItem><ComposicaoPortal calculo={calculo} /></StaggerItem>}
 
         {/* ── Documentos não considerados (divergências descartadas pela Equipe) ──
              Nunca usar a palavra "Divergência" aqui — regra de UX já estabelecida para o Portal.
              Não renderiza nada se não houver nenhum documento descartado (sem card vazio). */}
         {data.documentosDescartados.length > 0 && !isFinancialFollowUpStatus(data.sgc.status) && (
+          <StaggerItem>
           <Card className="p-5 sm:p-6">
             <h2 className="text-card-title text-[var(--foreground)]">Documentos não considerados</h2>
             <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">
@@ -1050,17 +1071,20 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
               ))}
             </ul>
           </Card>
+          </StaggerItem>
         )}
 
         {!isFinancialFollowUpStatus(data.sgc.status) && (
+          <StaggerItem>
           <DocumentosMedicaoPortal
             calculo={calculo!}
             observacoesContrato={data.pagamento?.condicoesFixas?.observacoesContrato}
             codigo={data.usuario.codigo}
             ciclo={data.cicloAtivo}
           />
+          </StaggerItem>
         )}
-        </>}
+        </Stagger>}
 
         {/* ── Minhas Medições ── */}
         {section === "medicoes" && (
@@ -1158,7 +1182,7 @@ function RevisionChatWidget({
   if (!open) {
     return (
       <button
-        className={`fixed bottom-5 right-5 z-50 inline-flex h-12 items-center gap-2 rounded-full px-4 text-sm font-semibold text-[var(--on-solid)] shadow-xl ${hasUnread ? "bg-[var(--success)] hover:bg-[var(--success)]/90" : "bg-[var(--primary)] hover:bg-[var(--primary)]/90"}`}
+        className={`fixed bottom-5 right-5 z-50 inline-flex h-12 items-center gap-2 rounded-full px-4 text-sm font-semibold text-[var(--on-solid)] shadow-xl ${ENTRADA_JANELA} ${hasUnread ? "bg-[var(--success)] hover:bg-[var(--success)]/90" : "bg-[var(--primary)] hover:bg-[var(--primary)]/90"}`}
         onClick={() => onOpenChange(true)}
       >
         <MessageCircle size={18} />
@@ -1217,7 +1241,7 @@ function RevisionChatWidget({
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 grid h-[min(560px,calc(100vh-40px))] min-h-0 w-[min(860px,calc(100vw-24px))] grid-cols-1 overflow-hidden rounded-xl border border-[var(--border-strong)] bg-[var(--surface)] shadow-2xl md:grid-cols-[300px_1fr]">
+    <div className={`fixed bottom-5 right-5 z-50 grid h-[min(560px,calc(100vh-40px))] min-h-0 w-[min(860px,calc(100vw-24px))] grid-cols-1 overflow-hidden rounded-xl border border-[var(--border-strong)] bg-[var(--surface)] shadow-2xl md:grid-cols-[300px_1fr] ${ENTRADA_JANELA}`}>
       <aside className="hidden min-h-0 min-w-0 border-r border-[var(--border)] bg-[var(--surface)] md:flex md:flex-col">
         <div className="border-b border-[var(--border)] px-4 py-3">
           <p className="text-base font-bold text-[var(--foreground)]">Conversas</p>
@@ -1271,7 +1295,7 @@ function RevisionChatWidget({
             visibleMessages.map((mensagem) => {
               const isFornecedor = mensagem.autor === "FORNECEDOR";
               return (
-                <div key={mensagem.id} className={`flex items-end gap-2 ${isFornecedor ? "justify-end" : "justify-start"}`}>
+                <div key={mensagem.id} className={`flex items-end gap-2 ${isFornecedor ? "justify-end" : `justify-start ${ENTRADA_MENSAGEM}`}`}>
                   {!isFornecedor && (
                     <ChatAvatar
                       name={mensagem.autorNome}

@@ -1,7 +1,7 @@
-import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures/test-with-error-guard";
 import { LoginPage } from "./pages/login-page";
 import { e2eUsers } from "./fixtures";
+import { fecharEMedir } from "./fixtures/saida-animada";
 
 /**
  * Saída animada de modais e painéis (M3 do layout). Enquanto o elemento some, ele precisa ficar inerte:
@@ -9,25 +9,6 @@ import { e2eUsers } from "./fixtures";
  * (ex.: um segundo POST de exclusão). Aqui o motion fica ligado, ao contrário do resto da suíte.
  */
 test.use({ contextOptions: { reducedMotion: "no-preference" } });
-
-/** Clica em fechar e acompanha a saída quadro a quadro: o alvo ainda existe, fica inerte e o foco sai dele. */
-async function fecharEMedir(page: Page, botaoFechar: string, alvo: string) {
-  return page.evaluate(async ([botao, seletor]) => {
-    document.querySelector<HTMLElement>(botao)!.click();
-    const quadro = () => new Promise((ok) => requestAnimationFrame(() => ok(null)));
-    let medida = { saindo: false, inerte: false, focoDentro: true };
-    for (let i = 0; i < 20 && !medida.inerte; i++) {
-      await quadro();
-      const el = document.querySelector(seletor);
-      if (!el) break;
-      medida = { saindo: true, inerte: !!el.closest("[inert]"), focoDentro: true };
-    }
-    // O navegador tira o foco de um elemento inerte na etapa de renderização seguinte.
-    await quadro();
-    const el = document.querySelector(seletor);
-    return { ...medida, focoDentro: !!el && el.contains(document.activeElement) };
-  }, [botaoFechar, alvo] as const);
-}
 
 test("durante a saída, o modal e o painel lateral ficam inertes (sem teclado nem leitor de tela)", async ({ page }) => {
   const login = new LoginPage(page);
