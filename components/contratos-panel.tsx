@@ -61,15 +61,15 @@ function ContratoForm({
   const [valorTotal,  setValorTotal]  = useState(initial?.valor_total ?? "");
 
   return (
-    <div className="grid gap-4 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4">
+    <div className="grid gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
       {/* Linha 1: Nome + ID */}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-1">
-          <label className="text-[11px] font-semibold text-[#555555]">Nome do contrato *</label>
+          <label className="text-[11px] font-semibold text-[var(--muted-foreground)]">Nome do contrato *</label>
           <Input placeholder="Ex: Salobo" value={nome} onChange={(e) => setNome(e.target.value)} />
         </div>
         <div className="grid gap-1">
-          <label className="text-[11px] font-semibold text-[#555555]">ID (opcional)</label>
+          <label className="text-[11px] font-semibold text-[var(--muted-foreground)]">ID (opcional)</label>
           <Input placeholder="Ex: SLBO-001" value={codigo} onChange={(e) => setCodigo(e.target.value)} />
         </div>
       </div>
@@ -77,11 +77,11 @@ function ContratoForm({
       {/* Linha 2: Gestor + Fiscal */}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-1">
-          <label className="text-[11px] font-semibold text-[#555555]">Gestor</label>
+          <label className="text-[11px] font-semibold text-[var(--muted-foreground)]">Gestor</label>
           <Input placeholder="Nome do gestor" value={gestor} onChange={(e) => setGestor(e.target.value)} />
         </div>
         <div className="grid gap-1">
-          <label className="text-[11px] font-semibold text-[#555555]">Fiscal</label>
+          <label className="text-[11px] font-semibold text-[var(--muted-foreground)]">Fiscal</label>
           <Input placeholder="Nome do fiscal" value={fiscal} onChange={(e) => setFiscal(e.target.value)} />
         </div>
       </div>
@@ -89,25 +89,25 @@ function ContratoForm({
       {/* Linha 3: Datas + Valor */}
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="grid gap-1">
-          <label className="text-[11px] font-semibold text-[#555555]">Data de início</label>
+          <label className="text-[11px] font-semibold text-[var(--muted-foreground)]">Data de início</label>
           <input
             type="date"
             value={dataInicio}
             onChange={(e) => setDataInicio(e.target.value)}
-            className="h-9 rounded-lg border border-[#E5E7EB] px-3 text-xs text-[#1A1A1A] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+            className="h-9 rounded-lg border border-[var(--border)] px-3 text-xs text-[var(--foreground)] outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20"
           />
         </div>
         <div className="grid gap-1">
-          <label className="text-[11px] font-semibold text-[#555555]">Data de término</label>
+          <label className="text-[11px] font-semibold text-[var(--muted-foreground)]">Data de término</label>
           <input
             type="date"
             value={dataFim}
             onChange={(e) => setDataFim(e.target.value)}
-            className="h-9 rounded-lg border border-[#E5E7EB] px-3 text-xs text-[#1A1A1A] outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+            className="h-9 rounded-lg border border-[var(--border)] px-3 text-xs text-[var(--foreground)] outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20"
           />
         </div>
         <div className="grid gap-1">
-          <label className="text-[11px] font-semibold text-[#555555]">Valor total (R$)</label>
+          <label className="text-[11px] font-semibold text-[var(--muted-foreground)]">Valor total (R$)</label>
           <Input
             type="number"
             placeholder="0,00"
@@ -119,18 +119,18 @@ function ContratoForm({
 
       {/* Linha 4: Descrição */}
       <div className="grid gap-1">
-        <label className="text-[11px] font-semibold text-[#555555]">Descrição (opcional)</label>
+        <label className="text-[11px] font-semibold text-[var(--muted-foreground)]">Descrição (opcional)</label>
         <Input placeholder="Descrição resumida do contrato" value={descricao} onChange={(e) => setDescricao(e.target.value)} />
       </div>
 
       <div className="flex justify-end gap-2">
-        <button onClick={onCancel} className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-medium text-[#555555] hover:bg-[#F3F4F6]">
+        <button onClick={onCancel} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--muted-foreground)] hover:bg-[var(--surface-hover)]">
           <X size={12} className="mr-1 inline" />Cancelar
         </button>
         <button
           onClick={() => onSave({ nome, codigo, descricao, gestor, fiscal, data_inicio: dataInicio, data_fim: dataFim, valor_total: valorTotal })}
           disabled={saving || !nome.trim()}
-          className="rounded-lg bg-[#AF1B1B] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#8C1616] disabled:opacity-40"
+          className="rounded-lg bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-[var(--on-solid)] hover:bg-[var(--primary-hover)] disabled:opacity-40"
         >
           <Check size={12} className="mr-1 inline" />{saving ? "Salvando…" : "Salvar"}
         </button>
@@ -147,28 +147,28 @@ function ContratoRow({ c, onEdit, onToggle, onDelete }: {
 }) {
   return (
     <div className={`rounded-xl border px-4 py-3 transition-colors ${
-      c.ativo ? "border-[#E5E7EB] bg-white" : "border-[#F3F4F6] bg-[#FAFAFA] opacity-60"
+      c.ativo ? "border-[var(--border)] bg-[var(--surface)]" : "border-[var(--surface-hover)] bg-[var(--surface-muted)] opacity-60"
     }`}>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#F3F4F6] text-[#555555]">
+        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-hover)] text-[var(--muted-foreground)]">
           <Building2 size={15} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-sm font-semibold text-[#1A1A1A]">{c.nome}</span>
-            {c.codigo && <span className="rounded bg-[#EFF6FF] px-1.5 py-0.5 text-[10px] font-semibold text-[#2563EB]">{c.codigo}</span>}
+            <span className="text-sm font-semibold text-[var(--foreground)]">{c.nome}</span>
+            {c.codigo && <span className="rounded bg-[var(--primary-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--primary)]">{c.codigo}</span>}
             <Badge variant={c.ativo ? "success" : "neutral"}>{c.ativo ? "Ativo" : "Inativo"}</Badge>
           </div>
-          {c.descricao && <p className="mt-0.5 text-[11px] text-[#9CA3AF]">{c.descricao}</p>}
+          {c.descricao && <p className="mt-0.5 text-[11px] text-[var(--muted-foreground)]">{c.descricao}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <button onClick={onEdit} className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-xs font-medium text-[#555555] hover:border-[#2563EB] hover:text-[#2563EB]">
+          <button onClick={onEdit} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs font-medium text-[var(--muted-foreground)] hover:border-[var(--primary)] hover:text-[var(--primary)]">
             <Edit2 size={12} className="mr-1 inline" />Editar
           </button>
-          <button onClick={onToggle} className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-xs font-medium text-[#555555] hover:border-[#F59E0B] hover:text-[#D97706]">
+          <button onClick={onToggle} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs font-medium text-[var(--muted-foreground)] hover:border-[var(--warning)] hover:text-[var(--warning)]">
             {c.ativo ? "Desativar" : "Ativar"}
           </button>
-          <button onClick={onDelete} className="rounded-lg border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-xs font-medium text-[#555555] hover:border-[#DC2626] hover:text-[#DC2626]">
+          <button onClick={onDelete} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs font-medium text-[var(--muted-foreground)] hover:border-[var(--error)] hover:text-[var(--error)]">
             <Trash2 size={12} className="mr-1 inline" />Excluir
           </button>
         </div>
@@ -176,21 +176,21 @@ function ContratoRow({ c, onEdit, onToggle, onDelete }: {
 
       {/* Detalhes */}
       {(c.gestor || c.fiscal || c.data_inicio || c.data_fim || c.valor_total) && (
-        <div className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 border-t border-[#F3F4F6] pt-2.5">
+        <div className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 border-t border-[var(--surface-hover)] pt-2.5">
           {c.gestor && (
-            <span className="text-[11px] text-[#555555]"><span className="font-semibold text-[#9CA3AF]">Gestor:</span> {c.gestor}</span>
+            <span className="text-[11px] text-[var(--muted-foreground)]"><span className="font-semibold text-[var(--muted-foreground)]">Gestor:</span> {c.gestor}</span>
           )}
           {c.fiscal && (
-            <span className="text-[11px] text-[#555555]"><span className="font-semibold text-[#9CA3AF]">Fiscal:</span> {c.fiscal}</span>
+            <span className="text-[11px] text-[var(--muted-foreground)]"><span className="font-semibold text-[var(--muted-foreground)]">Fiscal:</span> {c.fiscal}</span>
           )}
           {(c.data_inicio || c.data_fim) && (
-            <span className="text-[11px] text-[#555555]">
-              <Calendar size={10} className="mr-1 inline text-[#9CA3AF]" />
+            <span className="text-[11px] text-[var(--muted-foreground)]">
+              <Calendar size={10} className="mr-1 inline text-[var(--muted-foreground)]" />
               {fmtDate(c.data_inicio)} → {fmtDate(c.data_fim)}
             </span>
           )}
           {c.valor_total && (
-            <span className="text-[11px] font-semibold text-[#16A34A]">{fmtValor(c.valor_total)}</span>
+            <span className="text-[11px] font-semibold text-[var(--success)]">{fmtValor(c.valor_total)}</span>
           )}
         </div>
       )}
@@ -281,21 +281,21 @@ export function ContratosPanel() {
       {/* KPIs */}
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#555555]">Total</p>
-          <p className="mt-1 text-2xl font-bold text-[#1A1A1A]">{contratos.length}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Total</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{contratos.length}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#555555]">Ativos</p>
-          <p className="mt-1 text-2xl font-bold text-[#16A34A]">{ativos}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Ativos</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--success)]">{ativos}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#555555]">Inativos</p>
-          <p className="mt-1 text-2xl font-bold text-[#9CA3AF]">{inativos}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Inativos</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--muted-foreground)]">{inativos}</p>
         </Card>
       </div>
 
       {error && (
-        <div className="rounded-lg bg-[#FEE2E2] px-4 py-3 text-xs font-medium text-[#B91C1C]">{error}</div>
+        <div className="rounded-lg bg-[var(--error-soft)] px-4 py-3 text-xs font-medium text-[var(--error)]">{error}</div>
       )}
 
       {showNew && (
@@ -309,13 +309,13 @@ export function ContratosPanel() {
       {loading ? (
         <Card className="p-6">
           <div className="flex items-center gap-3">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#AF1B1B]" />
-            <span className="text-sm text-[#555555]">Carregando contratos…</span>
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--primary)]" />
+            <span className="text-sm text-[var(--muted-foreground)]">Carregando contratos…</span>
           </div>
         </Card>
       ) : contratos.length === 0 ? (
         <Card className="p-6">
-          <div className="flex items-center gap-3 text-[#555555]">
+          <div className="flex items-center gap-3 text-[var(--muted-foreground)]">
             <Building2 size={18} />
             <span className="text-sm">Nenhum contrato cadastrado.</span>
           </div>

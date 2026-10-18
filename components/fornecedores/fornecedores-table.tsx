@@ -64,7 +64,7 @@ function Distribuicao({ item, contratos }: { item: MapaPagamentoItem; contratos:
   return (
     <div className="flex flex-wrap items-center gap-1">
       {visiveis.length ? visiveis.map(({ contrato, valor }) => (
-        <span key={contrato.id} className="inline-flex max-w-[180px] items-center gap-1 rounded-md border border-[var(--border)] bg-[#FAFAF8] px-1.5 py-0.5 text-[11px] text-[var(--foreground)]" title={`${contrato.nome}: ${formatParticipacao(valor)}`}>
+        <span key={contrato.id} className="inline-flex max-w-[180px] items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-1.5 py-0.5 text-[11px] text-[var(--foreground)]" title={`${contrato.nome}: ${formatParticipacao(valor)}`}>
           <span className="truncate">{contrato.nome}</span>
           <span className="shrink-0 tabular-nums text-[var(--muted-foreground)]">{formatParticipacao(valor)}</span>
         </span>
@@ -76,7 +76,7 @@ function Distribuicao({ item, contratos }: { item: MapaPagamentoItem; contratos:
       )}
       {item.documentosPendentesContrato > 0 && (
         <span
-          className="text-[#D97706]"
+          className="text-[var(--warning)]"
           title={`${item.documentosPendentesContrato} documento(s) sem contrato (CTO) válido — ${money(item.valorNaoClassificadoContrato)} ainda não classificado. Os contratos identificados continuam corretos.`}
         >
           <AlertTriangle size={13} />
@@ -128,7 +128,7 @@ export function FornecedoresTable({
       {/* Desktop/tablet: tabela só de leitura; a linha inteira abre o detalhe, onde ficam as ações. */}
       <div className="hidden max-w-full overflow-x-auto md:block">
         <table className="w-full border-collapse text-sm" data-testid="fornecedores-tabela">
-          <thead className="bg-[#FAFAF8]">
+          <thead className="bg-[var(--surface-muted)]">
             <tr>
               {selecao && (
                 <th className="w-10 border-b border-[var(--border)] py-2.5 pl-3 pr-0 xl:pl-4">
@@ -163,7 +163,7 @@ export function FornecedoresTable({
                     }
                   }}
                   data-cadastro-pendente={item.cadastroPendente ? "true" : undefined}
-                  className={`cursor-pointer border-b border-[#EFEFED] transition-colors last:border-0 hover:bg-[#FAFAF8] focus-visible:bg-[#FAFAF8] focus-visible:outline-none ${item.cadastroPendente ? "bg-[#F4F4F2] text-[var(--muted-foreground)]" : ""} ${selecao?.selecionados.has(item.id) ? "bg-[#FDF6F6]" : ""}`}
+                  className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)] focus-visible:outline-none ${item.cadastroPendente ? "bg-[var(--surface-muted)] text-[var(--muted-foreground)]" : ""} ${selecao?.selecionados.has(item.id) ? "bg-[var(--primary-soft)]" : ""}`}
                 >
                   {selecao && (
                     // O clique no checkbox nunca abre o detalhe da linha.
@@ -194,9 +194,9 @@ export function FornecedoresTable({
       </div>
 
       {/* Mobile: linhas compactas; ações e detalhes completos ficam no drawer. */}
-      <ul className="divide-y divide-[#EFEFED] md:hidden" data-testid="fornecedores-lista-mobile">
+      <ul className="divide-y divide-[var(--border)] md:hidden" data-testid="fornecedores-lista-mobile">
         {selecao && (
-          <li className="bg-[#FAFAF8]">
+          <li className="bg-[var(--surface-muted)]">
             <label className="flex min-h-10 cursor-pointer items-center gap-3 px-4 py-2 text-[12px] font-semibold text-[var(--muted-foreground)]">
               <CheckboxCabecalho selecao={selecao} />
               Selecionar todos os aptos ({selecao.totalAptos})
@@ -206,13 +206,13 @@ export function FornecedoresTable({
         {itens.map((item) => {
           const codigo = item.projetistaCodigo ?? "";
           return (
-            <li key={item.id} className={`flex items-stretch ${item.cadastroPendente ? "bg-[#F4F4F2]" : ""}`} data-cadastro-pendente={item.cadastroPendente ? "true" : undefined}>
+            <li key={item.id} className={`flex items-stretch ${item.cadastroPendente ? "bg-[var(--surface-muted)]" : ""}`} data-cadastro-pendente={item.cadastroPendente ? "true" : undefined}>
               {selecao && (
                 <label className="flex min-w-10 items-center justify-center pl-4">
                   <CheckboxLinha item={item} selecao={selecao} nome={item.responsavel ?? codigo ?? "fornecedor"} />
                 </label>
               )}
-              <button type="button" onClick={() => onOpen(item)} aria-label={`Abrir detalhe de ${item.responsavel ?? codigo ?? "fornecedor"}`} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
+              <button type="button" onClick={() => onOpen(item)} aria-label={`Abrir detalhe de ${item.responsavel ?? codigo ?? "fornecedor"}`} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[var(--surface-muted)]">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-[var(--foreground)]">{item.responsavel ?? codigo ?? "–"}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2">

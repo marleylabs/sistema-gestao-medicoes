@@ -58,8 +58,8 @@ export function Dashboard({ data }: { data: DashboardData | null }) {
     return (
       <Card className="p-6">
         <div className="flex items-center gap-3">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#2563EB]" />
-          <span className="text-sm text-[#555555]">Carregando indicadores...</span>
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--primary)]" />
+          <span className="text-sm text-[var(--muted-foreground)]">Carregando indicadores...</span>
         </div>
       </Card>
     );
@@ -72,30 +72,30 @@ export function Dashboard({ data }: { data: DashboardData | null }) {
           title="Valor total medido"
           value={currency.format(data.cards.totalMedido)}
           icon={<Banknote size={19} />}
-          iconBg="bg-[#EFF6FF]"
-          iconColor="text-[#2563EB]"
+          iconBg="bg-[var(--primary-soft)]"
+          iconColor="text-[var(--primary)]"
           sensitive
         />
         <KpiCard
           title="Horas contabilizadas"
           value={`${number.format(data.cards.totalHoras)} HH`}
           icon={<Clock3 size={19} />}
-          iconBg="bg-[#F0FDF4]"
-          iconColor="text-[#16A34A]"
+          iconBg="bg-[var(--success-soft)]"
+          iconColor="text-[var(--success)]"
         />
         <KpiCard
           title="Profissionais ATO"
           value={number.format(data.cards.atosAtivos)}
           icon={<UserCheck size={19} />}
-          iconBg="bg-[#FFFBEB]"
-          iconColor="text-[#D97706]"
+          iconBg="bg-[var(--warning-soft)]"
+          iconColor="text-[var(--warning)]"
         />
         <KpiCard
           title="Equipe de produção"
           value={number.format(data.cards.producaoAtivos)}
           icon={<HardHat size={19} />}
-          iconBg="bg-[#FEF2F2]"
-          iconColor="text-[#AF1B1B]"
+          iconBg="bg-[var(--error-soft)]"
+          iconColor="text-[var(--primary)]"
         />
       </div>
     </section>
@@ -111,12 +111,12 @@ function TiposPrecos({ itens }: { itens: DashboardData["tiposPrecos"] }) {
     return (
       <Card className="p-5">
         <div className="mb-4 flex items-center gap-2">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB]">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--primary-soft)] text-[var(--primary)]">
             <Users size={16} />
           </span>
-          <h3 className="text-sm font-bold text-[#1A1A1A]">Tipos e Preços por fornecedor</h3>
+          <h3 className="text-sm font-bold text-[var(--foreground)]">Tipos e Preços por fornecedor</h3>
         </div>
-        <p className="text-sm text-[#555555]">Nenhum documento cadastrado.</p>
+        <p className="text-sm text-[var(--muted-foreground)]">Nenhum documento cadastrado.</p>
       </Card>
     );
   }
@@ -129,18 +129,18 @@ function TiposPrecos({ itens }: { itens: DashboardData["tiposPrecos"] }) {
 
   return (
     <Card className="overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-[#E5E7EB] px-5 py-3.5">
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[#EFF6FF] text-[#2563EB]">
+      <div className="flex items-center gap-2 border-b border-[var(--border)] px-5 py-3.5">
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--primary-soft)] text-[var(--primary)]">
           <Users size={14} />
         </span>
-        <h3 className="text-sm font-bold text-[#1A1A1A]">Tipos e Preços por fornecedor</h3>
+        <h3 className="text-sm font-bold text-[var(--foreground)]">Tipos e Preços por fornecedor</h3>
       </div>
       <div className="overflow-auto max-h-[260px]">
         <table className="w-full border-collapse text-sm">
-          <thead className="sticky top-0 bg-[#F9FAFB]">
+          <thead className="sticky top-0 bg-[var(--surface-muted)]">
             <tr>
               {["Fornecedor", "Tipo DG/DOC/HH", "Preço Unit."].map((h, i) => (
-                <th key={h} className={`text-table-header border-b border-[#E5E7EB] px-4 py-2.5 text-[var(--muted-foreground)] ${i > 0 ? "text-right" : "text-left"}`}>
+                <th key={h} className={`text-table-header border-b border-[var(--border)] px-4 py-2.5 text-[var(--muted-foreground)] ${i > 0 ? "text-right" : "text-left"}`}>
                   {h}
                 </th>
               ))}
@@ -149,10 +149,10 @@ function TiposPrecos({ itens }: { itens: DashboardData["tiposPrecos"] }) {
           <tbody>
             {Object.entries(porColaborador).map(([codigo, { nome, docs }], gi) =>
               docs.map((doc, di) => (
-                <tr key={`${codigo}-${di}`} className={`border-b border-[#F3F4F6] last:border-0 ${(gi + di) % 2 === 0 ? "" : "bg-[#FAFAFA]"}`}>
-                  <td className="px-4 py-2.5 font-medium text-[#1A1A1A]">{nome}</td>
-                  <td className="px-4 py-2.5 text-right text-[#555555]">{doc.tipo2}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-[#1A1A1A]">
+                <tr key={`${codigo}-${di}`} className={`border-b border-[var(--surface-hover)] last:border-0 ${(gi + di) % 2 === 0 ? "" : "bg-[var(--surface-muted)]"}`}>
+                  <td className="px-4 py-2.5 font-medium text-[var(--foreground)]">{nome}</td>
+                  <td className="px-4 py-2.5 text-right text-[var(--muted-foreground)]">{doc.tipo2}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-[var(--foreground)]">
                     <BlurValue>{currency.format(parseFloat(doc.condicao) || 0)}</BlurValue>
                   </td>
                 </tr>
@@ -276,17 +276,17 @@ export function MapaPagamentoResumo({
 
         {/* Contracts table */}
         <Card className="overflow-hidden">
-          <div className="border-b border-[#E5E7EB] px-5 py-3.5">
-            <h3 className="text-sm font-bold text-[#1A1A1A]">Distribuição por contrato</h3>
+          <div className="border-b border-[var(--border)] px-5 py-3.5">
+            <h3 className="text-sm font-bold text-[var(--foreground)]">Distribuição por contrato</h3>
           </div>
           <div className="overflow-auto">
             <table className="w-full min-w-[480px] border-collapse text-sm">
               <thead>
-                <tr className="bg-[#F9FAFB]">
+                <tr className="bg-[var(--surface-muted)]">
                   {["Contrato", "Valor medido", "Participação"].map((h, i) => (
                     <th
                       key={h}
-                      className={`text-table-header border-b border-[#E5E7EB] px-4 py-2.5 text-[var(--muted-foreground)] ${i > 0 ? "text-right" : "text-left"}`}
+                      className={`text-table-header border-b border-[var(--border)] px-4 py-2.5 text-[var(--muted-foreground)] ${i > 0 ? "text-right" : "text-left"}`}
                     >
                       {h}
                     </th>
@@ -300,11 +300,11 @@ export function MapaPagamentoResumo({
                   return (
                     <tr
                       key={contrato.contrato}
-                      className={`border-b border-[#F3F4F6] last:border-0 ${isTotal ? "bg-[#F9FAFB] font-semibold" : i % 2 === 0 ? "" : "bg-[#FAFAFA]"}`}
+                      className={`border-b border-[var(--surface-hover)] last:border-0 ${isTotal ? "bg-[var(--surface-muted)] font-semibold" : i % 2 === 0 ? "" : "bg-[var(--surface-muted)]"}`}
                     >
-                      <td className="px-4 py-3 font-medium text-[#1A1A1A]">{contrato.contrato}</td>
-                      <td className="px-4 py-3 text-right tabular-nums text-[#1A1A1A]"><BlurValue>{currency.format(contrato.valor)}</BlurValue></td>
-                      <td className="px-4 py-3 text-right tabular-nums text-[#1A1A1A]">{rateio ? <BlurValue>{percent.format(rateio.percentual)}</BlurValue> : "–"}</td>
+                      <td className="px-4 py-3 font-medium text-[var(--foreground)]">{contrato.contrato}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[var(--foreground)]"><BlurValue>{currency.format(contrato.valor)}</BlurValue></td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[var(--foreground)]">{rateio ? <BlurValue>{percent.format(rateio.percentual)}</BlurValue> : "–"}</td>
                     </tr>
                   );
                 })}
@@ -312,7 +312,7 @@ export function MapaPagamentoResumo({
             </table>
           </div>
           {contexto.valorNaoClassificado > 0 && (
-            <p className="border-t border-[#F3F4F6] px-5 py-2.5 text-xs text-[#92400E]">
+            <p className="border-t border-[var(--surface-hover)] px-5 py-2.5 text-xs text-[var(--warning)]">
               Valor ainda não classificado por contrato: <BlurValue>{currency.format(contexto.valorNaoClassificado)}</BlurValue> ({percent.format(contexto.percentualNaoClassificado / 100)})
             </p>
           )}
@@ -343,7 +343,7 @@ function ContextEditor({
 
   return (
     <Card className="p-5">
-      <p className="mb-4 text-sm font-semibold text-[#1A1A1A]">Editar configuração do ciclo</p>
+      <p className="mb-4 text-sm font-semibold text-[var(--foreground)]">Editar configuração do ciclo</p>
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         <LabelField label="Mês de referência">
           <Input value={form.mesReferencia} onChange={(e) => update("mesReferencia", e.target.value)} />
@@ -368,7 +368,7 @@ function ContextEditor({
 
 function LabelField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="grid gap-1.5 text-sm font-medium text-[#1A1A1A]">
+    <label className="grid gap-1.5 text-sm font-medium text-[var(--foreground)]">
       <span className="text-label text-[var(--muted-foreground)]">{label}</span>
       {children}
     </label>

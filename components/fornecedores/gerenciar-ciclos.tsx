@@ -90,7 +90,7 @@ export function GerenciarCiclosPanel({
             <span className="text-label text-[var(--muted-foreground)]">Novo ciclo</span>
             <div className="flex gap-2">
               <input
-                className="h-9 w-full min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-white px-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 sm:w-32 sm:flex-none"
+                className="h-9 w-full min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20 sm:w-32 sm:flex-none"
                 placeholder="Ex: 2606"
                 aria-label="Novo ciclo (YYMM)"
                 maxLength={4}
@@ -107,12 +107,12 @@ export function GerenciarCiclosPanel({
             {erro && <p className="text-xs text-[var(--error)]" role="alert">{erro}</p>}
           </div>
 
-          <ul className="divide-y divide-[#EFEFED] rounded-lg border border-[var(--border)]" data-testid="gerenciar-ciclos-lista">
+          <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]" data-testid="gerenciar-ciclos-lista">
             {ciclos.length === 0 && <li className="px-4 py-8 text-center text-sm text-[var(--muted-foreground)]">Nenhum ciclo cadastrado.</li>}
             {ciclos.map((c) => {
               const selecionado = c.ciclo === cicloSelecionado;
               return (
-                <li key={c.ciclo} className={`flex min-w-0 items-center gap-3 px-4 py-3 ${selecionado ? "bg-[#FAFAF8]" : ""}`} data-ciclo={c.ciclo}>
+                <li key={c.ciclo} className={`flex min-w-0 items-center gap-3 px-4 py-3 ${selecionado ? "bg-[var(--surface-muted)]" : ""}`} data-ciclo={c.ciclo}>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="font-technical text-sm font-semibold text-[var(--foreground)]">{c.ciclo}</span>
@@ -133,7 +133,7 @@ export function GerenciarCiclosPanel({
                     <IconButton
                       title={`Excluir ciclo ${c.ciclo}`}
                       onClick={() => { setErroExclusao(null); setExcluindo(c.ciclo); }}
-                      className="border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C] hover:bg-[#FEE2E2] hover:text-[#991B1B]"
+                      className="border-[var(--error)]/30 bg-[var(--error-soft)] text-[var(--error)] hover:bg-[var(--error)]/15"
                     >
                       <Trash2 size={14} />
                     </IconButton>
@@ -179,7 +179,7 @@ function ConfirmarExclusao({
   }, [confirmando, onCancel]);
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[440px] sm:max-w-[90vw]" role="alertdialog" aria-modal="true" aria-label="Excluir ciclo">
+      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[440px] sm:max-w-[90vw]" role="alertdialog" aria-modal="true" aria-label="Excluir ciclo">
         <div className="border-b border-[var(--border)] px-5 py-4">
           <h2 className="text-sm font-bold text-[var(--foreground)]">Excluir o ciclo {ciclo}?</h2>
           <p className="mt-1 text-xs text-[var(--muted-foreground)]">

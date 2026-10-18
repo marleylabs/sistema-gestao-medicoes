@@ -16,7 +16,7 @@ const dataHora = (iso: string | null | undefined) => (iso ? new Intl.DateTimeFor
 
 function LinkArquivo({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 text-[12px] font-semibold text-[var(--foreground)] transition hover:border-[var(--border-strong)] hover:bg-[#f7f7f5]">
+    <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-[12px] font-semibold text-[var(--foreground)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]">
       <FileText size={13} />
       {children}
     </a>
@@ -27,7 +27,7 @@ function Resumo({ itens }: { itens: { label: string; valor: ReactNode }[] }) {
   return (
     <dl className="grid grid-cols-2 gap-3">
       {itens.map((i) => (
-        <div key={i.label} className="rounded-lg border border-[var(--border)] bg-[#FAFAF8] px-3 py-2.5">
+        <div key={i.label} className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2.5">
           <dt className="text-[11px] text-[var(--muted-foreground)]">{i.label}</dt>
           <dd className="mt-0.5 text-base font-semibold tabular-nums text-[var(--foreground)]">{i.valor}</dd>
         </div>
@@ -114,7 +114,7 @@ export function MedicaoDrawer({
 
       <PanelSection title="Distribuição por contrato">
         {contratos.length ? (
-          <ul className="divide-y divide-[#EFEFED] rounded-lg border border-[var(--border)]">
+          <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
             {contratos.map(([id, p]) => (
               <li key={id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                 <span className="min-w-0 truncate text-[var(--foreground)]">{nomesContrato.get(id) ?? id}</span>
@@ -174,7 +174,7 @@ export function MedicaoDrawer({
 function MedicaoLinha({ m, extra, onOpen }: { m: MedicaoHistorico; extra?: ReactNode; onOpen: () => void }) {
   return (
     <li>
-      <button type="button" onClick={onOpen} aria-label={`Abrir medição de ${m.nome} no ciclo ${m.ciclo}`} className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-[#FAFAF8]">
+      <button type="button" onClick={onOpen} aria-label={`Abrir medição de ${m.nome} no ciclo ${m.ciclo}`} className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm hover:bg-[var(--surface-muted)]">
         <span className="w-12 shrink-0 font-technical text-[12.5px] text-[var(--foreground)]">{m.ciclo}</span>
         <span className="min-w-0 flex-1">
           {extra ?? <Badge variant={m.status.badge}>{m.status.label}</Badge>}
@@ -211,14 +211,14 @@ export function FornecedorHistoricoDrawer({
         ]} />
       </PanelSection>
       <PanelSection title="Por ciclo">
-        <ul className="divide-y divide-[#EFEFED] rounded-lg border border-[var(--border)]" data-testid="historico-fornecedor-ciclos">
+        <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]" data-testid="historico-fornecedor-ciclos">
           {fornecedor.medicoes.map((m) => <MedicaoLinha key={m.key} m={m} onOpen={() => onAbrirMedicao(m)} />)}
         </ul>
       </PanelSection>
       <PanelSection title="Contratos">
         {fornecedor.contratoIds.length ? (
           <div className="flex flex-wrap gap-1.5">
-            {fornecedor.contratoIds.map((id) => <span key={id} className="rounded-md border border-[var(--border)] bg-[#FAFAF8] px-2 py-0.5 text-[12px] text-[var(--foreground)]">{nomesContrato.get(id) ?? id}</span>)}
+            {fornecedor.contratoIds.map((id) => <span key={id} className="rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-0.5 text-[12px] text-[var(--foreground)]">{nomesContrato.get(id) ?? id}</span>)}
           </div>
         ) : <p className="text-sm text-[var(--muted-foreground)]">Nenhum contrato identificado.</p>}
       </PanelSection>
@@ -254,7 +254,7 @@ export function ContratoHistoricoDrawer({
         <p className="text-[11px] text-[var(--muted-foreground)]">Valor atribuído = pagamento de cada medição × participação do contrato (mesma regra da distribuição por contrato do Dashboard).</p>
       </PanelSection>
       <PanelSection title="Fornecedores envolvidos">
-        <ul className="divide-y divide-[#EFEFED] rounded-lg border border-[var(--border)]">
+        <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
           {porFornecedor.map((f) => (
             <li key={f.codigo} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
               <span className="min-w-0 truncate text-[var(--foreground)]">{f.nome}</span>
@@ -264,7 +264,7 @@ export function ContratoHistoricoDrawer({
         </ul>
       </PanelSection>
       <PanelSection title="Medições">
-        <ul className="divide-y divide-[#EFEFED] rounded-lg border border-[var(--border)]" data-testid="historico-contrato-medicoes">
+        <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]" data-testid="historico-contrato-medicoes">
           {contrato.medicoes.map((m) => (
             <MedicaoLinha
               key={m.key}

@@ -87,23 +87,23 @@ function AlterarPerfilModal({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[380px] sm:max-w-[90vw]">
-        <div className="border-b border-[#E5E7EB] px-5 py-4">
-          <h2 className="text-sm font-bold text-[#1A1A1A]">Alterar perfil</h2>
-          <p className="mt-0.5 text-xs text-[#6B7280]">{target.nome}</p>
+      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[380px] sm:max-w-[90vw]">
+        <div className="border-b border-[var(--border)] px-5 py-4">
+          <h2 className="text-sm font-bold text-[var(--foreground)]">Alterar perfil</h2>
+          <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">{target.nome}</p>
         </div>
         <div className="p-5">
           <select
             value={perfil}
             onChange={(e) => setPerfil(e.target.value)}
-            className="h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#1A1A1A] outline-none transition hover:border-[#D1D5DB] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+            className="h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--foreground)] outline-none transition hover:border-[var(--border-strong)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20"
           >
             {INTERNAL_PERFIL_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
+        <div className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
           <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
           <Button onClick={salvar} disabled={saving || perfil === target.perfilAtual}>
             {saving ? "Salvando..." : "Salvar"}
@@ -167,18 +167,18 @@ function PermissoesExtrasModal({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
-        <div className="border-b border-[#E5E7EB] px-5 py-4">
-          <h2 className="text-sm font-bold text-[#1A1A1A]">Acessos adicionais</h2>
-          <p className="mt-0.5 text-xs text-[#6B7280]">{target.nome} — perfil {PERFIL_LABEL[target.perfil] ?? target.perfil}</p>
+      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
+        <div className="border-b border-[var(--border)] px-5 py-4">
+          <h2 className="text-sm font-bold text-[var(--foreground)]">Acessos adicionais</h2>
+          <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">{target.nome} — perfil {PERFIL_LABEL[target.perfil] ?? target.perfil}</p>
         </div>
         <div className="grid gap-4 p-5">
           {basePerfil.length > 0 && (
             <div>
-              <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#9CA3AF]">Acessos do perfil</p>
+              <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Acessos do perfil</p>
               <div className="flex flex-wrap gap-1.5">
                 {basePerfil.map((p) => (
-                  <span key={p} className="rounded-full bg-[#F3F4F6] px-2 py-1 text-[11px] font-semibold text-[#6B7280]">
+                  <span key={p} className="rounded-full bg-[var(--surface-hover)] px-2 py-1 text-[11px] font-semibold text-[var(--muted-foreground)]">
                     ✓ {PERMISSAO_LABEL_LOOSE[p] ?? p} — incluído pelo perfil
                   </span>
                 ))}
@@ -186,18 +186,18 @@ function PermissoesExtrasModal({
             </div>
           )}
           <div>
-            <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#9CA3AF]">Acessos adicionais</p>
+            <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Acessos adicionais</p>
             {opcoesExtras.length === 0 ? (
-              <p className="text-xs text-[#9CA3AF]">Nenhum acesso adicional disponível para este perfil.</p>
+              <p className="text-xs text-[var(--muted-foreground)]">Nenhum acesso adicional disponível para este perfil.</p>
             ) : (
               <div className="grid gap-2">
                 {opcoesExtras.map((option) => (
-                  <label key={option.value} className="flex items-center gap-2 text-sm text-[#1A1A1A]">
+                  <label key={option.value} className="flex items-center gap-2 text-sm text-[var(--foreground)]">
                     <input
                       type="checkbox"
                       checked={selecionadas.has(option.value)}
                       onChange={() => toggle(option.value)}
-                      className="h-4 w-4 cursor-pointer accent-[#AF1B1B]"
+                      className="h-4 w-4 cursor-pointer accent-[var(--primary)]"
                     />
                     {option.label}
                   </label>
@@ -206,7 +206,7 @@ function PermissoesExtrasModal({
             )}
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
+        <div className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
           <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
           <Button onClick={salvar} disabled={saving || inalterado}>
             {saving ? "Salvando..." : "Salvar"}
@@ -246,57 +246,57 @@ function CredencialModal({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="credencial-titulo" data-testid="credencial-modal" className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
-        <div className="border-b border-[#E5E7EB] px-5 py-4">
-          <h2 id="credencial-titulo" className="text-sm font-bold text-[#1A1A1A]">{titulo}</h2>
+      <div role="dialog" aria-modal="true" aria-labelledby="credencial-titulo" data-testid="credencial-modal" className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
+        <div className="border-b border-[var(--border)] px-5 py-4">
+          <h2 id="credencial-titulo" className="text-sm font-bold text-[var(--foreground)]">{titulo}</h2>
         </div>
         <div className="grid gap-3 p-5 text-sm">
           <div>
-            <span className="text-xs text-[#64748B]">Nome</span>
-            <p className="font-semibold text-[#1F2937]">{nome}</p>
+            <span className="text-xs text-[var(--muted-foreground)]">Nome</span>
+            <p className="font-semibold text-[var(--foreground)]">{nome}</p>
           </div>
           {usuario && (
             <div>
-              <span className="text-xs text-[#64748B]">Login</span>
-              <p className="font-mono font-semibold text-[#1F2937]">{usuario}</p>
+              <span className="text-xs text-[var(--muted-foreground)]">Login</span>
+              <p className="font-mono font-semibold text-[var(--foreground)]">{usuario}</p>
             </div>
           )}
           {email && (
             <div>
-              <span className="text-xs text-[#64748B]">E-mail</span>
-              <p className="font-semibold text-[#1F2937]">{email}</p>
+              <span className="text-xs text-[var(--muted-foreground)]">E-mail</span>
+              <p className="font-semibold text-[var(--foreground)]">{email}</p>
             </div>
           )}
-          <div className="rounded-lg bg-[#FFFBEB] px-3 py-2">
-            <span className="text-xs text-[#92400E]">Senha temporária</span>
+          <div className="rounded-lg bg-[var(--warning-soft)] px-3 py-2">
+            <span className="text-xs text-[var(--warning)]">Senha temporária</span>
             <div className="mt-1 flex items-center gap-1.5">
-              <span className="flex-1 truncate rounded-md border border-[#FDE68A] bg-white px-2 py-1 font-mono text-sm font-bold text-[#92400E]">
+              <span className="flex-1 truncate rounded-md border border-[var(--warning)]/35 bg-[var(--surface)] px-2 py-1 font-mono text-sm font-bold text-[var(--warning)]">
                 {visivel ? senha : "•".repeat(Math.max(senha.length, 8))}
               </span>
               <button
                 type="button"
                 onClick={() => setVisivel((v) => !v)}
                 title={visivel ? "Ocultar senha" : "Mostrar senha"}
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#FDE68A] bg-white text-[#92400E] transition hover:bg-[#FFFBEB]"
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--warning)]/35 bg-[var(--surface)] text-[var(--warning)] transition hover:bg-[var(--warning-soft)]"
               >
                 {visivel ? <EyeOff size={13} /> : <Eye size={13} />}
               </button>
               <button
                 type="button"
                 onClick={() => { navigator.clipboard?.writeText(senha); setCopiado(true); }}
-                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-[#FDE68A] bg-white px-2 text-[11px] font-semibold text-[#92400E] transition hover:bg-[#FFFBEB]"
+                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-[var(--warning)]/35 bg-[var(--surface)] px-2 text-[11px] font-semibold text-[var(--warning)] transition hover:bg-[var(--warning-soft)]"
               >
                 <Copy size={12} />
                 {copiado ? "Copiado" : "Copiar"}
               </button>
             </div>
           </div>
-          <p className="flex items-start gap-1.5 text-xs text-[#92400E]">
+          <p className="flex items-start gap-1.5 text-xs text-[var(--warning)]">
             <AlertTriangle size={13} className="mt-0.5 shrink-0" />
             Copie esta senha agora. Ela não poderá ser visualizada novamente.
           </p>
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
+        <div className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
           <Button onClick={onClose}>Concluir</Button>
         </div>
       </div>
@@ -317,14 +317,14 @@ function ConfirmResetSenhaModal({
 }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[380px] sm:max-w-[90vw]">
-        <div className="border-b border-[#E5E7EB] px-5 py-4">
-          <h2 className="text-sm font-bold text-[#1A1A1A]">Redefinir senha</h2>
-          <p className="mt-1 text-xs text-[#6B7280]">
-            Gerar uma nova senha temporária para <strong className="text-[#374151]">{nome}</strong>? A senha atual deixa de funcionar imediatamente.
+      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[380px] sm:max-w-[90vw]">
+        <div className="border-b border-[var(--border)] px-5 py-4">
+          <h2 className="text-sm font-bold text-[var(--foreground)]">Redefinir senha</h2>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+            Gerar uma nova senha temporária para <strong className="text-[var(--muted-foreground)]">{nome}</strong>? A senha atual deixa de funcionar imediatamente.
           </p>
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
+        <div className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
           <Button variant="secondary" onClick={onCancel} disabled={confirming}>Cancelar</Button>
           <Button onClick={onConfirm} disabled={confirming}>
             <KeyRound size={14} />
@@ -353,28 +353,28 @@ function ConfirmPrimeiroAcessoModal({
 }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
-        <div className="border-b border-[#E5E7EB] px-5 py-4">
-          <h2 className="text-sm font-bold text-[#1A1A1A]">Enviar primeiro acesso</h2>
-          <p className="mt-1 text-xs text-[#6B7280]">
+      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]">
+        <div className="border-b border-[var(--border)] px-5 py-4">
+          <h2 className="text-sm font-bold text-[var(--foreground)]">Enviar primeiro acesso</h2>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
             Será gerada uma nova senha temporária para este usuário e enviada para o e-mail cadastrado.
           </p>
         </div>
-        <div className="space-y-1.5 border-b border-[#E5E7EB] px-5 py-4 text-xs">
+        <div className="space-y-1.5 border-b border-[var(--border)] px-5 py-4 text-xs">
           <div className="flex justify-between gap-3">
-            <span className="text-[#94A3B8]">Nome</span>
-            <span className="font-semibold text-[#1F2937]">{nome}</span>
+            <span className="text-[var(--muted-foreground)]">Nome</span>
+            <span className="font-semibold text-[var(--foreground)]">{nome}</span>
           </div>
           <div className="flex justify-between gap-3">
-            <span className="text-[#94A3B8]">E-mail</span>
-            <span className="font-semibold text-[#1F2937]">{email}</span>
+            <span className="text-[var(--muted-foreground)]">E-mail</span>
+            <span className="font-semibold text-[var(--foreground)]">{email}</span>
           </div>
           <div className="flex justify-between gap-3">
-            <span className="text-[#94A3B8]">Usuário/Login</span>
-            <span className="font-technical font-semibold text-[#1F2937]">{usuario}</span>
+            <span className="text-[var(--muted-foreground)]">Usuário/Login</span>
+            <span className="font-technical font-semibold text-[var(--foreground)]">{usuario}</span>
           </div>
         </div>
-        <div className="border-b border-[#FDE68A] bg-[#FFFBEB] px-5 py-2.5 text-[11px] text-[#92400E]">
+        <div className="border-b border-[var(--warning)]/35 bg-[var(--warning-soft)] px-5 py-2.5 text-[11px] text-[var(--warning)]">
           Uma senha temporária anterior, caso exista, deixará de ser válida.
         </div>
         <div className="flex justify-end gap-2 px-5 py-4">
@@ -449,41 +449,41 @@ function DeleteConfirmModal({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[90vw]">
-        <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
-          <h2 className="text-sm font-bold text-[#1A1A1A]">
+      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[90vw]">
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
+          <h2 className="text-sm font-bold text-[var(--foreground)]">
             {isBulk ? `Excluir ${items.length} fornecedores definitivamente?` : "Excluir fornecedor definitivamente?"}
           </h2>
           <IconButton onClick={onClose} title="Fechar" disabled={deleting}><X size={16} /></IconButton>
         </div>
-        <div className="grid gap-3 p-5 text-sm text-[#374151]">
-          <p className="text-xs text-[#6B7280]">
+        <div className="grid gap-3 p-5 text-sm text-[var(--muted-foreground)]">
+          <p className="text-xs text-[var(--muted-foreground)]">
             {isBulk
               ? "Os cadastros administrativos e acessos selecionados serão removidos. Registros históricos da Equipe de Medição serão preservados."
               : "O cadastro administrativo e o acesso deste fornecedor serão removidos. Informações históricas relacionadas a medições, BMs, pagamentos, notas fiscais e comprovantes serão preservadas."}
           </p>
-          <div className="max-h-40 overflow-y-auto rounded-lg bg-[#F8FAFC] p-2 ring-1 ring-[#E2E8F0]">
+          <div className="max-h-40 overflow-y-auto rounded-lg bg-[var(--surface-muted)] p-2 ring-1 ring-[var(--border)]">
             {items.map((item) => (
-              <div key={item.id} className="grid gap-0.5 border-b border-[#E5E7EB] px-1.5 py-1.5 text-xs last:border-0">
-                <p className="font-semibold text-[#1F2937]">{displayText(item.responsavel)}</p>
-                <p className="font-technical text-[11px] text-[#64748B]">CNPJ {item.cnpj ?? "-"} · ID {compactId(item.id)}</p>
+              <div key={item.id} className="grid gap-0.5 border-b border-[var(--border)] px-1.5 py-1.5 text-xs last:border-0">
+                <p className="font-semibold text-[var(--foreground)]">{displayText(item.responsavel)}</p>
+                <p className="font-technical text-[11px] text-[var(--muted-foreground)]">CNPJ {item.cnpj ?? "-"} · ID {compactId(item.id)}</p>
               </div>
             ))}
           </div>
           {isBulk && (
-            <label className="grid gap-1 text-xs font-semibold text-[#374151]">
-              Digite <span className="font-technical text-[#AF1B1B]">{confirmPhrase}</span> para habilitar a exclusão
+            <label className="grid gap-1 text-xs font-semibold text-[var(--muted-foreground)]">
+              Digite <span className="font-technical text-[var(--primary)]">{confirmPhrase}</span> para habilitar a exclusão
               <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder={confirmPhrase} autoFocus />
             </label>
           )}
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
+        <div className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
           <Button variant="secondary" onClick={onClose} disabled={deleting}>Cancelar</Button>
           <button
             type="button"
             onClick={confirmDelete}
             disabled={deleting || !canConfirm}
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#DC2626] px-4 text-xs font-bold text-white shadow-sm transition hover:bg-[#B91C1C] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--error)] px-4 text-xs font-bold text-[var(--on-solid)] shadow-sm transition hover:bg-[var(--error)]/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Trash2 size={14} />
             {deleting ? "Excluindo..." : "Excluir definitivamente"}
@@ -500,9 +500,9 @@ const STATUS_LABELS: Record<IdentityCandidateSummary["profissionalStatus"], stri
   INEXISTENTE: "Inexistente",
 };
 const STATUS_TONE: Record<IdentityCandidateSummary["profissionalStatus"], string> = {
-  ATIVO: "bg-[#EAF7ED] text-[#28A745]",
-  EXCLUIDO: "bg-[#FFF1F1] text-[#DC3545]",
-  INEXISTENTE: "bg-[#F3F4F6] text-[#6B7280]",
+  ATIVO: "bg-[var(--success-soft)] text-[var(--success)]",
+  EXCLUIDO: "bg-[var(--error-soft)] text-[var(--error)]",
+  INEXISTENTE: "bg-[var(--surface-hover)] text-[var(--muted-foreground)]",
 };
 
 /**
@@ -581,19 +581,19 @@ function ResolverIdentidadeModal({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog flex max-h-[90vh] w-full flex-col overflow-hidden sm:w-[640px] sm:max-w-[92vw]">
-        <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-5 py-4">
+      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex max-h-[90vh] w-full flex-col overflow-hidden sm:w-[640px] sm:max-w-[92vw]">
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
           <div>
-            <h2 className="text-sm font-bold text-[#1A1A1A]">{confirmando ? "Usar esta identidade?" : "Resolver identidade"}</h2>
-            {!confirmando && <p className="mt-0.5 text-xs text-[#6B7280]">Encontramos mais de uma identidade histórica compatível com este registro. Selecione qual pessoa corresponde ao fornecedor importado.</p>}
+            <h2 className="text-sm font-bold text-[var(--foreground)]">{confirmando ? "Usar esta identidade?" : "Resolver identidade"}</h2>
+            {!confirmando && <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">Encontramos mais de uma identidade histórica compatível com este registro. Selecione qual pessoa corresponde ao fornecedor importado.</p>}
           </div>
           <IconButton onClick={onClose} title="Fechar" disabled={resolving}><X size={16} /></IconButton>
         </div>
 
-        <div className="grid gap-4 overflow-y-auto p-5 text-sm text-[#374151]">
+        <div className="grid gap-4 overflow-y-auto p-5 text-sm text-[var(--muted-foreground)]">
           {!confirmando && (
-            <div className="grid gap-1 rounded-lg bg-[#F8FAFC] p-3 ring-1 ring-[#E2E8F0]">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">Dados importados</p>
+            <div className="grid gap-1 rounded-lg bg-[var(--surface-muted)] p-3 ring-1 ring-[var(--border)]">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Dados importados</p>
               <p><strong>Nome:</strong> {item.responsavel}</p>
               {item.linha?.cnpj && <p><strong>CNPJ:</strong> {item.linha.cnpj}</p>}
               {item.linha?.email && <p><strong>E-mail:</strong> {item.linha.email}</p>}
@@ -603,15 +603,15 @@ function ResolverIdentidadeModal({
             </div>
           )}
 
-          {!confirmando && loading && <p className="text-xs text-[#6B7280]">Carregando candidatos…</p>}
-          {!confirmando && loadError && <p className="rounded-lg bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#B91C1C]">{loadError}</p>}
+          {!confirmando && loading && <p className="text-xs text-[var(--muted-foreground)]">Carregando candidatos…</p>}
+          {!confirmando && loadError && <p className="rounded-lg bg-[var(--error-soft)] px-3 py-2 text-xs font-semibold text-[var(--error)]">{loadError}</p>}
 
           {!confirmando && !loading && !loadError && (
             <div className="grid gap-3">
               {candidatos.map((c, idx) => (
-                <div key={c.codigo} className="grid gap-1.5 rounded-lg border border-[#E5E7EB] p-3">
+                <div key={c.codigo} className="grid gap-1.5 rounded-lg border border-[var(--border)] p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-bold uppercase tracking-wide text-[#6B7280]">Candidato {String.fromCharCode(65 + idx)}</p>
+                    <p className="text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Candidato {String.fromCharCode(65 + idx)}</p>
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${STATUS_TONE[c.profissionalStatus]}`}>Profissional {STATUS_LABELS[c.profissionalStatus]}</span>
                   </div>
                   <p><strong>Nome:</strong> {c.nomeCompleto || c.nomeAtual || "-"}</p>
@@ -623,7 +623,7 @@ function ResolverIdentidadeModal({
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${STATUS_TONE[c.usuarioStatus]}`}>{STATUS_LABELS[c.usuarioStatus]}</span>
                     {c.usuarioLogin ? ` (${c.usuarioLogin})` : ""}
                   </p>
-                  <p className="text-xs text-[#6B7280]">
+                  <p className="text-xs text-[var(--muted-foreground)]">
                     <strong>Histórico:</strong> {c.historico.sgc} SGC · {c.historico.mapaPagamento} pagamento(s) · {c.historico.medicao} medição(ões) · {c.historico.divergencias} divergência(s)
                   </p>
                   <div className="mt-1 flex justify-end">
@@ -634,9 +634,9 @@ function ResolverIdentidadeModal({
                 </div>
               ))}
 
-              <div className="grid gap-1.5 rounded-lg border border-dashed border-[#D1D5DB] p-3">
-                <p className="text-xs font-semibold text-[#374151]">Nenhuma dessas identidades</p>
-                <p className="text-xs text-[#6B7280]">Esta é uma pessoa diferente dos candidatos históricos acima — cria uma identidade nova, só quando for tecnicamente seguro.</p>
+              <div className="grid gap-1.5 rounded-lg border border-dashed border-[var(--border-strong)] p-3">
+                <p className="text-xs font-semibold text-[var(--muted-foreground)]">Nenhuma dessas identidades</p>
+                <p className="text-xs text-[var(--muted-foreground)]">Esta é uma pessoa diferente dos candidatos históricos acima — cria uma identidade nova, só quando for tecnicamente seguro.</p>
                 <div className="mt-1 flex justify-end">
                   <Button variant="secondary" onClick={() => { setSelecionado({ tipo: "NENHUMA_IDENTIDADE" }); setConfirmando(true); }}>
                     Nenhuma dessas identidades
@@ -648,7 +648,7 @@ function ResolverIdentidadeModal({
 
           {confirmando && (
             <div className="grid gap-3">
-              {resolveError && <p className="rounded-lg bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#B91C1C]">{resolveError}</p>}
+              {resolveError && <p className="rounded-lg bg-[var(--error-soft)] px-3 py-2 text-xs font-semibold text-[var(--error)]">{resolveError}</p>}
               <p><strong>Registro importado:</strong> {item.responsavel}</p>
               {selecionado?.tipo === "USAR_CANDIDATO" ? (
                 <p>
@@ -658,11 +658,11 @@ function ResolverIdentidadeModal({
                 </p>
               ) : (
                 <div className="grid gap-2">
-                  <p className="rounded-lg bg-[#FFFBEB] px-3 py-2 text-xs font-semibold text-[#92400E]">
+                  <p className="rounded-lg bg-[var(--warning-soft)] px-3 py-2 text-xs font-semibold text-[var(--warning)]">
                     Uma identidade NOVA será criada para "{item.responsavel}". Esta ação só é permitida quando não colide com nenhum código histórico existente — o servidor valida isso antes de confirmar.
                   </p>
-                  <label className="grid gap-1 text-xs font-semibold text-[#374151]">
-                    Digite <span className="font-technical text-[#AF1B1B]">{confirmPhraseNenhuma}</span> para confirmar
+                  <label className="grid gap-1 text-xs font-semibold text-[var(--muted-foreground)]">
+                    Digite <span className="font-technical text-[var(--primary)]">{confirmPhraseNenhuma}</span> para confirmar
                     <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder={confirmPhraseNenhuma} autoFocus />
                   </label>
                 </div>
@@ -671,7 +671,7 @@ function ResolverIdentidadeModal({
           )}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-5 py-4">
+        <div className="flex justify-end gap-2 border-t border-[var(--border)] px-5 py-4">
           <Button variant="secondary" onClick={confirmando ? () => { setConfirmando(false); setResolveError(""); } : onClose} disabled={resolving}>
             {confirmando ? "Voltar" : "Cancelar"}
           </Button>
@@ -680,7 +680,7 @@ function ResolverIdentidadeModal({
               type="button"
               onClick={confirmar}
               disabled={resolving || !podeConfirmarNenhuma}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2563EB] px-4 text-xs font-bold text-white shadow-sm transition hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-xs font-bold text-[var(--on-solid)] shadow-sm transition hover:bg-[var(--primary)]/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {resolving ? "Confirmando..." : "Confirmar identidade"}
             </button>
@@ -727,7 +727,7 @@ function ConfirmAcaoModal({
   }, [confirming, onCancel]);
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:p-4">
-      <div className="ds-dialog flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]" role="alertdialog" aria-modal="true" aria-label={titulo}>
+      <div className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex w-full flex-col overflow-hidden sm:w-[420px] sm:max-w-[90vw]" role="alertdialog" aria-modal="true" aria-label={titulo}>
         <div className="border-b border-[var(--border)] px-5 py-4">
           <h2 className="text-sm font-bold text-[var(--foreground)]">{titulo}</h2>
           <div className="mt-1 text-xs text-[var(--muted-foreground)]">{mensagem}</div>
@@ -793,10 +793,10 @@ function FiltrosPopover({
     <div className="relative shrink-0" ref={ref}>
       <FilterButton count={activeCount} onClick={() => setOpen((v) => !v)} />
       {open && (
-        <div ref={painelRef} style={posicao} className="absolute right-0 top-10 z-40 grid w-[300px] max-w-[88vw] gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
+        <div ref={painelRef} style={posicao} className="absolute right-0 top-10 z-40 grid w-[300px] max-w-[88vw] gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-xl">
           <div className="flex items-center justify-between">
             <p className="text-label text-[var(--muted-foreground)]">Filtros</p>
-            <button type="button" onClick={() => setOpen(false)} title="Fechar" className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[#94A3B8] transition hover:bg-[#F1F5F9] hover:text-[#374151]">
+            <button type="button" onClick={() => setOpen(false)} title="Fechar" className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]">
               <X size={12} />
             </button>
           </div>
@@ -822,7 +822,7 @@ function FiltrosPopover({
                 <p className="mb-1 text-xs text-[var(--foreground)]">Vigência</p>
                 <div className="grid grid-cols-2 gap-1.5">
                   {(["validos", "vencidos", "vencendo", "pendencias"] as SituacaoOpcao[]).map((value) => (
-                    <label key={value} className="flex items-center gap-2 text-xs text-[#374151]">
+                    <label key={value} className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
                       <input type="checkbox" checked={situacao.has(value)} onChange={() => onToggleSituacao(value)} className="accent-[var(--primary)]" />
                       {SITUACAO_LABELS[value]}
                     </label>
@@ -833,7 +833,7 @@ function FiltrosPopover({
                 <p className="mb-1 text-xs text-[var(--foreground)]">Acesso ao portal</p>
                 <div className="flex flex-wrap gap-x-4 gap-y-1">
                   {(["ativo", "inativo"] as AcessoOpcao[]).map((value) => (
-                    <label key={value} className="flex items-center gap-1.5 text-xs text-[#374151]">
+                    <label key={value} className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
                       <input type="checkbox" checked={acesso.has(value)} onChange={() => onToggleAcesso(value)} className="accent-[var(--primary)]" />
                       {ACESSO_LABELS[value]}
                     </label>
@@ -1303,7 +1303,7 @@ export function AdministrativoPanel({
       <AdministrativoKpis items={items} loading={loading} />
 
       {pendencias.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-[#f2dbb7] bg-[var(--warning-soft)] px-4 py-2.5 text-[13px] text-[#92400E]">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-[var(--warning)]/35 bg-[var(--warning-soft)] px-4 py-2.5 text-[13px] text-[var(--warning)]">
           <span className="flex items-center gap-2">
             <AlertTriangle size={15} className="shrink-0" />
             {pendencias.length === 1 ? "1 fornecedor com pendência cadastral (bloqueia envio de NF)." : `${pendencias.length} fornecedores com pendências cadastrais (bloqueiam envio de NF).`}
@@ -1339,7 +1339,7 @@ export function AdministrativoPanel({
           </div>
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
             <span className="relative min-w-0 sm:w-[340px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#9CA3AF]" size={14} />
+              <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[var(--muted-foreground)]" size={14} />
               <Input
                 className="pl-8"
                 aria-label="Buscar cadastros"
@@ -1638,7 +1638,7 @@ export function AdministrativoPanel({
       {resolverItem && <ResolverIdentidadeModal item={resolverItem} onClose={() => setResolverItem(null)} onResolved={handleIdentidadeResolvida} />}
 
       {toast && (
-        <div className={`fixed bottom-5 right-5 z-[80] rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg ${toast.tone === "success" ? "bg-[#16A34A]" : "bg-[#DC2626]"}`}>
+        <div className={`fixed bottom-5 right-5 z-[80] rounded-lg px-4 py-3 text-sm font-semibold text-[var(--on-solid)] shadow-lg ${toast.tone === "success" ? "bg-[var(--success)]" : "bg-[var(--error)]"}`}>
           {toast.message}
         </div>
       )}

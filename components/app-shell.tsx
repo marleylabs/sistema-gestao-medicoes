@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { clsx } from "clsx";
+import { motion } from "framer-motion";
+import { FadeIn } from "@/components/motion";
 
 type NavItem = {
   id: string;
@@ -22,8 +24,8 @@ type AppShellProps = {
   children: React.ReactNode;
 };
 
-function NavButton({ item, active, onNavigate, onClose }: {
-  item: NavItem; active: boolean;
+function NavButton({ item, active, indicadorId, onNavigate, onClose }: {
+  item: NavItem; active: boolean; indicadorId: string;
   onNavigate: (id: string) => void; onClose?: () => void;
 }) {
   return (
@@ -31,13 +33,20 @@ function NavButton({ item, active, onNavigate, onClose }: {
       onClick={() => { onNavigate(item.id); onClose?.(); }}
       className={clsx(
         "group relative flex h-[38px] w-full items-center gap-2.5 rounded-lg px-3 text-left text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30",
-        active ? "bg-[var(--primary)] text-white" : "text-white/75 hover:bg-white/[0.06] hover:text-white",
+        active ? "text-[var(--on-solid)]" : "text-white/75 hover:bg-white/[0.06] hover:text-white",
       )}
     >
-      <span className="shrink-0">{item.icon}</span>
-      <span className="truncate">{item.label}</span>
+      {active && (
+        <motion.span
+          layoutId={indicadorId}
+          className="absolute inset-0 rounded-lg bg-[var(--primary)]"
+          transition={{ type: "spring", stiffness: 500, damping: 40 }}
+        />
+      )}
+      <span className="relative shrink-0">{item.icon}</span>
+      <span className="relative truncate">{item.label}</span>
       {item.badge ? (
-        <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#F59E0B] px-1 text-xs font-bold text-white">
+        <span className="relative ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--warning)] px-1 text-xs font-bold text-[var(--on-solid)]">
           {item.badge}
         </span>
       ) : null}
@@ -55,14 +64,14 @@ function OperationalAction({ item, active, onNavigate, onClose }: {
       className={clsx(
         "group mx-2.5 flex min-h-[54px] w-[calc(100%-20px)] items-center gap-3 rounded-lg border px-3 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/50",
         active
-          ? "border-[var(--primary)] bg-[var(--primary)] text-white"
-          : "border-[rgba(175,27,27,0.55)] bg-[rgba(175,27,27,0.08)] text-white hover:border-[var(--primary)] hover:bg-[var(--primary)]",
+          ? "border-[var(--primary)] bg-[var(--primary)] text-[var(--on-solid)]"
+          : "border-[var(--primary)]/55 bg-[var(--primary)]/8 text-white hover:border-[var(--primary)] hover:bg-[var(--primary)] hover:text-[var(--on-solid)]",
       )}
     >
-      <span className="shrink-0 text-[#ef8d8d] transition-colors group-hover:text-white">{item.icon}</span>
+      <span className="shrink-0 text-[#ef8d8d] transition-colors group-hover:text-[var(--on-solid)]">{item.icon}</span>
       <span className="min-w-0 leading-tight">
         <span className="block truncate text-[12px] font-semibold">{item.label}</span>
-        <span className="mt-1 block truncate text-[10px] text-white/45 transition-colors group-hover:text-white/75">Nova base de medições</span>
+        <span className="mt-1 block truncate text-[10px] text-white/45 transition-colors group-hover:text-[var(--on-solid)]/75">Nova base de medições</span>
       </span>
     </button>
   );
@@ -124,6 +133,7 @@ export function AppShell({
               key={item.id}
               item={item}
               active={activeSection === item.id}
+              indicadorId={mobile ? "nav-ativo-mobile" : "nav-ativo"}
               onNavigate={onNavigate}
               onClose={mobile ? () => setMobileOpen(false) : undefined}
             />
@@ -177,11 +187,11 @@ export function AppShell({
       {/* ── Main ── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Mobile navigation header. Desktop page identity lives in content. */}
-        <header className="flex min-h-[54px] shrink-0 items-center gap-2 border-b border-[var(--border)] bg-white px-3 lg:hidden">
+        <header className="flex min-h-[54px] shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--surface)] px-3 lg:hidden">
           <div className="flex items-center gap-2 min-w-0">
             {/* Hamburger — mobile only */}
             <button
-              className="flex shrink-0 items-center justify-center rounded-lg p-2 text-[#555555] hover:bg-[#F3F4F6] lg:hidden"
+              className="flex shrink-0 items-center justify-center rounded-lg p-2 text-[var(--muted-foreground)] hover:bg-[var(--surface-hover)] lg:hidden"
               onClick={() => setMobileOpen(true)}
               aria-label="Abrir menu"
             >
@@ -193,7 +203,7 @@ export function AppShell({
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto px-3 sm:px-5 lg:px-6 lg:pr-[76px]">
-          {children}
+          <FadeIn chave={activeSection}>{children}</FadeIn>
         </main>
       </div>
     </div>

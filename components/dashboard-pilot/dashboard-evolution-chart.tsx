@@ -52,7 +52,7 @@ export function DashboardEvolutionChart({ data }: { data: DashboardData["porCicl
           <p className="text-card-title text-[var(--foreground)]">Evolução das medições</p>
           <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">Valor medido por ciclo disponível no filtro atual</p>
         </div>
-        <span className="rounded-md border border-[var(--border)] bg-[#FAFAF8] px-2 py-1 font-technical text-[10px] text-[var(--muted-foreground)]">
+        <span className="rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-1 font-technical text-[10px] text-[var(--muted-foreground)]">
           {pontos.length} ciclo{pontos.length === 1 ? "" : "s"}
         </span>
       </div>
@@ -111,7 +111,7 @@ export function DashboardEvolutionChart({ data }: { data: DashboardData["porCicl
           </ResponsiveContainer>
         </BlurValue>
       ) : (
-        <div className="flex h-[250px] items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-[#FAFAF8] text-[11px] text-[var(--muted-foreground)]">
+        <div className="flex h-[250px] items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-muted)] text-[11px] text-[var(--muted-foreground)]">
           Nenhuma medição disponível para este filtro.
         </div>
       )}

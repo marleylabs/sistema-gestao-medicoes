@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Tema escuro por classe no <html> (aplicada pelo script de app/layout.tsx). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Tailwind v4 reserva --font-sans/--font-mono como tokens de tema: precisam ser
    sobrescritos via @theme, não em :root, senão a declaração é ignorada. */
 @theme {
@@ -11,16 +14,19 @@
   --sidebar: #0a0a0a;
   --background: #f7f7f5;
   --surface: #ffffff;
+  --surface-muted: #fafaf8;
+  --surface-hover: #f1f1ef;
   --primary: #af1b1b;
   --primary-hover: #951717;
   --primary-soft: #fdf1f1;
+  --on-solid: #ffffff;
   --foreground: #111111;
   --muted-foreground: #6b6b6b;
   --border: #e5e5e2;
   --border-strong: #d4d4d0;
   --success: #16803c;
   --success-soft: #edf8f0;
-  --warning: #b86608;
+  --warning: #9a5306; /* #b86608 dava 4.2:1 no branco */
   --warning-soft: #fff7e8;
   --error: #c62828;
   --error-soft: #fff0f0;
@@ -31,6 +37,46 @@
   --danger: var(--error);
   --text: var(--foreground);
   --muted: var(--muted-foreground);
+  --scrollbar: #c9c9c5;
+  --scrollbar-hover: #aaaaaa;
+  --row-hover: #fafaf8;
+  --selection: color-mix(in srgb, var(--primary) 18%, white);
+  --shadow-dialog: 0 22px 60px rgba(0, 0, 0, 0.18);
+  --shadow-popover: 0 12px 34px rgba(0, 0, 0, 0.14);
+  color-scheme: light;
+}
+
+/* Escuro: tons ajustados para texto sobre superfície escura (contraste >= 4.5:1, medido na spec).
+   Fundos sólidos coloridos usam --on-solid no texto, que fica escuro neste tema. */
+.dark {
+  --sidebar: #09090b;
+  --background: #0f0f10;
+  --surface: #18181b;
+  --surface-muted: #202024;
+  --surface-hover: #27272b;
+  --primary: #f06a6a;
+  --primary-hover: #f58a8a;
+  --primary-soft: #3b1d1f;
+  --on-solid: #0f0f10;
+  --foreground: #ededed;
+  --muted-foreground: #a1a1aa;
+  --border: #2e2e33;
+  --border-strong: #45454d;
+  --success: #4ade80;
+  --success-soft: #16291d;
+  --warning: #fbbf24;
+  --warning-soft: #33270f;
+  --error: #f87171;
+  --error-soft: #3b1d1f;
+  --info: #a1a1aa;
+  --info-soft: #26262b;
+  --scrollbar: #45454d;
+  --scrollbar-hover: #5c5c66;
+  --row-hover: #202024;
+  --selection: color-mix(in srgb, var(--primary) 30%, transparent);
+  --shadow-dialog: 0 22px 60px rgba(0, 0, 0, 0.6);
+  --shadow-popover: 0 12px 34px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -62,26 +108,17 @@ button:disabled, [role="button"][aria-disabled="true"], select:disabled { cursor
   outline-offset: 2px;
 }
 
-::selection { background: color-mix(in srgb, var(--primary) 18%, white); }
+::selection { background: var(--selection); }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #c9c9c5 transparent;
+  scrollbar-color: var(--scrollbar) transparent;
 }
 
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: #c9c9c5; border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
-*::-webkit-scrollbar-thumb:hover { background-color: #aaa; }
-
-/* Compatibilidade visual durante a migração: antigos azuis de ação passam a usar o token institucional. */
-.bg-\[\#2563EB\] { background-color: var(--primary) !important; }
-.hover\:bg-\[\#1D4ED8\]:hover { background-color: var(--primary-hover) !important; }
-.text-\[\#2563EB\], .text-\[\#1D4ED8\] { color: var(--primary) !important; }
-.border-\[\#2563EB\] { border-color: var(--primary) !important; }
-.focus\:border-\[\#2563EB\]:focus { border-color: var(--primary) !important; }
-.focus\:ring-\[\#2563EB\]\/20:focus, .focus\:ring-\[\#2563EB\]\/25:focus { --tw-ring-color: color-mix(in srgb, var(--primary) 20%, transparent) !important; }
-.bg-\[\#EFF6FF\] { background-color: var(--primary-soft) !important; }
+*::-webkit-scrollbar-thumb { background: var(--scrollbar); border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-hover); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
@@ -90,20 +127,20 @@ button:disabled, [role="button"][aria-disabled="true"], select:disabled { cursor
 table { font-size: 12px; }
 thead th { height: 36px; }
 tbody tr { min-height: 38px; transition: background-color 150ms ease; }
-tbody tr:hover { background-color: #fafaf8; }
+tbody tr:hover { background-color: var(--row-hover); }
 
 .ds-dialog {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-dialog);
 }
 
 .ds-popover {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.14);
+  box-shadow: var(--shadow-popover);
 }
 
 /* ── Escala tipográfica global ── */

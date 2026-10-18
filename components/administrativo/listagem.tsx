@@ -92,7 +92,7 @@ export function FornecedoresCadastroTable({
     <>
       <div className="hidden max-w-full overflow-x-auto md:block">
         <table className="w-full border-collapse text-sm" data-testid="administrativo-tabela">
-          <thead className="bg-[#FAFAF8]">
+          <thead className="bg-[var(--surface-muted)]">
             <tr>
               {isAdmin && (
                 <Th className="w-10 pr-0">
@@ -123,7 +123,7 @@ export function FornecedoresCadastroTable({
                 onClick={() => onOpen(item)}
                 onKeyDown={(event) => openOnKey(event, () => onOpen(item))}
                 aria-label={`Abrir cadastro de ${item.responsavel}`}
-                className={`cursor-pointer border-b border-[#EFEFED] transition-colors last:border-0 hover:bg-[#FAFAF8] focus-visible:bg-[#FAFAF8] focus-visible:outline-none ${selectedIds.has(item.id) ? "bg-[#FDF6F6]" : ""}`}
+                className={`cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)] focus-visible:outline-none ${selectedIds.has(item.id) ? "bg-[var(--primary-soft)]" : ""}`}
               >
                 {isAdmin && (
                   <td className="w-10 py-3 pl-3 pr-0 xl:pl-4" onClick={(event) => event.stopPropagation()}>
@@ -169,9 +169,9 @@ export function FornecedoresCadastroTable({
         </table>
       </div>
 
-      <ul className="divide-y divide-[#EFEFED] md:hidden" data-testid="administrativo-lista-mobile">
+      <ul className="divide-y divide-[var(--border)] md:hidden" data-testid="administrativo-lista-mobile">
         {isAdmin && (
-          <li className="bg-[#FAFAF8]">
+          <li className="bg-[var(--surface-muted)]">
             <label className="flex min-h-10 cursor-pointer items-center gap-3 px-4 py-2 text-[12px] font-semibold text-[var(--muted-foreground)]">
               <input
                 type="checkbox"
@@ -192,7 +192,7 @@ export function FornecedoresCadastroTable({
                 <input type="checkbox" checked={selectedIds.has(item.id)} onChange={() => onToggleSelected(item.id)} aria-label={`Selecionar ${item.responsavel}`} className="h-4 w-4 accent-[var(--primary)]" />
               </label>
             )}
-            <button type="button" onClick={() => onOpen(item)} aria-label={`Abrir cadastro de ${item.responsavel}`} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
+            <button type="button" onClick={() => onOpen(item)} aria-label={`Abrir cadastro de ${item.responsavel}`} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-[var(--surface-muted)]">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-[var(--foreground)]">{item.responsavel}</p>
                 <p className="truncate text-[12px] text-[var(--muted-foreground)]">{item.razaoSocial || "–"}</p>
@@ -217,7 +217,7 @@ export function FuncionariosTable({ itens, onOpen }: { itens: Funcionario[]; onO
     <>
       <div className="hidden max-w-full overflow-x-auto md:block">
         <table className="w-full border-collapse text-sm" data-testid="administrativo-funcionarios-tabela">
-          <thead className="bg-[#FAFAF8]">
+          <thead className="bg-[var(--surface-muted)]">
             <tr>
               <Th>Funcionário</Th>
               <Th>Login</Th>
@@ -234,7 +234,7 @@ export function FuncionariosTable({ itens, onOpen }: { itens: Funcionario[]; onO
                 onClick={() => onOpen(item)}
                 onKeyDown={(event) => openOnKey(event, () => onOpen(item))}
                 aria-label={`Abrir cadastro de ${item.nome}`}
-                className="cursor-pointer border-b border-[#EFEFED] transition-colors last:border-0 hover:bg-[#FAFAF8] focus-visible:bg-[#FAFAF8] focus-visible:outline-none"
+                className="cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)] focus-visible:outline-none"
               >
                 <td className="px-3 py-3 xl:px-4">
                   <p className="max-w-[280px] truncate font-semibold text-[var(--foreground)]">{item.nome}</p>
@@ -245,7 +245,7 @@ export function FuncionariosTable({ itens, onOpen }: { itens: Funcionario[]; onO
                 <td className="px-3 py-3 xl:px-4">
                   <div className="flex flex-col items-start gap-1">
                     <StatusBadge ativo={item.ativo} />
-                    {item.primeiroLogin && <span className="text-[10px] text-[#92400E]">1º acesso pendente</span>}
+                    {item.primeiroLogin && <span className="text-[10px] text-[var(--warning)]">1º acesso pendente</span>}
                   </div>
                 </td>
                 <td className="px-2 py-3 text-[var(--muted-foreground)]"><ChevronRight size={15} /></td>
@@ -254,10 +254,10 @@ export function FuncionariosTable({ itens, onOpen }: { itens: Funcionario[]; onO
           </tbody>
         </table>
       </div>
-      <ul className="divide-y divide-[#EFEFED] md:hidden" data-testid="administrativo-funcionarios-lista-mobile">
+      <ul className="divide-y divide-[var(--border)] md:hidden" data-testid="administrativo-funcionarios-lista-mobile">
         {itens.map((item) => (
           <li key={item.id}>
-            <button type="button" onClick={() => onOpen(item)} aria-label={`Abrir cadastro de ${item.nome}`} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
+            <button type="button" onClick={() => onOpen(item)} aria-label={`Abrir cadastro de ${item.nome}`} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[var(--surface-muted)]">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-[var(--foreground)]">{item.nome}</p>
                 <p className="truncate text-[12px] text-[var(--muted-foreground)]">{PERFIL_LABEL[item.perfil] ?? item.perfil} · <span className="font-technical">{item.usuario}</span></p>

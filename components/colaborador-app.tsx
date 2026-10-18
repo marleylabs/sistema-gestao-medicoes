@@ -127,8 +127,8 @@ function hasUnreadMedicaoMessages(messages: SgcChatMessage[]) {
 }
 
 function ChatReceipt({ read, sending }: { read: boolean; sending?: boolean }) {
-  if (sending) return <Check size={13} className="text-[#9CA3AF]" />;
-  return <CheckCheck size={13} className={read ? "text-[#2563EB]" : "text-[#9CA3AF]"} />;
+  if (sending) return <Check size={13} className="text-[var(--muted-foreground)]" />;
+  return <CheckCheck size={13} className={read ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"} />;
 }
 
 function initials(value: string | null | undefined) {
@@ -149,7 +149,7 @@ function ChatAvatar({
   className?: string;
 }) {
   return (
-    <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-bold ${className} ${unread ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
+    <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-bold ${className} ${unread ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--primary-soft)] text-[var(--primary)]"}`}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt="" className="h-full w-full object-cover" />
@@ -603,7 +603,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
           </p>
           <div className="mt-5 flex justify-center">
             {loadError === "sessao" ? (
-              <a href="/login" className="inline-flex h-10 items-center rounded-lg bg-[var(--primary)] px-4 text-[13px] font-semibold text-white hover:bg-[var(--primary-hover)]">Entrar novamente</a>
+              <a href="/login" className="inline-flex h-10 items-center rounded-lg bg-[var(--primary)] px-4 text-[13px] font-semibold text-[var(--on-solid)] hover:bg-[var(--primary-hover)]">Entrar novamente</a>
             ) : (
               <Button className="h-10 px-4" onClick={() => void loadData()}>Tentar novamente</Button>
             )}
@@ -638,16 +638,16 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
         {/* ── Aguardando envio ── */}
         {section === "portal" && aguardando && (
           <Card className="p-10 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#F3F4F6] text-[#9CA3AF]">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--surface-hover)] text-[var(--muted-foreground)]">
               <Clock size={30} />
             </div>
-            <h2 className="text-section-title text-[#1A1A1A]">Aguardando o envio do BM</h2>
-            <p className="mt-2 text-sm text-[#555555]">
+            <h2 className="text-section-title text-[var(--foreground)]">Aguardando o envio do BM</h2>
+            <p className="mt-2 text-sm text-[var(--muted-foreground)]">
               Sua medição ainda não foi disponibilizada pela equipe de Medição.
               <br />
               Assim que for enviada, você poderá visualizar e validar os dados aqui.
             </p>
-            <p className="mt-4 text-xs text-[#9CA3AF]">
+            <p className="mt-4 text-xs text-[var(--muted-foreground)]">
               Caso tenha dúvidas, entre em contato com a equipe responsável.
             </p>
           </Card>
@@ -657,17 +657,17 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
         {section === "portal" && precisaConferencia && data.sgc.statusConferencia === "AGUARDANDO_UPLOAD" && (
           <Card className="p-6">
             <p className="text-eyebrow mb-1 text-[var(--primary)]">Fornecedor</p>
-            <h2 className="text-section-title text-[#1A1A1A]">Conferência da Medição</h2>
-            <p className="mt-2 text-sm text-[#555555]">
+            <h2 className="text-section-title text-[var(--foreground)]">Conferência da Medição</h2>
+            <p className="mt-2 text-sm text-[var(--muted-foreground)]">
               Antes de visualizar e aprovar seu BM, informe os documentos correspondentes a este ciclo. Baixe a máscara, preencha os dados e envie o arquivo para conferência.
             </p>
-            <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#F9FAFB] px-3 py-1.5">
+            <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[var(--surface-muted)] px-3 py-1.5">
               <span className="text-label text-[var(--muted-foreground)]">Ciclo da medição</span>
-              <span className="font-technical text-sm font-bold text-[#1A1A1A]">{data.cicloAtivo}</span>
+              <span className="font-technical text-sm font-bold text-[var(--foreground)]">{data.cicloAtivo}</span>
             </div>
 
             {message && (
-              <div className={`mt-4 rounded-lg px-4 py-3 text-sm font-medium ${message.type === "success" ? "bg-[#F0FDF4] text-[#16A34A]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
+              <div className={`mt-4 rounded-lg px-4 py-3 text-sm font-medium ${message.type === "success" ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--primary-soft)] text-[var(--primary)]"}`}>
                 {message.text}
               </div>
             )}
@@ -676,7 +676,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
               <a
                 href="/api/colaborador/conferencia/mascara"
                 download
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#555555] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--muted-foreground)] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
               >
                 <FileUp size={14} />
                 Baixar máscara
@@ -692,13 +692,13 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                 setDraggingConferencia(false);
                 handleConferenciaFileSelect(e.dataTransfer.files?.[0] ?? null);
               }}
-              className={`rounded-xl border border-dashed px-4 py-5 text-center transition ${draggingConferencia ? "border-[var(--primary)] bg-[var(--primary-soft)]" : "border-[#D1D5DB] bg-white/65 hover:bg-white"}`}
+              className={`rounded-xl border border-dashed px-4 py-5 text-center transition ${draggingConferencia ? "border-[var(--primary)] bg-[var(--primary-soft)]" : "border-[var(--border-strong)] bg-white/65 hover:bg-[var(--surface)]"}`}
             >
               {!conferenciaFile ? (
                 <>
-                  <UploadCloud className="mx-auto mb-2 text-[#9CA3AF]" size={26} />
-                  <p className="text-sm text-[#555555]">Arraste o arquivo .xlsx aqui ou</p>
-                  <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-semibold text-[#555555] hover:border-[var(--primary)] hover:text-[var(--primary)]">
+                  <UploadCloud className="mx-auto mb-2 text-[var(--muted-foreground)]" size={26} />
+                  <p className="text-sm text-[var(--muted-foreground)]">Arraste o arquivo .xlsx aqui ou</p>
+                  <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] hover:border-[var(--primary)] hover:text-[var(--primary)]">
                     Selecionar arquivo
                     <input
                       type="file"
@@ -711,10 +711,10 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
               ) : (
                 <div className="flex items-center justify-between gap-3 text-left">
                   <div className="flex min-w-0 items-center gap-2">
-                    <FileIcon size={18} className="shrink-0 text-[#6B7280]" />
+                    <FileIcon size={18} className="shrink-0 text-[var(--muted-foreground)]" />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[#1A1A1A]">{conferenciaFile.name}</p>
-                      <p className="mt-0.5 text-xs text-[#6B7280]">{readableFileSize(conferenciaFile.size)}</p>
+                      <p className="truncate text-sm font-semibold text-[var(--foreground)]">{conferenciaFile.name}</p>
+                      <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">{readableFileSize(conferenciaFile.size)}</p>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
@@ -729,11 +729,11 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
               )}
             </div>
             {conferenciaUploading && (
-              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[#F3F4F6]">
-                <div className="h-full rounded-full bg-[#15803D] transition-all duration-200" style={{ width: `${conferenciaProgress}%` }} />
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-hover)]">
+                <div className="h-full rounded-full bg-[var(--success)] transition-all duration-200" style={{ width: `${conferenciaProgress}%` }} />
               </div>
             )}
-            {conferenciaError && <p className="mt-2 flex items-center gap-1 text-xs text-[#B91C1C]"><AlertCircle size={13} />{conferenciaError}</p>}
+            {conferenciaError && <p className="mt-2 flex items-center gap-1 text-xs text-[var(--error)]"><AlertCircle size={13} />{conferenciaError}</p>}
           </Card>
         )}
 
@@ -745,17 +745,17 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
         */}
         {section === "portal" && precisaConferencia && data.sgc.statusConferencia === "DIVERGENCIA" && (
           <Card className="p-10 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#F3F4F6] text-[#9CA3AF]">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--surface-hover)] text-[var(--muted-foreground)]">
               <Clock size={30} />
             </div>
-            <h2 className="text-section-title text-[#1A1A1A]">Análise em andamento</h2>
-            <p className="mt-2 text-sm text-[#555555]">
+            <h2 className="text-section-title text-[var(--foreground)]">Análise em andamento</h2>
+            <p className="mt-2 text-sm text-[var(--muted-foreground)]">
               As informações enviadas estão sendo analisadas pela Equipe de Medição.
               <br />
               Aguarde a conclusão da análise.
             </p>
-            <div className="mx-auto mt-4 inline-flex items-center gap-4 rounded-lg bg-[#F9FAFB] px-4 py-2">
-              <span className="text-label text-[var(--muted-foreground)]">Ciclo <span className="font-technical text-[#1A1A1A]">{data.cicloAtivo}</span></span>
+            <div className="mx-auto mt-4 inline-flex items-center gap-4 rounded-lg bg-[var(--surface-muted)] px-4 py-2">
+              <span className="text-label text-[var(--muted-foreground)]">Ciclo <span className="font-technical text-[var(--foreground)]">{data.cicloAtivo}</span></span>
               <span className="text-label text-[var(--muted-foreground)]">Status <Badge variant="warning" className="ml-1">Em análise</Badge></span>
             </div>
           </Card>
@@ -792,7 +792,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
               <ol className="mt-4 grid gap-3 md:grid-cols-2">
                 <li className="flex flex-col gap-3 rounded-lg border border-[var(--border)] p-4">
                   <div className="flex items-start gap-3">
-                    <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${salvoAt ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[#f1f1ef] text-[var(--foreground)]"}`} aria-hidden>
+                    <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${salvoAt ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--surface-hover)] text-[var(--foreground)]"}`} aria-hidden>
                       {salvoAt ? <Check size={13} /> : "1"}
                     </span>
                     <div className="min-w-0">
@@ -844,7 +844,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                 detalhe={data.sgc.aprovadoAt ? `Aprovado em ${formatDataHora(data.sgc.aprovadoAt)}. Envie a Nota Fiscal para seguir com o pagamento.` : "Envie a Nota Fiscal para seguir com o pagamento."}
               />
               <PortalFeedback message={message} />
-              <div className="mt-5 rounded-lg border border-[#f2dbb7] bg-[var(--warning-soft)] p-4 sm:p-5">
+              <div className="mt-5 rounded-lg border border-[var(--warning)]/35 bg-[var(--warning-soft)] p-4 sm:p-5">
                 <div className="mb-3 flex items-start gap-2">
                   <FileUp size={16} className="mt-0.5 shrink-0 text-[var(--warning)]" aria-hidden />
                   <div>
@@ -865,7 +865,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                   role="button"
                   tabIndex={0}
                   aria-label="Escolher arquivo da Nota Fiscal"
-                  className={`rounded-lg border border-dashed px-4 py-5 text-center transition ${draggingNf ? "border-[var(--warning)] bg-white" : "border-[#e6c48f] bg-white/70 hover:bg-white"}`}
+                  className={`rounded-lg border border-dashed px-4 py-5 text-center transition ${draggingNf ? "border-[var(--warning)] bg-[var(--surface)]" : "border-[var(--warning)]/35 bg-white/70 hover:bg-[var(--surface)]"}`}
                   onClick={() => nfInputRef.current?.click()}
                   onKeyDown={(event) => {
                     if (event.key !== "Enter" && event.key !== " ") return;
@@ -888,7 +888,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                   <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">PDF pesquisável</p>
                 </div>
                 {nfFile && (
-                  <div className="mt-3 rounded-lg border border-[var(--border)] bg-white p-3">
+                  <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
                     <div className="flex items-center gap-3">
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--warning-soft)] text-[var(--warning)]">
                         <FileIcon size={18} aria-hidden />
@@ -896,7 +896,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <p className="truncate text-[13px] font-semibold text-[var(--foreground)]">{nfFile.name}</p>
-                          <span className="shrink-0 rounded bg-[#f1f1ef] px-1.5 py-0.5 text-[10px] font-bold text-[var(--muted-foreground)]">{fileExtension(nfFile.name)}</span>
+                          <span className="shrink-0 rounded bg-[var(--surface-hover)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--muted-foreground)]">{fileExtension(nfFile.name)}</span>
                         </div>
                         <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">{readableFileSize(nfFile.size)}</p>
                       </div>
@@ -909,7 +909,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
                         <Trash2 size={15} />
                       </IconButton>
                     </div>
-                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#efefec]">
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--surface-hover)]">
                       <div
                         className={`h-full rounded-full transition-all duration-200 ${nfError ? "bg-[var(--error)]" : "bg-[var(--success)]"}`}
                         style={{ width: `${nfError ? 100 : nfProgress}%` }}
@@ -942,7 +942,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
               </EstadoConcluido>
               <PortalFeedback message={message} />
               {data.sgc.pontosDiscordancia && (
-                <div className="mt-4 rounded-lg border border-[var(--border)] bg-[#fafaf8] p-3">
+                <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Motivo informado</p>
                   <p className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-[var(--foreground)]">{data.sgc.pontosDiscordancia}</p>
                 </div>
@@ -1037,7 +1037,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             </p>
             <ul className="mt-3 grid gap-2">
               {data.documentosDescartados.map((d) => (
-                <li key={d.id} className="grid gap-1 rounded-lg border border-[var(--border)] bg-[#fafaf8] p-3 sm:grid-cols-[minmax(0,200px)_1fr] sm:gap-4">
+                <li key={d.id} className="grid gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 sm:grid-cols-[minmax(0,200px)_1fr] sm:gap-4">
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Documento</p>
                     <p className="break-all font-technical text-[13px] font-semibold text-[var(--foreground)]">{d.nrVale}</p>
@@ -1158,7 +1158,7 @@ function RevisionChatWidget({
   if (!open) {
     return (
       <button
-        className={`fixed bottom-5 right-5 z-50 inline-flex h-12 items-center gap-2 rounded-full px-4 text-sm font-semibold text-white shadow-xl ${hasUnread ? "bg-[#16A34A] hover:bg-[#15803D]" : "bg-[#2563EB] hover:bg-[#1D4ED8]"}`}
+        className={`fixed bottom-5 right-5 z-50 inline-flex h-12 items-center gap-2 rounded-full px-4 text-sm font-semibold text-[var(--on-solid)] shadow-xl ${hasUnread ? "bg-[var(--success)] hover:bg-[var(--success)]/90" : "bg-[var(--primary)] hover:bg-[var(--primary)]/90"}`}
         onClick={() => onOpenChange(true)}
       >
         <MessageCircle size={18} />
@@ -1217,56 +1217,56 @@ function RevisionChatWidget({
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 grid h-[min(560px,calc(100vh-40px))] min-h-0 w-[min(860px,calc(100vw-24px))] grid-cols-1 overflow-hidden rounded-xl border border-[#D1D5DB] bg-white shadow-2xl md:grid-cols-[300px_1fr]">
-      <aside className="hidden min-h-0 min-w-0 border-r border-[#E5E7EB] bg-white md:flex md:flex-col">
-        <div className="border-b border-[#E5E7EB] px-4 py-3">
-          <p className="text-base font-bold text-[#1A1A1A]">Conversas</p>
-          <div className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-xs text-[#9CA3AF]">
+    <div className="fixed bottom-5 right-5 z-50 grid h-[min(560px,calc(100vh-40px))] min-h-0 w-[min(860px,calc(100vw-24px))] grid-cols-1 overflow-hidden rounded-xl border border-[var(--border-strong)] bg-[var(--surface)] shadow-2xl md:grid-cols-[300px_1fr]">
+      <aside className="hidden min-h-0 min-w-0 border-r border-[var(--border)] bg-[var(--surface)] md:flex md:flex-col">
+        <div className="border-b border-[var(--border)] px-4 py-3">
+          <p className="text-base font-bold text-[var(--foreground)]">Conversas</p>
+          <div className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-xs text-[var(--muted-foreground)]">
             <Search size={14} />
             Pesquise conversas
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <button className="flex w-full gap-3 border-b border-[#F3F4F6] bg-[#EFF6FF] px-4 py-3 text-left">
+          <button className="flex w-full gap-3 border-b border-[var(--surface-hover)] bg-[var(--primary-soft)] px-4 py-3 text-left">
             <ChatAvatar name="Equipe de Medição" unread={hasUnread} className="h-10 w-10" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-sm font-semibold text-[#1A1A1A]">Equipe de Medição</p>
-                <span className="shrink-0 text-[10px] text-[#9CA3AF]">{latestMedicaoMessage ? chatTime(latestMedicaoMessage.criadoAt).split(", ").at(-1) : ""}</span>
+                <p className="truncate text-sm font-semibold text-[var(--foreground)]">Equipe de Medição</p>
+                <span className="shrink-0 text-[10px] text-[var(--muted-foreground)]">{latestMedicaoMessage ? chatTime(latestMedicaoMessage.criadoAt).split(", ").at(-1) : ""}</span>
               </div>
-              <p className="mt-0.5 truncate text-xs text-[#6B7280]">{latestMedicaoMessage?.texto ?? "Sem mensagens."}</p>
+              <p className="mt-0.5 truncate text-xs text-[var(--muted-foreground)]">{latestMedicaoMessage?.texto ?? "Sem mensagens."}</p>
             </div>
           </button>
-          <button className="flex w-full gap-3 border-b border-[#F3F4F6] px-4 py-3 text-left opacity-70">
+          <button className="flex w-full gap-3 border-b border-[var(--surface-hover)] px-4 py-3 text-left opacity-70">
             <ChatAvatar name="Financeiro" className="h-10 w-10" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-sm font-semibold text-[#1A1A1A]">Financeiro</p>
-                <span className="rounded-full bg-[#F3F4F6] px-2 py-0.5 text-[10px] font-semibold text-[#6B7280]">em breve</span>
+                <p className="truncate text-sm font-semibold text-[var(--foreground)]">Financeiro</p>
+                <span className="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted-foreground)]">em breve</span>
               </div>
-              <p className="mt-0.5 truncate text-xs text-[#6B7280]">Canal reservado para notas fiscais e pagamentos.</p>
+              <p className="mt-0.5 truncate text-xs text-[var(--muted-foreground)]">Canal reservado para notas fiscais e pagamentos.</p>
             </div>
           </button>
         </div>
       </aside>
 
       <section className="flex min-h-0 min-w-0 flex-col">
-        <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
             <ChatAvatar name="Equipe de Medição" />
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-[#1A1A1A]">Equipe de Medição</p>
-              <p className={`text-xs ${medicaoOnline ? "text-[#16A34A]" : "text-[#9CA3AF]"}`}>
+              <p className="truncate text-sm font-bold text-[var(--foreground)]">Equipe de Medição</p>
+              <p className={`text-xs ${medicaoOnline ? "text-[var(--success)]" : "text-[var(--muted-foreground)]"}`}>
                 {medicaoOnline ? "online" : "offline"}
               </p>
             </div>
           </div>
-          <button className="rounded-full p-1 text-[#6B7280] hover:bg-white hover:text-[#1A1A1A]" onClick={() => onOpenChange(false)} aria-label="Fechar chat">
+          <button className="rounded-full p-1 text-[var(--muted-foreground)] hover:bg-[var(--surface)] hover:text-[var(--foreground)]" onClick={() => onOpenChange(false)} aria-label="Fechar chat">
             <X size={16} />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#F3F4F6] px-4 py-4">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[var(--surface-hover)] px-4 py-4">
           {visibleMessages.length ? (
             visibleMessages.map((mensagem) => {
               const isFornecedor = mensagem.autor === "FORNECEDOR";
@@ -1279,8 +1279,8 @@ function RevisionChatWidget({
                       className="h-7 w-7 text-[10px]"
                     />
                   )}
-                  <div className={`max-w-[82%] rounded-xl px-3 py-2 text-sm shadow-sm ${isFornecedor ? "rounded-br-sm bg-[#DBEAFE] text-[#1E3A8A]" : "rounded-bl-sm bg-white text-[#1A1A1A]"}`}>
-                    <p className={`mb-1 text-[11px] font-bold ${isFornecedor ? "text-[#1D4ED8]" : "text-[#2563EB]"}`}>
+                  <div className={`max-w-[82%] rounded-xl px-3 py-2 text-sm shadow-sm ${isFornecedor ? "rounded-br-sm bg-[var(--primary-soft)] text-[var(--primary)]" : "rounded-bl-sm bg-[var(--surface)] text-[var(--foreground)]"}`}>
+                    <p className={`mb-1 text-[11px] font-bold ${isFornecedor ? "text-[var(--primary)]" : "text-[var(--primary)]"}`}>
                       {mensagem.autorNome}
                     </p>
                     {mensagem.tipo === "AUDIO" && mensagem.audioUrl ? (
@@ -1306,17 +1306,17 @@ function RevisionChatWidget({
               );
             })
           ) : (
-            <p className="rounded-lg border border-dashed border-[#D1D5DB] bg-white px-3 py-4 text-center text-sm text-[#6B7280]">
+            <p className="rounded-lg border border-dashed border-[var(--border-strong)] bg-[var(--surface)] px-3 py-4 text-center text-sm text-[var(--muted-foreground)]">
               Nenhuma mensagem registrada nesta revisão.
             </p>
           )}
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="border-t border-[#E5E7EB] bg-white p-3">
+        <div className="border-t border-[var(--border)] bg-[var(--surface)] p-3">
           <div className="flex items-end gap-2">
             <textarea
-              className="max-h-32 min-h-11 flex-1 resize-none rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+              className="max-h-32 min-h-11 flex-1 resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]/70 focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20"
               placeholder="Digite uma nova mensagem..."
               value={draft}
               onChange={(e) => onDraftChange(e.target.value)}

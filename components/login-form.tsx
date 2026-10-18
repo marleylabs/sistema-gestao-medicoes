@@ -52,12 +52,12 @@ export function LoginForm() {
                 <img src="/logo.png" alt="En Passant" className="h-full w-full object-cover" />
               </span>
               <div>
-                <div className="text-lg font-bold text-[#1A1A1A]">En Passant</div>
-                <div className="text-xs italic text-[#9CA3AF]">Movimento lateral em busca de novos objetivos</div>
+                <div className="text-lg font-bold text-[var(--foreground)]">En Passant</div>
+                <div className="text-xs italic text-[var(--muted-foreground)]">Movimento lateral em busca de novos objetivos</div>
               </div>
             </div>
 
-            <div className="rounded-xl border border-[var(--border)] bg-white p-6 shadow-[0_12px_36px_rgba(0,0,0,0.06)]">
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[0_12px_36px_rgba(0,0,0,0.06)]">
               <div className="mb-6">
                 <p className="text-eyebrow mb-1 text-[var(--primary)]">Acesso corporativo</p>
                 <h1 className="text-page-title text-[var(--foreground)]">Acessar plataforma</h1>
@@ -65,10 +65,10 @@ export function LoginForm() {
               </div>
 
               <form className="grid gap-4" onSubmit={submit}>
-                <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
+                <label className="grid gap-1.5 text-sm font-semibold text-[var(--foreground)]">
                   <span>ID de acesso</span>
                   <span className="relative">
-                    <UserRound className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#1A1A1A]" size={17} />
+                    <UserRound className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--foreground)]" size={17} />
                     <Input
                       className="pl-10"
                       autoComplete="username"
@@ -80,10 +80,10 @@ export function LoginForm() {
                   </span>
                 </label>
 
-                <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
+                <label className="grid gap-1.5 text-sm font-semibold text-[var(--foreground)]">
                   <span>Senha</span>
                   <span className="relative">
-                    <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#1A1A1A]" size={17} />
+                    <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--foreground)]" size={17} />
                     <Input
                       className="px-10"
                       type={showPassword ? "text" : "password"}
@@ -94,7 +94,7 @@ export function LoginForm() {
                     />
                     <button
                       type="button"
-                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center text-[#1A1A1A]"
+                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center text-[var(--foreground)]"
                       onClick={() => setShowPassword((value) => !value)}
                       title={showPassword ? "Ocultar senha" : "Exibir senha"}
                     >
@@ -103,7 +103,7 @@ export function LoginForm() {
                   </span>
                 </label>
 
-                {message ? <div className="rounded-md bg-[#F5F5F5] px-3 py-2 text-sm font-medium text-[#AF1B1B]">{message}</div> : null}
+                {message ? <div className="rounded-md bg-[var(--surface-muted)] px-3 py-2 text-sm font-medium text-[var(--primary)]">{message}</div> : null}
 
                 <Button type="submit" className="mt-1 w-full" disabled={loading} aura>
                   <LogIn size={17} />

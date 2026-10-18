@@ -59,7 +59,7 @@ function Comparacao({ campos }: { campos: CampoComparado[] }) {
       {/* Desktop: tabela. */}
       <table className="hidden w-full border-collapse text-[13px] md:table" data-testid="divergencia-comparacao">
         <thead>
-          <tr className="bg-[#fafaf8]">
+          <tr className="bg-[var(--surface-muted)]">
             {["Campo", "Equipe / Sistema", "Fornecedor", "Status"].map((h) => (
               <th key={h} scope="col" className="text-table-header border-b border-[var(--border)] px-3 py-2 text-left text-[var(--muted-foreground)]">{h}</th>
             ))}
@@ -84,7 +84,7 @@ function Comparacao({ campos }: { campos: CampoComparado[] }) {
         {campos.map((c) => {
           const destaque = c.status === "DIVERGENTE";
           return (
-            <li key={c.chave} className={`rounded-lg border p-3 ${destaque ? "border-[#efc6c6] bg-[var(--error-soft)]" : "border-[var(--border)]"}`}>
+            <li key={c.chave} className={`rounded-lg border p-3 ${destaque ? "border-[var(--error)]/30 bg-[var(--error-soft)]" : "border-[var(--border)]"}`}>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[13px] font-semibold text-[var(--foreground)]">{c.label}</span>
                 <StatusCampoChip status={c.status} />
@@ -130,13 +130,13 @@ function ConfirmarDecisaoDialog({
 
   return (
     <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:items-center sm:p-4">
-      <div role="alertdialog" aria-modal="true" aria-labelledby={`${id}-t`} aria-describedby={`${id}-d`} className="ds-dialog flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[520px] sm:max-w-[92vw]">
+      <div role="alertdialog" aria-modal="true" aria-labelledby={`${id}-t`} aria-describedby={`${id}-d`} className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[520px] sm:max-w-[92vw]">
         <div className="border-b border-[var(--border)] px-5 py-4">
           <h2 id={`${id}-t`} className="text-section-title text-[var(--foreground)]">{acao.label}</h2>
           <p id={`${id}-d`} className="mt-1 text-[12px] text-[var(--muted-foreground)]">{acao.consequencia}</p>
         </div>
         <div className="grid min-h-0 gap-3 overflow-y-auto px-5 py-4 text-[13px]">
-          {erro && <p role="alert" className="rounded-lg border border-[#efc6c6] bg-[var(--error-soft)] px-3 py-2 font-medium text-[var(--error)]">{erro}</p>}
+          {erro && <p role="alert" className="rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-3 py-2 font-medium text-[var(--error)]">{erro}</p>}
           <p><span className="text-[var(--muted-foreground)]">Documento:</span> <span className="font-technical font-semibold">{divergencia.nrVale}</span></p>
           {linhas.length > 0 && tipo !== "AMBIGUA" && (
             <table className="w-full border-collapse">
@@ -159,7 +159,7 @@ function ConfirmarDecisaoDialog({
             </table>
           )}
           {observacao.trim() && (
-            <div className="rounded-lg border border-[var(--border)] bg-[#fafaf8] p-3">
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Observação da análise</p>
               <p className="mt-1 whitespace-pre-wrap break-words">{observacao.trim()}</p>
             </div>
@@ -205,7 +205,7 @@ function DocumentoDivergencia({
 
   return (
     <li className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]" data-testid="divergencia-documento" data-nr-vale={d.nrVale} data-status={d.status}>
-      <button type="button" className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-[#fafaf8]" onClick={onAlternar} aria-expanded={aberto} aria-controls={painelId}>
+      <button type="button" className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--surface-muted)]" onClick={onAlternar} aria-expanded={aberto} aria-controls={painelId}>
         <span className="min-w-0">
           <span className="block break-all font-technical text-[14px] font-bold text-[var(--foreground)]">{d.nrVale}</span>
           <span className="mt-0.5 block text-[12px] text-[var(--muted-foreground)]">{meta}</span>
@@ -222,7 +222,7 @@ function DocumentoDivergencia({
 
       {aberto && (
         <div id={painelId} className="grid gap-4 border-t border-[var(--border)] px-4 py-4">
-          <p role="note" className={`rounded-lg border px-3 py-2 text-[13px] ${pendente ? "border-[#f2dbb7] bg-[var(--warning-soft)] text-[var(--foreground)]" : "border-[var(--border)] bg-[#fafaf8] text-[var(--muted-foreground)]"}`} data-testid="divergencia-resumo">
+          <p role="note" className={`rounded-lg border px-3 py-2 text-[13px] ${pendente ? "border-[var(--warning)]/35 bg-[var(--warning-soft)] text-[var(--foreground)]" : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--muted-foreground)]"}`} data-testid="divergencia-resumo">
             {resumo}
           </p>
 
@@ -264,7 +264,7 @@ function DocumentoDivergencia({
               </div>
             </>
           ) : (
-            <dl className="grid gap-2 rounded-lg border border-[var(--border)] bg-[#fafaf8] p-3 text-[13px] sm:grid-cols-2" data-testid="divergencia-decisao">
+            <dl className="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-[13px] sm:grid-cols-2" data-testid="divergencia-decisao">
               <div><dt className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Decisão</dt><dd className="font-semibold text-[var(--foreground)]">{decisao?.label ?? d.status}</dd></div>
               {tipo === "CAMPOS" && divergentes.length > 0 && (
                 <div><dt className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Valor adotado</dt><dd className="font-technical">{divergentes.map((c) => `${c.label}: ${(d.status === "INCLUIDA" ? c.fornecedor : c.equipe) ?? "—"}`).join(" · ")}</dd></div>
@@ -382,7 +382,7 @@ export function DivergenciasMedicao({
     return (
       <div className="grid gap-2" data-testid="divergencias-medicao">
         <h3 className="text-card-title text-[var(--foreground)]">Divergências da Medição</h3>
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#efc6c6] bg-[var(--error-soft)] px-3 py-2 text-[13px] text-[var(--error)]">
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-3 py-2 text-[13px] text-[var(--error)]">
           {erro}
           <Button variant="secondary" className="border-[var(--border-strong)]! h-8 px-3 text-xs" onClick={onRecarregar}>Tentar novamente</Button>
         </div>
@@ -412,7 +412,7 @@ export function DivergenciasMedicao({
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex w-full rounded-lg border border-[var(--border)] bg-white p-0.5 sm:w-auto" role="group" aria-label="Filtrar documentos">
+        <div className="inline-flex w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5 sm:w-auto" role="group" aria-label="Filtrar documentos">
           {filtros.map(([valor, label, n]) => (
             <button key={valor} type="button" aria-pressed={filtro === valor} onClick={() => setFiltro(valor)} className={`flex-1 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors sm:flex-none ${filtro === valor ? "bg-[var(--primary-soft)] text-[var(--primary)]" : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}>
               {label} <span className="tabular-nums">({n})</span>
@@ -422,7 +422,7 @@ export function DivergenciasMedicao({
         <label className="relative block w-full sm:w-64">
           <span className="sr-only">Buscar documento por NR VALE</span>
           <Search size={14} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
-          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar documento..." aria-label="Buscar documento por NR VALE" className="h-9 w-full rounded-lg border border-[var(--border)] bg-white pl-8 pr-3 text-[13px] outline-none focus:border-[var(--primary)]" />
+          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar documento..." aria-label="Buscar documento por NR VALE" className="h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] pl-8 pr-3 text-[13px] outline-none focus:border-[var(--primary)]" />
         </label>
       </div>
 

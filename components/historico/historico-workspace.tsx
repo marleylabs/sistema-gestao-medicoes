@@ -117,7 +117,7 @@ export function HistoricoWorkspace({ ciclos }: { ciclos: CicloHistorico[] }) {
           </div>
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
             <span className="relative min-w-0 sm:w-[280px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#9CA3AF]" size={14} />
+              <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[var(--muted-foreground)]" size={14} />
               <Input
                 className="pl-8"
                 aria-label="Buscar no histórico"
@@ -137,10 +137,10 @@ export function HistoricoWorkspace({ ciclos }: { ciclos: CicloHistorico[] }) {
                 <div className="relative shrink-0" ref={filtrosRef}>
                   <FilterButton count={chips.length} onClick={() => setFiltrosAbertos((v) => !v)} />
                   {filtrosAbertos && (
-                    <div ref={filtrosPainelRef} style={filtrosPosicao} className="absolute right-0 top-10 z-40 grid w-[280px] max-w-[88vw] gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
+                    <div ref={filtrosPainelRef} style={filtrosPosicao} className="absolute right-0 top-10 z-40 grid w-[280px] max-w-[88vw] gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-xl">
                       <div className="flex items-center justify-between">
                         <p className="text-label text-[var(--muted-foreground)]">Filtros</p>
-                        <button type="button" onClick={() => setFiltrosAbertos(false)} title="Fechar" className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#374151]"><X size={12} /></button>
+                        <button type="button" onClick={() => setFiltrosAbertos(false)} title="Fechar" className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"><X size={12} /></button>
                       </div>
                       {visao === "medicoes" && (
                         <label className="grid gap-1 text-xs text-[var(--foreground)]">
@@ -228,14 +228,14 @@ export function HistoricoWorkspace({ ciclos }: { ciclos: CicloHistorico[] }) {
 
       {bm && (
         <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:p-4 sm:pt-10">
-          <div className="min-h-screen w-full max-w-5xl rounded-none bg-white shadow-2xl sm:min-h-0 sm:rounded-xl">
+          <div className="min-h-screen w-full max-w-5xl rounded-none bg-[var(--surface)] shadow-2xl sm:min-h-0 sm:rounded-xl">
             <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
               <p className="text-sm font-semibold text-[var(--foreground)]">Boletim de Medição</p>
               <IconButton onClick={() => setBm(null)} title="Fechar boletim"><X size={16} /></IconButton>
             </div>
             <div className="p-4 sm:p-5">
               {bm.loading ? <p className="py-10 text-center text-sm text-[var(--muted-foreground)]">Carregando boletim…</p>
-                : bm.erro ? <div className="rounded-lg border border-[#efc6c6] bg-[var(--error-soft)] px-4 py-3 text-sm text-[var(--error)]">{bm.erro}</div>
+                : bm.erro ? <div className="rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-4 py-3 text-sm text-[var(--error)]">{bm.erro}</div>
                 : bm.data ? <BoletimMedicao data={bm.data} /> : null}
             </div>
           </div>

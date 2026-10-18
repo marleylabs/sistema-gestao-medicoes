@@ -143,8 +143,8 @@ export function PortalFeedback({ message }: { message: { text: string; type: "su
       role="status"
       className={`mt-4 flex items-start gap-2 rounded-lg border px-3.5 py-2.5 text-[13px] font-medium ${
         message.type === "success"
-          ? "border-[#cde9d5] bg-[var(--success-soft)] text-[var(--success)]"
-          : "border-[var(--border)] bg-[#fafaf8] text-[var(--foreground)]"
+          ? "border-[var(--success)]/30 bg-[var(--success-soft)] text-[var(--success)]"
+          : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--foreground)]"
       }`}
     >
       {message.type === "success" && <CheckCircle2 size={15} className="mt-0.5 shrink-0" aria-hidden />}
@@ -166,7 +166,7 @@ export function EstadoConcluido({
   children?: ReactNode;
 }) {
   const Icone = tone === "success" ? CheckCircle2 : tone === "warning" ? MessageCircle : XCircle;
-  const cor = tone === "success" ? "bg-[var(--success-soft)] text-[var(--success)]" : tone === "warning" ? "bg-[var(--warning-soft)] text-[var(--warning)]" : "bg-[#f1f1ef] text-[var(--muted-foreground)]";
+  const cor = tone === "success" ? "bg-[var(--success-soft)] text-[var(--success)]" : tone === "warning" ? "bg-[var(--warning-soft)] text-[var(--warning)]" : "bg-[var(--surface-hover)] text-[var(--muted-foreground)]";
   return (
     <div className="flex items-start gap-3">
       <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${cor}`}>
@@ -229,7 +229,7 @@ export function ComposicaoPortal({ calculo, empilhado = false }: { calculo: Calc
                       <span className="min-w-0 break-words font-medium text-[var(--foreground)]">{contrato.nome}</span>
                       <span className="tabular-nums text-[var(--muted-foreground)]">{percentual.format(contrato.percentual / 100)}</span>
                     </div>
-                    <span className="h-1.5 overflow-hidden rounded-full bg-[#efefec]" aria-hidden>
+                    <span className="h-1.5 overflow-hidden rounded-full bg-[var(--surface-hover)]" aria-hidden>
                       <span className="block h-full rounded-full bg-[var(--primary)]" style={{ width: `${Math.min(100, Math.max(0, contrato.percentual))}%` }} />
                     </span>
                   </li>
@@ -275,7 +275,7 @@ export function DocumentosMedicaoPortal({
     <Card className="overflow-hidden">
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[#fafaf8] sm:px-6"
+        className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[var(--surface-muted)] sm:px-6"
         onClick={() => setAberto((v) => !v)}
         aria-expanded={aberto}
         aria-controls={painelId}
@@ -302,7 +302,7 @@ export function DocumentosMedicaoPortal({
               <div className="hidden overflow-x-auto lg:block">
                 <table className="w-full border-collapse text-[12px]">
                   <thead>
-                    <tr className="bg-[#fafaf8]">
+                    <tr className="bg-[var(--surface-muted)]">
                       {cabecalhos.map((h) => (
                         <th key={h} scope="col" className={`text-table-header whitespace-nowrap border-b border-[var(--border)] px-4 py-2.5 text-[var(--muted-foreground)] ${["A1eq / HH", "% Emissão", "Preço unit.", "Valor medido"].includes(h) ? "text-right" : "text-left"}`}>{h}</th>
                       ))}
@@ -312,7 +312,7 @@ export function DocumentosMedicaoPortal({
                     {c.totalCondicoesFixas > 0 && (
                       <tr className="border-b border-[var(--border)]">
                         <td className="px-4 py-3" colSpan={7}>
-                          <span className="mr-2 inline-flex rounded-md border border-[var(--border)] bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Condição fixa</span>
+                          <span className="mr-2 inline-flex rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Condição fixa</span>
                           <span className="font-medium text-[var(--foreground)]">{condicaoFixaLabel}</span>
                         </td>
                         <td className="px-4 py-3 text-right font-semibold tabular-nums text-[var(--foreground)]">{brl.format(c.totalCondicoesFixas)}</td>
@@ -338,7 +338,7 @@ export function DocumentosMedicaoPortal({
                     {c.descontos.map((d) => (
                       <tr key={d.id} className="border-b border-[var(--border)] last:border-0">
                         <td className="px-4 py-3" colSpan={7}>
-                          <span className="mr-2 inline-flex rounded-md border border-[#efc6c6] bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--error)]">Desconto</span>
+                          <span className="mr-2 inline-flex rounded-md border border-[var(--error)]/30 bg-[var(--surface)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--error)]">Desconto</span>
                           <span className="font-medium text-[var(--error)]">{d.obs || d.numeroDocumento || "Desconto aplicado"}</span>
                         </td>
                         <td className="px-4 py-3 text-right font-semibold tabular-nums text-[var(--error)]">- {brl.format(Math.abs(d.valorMedido))}</td>
@@ -382,7 +382,7 @@ export function DocumentosMedicaoPortal({
                   </li>
                 ))}
                 {c.descontos.map((d) => (
-                  <li key={d.id} className="rounded-lg border border-[#efc6c6] p-3">
+                  <li key={d.id} className="rounded-lg border border-[var(--error)]/30 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--error)]">Desconto</p>
@@ -440,7 +440,7 @@ function PortalDialog({
         aria-modal="true"
         aria-labelledby={`${id}-titulo`}
         aria-describedby={`${id}-descricao`}
-        className="ds-dialog flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]"
+        className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]"
       >
         <div className="border-b border-[var(--border)] px-5 py-4">
           <h2 id={`${id}-titulo`} className="text-section-title text-[var(--foreground)]">{titulo}</h2>
@@ -456,7 +456,7 @@ function PortalDialog({
 function ErroDialogo({ erro }: { erro: string | null }) {
   if (!erro) return null;
   return (
-    <p role="alert" className="rounded-lg border border-[#efc6c6] bg-[var(--error-soft)] px-3 py-2 text-[13px] font-medium text-[var(--error)]">
+    <p role="alert" className="rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-3 py-2 text-[13px] font-medium text-[var(--error)]">
       {erro}
     </p>
   );
@@ -501,7 +501,7 @@ export function AprovarBoletimDialog({
       }
     >
       <ErroDialogo erro={erro} />
-      <dl className="grid gap-2 rounded-lg border border-[var(--border)] bg-[#fafaf8] p-3 text-[13px]">
+      <dl className="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-[13px]">
         <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">Fornecedor</dt><dd className="min-w-0 break-words text-right font-medium text-[var(--foreground)]">{fornecedor}</dd></div>
         <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">Ciclo</dt><dd className="font-technical font-semibold text-[var(--foreground)]">{ciclo}</dd></div>
         <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">Total da medição</dt><dd className="font-semibold tabular-nums text-[var(--foreground)]">{brl.format(totalMedicao)}</dd></div>
@@ -548,7 +548,7 @@ export function SolicitarRevisaoDialog({
     >
       <ErroDialogo erro={erro} />
       {respostaAdmin && (
-        <div className="rounded-lg border border-[var(--border)] bg-[#fafaf8] p-3">
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Resposta da equipe de Medição</p>
           <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--foreground)]">{respostaAdmin}</p>
         </div>
@@ -592,7 +592,7 @@ export function ResponderMedicaoDialog({
 }) {
   const campoId = useId();
   const bloco = (titulo: string, texto: string) => (
-    <div className="rounded-lg border border-[var(--border)] bg-[#fafaf8] p-3">
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">{titulo}</p>
       <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--foreground)]">{texto}</p>
     </div>

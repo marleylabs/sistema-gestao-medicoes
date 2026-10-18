@@ -112,7 +112,7 @@ export function FornecedorDrawer({
 
           <Secao titulo="Distribuição por contrato">
             {contratos.length ? (
-              <ul className="divide-y divide-[#EFEFED] rounded-lg border border-[var(--border)]">
+              <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
                 {contratos.map((contrato) => (
                   <li key={contrato.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                     <span className="min-w-0 truncate text-[var(--foreground)]">{contrato.nome}</span>
@@ -124,7 +124,7 @@ export function FornecedorDrawer({
               <p className="text-sm text-[var(--muted-foreground)]">Nenhum contrato identificado no ciclo.</p>
             )}
             {item.documentosPendentesContrato > 0 && (
-              <p className="flex items-start gap-1.5 text-[12px] text-[#D97706]">
+              <p className="flex items-start gap-1.5 text-[12px] text-[var(--warning)]">
                 <AlertTriangle size={13} className="mt-0.5 shrink-0" />
                 {item.documentosPendentesContrato} documento(s) sem contrato (CTO) válido — {money(item.valorNaoClassificadoContrato)} ainda não classificado.
               </p>
@@ -138,7 +138,7 @@ export function FornecedorDrawer({
                 <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
               </summary>
               {precos.length ? (
-                <ul className="mt-2 divide-y divide-[#EFEFED] rounded-lg border border-[var(--border)]">
+                <ul className="mt-2 divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
                   {precos.map((preco, index) => (
                     <li key={`${preco.tipo2}-${preco.condicao}-${index}`} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                       <span className="text-[var(--foreground)]">{preco.tipo2}</span>

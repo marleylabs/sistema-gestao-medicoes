@@ -110,7 +110,7 @@ export function EvidenciaDrawer({
         {!bm ? <p className="text-sm text-[var(--muted-foreground)]">{bmErro ? "Sem documentos para exibir." : "Carregando documentos…"}</p>
           : documentos.length === 0 ? <p className="text-sm text-[var(--muted-foreground)]">Nenhum documento medido neste BM.</p>
           : (
-            <ul className="divide-y divide-[#EFEFED] rounded-lg border border-[var(--border)]" data-testid="evidencia-documentos">
+            <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]" data-testid="evidencia-documentos">
               {documentos.map((d) => {
                 const desconto = (d.tipo2 ?? "").toUpperCase().trim() === "DESCONTO";
                 return (

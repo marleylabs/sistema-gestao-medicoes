@@ -49,8 +49,8 @@ function hasUnreadFornecedorMessages(messages: SgcChatMessage[]) {
 }
 
 function ChatReceipt({ read, sending }: { read: boolean; sending?: boolean }) {
-  if (sending) return <Check size={13} className="text-[#9CA3AF]" />;
-  return <CheckCheck size={13} className={read ? "text-[#2563EB]" : "text-[#9CA3AF]"} />;
+  if (sending) return <Check size={13} className="text-[var(--muted-foreground)]" />;
+  return <CheckCheck size={13} className={read ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"} />;
 }
 
 function chatTime(value: string) {
@@ -80,7 +80,7 @@ function ChatAvatar({
   className?: string;
 }) {
   return (
-    <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-bold ${className} ${unread ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
+    <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-bold ${className} ${unread ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--primary-soft)] text-[var(--primary)]"}`}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt="" className="h-full w-full object-cover" />
@@ -186,7 +186,7 @@ export function MapaItemActions({
             setRetornando(true);
             try { await onRetornarBm(sgcId); } finally { setRetornando(false); }
           }}
-          className="h-8 shrink-0 gap-1 whitespace-nowrap border border-[#FCA5A5] bg-[#FEF2F2] px-2 text-xs font-semibold !text-[#DC2626] hover:border-[#F87171] hover:bg-[#FEE2E2]"
+          className="h-8 shrink-0 gap-1 whitespace-nowrap border border-[var(--error)]/30 bg-[var(--error-soft)] px-2 text-xs font-semibold !text-[var(--error)] hover:border-[var(--error)] hover:bg-[var(--error)]/15"
           variant="ghost"
         >
           <RotateCcw size={12} />
@@ -214,8 +214,8 @@ export function MapaItemActions({
           }}
           className={`h-8 shrink-0 gap-1 whitespace-nowrap px-2 text-xs font-semibold ${
             isRevisaoEnvio
-              ? "border border-[#FCD34D] bg-[#FFFBEB] !text-[#D97706] hover:bg-[#FEF3C7]"
-              : "border border-[#BFDBFE] bg-[#EFF6FF] !text-[#2563EB] hover:bg-[#DBEAFE]"
+              ? "border border-[var(--warning)]/35 bg-[var(--warning-soft)] !text-[var(--warning)] hover:bg-[var(--warning)]/15"
+              : "border border-[var(--primary)]/30 bg-[var(--primary-soft)] !text-[var(--primary)] hover:bg-[var(--primary)]/15"
           }`}
           variant="ghost"
         >
@@ -227,8 +227,8 @@ export function MapaItemActions({
         <div className="relative">
           <IconButton
             className={hasUnreadFornecedorMessages(revisao.mensagens)
-              ? "border-[#86EFAC] bg-[#F0FDF4] text-[#16A34A] hover:border-[#22C55E] hover:bg-[#DCFCE7]"
-              : "border-[#FCD34D] bg-[#FFFBEB] text-[#D97706] hover:border-[#F59E0B] hover:bg-[#FEF3C7]"}
+              ? "border-[var(--success)]/30 bg-[var(--success-soft)] text-[var(--success)] hover:border-[var(--success)] hover:bg-[var(--success)]/15"
+              : "border-[var(--warning)]/35 bg-[var(--warning-soft)] text-[var(--warning)] hover:border-[var(--warning)] hover:bg-[var(--warning)]/15"}
             title="Ver comentário do fornecedor"
             onClick={onToggleDropdown}
           >
@@ -253,7 +253,7 @@ export function MapaItemActions({
         <Edit3 size={13} />
         Editar pagamento
       </Button>
-      <Button variant="ghost" className="h-8 gap-1.5 px-2.5 text-xs !text-[#DC2626] hover:bg-[#FEF2F2]" onClick={excluir}>
+      <Button variant="ghost" className="h-8 gap-1.5 px-2.5 text-xs !text-[var(--error)] hover:bg-[var(--error-soft)]" onClick={excluir}>
         <Trash2 size={13} />
         Excluir pagamento
       </Button>
@@ -419,15 +419,15 @@ export function ComentarioDropdown({
   return (
     <div
       ref={ref}
-      className="fixed bottom-5 right-5 z-50 grid h-[min(560px,calc(100vh-40px))] min-h-0 w-[min(860px,calc(100vw-24px))] grid-cols-1 overflow-hidden rounded-xl border border-[#D1D5DB] bg-white shadow-2xl md:grid-cols-[300px_1fr]"
+      className="fixed bottom-5 right-5 z-50 grid h-[min(560px,calc(100vh-40px))] min-h-0 w-[min(860px,calc(100vw-24px))] grid-cols-1 overflow-hidden rounded-xl border border-[var(--border-strong)] bg-[var(--surface)] shadow-2xl md:grid-cols-[300px_1fr]"
     >
-      <aside className="hidden min-h-0 min-w-0 border-r border-[#E5E7EB] bg-white md:flex md:flex-col">
-        <div className="border-b border-[#E5E7EB] px-4 py-3">
-          <p className="text-base font-bold text-[#1A1A1A]">Conversas</p>
-          <div className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-xs text-[#9CA3AF]">
+      <aside className="hidden min-h-0 min-w-0 border-r border-[var(--border)] bg-[var(--surface)] md:flex md:flex-col">
+        <div className="border-b border-[var(--border)] px-4 py-3">
+          <p className="text-base font-bold text-[var(--foreground)]">Conversas</p>
+          <div className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-xs text-[var(--muted-foreground)]">
             <Search size={14} />
             <input
-              className="min-w-0 flex-1 bg-transparent text-xs text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF]"
+              className="min-w-0 flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]/70"
               placeholder="Pesquise usuário ou mensagem"
               value={chatSearch}
               onChange={(event) => setChatSearch(event.target.value)}
@@ -442,7 +442,7 @@ export function ComentarioDropdown({
             return (
               <button
                 key={conversa.id}
-                className={`flex w-full gap-3 border-b border-[#F3F4F6] px-4 py-3 text-left transition ${active ? "bg-[#EFF6FF]" : "hover:bg-[#F9FAFB]"}`}
+                className={`flex w-full gap-3 border-b border-[var(--surface-hover)] px-4 py-3 text-left transition ${active ? "bg-[var(--primary-soft)]" : "hover:bg-[var(--surface-muted)]"}`}
                 onClick={() => onSelectRevisao?.(conversa)}
               >
                 <ChatAvatar
@@ -453,39 +453,39 @@ export function ComentarioDropdown({
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-semibold text-[#1A1A1A]">{conversa.colaboradorNome ?? conversa.colaboradorCodigo}</p>
-                    <span className="shrink-0 text-[10px] text-[#9CA3AF]">{conversationTime(latest?.criadoAt ?? conversa.revisaoSolicitadaAt)}</span>
+                    <p className="truncate text-sm font-semibold text-[var(--foreground)]">{conversa.colaboradorNome ?? conversa.colaboradorCodigo}</p>
+                    <span className="shrink-0 text-[10px] text-[var(--muted-foreground)]">{conversationTime(latest?.criadoAt ?? conversa.revisaoSolicitadaAt)}</span>
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-[#6B7280]">{latest?.texto ?? "Sem mensagens."}</p>
+                  <p className="mt-0.5 truncate text-xs text-[var(--muted-foreground)]">{latest?.texto ?? "Sem mensagens."}</p>
                 </div>
               </button>
             );
           }) : (
-            <p className="px-4 py-6 text-sm text-[#9CA3AF]">Nenhuma conversa encontrada.</p>
+            <p className="px-4 py-6 text-sm text-[var(--muted-foreground)]">Nenhuma conversa encontrada.</p>
           )}
         </div>
       </aside>
 
       <section className="flex min-h-0 min-w-0 flex-col">
-        <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
             <ChatAvatar
               name={revisao.colaboradorNome ?? revisao.colaboradorCodigo}
               src={revisao.colaboradorAvatarUrl}
             />
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-[#1A1A1A]">{revisao.colaboradorNome ?? revisao.colaboradorCodigo}</p>
-              <p className={`text-xs ${revisao.colaboradorOnline ? "text-[#16A34A]" : "text-[#9CA3AF]"}`}>
+              <p className="truncate text-sm font-bold text-[var(--foreground)]">{revisao.colaboradorNome ?? revisao.colaboradorCodigo}</p>
+              <p className={`text-xs ${revisao.colaboradorOnline ? "text-[var(--success)]" : "text-[var(--muted-foreground)]"}`}>
                 {revisao.colaboradorOnline ? "online" : "offline"}
               </p>
             </div>
           </div>
-          <button className="rounded-full p-1 text-[#9CA3AF] hover:bg-white hover:text-[#1A1A1A]" onClick={onClose} aria-label="Fechar chat">
+          <button className="rounded-full p-1 text-[var(--muted-foreground)] hover:bg-[var(--surface)] hover:text-[var(--foreground)]" onClick={onClose} aria-label="Fechar chat">
             <X size={16} />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[#F3F4F6] px-4 py-4">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-[var(--surface-hover)] px-4 py-4">
           {mensagens.length ? (
             mensagens.map((mensagem) => {
               const isMedicao = mensagem.autor === "MEDICAO";
@@ -498,8 +498,8 @@ export function ComentarioDropdown({
                       className="h-7 w-7 text-[10px]"
                     />
                   )}
-                  <div className={`max-w-[82%] rounded-xl px-3 py-2 text-sm shadow-sm ${isMedicao ? "rounded-br-sm bg-[#DCFCE7] text-[#14532D]" : "rounded-bl-sm bg-white text-[#1A1A1A]"}`}>
-                    <p className={`mb-1 text-[11px] font-bold ${isMedicao ? "text-[#15803D]" : "text-[#2563EB]"}`}>
+                  <div className={`max-w-[82%] rounded-xl px-3 py-2 text-sm shadow-sm ${isMedicao ? "rounded-br-sm bg-[var(--success-soft)] text-[var(--success)]" : "rounded-bl-sm bg-[var(--surface)] text-[var(--foreground)]"}`}>
+                    <p className={`mb-1 text-[11px] font-bold ${isMedicao ? "text-[var(--success)]" : "text-[var(--primary)]"}`}>
                       {mensagem.autorNome}
                     </p>
                     {mensagem.tipo === "AUDIO" && mensagem.audioUrl ? (
@@ -525,18 +525,18 @@ export function ComentarioDropdown({
               );
             })
           ) : (
-            <p className="rounded-lg border border-dashed border-[#D1D5DB] bg-white px-3 py-4 text-center text-sm text-[#6B7280]">
+            <p className="rounded-lg border border-dashed border-[var(--border-strong)] bg-[var(--surface)] px-3 py-4 text-center text-sm text-[var(--muted-foreground)]">
               Nenhuma mensagem registrada nesta revisão.
             </p>
           )}
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="border-t border-[#E5E7EB] bg-white p-3">
+        <div className="border-t border-[var(--border)] bg-[var(--surface)] p-3">
           {revisao.status === "REVISAO_SOLICITADA" ? (
             <div className="flex items-end gap-2">
               <textarea
-                className="max-h-32 min-h-11 flex-1 resize-none rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+                className="max-h-32 min-h-11 flex-1 resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]/70 focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20"
                 placeholder="Digite uma nova mensagem..."
                 value={resposta}
                 onChange={(e) => setResposta(e.target.value)}
@@ -555,7 +555,7 @@ export function ComentarioDropdown({
               </Button>
             </div>
           ) : (
-            <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3 text-center text-sm font-medium text-[#6B7280]">
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-3 text-center text-sm font-medium text-[var(--muted-foreground)]">
               Conversa encerrada. O histórico permanece disponível para consulta.
             </div>
           )}

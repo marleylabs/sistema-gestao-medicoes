@@ -224,7 +224,7 @@ export function BoletimMedicao({ data }: { data: BmData }) {
       {/* BM content — o scroll horizontal (quando a tabela não cabe) fica CONTIDO aqui, nunca na
           página. printRef continua apontando para o mesmo conteúdo (só a tabela) — as classes do
           wrapper não têm efeito na impressão, que usa só o <style> inline abaixo, não o Tailwind. */}
-      <div ref={printRef} className="w-full max-w-full overflow-x-auto">
+      <div ref={printRef} className="w-full max-w-full overflow-x-auto bg-white text-black">
         <table className="w-full min-w-[800px] border-collapse text-[10px]" style={{ fontFamily: "Arial, sans-serif" }}>
 
           {/* ── Linha 1: Título ── */}

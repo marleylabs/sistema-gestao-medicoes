@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { SCRIPT_TEMA_INICIAL } from "@/lib/tema";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -27,7 +28,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA_INICIAL }} />
+      </head>
       <body className={`${manrope.variable} ${geistMono.variable}`}>
         <Providers>{children}</Providers>
       </body>

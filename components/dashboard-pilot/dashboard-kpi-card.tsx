@@ -18,7 +18,7 @@ export function DashboardKpiCard({
   compact?: boolean;
 }) {
   const tones = {
-    neutral: "bg-[#F4F4F2] text-[#52525B]",
+    neutral: "bg-[var(--surface-muted)] text-[var(--muted-foreground)]",
     brand: "bg-[var(--primary-soft)] text-[var(--primary)]",
     warning: "bg-[var(--warning-soft)] text-[var(--warning)]",
     danger: "bg-[var(--error-soft)] text-[var(--error)]",

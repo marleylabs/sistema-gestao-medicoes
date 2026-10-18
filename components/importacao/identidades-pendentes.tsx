@@ -78,7 +78,7 @@ function DialogShell({ titulo, children, footer, onClose, busy = false, testId }
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-2 backdrop-blur-[1px] sm:items-center sm:p-4">
       <div role="dialog" aria-modal="true" aria-labelledby={`${id}-t`} aria-busy={busy} data-testid={testId}
-        className="ds-dialog flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]">
+        className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]">
         <div className="border-b border-[var(--border)] px-5 py-4">
           <h2 id={`${id}-t`} className="text-section-title break-words text-[var(--foreground)]">{titulo}</h2>
         </div>
@@ -114,7 +114,7 @@ function useAcao() {
 
 function ResumoIdentidade({ identidade }: { identidade: IdentidadeDoCiclo }) {
   return (
-    <div className="grid gap-1 rounded-lg border border-[var(--border)] bg-[#fafaf9] p-3 text-xs">
+    <div className="grid gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-xs">
       <p><span className="text-[var(--muted-foreground)]">Nome na planilha:</span> <strong className="break-words">{identidade.valorBruto}</strong></p>
       <p><span className="text-[var(--muted-foreground)]">Origem:</span> {identidade.origem} · {identidade.ocorrencias} ocorrência(s){identidade.linhas.length ? ` · linha(s) ${identidade.linhas.slice(0, 10).join(", ")}${identidade.linhas.length > 10 ? "…" : ""}` : ""}</p>
       <p><span className="text-[var(--muted-foreground)]">Valor no ciclo:</span> <strong className="tabular-nums">{money.format(identidade.valor)}</strong></p>
@@ -176,11 +176,11 @@ function VincularDialog({ identidade, sugestao, onClose, onConcluido }: {
       {escolhido ? (
         <>
           <p><strong className="break-words">{identidade.valorBruto}</strong> será vinculado a:</p>
-          <div className="grid gap-0.5 rounded-lg border border-[var(--border)] bg-[#fafaf9] p-3 text-xs" data-testid="identidade-alvo">
+          <div className="grid gap-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-xs" data-testid="identidade-alvo">
             <strong className="text-[13px]">{escolhido.responsavel}</strong>
             <span className="font-technical text-[var(--muted-foreground)]">{escolhido.codigo}{escolhido.razaoSocial ? ` · ${escolhido.razaoSocial}` : ""}</span>
           </div>
-          {sugestao && <p className="text-[#92400E]">Sugestão (não aplicada) por nome parecido — confirme que é a mesma pessoa/empresa.</p>}
+          {sugestao && <p className="text-[var(--warning)]">Sugestão (não aplicada) por nome parecido — confirme que é a mesma pessoa/empresa.</p>}
           <ResumoIdentidade identidade={identidade} />
           <p className="text-[var(--muted-foreground)]">As {identidade.ocorrencias} ocorrência(s) deste ciclo passam para o cadastro sem reimportar e sem mudar valores. O nome vira alias para as próximas importações; o nome e o código do cadastro não mudam.</p>
           {sugestao && (
@@ -322,7 +322,7 @@ export function ResolverCadastroPendente({ ciclo, identidadeId, onNovoFornecedor
   const { identidades, sugestaoDe, podeResolver, carregando } = useIdentidadesDoCiclo(ciclo);
   const identidade = identidades.find((i) => i.id === identidadeId);
   return (
-    <div className="grid gap-2 rounded-lg border border-[#f2dbb7] bg-[var(--warning-soft)] p-3 text-xs" data-testid="cadastro-pendente-detalhe">
+    <div className="grid gap-2 rounded-lg border border-[var(--warning)]/35 bg-[var(--warning-soft)] p-3 text-xs" data-testid="cadastro-pendente-detalhe">
       <p className="font-semibold text-[var(--warning)]">Cadastro pendente de vínculo</p>
       <p className="text-[var(--foreground)]">Este registro está no ciclo e compõe os totais, mas o BM fica indisponível até o vínculo com um cadastro.</p>
       {carregando ? <p className="text-[var(--muted-foreground)]">Carregando…</p> : identidade && podeResolver ? (
@@ -389,7 +389,7 @@ export function IdentidadesDoCicloPanel({ ciclo, onNovoFornecedor }: { ciclo: st
         <div className="flex flex-wrap gap-1" role="group" aria-label="Filtrar identidades">
           {FILTROS.map((f) => (
             <button key={f.id} type="button" aria-pressed={filtro === f.id} onClick={() => setFiltro(f.id)}
-              className={`h-8 rounded-lg border px-2.5 text-[11px] font-semibold transition ${filtro === f.id ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]" : "border-[var(--border)] bg-white text-[#555555] hover:border-[var(--border-strong)]"}`}>
+              className={`h-8 rounded-lg border px-2.5 text-[11px] font-semibold transition ${filtro === f.id ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]" : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)] hover:border-[var(--border-strong)]"}`}>
               {f.label}
             </button>
           ))}
@@ -422,7 +422,7 @@ export function IdentidadesDoCicloPanel({ ciclo, onNovoFornecedor }: { ciclo: st
                       <p className="text-[var(--success)]">→ {i.codigoCanonico}{i.status === "AUTO_VINCULADO" ? " (resolvido automaticamente)" : i.resolvidoPorNome ? ` · por ${i.resolvidoPorNome}` : ""}</p>
                     )}
                     {i.status === "DESCARTADO" && <p className="text-[var(--muted-foreground)]">Fora deste ciclo{i.descartadoPorNome ? ` · por ${i.descartadoPorNome}` : ""}</p>}
-                    {i.status === "PENDENTE" && i.sugestoesCadastro.length > 0 && <p className="text-[#92400E]">Sugestão (não aplicada): {i.sugestoesCadastro.join("; ")}</p>}
+                    {i.status === "PENDENTE" && i.sugestoesCadastro.length > 0 && <p className="text-[var(--warning)]">Sugestão (não aplicada): {i.sugestoesCadastro.join("; ")}</p>}
                     {i.status === "PENDENTE" && !pareceNomeDeFornecedor(i.valorBruto) && (
                       <p className="flex items-center gap-1 text-[var(--error)]"><AlertTriangle size={12} /> Não parece nome de fornecedor — corrija a coluna PROJETISTA na planilha.</p>
                     )}
@@ -470,7 +470,7 @@ function DescartarLinhasDialog({ grupo, ciclo, onClose, onConcluido }: {
     >
       <p>Essas linhas da aba {grupo.origem} têm dados de medição, mas nenhum fornecedor. Descartadas, <strong>não irão compor os valores nem o BM do ciclo {ciclo}</strong>.</p>
       <p className="text-[var(--muted-foreground)]">Se a linha pertence a alguém, prefira preencher PROJETISTA na planilha e reimportar.</p>
-      <ul className="grid max-h-48 gap-0.5 overflow-y-auto rounded-lg border border-[var(--border)] bg-[#fafaf9] p-2 text-[11px]">
+      <ul className="grid max-h-48 gap-0.5 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-2 text-[11px]">
         {linhas.map((l) => <li key={l.chave}>Linha {l.linha}: documento {l.numeroDocumento ?? "—"}{l.evidencia ? ` · ${l.evidencia}` : ""}</li>)}
       </ul>
       {erro && <p className="text-[var(--error)]" role="alert">{erro}</p>}
@@ -486,7 +486,7 @@ export function PendenciasEstruturais({ detalhes, ciclo, podeResolver }: { detal
   return (
     <div className="grid gap-2 text-[var(--foreground)]" data-testid="pendencias-estruturais">
       {mensagem && (
-        <p className="flex items-center gap-2 rounded-lg border border-[#cde9d5] bg-[var(--success-soft)] p-3 text-xs font-semibold text-[var(--success)]" role="status">
+        <p className="flex items-center gap-2 rounded-lg border border-[var(--success)]/30 bg-[var(--success-soft)] p-3 text-xs font-semibold text-[var(--success)]" role="status">
           <Check size={14} /> {mensagem}
         </p>
       )}
@@ -494,7 +494,7 @@ export function PendenciasEstruturais({ detalhes, ciclo, podeResolver }: { detal
         const chave = `${d.status}-${d.origem}-${d.valor}`;
         const jaDescartado = descartados.has(chave);
         return (
-          <div key={chave} className="grid gap-1 rounded-lg border border-[#efc6c6] bg-[var(--error-soft)] p-3 text-xs text-[var(--error)]"
+          <div key={chave} className="grid gap-1 rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] p-3 text-xs text-[var(--error)]"
             data-testid={d.status === "SEM_PROJETISTA" ? "identidades-sem-projetista" : "identidade-bloqueio"}>
             {d.status === "SEM_PROJETISTA" ? (
               <>

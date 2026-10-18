@@ -28,10 +28,10 @@ function SmallAction({ onClick, children, disabled, title, tone }: { onClick: ()
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`inline-flex h-8 items-center gap-1.5 rounded-lg border bg-white px-3 text-[12px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+      className={`inline-flex h-8 items-center gap-1.5 rounded-lg border bg-[var(--surface)] px-3 text-[12px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
         tone === "danger"
-          ? "border-[#efc6c6] text-[var(--error)] hover:bg-[var(--error-soft)]"
-          : "border-[var(--border)] text-[var(--foreground)] hover:border-[var(--border-strong)] hover:bg-[#f7f7f5]"
+          ? "border-[var(--error)]/30 text-[var(--error)] hover:bg-[var(--error-soft)]"
+          : "border-[var(--border)] text-[var(--foreground)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
       }`}
     >
       {children}
@@ -108,7 +108,7 @@ export function FornecedorDetalhe({
       }
     >
       {item.pendencias.length > 0 && (
-        <div className="flex items-start gap-2 border-b border-[#f2dbb7] bg-[var(--warning-soft)] px-5 py-3 text-[13px] text-[#92400E] sm:px-6">
+        <div className="flex items-start gap-2 border-b border-[var(--warning)]/35 bg-[var(--warning-soft)] px-5 py-3 text-[13px] text-[var(--warning)] sm:px-6">
           <AlertTriangle size={15} className="mt-0.5 shrink-0" />
           <span>Pendência: {item.pendencias.join(", ")}</span>
         </div>

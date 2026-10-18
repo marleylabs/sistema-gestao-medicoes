@@ -112,7 +112,7 @@ export function PrimeiroAcessoLoteDialog({
         aria-describedby={`${id}-d`}
         aria-busy={enviando}
         data-testid="primeiro-acesso-lote-dialog"
-        className="ds-dialog flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]"
+        className="ds-dialog transition-[opacity,scale] duration-200 ease-out starting:scale-[0.97] starting:opacity-0 motion-reduce:transition-none flex max-h-[calc(100dvh-16px)] w-full flex-col overflow-hidden sm:w-[480px] sm:max-w-[92vw]"
       >
         {fase === "resultado" && resumo ? (
           <>
@@ -163,7 +163,7 @@ export function PrimeiroAcessoLoteDialog({
           <>
             <div className="border-b border-[var(--border)] px-5 py-4">
               <h2 id={`${id}-t`} className="text-section-title text-[var(--foreground)]">Enviar primeiro acesso</h2>
-              <p id={`${id}-d`} role="alert" className="mt-2 rounded-lg border border-[#efc6c6] bg-[var(--error-soft)] px-3 py-2 text-[13px] font-medium text-[var(--error)]">{erro}</p>
+              <p id={`${id}-d`} role="alert" className="mt-2 rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-3 py-2 text-[13px] font-medium text-[var(--error)]">{erro}</p>
               {podeRepetir && (
                 <p className="mt-2 text-[12px] text-[var(--muted-foreground)]">
                   Parte dos acessos pode ter sido enviada. Tentar novamente é seguro: quem já recebeu nesta operação não recebe outra senha.
@@ -192,7 +192,7 @@ export function PrimeiroAcessoLoteDialog({
                 )}
               </dl>
               {acimaDoLimite && (
-                <p role="alert" className="rounded-lg border border-[#f2dbb7] bg-[var(--warning-soft)] px-3 py-2 text-[12px] text-[#92400E]">
+                <p role="alert" className="rounded-lg border border-[var(--warning)]/35 bg-[var(--warning-soft)] px-3 py-2 text-[12px] text-[var(--warning)]">
                   No máximo {LIMITE_PRIMEIRO_ACESSO_LOTE} fornecedores por envio. Reduza a seleção e envie em partes.
                 </p>
               )}

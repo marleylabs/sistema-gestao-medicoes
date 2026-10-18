@@ -112,7 +112,7 @@ export function ImportarConsultaPanel({
           <a
             href="/api/admin/templates/administrativo"
             download
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 text-[12px] font-semibold text-[var(--foreground)] transition hover:border-[var(--border-strong)] hover:bg-[#f7f7f5]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-[12px] font-semibold text-[var(--foreground)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
           >
             <Download size={13} />
             Baixar máscara
@@ -123,24 +123,24 @@ export function ImportarConsultaPanel({
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          className="flex min-h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border-strong)] bg-[#FAFAF8] px-4 text-center transition hover:border-[var(--primary)] hover:bg-[var(--primary-soft)]"
+          className="flex min-h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border-strong)] bg-[var(--surface-muted)] px-4 text-center transition hover:border-[var(--primary)] hover:bg-[var(--primary-soft)]"
         >
           <Upload size={20} className="text-[var(--primary)]" />
           <span className="text-sm font-semibold text-[var(--foreground)]">{file ? file.name : "Clique para selecionar ou trocar a planilha"}</span>
           <span className="text-xs text-[var(--muted-foreground)]">.xlsx ou .xlsm</span>
         </button>
-        {error && <div className="rounded-lg border border-[#efc6c6] bg-[var(--error-soft)] px-4 py-3 text-sm font-semibold text-[var(--error)]">{error}</div>}
+        {error && <div className="rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-4 py-3 text-sm font-semibold text-[var(--error)]">{error}</div>}
       </PanelSection>
 
       {result && (
         <PanelSection title="Resultado">
-          <div className="rounded-lg border border-[#cde9d5] bg-[var(--success-soft)] px-4 py-3 text-sm text-[var(--success)]">
+          <div className="rounded-lg border border-[var(--success)]/30 bg-[var(--success-soft)] px-4 py-3 text-sm text-[var(--success)]">
             Importação concluída: {result.total} registro(s), {result.criados} novo(s)
             {result.recriados > 0 ? `, ${result.recriados} recriado(s)` : ""}, {result.atualizados} atualizado(s), {result.usuariosCriados} usuário(s) criado(s)
             {result.usuariosReativados > 0 ? `, ${result.usuariosReativados} usuário(s) reativado(s)` : ""}.
           </div>
           {atencaoTotal > 0 && (
-            <div className="rounded-lg border border-[#f2dbb7] bg-[var(--warning-soft)] px-4 py-3 text-sm text-[#92400E]">
+            <div className="rounded-lg border border-[var(--warning)]/35 bg-[var(--warning-soft)] px-4 py-3 text-sm text-[var(--warning)]">
               <button type="button" onClick={() => setMostrarAtencao((v) => !v)} className="flex w-full items-center justify-between gap-2 text-left font-semibold">
                 <span>{atencaoTotal} registro(s) precisam de atenção</span>
                 <span className="text-xs underline">{mostrarAtencao ? "Ocultar detalhes" : "Ver detalhes"}</span>
@@ -148,12 +148,12 @@ export function ImportarConsultaPanel({
               {mostrarAtencao && (
                 <div className="mt-2 grid gap-1.5">
                   {itensAtencao.map((item, idx) => (
-                    <div key={`${item.responsavel}-${idx}`} className="rounded-md border border-[#f2dbb7] bg-white px-2.5 py-1.5 text-xs">
+                    <div key={`${item.responsavel}-${idx}`} className="rounded-md border border-[var(--warning)]/35 bg-[var(--surface)] px-2.5 py-1.5 text-xs">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <strong>{item.responsavel}</strong>
-                        <span className="rounded-md bg-[var(--warning-soft)] px-2 py-0.5 text-[10px] font-bold uppercase text-[#92400E]">{item.categoria}</span>
+                        <span className="rounded-md bg-[var(--warning-soft)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--warning)]">{item.categoria}</span>
                       </div>
-                      <p className="mt-0.5 text-[#78350F]">Motivo: {item.motivo}</p>
+                      <p className="mt-0.5 text-[var(--warning)]">Motivo: {item.motivo}</p>
                       {isAdmin && item.categoria !== "Bloqueado" && item.linha && (
                         <div className="mt-1.5 flex justify-end">
                           <Button variant="secondary" onClick={() => onResolver(item)}>Resolver</Button>
@@ -166,22 +166,22 @@ export function ImportarConsultaPanel({
             </div>
           )}
           {result.senhasTemporarias.length > 0 && (
-            <div className="grid gap-2 rounded-lg border border-[#f2dbb7] bg-[var(--warning-soft)] p-3">
-              <p className="text-xs font-bold uppercase text-[#92400E]">
+            <div className="grid gap-2 rounded-lg border border-[var(--warning)]/35 bg-[var(--warning-soft)] p-3">
+              <p className="text-xs font-bold uppercase text-[var(--warning)]">
                 {result.senhasTemporarias.length} senha(s) temporária(s) — usuário(s) novo(s) ou reativado(s) sem senha anterior recuperável
               </p>
               <div className="grid gap-1.5">
                 {result.senhasTemporarias.map((entry) => (
-                  <div key={`${entry.usuario}-${entry.nome}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#f2dbb7] bg-white px-2.5 py-1.5 text-xs">
-                    <span className="min-w-0 truncate text-[#92400E]">
-                      <strong>{entry.nome}</strong> {entry.email ? `· ${entry.email}` : ""} <span className="font-technical text-[10px] text-[#B45309]">({entry.usuario})</span>
+                  <div key={`${entry.usuario}-${entry.nome}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--warning)]/35 bg-[var(--surface)] px-2.5 py-1.5 text-xs">
+                    <span className="min-w-0 truncate text-[var(--warning)]">
+                      <strong>{entry.nome}</strong> {entry.email ? `· ${entry.email}` : ""} <span className="font-technical text-[10px] text-[var(--warning)]">({entry.usuario})</span>
                     </span>
                     <span className="inline-flex items-center gap-1.5">
-                      <span className="font-technical font-bold text-[#92400E]">{entry.senha}</span>
+                      <span className="font-technical font-bold text-[var(--warning)]">{entry.senha}</span>
                       <button
                         type="button"
                         onClick={() => navigator.clipboard?.writeText(entry.senha)}
-                        className="inline-flex h-6 items-center gap-1 rounded-md border border-[#f2dbb7] bg-white px-1.5 text-[10px] font-semibold text-[#92400E] transition hover:bg-[var(--warning-soft)]"
+                        className="inline-flex h-6 items-center gap-1 rounded-md border border-[var(--warning)]/35 bg-[var(--surface)] px-1.5 text-[10px] font-semibold text-[var(--warning)] transition hover:bg-[var(--warning-soft)]"
                       >
                         <Copy size={10} />
                         Copiar
@@ -190,7 +190,7 @@ export function ImportarConsultaPanel({
                   </div>
                 ))}
               </div>
-              <p className="flex items-start gap-1.5 text-[11px] text-[#92400E]">
+              <p className="flex items-start gap-1.5 text-[11px] text-[var(--warning)]">
                 <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                 Essas senhas serão exibidas somente nesta importação — copie agora antes de sair desta tela.
               </p>

@@ -115,7 +115,7 @@ export function EvidenciasWorkspace({
       <Card className="w-full min-w-0 max-w-full overflow-hidden">
         <div className="flex flex-col gap-2 border-b border-[var(--border)] px-5 py-3 sm:flex-row sm:items-center sm:justify-end">
           <span className="relative min-w-0 sm:w-[300px]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#9CA3AF]" size={14} />
+            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[var(--muted-foreground)]" size={14} />
             <Input className="pl-8" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Fornecedor, empresa, código ou ciclo…" aria-label="Buscar evidências" />
           </span>
           <div className="flex items-center gap-2">
@@ -128,10 +128,10 @@ export function EvidenciasWorkspace({
             <div className="relative shrink-0" ref={filtrosRef}>
               <FilterButton count={chips.length} onClick={() => setFiltrosAbertos((v) => !v)} />
               {filtrosAbertos && (
-                <div ref={filtrosPainelRef} style={filtrosPosicao} className="absolute right-0 top-10 z-40 grid w-[300px] max-w-[88vw] gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-xl">
+                <div ref={filtrosPainelRef} style={filtrosPosicao} className="absolute right-0 top-10 z-40 grid w-[300px] max-w-[88vw] gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-xl">
                   <div className="flex items-center justify-between">
                     <p className="text-label text-[var(--muted-foreground)]">Filtros</p>
-                    <button type="button" onClick={() => setFiltrosAbertos(false)} title="Fechar" className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#374151]"><X size={12} /></button>
+                    <button type="button" onClick={() => setFiltrosAbertos(false)} title="Fechar" className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"><X size={12} /></button>
                   </div>
                   <label className="grid gap-1 text-xs text-[var(--foreground)]">
                     Status
@@ -150,16 +150,16 @@ export function EvidenciasWorkspace({
                       onChange={(e) => { setFornecedor(null); setFornecedorQuery(e.target.value); setSugestoesAbertas(true); }}
                     />
                     {sugestoesAbertas && !fornecedor && sugestoes.length > 0 && (
-                      <div className="absolute top-full z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[var(--border)] bg-white shadow-lg">
+                      <div className="absolute top-full z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg">
                         {sugestoes.map((f) => (
                           <button
                             key={f.codigo}
                             type="button"
                             onClick={() => { setFornecedor(f); setFornecedorQuery(""); setSugestoesAbertas(false); }}
-                            className="flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-[#F9FAFB]"
+                            className="flex w-full flex-col items-start px-3 py-2 text-left text-xs hover:bg-[var(--surface-muted)]"
                           >
-                            <span className="font-semibold text-[#1A1A1A]">{f.nome}</span>
-                            <span className="font-technical text-[10px] text-[#9CA3AF]">{f.codigo}</span>
+                            <span className="font-semibold text-[var(--foreground)]">{f.nome}</span>
+                            <span className="font-technical text-[10px] text-[var(--muted-foreground)]">{f.codigo}</span>
                           </button>
                         ))}
                       </div>
@@ -185,7 +185,7 @@ export function EvidenciasWorkspace({
           <div className="px-6 py-14 text-center text-sm text-[var(--muted-foreground)]">Selecione um ciclo ou um fornecedor para visualizar as evidências.</div>
         ) : loading && !itens.length ? (
           <div className="grid gap-2 px-5 py-5" aria-label="Carregando evidências">
-            {[0, 1, 2].map((i) => <div key={i} className="h-11 animate-pulse rounded-lg bg-[#F4F4F2]" />)}
+            {[0, 1, 2].map((i) => <div key={i} className="h-11 animate-pulse rounded-lg bg-[var(--surface-muted)]" />)}
           </div>
         ) : erro ? (
           <div className="px-6 py-14 text-center text-sm text-[var(--error)]">{erro}</div>
@@ -215,7 +215,7 @@ export function EvidenciasWorkspace({
 
       {bm && (
         <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:p-4 sm:pt-10">
-          <div className="min-h-screen w-full max-w-5xl rounded-none bg-white shadow-2xl sm:min-h-0 sm:rounded-xl">
+          <div className="min-h-screen w-full max-w-5xl rounded-none bg-[var(--surface)] shadow-2xl sm:min-h-0 sm:rounded-xl">
             <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
               <p className="text-sm font-semibold text-[var(--foreground)]">Boletim de Medição{aberta ? ` — ${aberta.nome} (${aberta.ciclo})` : ""}</p>
               <IconButton onClick={() => setBm(null)} title="Fechar boletim"><X size={16} /></IconButton>
@@ -223,7 +223,7 @@ export function EvidenciasWorkspace({
             {/* Sem overflow-x-auto aqui: BoletimMedicao já rola horizontalmente por conta própria. */}
             <div className="min-w-0 max-w-full p-4 sm:p-5">
               {bm.loading ? <p className="py-10 text-center text-sm text-[var(--muted-foreground)]">Carregando boletim…</p>
-                : bm.erro ? <div className="rounded-lg border border-[#efc6c6] bg-[var(--error-soft)] px-4 py-3 text-sm text-[var(--error)]">{bm.erro}</div>
+                : bm.erro ? <div className="rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-4 py-3 text-sm text-[var(--error)]">{bm.erro}</div>
                 : bm.data ? <BoletimMedicao data={bm.data} /> : null}
             </div>
           </div>
@@ -247,7 +247,7 @@ function EvidenciasLista({ itens, onOpen }: { itens: Evidencia[]; onOpen: (e: Ev
     <>
       <div className="hidden max-w-full overflow-x-auto md:block">
         <table className="w-full border-collapse text-sm" data-testid="evidencias-lista">
-          <thead className="bg-[#FAFAF8]">
+          <thead className="bg-[var(--surface-muted)]">
             <tr>
               <th className={th}>Fornecedor</th>
               <th className={`${th} w-20`}>Ciclo</th>
@@ -265,7 +265,7 @@ function EvidenciasLista({ itens, onOpen }: { itens: Evidencia[]; onOpen: (e: Ev
                 aria-label={`Abrir evidência de ${e.nome} no ciclo ${e.ciclo}`}
                 onClick={() => onOpen(e)}
                 onKeyDown={(ev) => onKey(ev, () => onOpen(e))}
-                className="cursor-pointer border-b border-[#EFEFED] transition-colors last:border-0 hover:bg-[#FAFAF8] focus-visible:bg-[#FAFAF8] focus-visible:outline-none"
+                className="cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)] focus-visible:outline-none"
               >
                 <td className="px-3 py-3 xl:px-4">
                   <p className="max-w-[340px] truncate font-semibold text-[var(--foreground)]">{e.nome}</p>
@@ -281,10 +281,10 @@ function EvidenciasLista({ itens, onOpen }: { itens: Evidencia[]; onOpen: (e: Ev
           </tbody>
         </table>
       </div>
-      <ul className="divide-y divide-[#EFEFED] md:hidden" data-testid="evidencias-lista-mobile">
+      <ul className="divide-y divide-[var(--border)] md:hidden" data-testid="evidencias-lista-mobile">
         {itens.map((e) => (
           <li key={e.key}>
-            <button type="button" onClick={() => onOpen(e)} aria-label={`Abrir evidência de ${e.nome} no ciclo ${e.ciclo}`} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
+            <button type="button" onClick={() => onOpen(e)} aria-label={`Abrir evidência de ${e.nome} no ciclo ${e.ciclo}`} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[var(--surface-muted)]">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-[var(--foreground)]">{e.nome}</p>
                 <p className="truncate text-[12px] text-[var(--muted-foreground)]"><span className="font-technical">{e.ciclo}</span> · {e.empresa ?? e.colaboradorCodigo}</p>

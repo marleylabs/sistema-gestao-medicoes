@@ -87,7 +87,7 @@ function Avatar({ name, src, isTeam, className = "h-9 w-9" }: { name: string; sr
     );
   }
   return (
-    <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#EFF6FF] text-xs font-bold text-[#2563EB] ${className}`}>
+    <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--primary-soft)] text-xs font-bold text-[var(--primary)] ${className}`}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt="" className="h-full w-full object-cover" />
@@ -172,8 +172,8 @@ function ChatMessage({
         <div
           className={`rounded-xl px-3 py-2 text-[13px] leading-relaxed ${
             isOwn
-              ? "rounded-tr-sm border border-[rgba(175,27,27,0.14)] bg-[rgba(175,27,27,0.08)] text-[var(--foreground)]"
-              : "rounded-tl-sm border border-[var(--border)] bg-white text-[var(--foreground)]"
+              ? "rounded-tr-sm border border-[var(--primary)]/14 bg-[var(--primary)]/8 text-[var(--foreground)]"
+              : "rounded-tl-sm border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)]"
           }`}
         >
           {message.arquivoUrl && message.tipoMensagem === "AUDIO" && (
@@ -211,7 +211,7 @@ function ChatImagePreview({ message, onOpen }: { message: ChatMensagem; onOpen: 
 
   if (error) {
     return (
-      <div className="flex max-w-[380px] flex-col items-center gap-2 rounded-lg border border-dashed border-[var(--border)] bg-[#F9FAFB] px-3 py-4 text-center text-xs text-[var(--muted-foreground)]">
+      <div className="flex max-w-[380px] flex-col items-center gap-2 rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-3 py-4 text-center text-xs text-[var(--muted-foreground)]">
         <span>Não foi possível carregar esta imagem.</span>
         <a href={`${message.arquivoUrl}?download=1`} download={message.arquivoNome ?? undefined} className="font-semibold text-[var(--primary)] underline-offset-2 hover:underline">
           Baixar arquivo
@@ -307,7 +307,7 @@ function ChatImageViewer({ message, onClose }: { message: ChatMensagem; onClose:
 
 /** Presença de uma conversa individual — nunca usada para conversas de equipe (targetPerfil truthy), que mostram sua descrição fixa em vez de online/offline. */
 function UserPresence({ online }: { online: boolean }) {
-  return <span className={`text-xs ${online ? "text-[#16A34A]" : "text-[var(--muted-foreground)]"}`}>{online ? "online" : "offline"}</span>;
+  return <span className={`text-xs ${online ? "text-[var(--success)]" : "text-[var(--muted-foreground)]"}`}>{online ? "online" : "offline"}</span>;
 }
 
 function ConversationListItem({
@@ -322,21 +322,21 @@ function ConversationListItem({
   const isTeam = !!conversa.targetPerfil;
   return (
     <button
-      className={`flex w-full items-center gap-3 border-b border-[#F3F4F6] px-4 py-3 text-left transition-colors ${
-        selected ? "border-l-2 border-l-[var(--primary)] bg-[rgba(175,27,27,0.06)]" : "border-l-2 border-l-transparent hover:bg-[#F9FAFB]"
+      className={`flex w-full items-center gap-3 border-b border-[var(--surface-hover)] px-4 py-3 text-left transition-colors ${
+        selected ? "border-l-2 border-l-[var(--primary)] bg-[var(--primary)]/6" : "border-l-2 border-l-transparent hover:bg-[var(--surface-muted)]"
       }`}
       onClick={onClick}
     >
       <Avatar name={conversa.titulo} src={conversa.avatarUrl} isTeam={isTeam} className="h-10 w-10" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-sm font-semibold text-[#1A1A1A]">{conversa.titulo}</p>
-          <span className="font-technical shrink-0 text-[10px] text-[#9CA3AF]">{chatTime(conversa.ultimaMensagem?.criadoAt)}</span>
+          <p className="truncate text-sm font-semibold text-[var(--foreground)]">{conversa.titulo}</p>
+          <span className="font-technical shrink-0 text-[10px] text-[var(--muted-foreground)]">{chatTime(conversa.ultimaMensagem?.criadoAt)}</span>
         </div>
-        <p className="mt-0.5 truncate text-xs text-[#6B7280]">{conversa.ultimaMensagem?.texto ?? conversa.subtitulo}</p>
+        <p className="mt-0.5 truncate text-xs text-[var(--muted-foreground)]">{conversa.ultimaMensagem?.texto ?? conversa.subtitulo}</p>
       </div>
       {conversa.unreadCount > 0 && (
-        <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-white">
+        <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-[var(--on-solid)]">
           {conversa.unreadCount}
         </span>
       )}
@@ -692,7 +692,7 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
     return (
       <button
         ref={bubbleRef}
-        className={`fixed z-30 inline-flex h-10 touch-none select-none items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold text-white shadow-lg transition-colors ${bubblePosition ? "" : `right-4 ${className || "bottom-4"}`} ${unreadCount ? "bg-[#16A34A] hover:bg-[#15803D]" : "bg-[var(--primary)] hover:bg-[var(--primary-hover)]"}`}
+        className={`fixed z-30 inline-flex h-10 touch-none select-none items-center gap-2 rounded-full px-3.5 text-[12px] font-semibold text-[var(--on-solid)] shadow-lg transition-colors ${bubblePosition ? "" : `right-4 ${className || "bottom-4"}`} ${unreadCount ? "bg-[var(--success)] hover:bg-[var(--success)]/90" : "bg-[var(--primary)] hover:bg-[var(--primary-hover)]"}`}
         style={bubblePosition ? { right: bubblePosition.right, bottom: bubblePosition.bottom } : undefined}
         onPointerDown={handleBubblePointerDown}
         onPointerMove={handleBubblePointerMove}
@@ -714,52 +714,52 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
 
   return (
     <div
-      className={`fixed right-4 z-30 grid h-[min(720px,80vh)] min-h-0 w-[min(1000px,calc(100vw-32px))] grid-cols-1 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-2xl md:grid-cols-[300px_1fr] ${className || "bottom-4"}`}
+      className={`fixed right-4 z-30 grid h-[min(720px,80vh)] min-h-0 w-[min(1000px,calc(100vw-32px))] grid-cols-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl md:grid-cols-[300px_1fr] ${className || "bottom-4"}`}
     >
-      <aside className={`min-h-0 min-w-0 flex-col border-r border-[#E5E7EB] bg-white ${selected ? "hidden" : "flex"} md:flex`}>
-        <div className="border-b border-[#E5E7EB] px-4 py-3">
-          <p className="text-sm font-bold text-[#1A1A1A]">Conversas</p>
-          <div className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-3 text-[12px] text-[#9CA3AF]">
+      <aside className={`min-h-0 min-w-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] ${selected ? "hidden" : "flex"} md:flex`}>
+        <div className="border-b border-[var(--border)] px-4 py-3">
+          <p className="text-sm font-bold text-[var(--foreground)]">Conversas</p>
+          <div className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 text-[12px] text-[var(--muted-foreground)]">
             <Search size={13} />
-            <input className="min-w-0 flex-1 bg-transparent text-[12px] text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF]" placeholder="Pesquisar..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]/70" placeholder="Pesquisar..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {pinnedUsuarios.map((usuario) => (
-            <button key={`fixed-${usuario.id}`} className="flex w-full items-center gap-3 border-b border-[#F3F4F6] bg-[#FAFAFA] px-4 py-3 text-left transition-colors hover:bg-[rgba(175,27,27,0.05)]" onClick={() => startConversation(usuario)}>
+            <button key={`fixed-${usuario.id}`} className="flex w-full items-center gap-3 border-b border-[var(--surface-hover)] bg-[var(--surface-muted)] px-4 py-3 text-left transition-colors hover:bg-[var(--primary)]/5" onClick={() => startConversation(usuario)}>
               <Avatar name={perfilLabel(usuario.perfil)} isTeam className="h-10 w-10" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-[#1A1A1A]">{perfilLabel(usuario.perfil)}</p>
+                <p className="truncate text-sm font-semibold text-[var(--foreground)]">{perfilLabel(usuario.perfil)}</p>
                 <p className="mt-0.5 truncate text-xs text-[var(--primary)]">Equipe fixa</p>
               </div>
             </button>
           ))}
           {usuariosToShow.map((usuario) => (
-            <button key={usuario.id} className="flex w-full gap-3 border-b border-[#F3F4F6] px-4 py-3 text-left hover:bg-[#F9FAFB]" onClick={() => startConversation(usuario)}>
+            <button key={usuario.id} className="flex w-full gap-3 border-b border-[var(--surface-hover)] px-4 py-3 text-left hover:bg-[var(--surface-muted)]" onClick={() => startConversation(usuario)}>
               <Avatar name={usuario.nome} src={usuario.avatarUrl} className="h-10 w-10" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-[#1A1A1A]">{usuario.nome}</p>
-                <p className="mt-0.5 truncate text-xs text-[#6B7280]">Iniciar conversa • {perfilLabel(usuario.perfil)}</p>
+                <p className="truncate text-sm font-semibold text-[var(--foreground)]">{usuario.nome}</p>
+                <p className="mt-0.5 truncate text-xs text-[var(--muted-foreground)]">Iniciar conversa • {perfilLabel(usuario.perfil)}</p>
               </div>
             </button>
           ))}
           {filteredConversas.map((conversa) => (
             <ConversationListItem key={conversa.id} conversa={conversa} selected={selected?.id === conversa.id} onClick={() => selectConversa(conversa)} />
           ))}
-          {!pinnedUsuarios.length && !filteredConversas.length && !usuariosToShow.length && <p className="px-4 py-6 text-sm text-[#9CA3AF]">Nenhuma conversa encontrada.</p>}
+          {!pinnedUsuarios.length && !filteredConversas.length && !usuariosToShow.length && <p className="px-4 py-6 text-sm text-[var(--muted-foreground)]">Nenhuma conversa encontrada.</p>}
         </div>
       </aside>
 
       <section className={`min-h-0 min-w-0 flex-col ${selected ? "flex" : "hidden"} md:flex`}>
-        <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
           {selectedLive ? (
             <div className="flex min-w-0 items-center gap-2">
-              <button className="-ml-1 rounded-full p-1.5 text-[#6B7280] hover:bg-white hover:text-[#1A1A1A] md:hidden" onClick={() => setSelected(null)} aria-label="Voltar para a lista de conversas">
+              <button className="-ml-1 rounded-full p-1.5 text-[var(--muted-foreground)] hover:bg-[var(--surface)] hover:text-[var(--foreground)] md:hidden" onClick={() => setSelected(null)} aria-label="Voltar para a lista de conversas">
                 <ArrowLeft size={16} />
               </button>
               <Avatar name={selectedLive.titulo} src={selectedLive.avatarUrl} isTeam={!!selectedLive.targetPerfil} />
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-[#1A1A1A]">{selectedLive.titulo}</p>
+                <p className="truncate text-sm font-bold text-[var(--foreground)]">{selectedLive.titulo}</p>
                 {selectedLive.targetPerfil ? (
                   <p className="text-xs text-[var(--muted-foreground)]">{selectedLive.subtitulo}</p>
                 ) : (
@@ -767,8 +767,8 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
                 )}
               </div>
             </div>
-          ) : <p className="text-sm font-bold text-[#1A1A1A]">Selecione uma conversa</p>}
-          <button className="rounded-full p-1 text-[#6B7280] hover:bg-white hover:text-[#1A1A1A]" onClick={() => setOpen(false)} aria-label="Fechar chat"><X size={16} /></button>
+          ) : <p className="text-sm font-bold text-[var(--foreground)]">Selecione uma conversa</p>}
+          <button className="rounded-full p-1 text-[var(--muted-foreground)] hover:bg-[var(--surface)] hover:text-[var(--foreground)]" onClick={() => setOpen(false)} aria-label="Fechar chat"><X size={16} /></button>
         </div>
 
         <div ref={scrollAreaRef} onScroll={handleMessagesScroll} className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[var(--background)] px-4 py-4">
@@ -777,7 +777,7 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
               messageItems.map((item) =>
                 item.kind === "date" ? (
                   <div key={item.key} className="flex items-center justify-center py-1">
-                    <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">{item.label}</span>
+                    <span className="rounded-full bg-[var(--surface-hover)] px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">{item.label}</span>
                   </div>
                 ) : (
                   <ChatMessage key={item.message.id} message={item.message} isOwn={item.message.meu} showHeader={item.showHeader} onOpenImage={setViewerMessage} />
@@ -785,24 +785,24 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
               )
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
-                <p className="text-sm font-semibold text-[#1A1A1A]">Nenhuma mensagem ainda.</p>
-                <p className="text-xs text-[#6B7280]">Inicie a conversa enviando uma mensagem.</p>
+                <p className="text-sm font-semibold text-[var(--foreground)]">Nenhuma mensagem ainda.</p>
+                <p className="text-xs text-[var(--muted-foreground)]">Inicie a conversa enviando uma mensagem.</p>
               </div>
             )
           ) : (
             <div className="flex h-full items-center justify-center">
-              <p className="max-w-xs text-center text-sm text-[#6B7280]">Busque um usuário ou selecione uma conversa existente.</p>
+              <p className="max-w-xs text-center text-sm text-[var(--muted-foreground)]">Busque um usuário ou selecione uma conversa existente.</p>
             </div>
           )}
           <div ref={endRef} />
         </div>
 
-        <div className="border-t border-[#E5E7EB] bg-white p-3">
+        <div className="border-t border-[var(--border)] bg-[var(--surface)] p-3">
           <input ref={fileInputRef} type="file" className="hidden" accept={fileAccept} onChange={(event) => handleFileChange(event.target.files?.[0])} />
           <div className="flex items-end gap-2">
             <textarea
               ref={textareaRef}
-              className="max-h-32 min-h-[42px] flex-1 resize-none rounded-lg border border-[var(--border)] bg-white px-3 py-2.5 text-[13px] leading-relaxed text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/15"
+              className="max-h-32 min-h-[42px] flex-1 resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-[13px] leading-relaxed text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]/70 focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/15"
               placeholder="Digite uma mensagem..."
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -811,19 +811,19 @@ export function GeneralChatWidget({ className = "" }: { className?: string }) {
               rows={1}
             />
             <div className="relative shrink-0">
-              <button className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[#6B7280] shadow-sm transition hover:bg-[#F9FAFB] hover:text-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setAttachmentMenuOpen((current) => !current)} disabled={!selected || sending} aria-label="Adicionar anexo" title="Adicionar anexo">
+              <button className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)] shadow-sm transition hover:bg-[var(--surface-muted)] hover:text-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setAttachmentMenuOpen((current) => !current)} disabled={!selected || sending} aria-label="Adicionar anexo" title="Adicionar anexo">
                 <Paperclip size={16} />
               </button>
               {attachmentMenuOpen && selected && (
-                <div className="absolute bottom-12 right-0 z-10 w-44 overflow-hidden rounded-lg border border-[var(--border)] bg-white py-1 text-sm shadow-xl">
-                  <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-[#374151] hover:bg-[#F9FAFB]" onClick={() => openAttachmentPicker(MEDIA_ACCEPT)}>
+                <div className="absolute bottom-12 right-0 z-10 w-44 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] py-1 text-sm shadow-xl">
+                  <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-[var(--muted-foreground)] hover:bg-[var(--surface-muted)]" onClick={() => openAttachmentPicker(MEDIA_ACCEPT)}>
                     <ImageIcon size={15} className="text-[var(--primary)]" />
                     Fotos e vídeos
                   </button>
                 </div>
               )}
             </div>
-            <button className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${recording ? "border-[#DC2626] bg-[#FEF2F2] text-[#DC2626]" : "border-[var(--border)] bg-white text-[#6B7280] hover:bg-[#F9FAFB] hover:text-[var(--primary)]"}`} onClick={toggleRecording} disabled={!selected || sending} aria-label={recording ? "Parar gravação" : "Enviar áudio"} title={recording ? "Parar gravação" : "Enviar áudio"}>
+            <button className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${recording ? "border-[var(--error)] bg-[var(--error-soft)] text-[var(--error)]" : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)] hover:bg-[var(--surface-muted)] hover:text-[var(--primary)]"}`} onClick={toggleRecording} disabled={!selected || sending} aria-label={recording ? "Parar gravação" : "Enviar áudio"} title={recording ? "Parar gravação" : "Enviar áudio"}>
               {recording ? <StopCircle size={16} /> : <Mic size={16} />}
             </button>
             <Button className="h-10 shrink-0 px-4" onClick={() => sendMessage()} disabled={sending || !selected || !draft.trim()}>

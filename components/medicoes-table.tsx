@@ -37,7 +37,7 @@ export function MedicoesTable({
       {
         accessorKey: "numeroMedicao",
         header: "Medição",
-        cell: ({ row }) => <span className="font-semibold text-[#1A1A1A]">{row.original.numeroMedicao}</span>,
+        cell: ({ row }) => <span className="font-semibold text-[var(--foreground)]">{row.original.numeroMedicao}</span>,
       },
       {
         accessorFn: (row) => row.projeto.codigoProjeto,
@@ -45,8 +45,8 @@ export function MedicoesTable({
         header: "Projeto",
         cell: ({ row }) => (
           <div className="min-w-52">
-            <div className="font-medium text-[#1A1A1A]">{row.original.projeto.codigoProjeto}</div>
-            <div className="text-xs text-[#1A1A1A]">{row.original.projeto.contrato ?? row.original.projeto.centroCusto ?? "-"}</div>
+            <div className="font-medium text-[var(--foreground)]">{row.original.projeto.codigoProjeto}</div>
+            <div className="text-xs text-[var(--foreground)]">{row.original.projeto.contrato ?? row.original.projeto.centroCusto ?? "-"}</div>
           </div>
         ),
       },
@@ -63,13 +63,13 @@ export function MedicoesTable({
         cell: ({ row }) => (
           <div className="min-w-44">
             <div>{row.original.profissional?.nome ?? "-"}</div>
-            <div className="text-xs text-[#1A1A1A]">{row.original.profissional?.nomeCompleto ?? row.original.profissional?.funcao ?? ""}</div>
+            <div className="text-xs text-[var(--foreground)]">{row.original.profissional?.nomeCompleto ?? row.original.profissional?.funcao ?? ""}</div>
             {row.original.profissional?.statusColaborador ? (
-              <div className="mt-1 inline-flex rounded-md bg-[#F5F5F5] px-2 py-0.5 text-xs font-bold text-[#AF1B1B]">
+              <div className="mt-1 inline-flex rounded-md bg-[var(--surface-muted)] px-2 py-0.5 text-xs font-bold text-[var(--primary)]">
                 {row.original.profissional.statusColaborador}
               </div>
             ) : null}
-            {row.original.profissional?.email ? <div className="text-xs text-[#1A1A1A]">{row.original.profissional.email}</div> : null}
+            {row.original.profissional?.email ? <div className="text-xs text-[var(--foreground)]">{row.original.profissional.email}</div> : null}
           </div>
         ),
       },
@@ -96,7 +96,7 @@ export function MedicoesTable({
             <IconButton onClick={() => onEdit(row.original)} title="Editar">
               <Edit size={15} />
             </IconButton>
-            <IconButton onClick={() => onDelete(row.original)} title="Excluir" className="text-[#AF1B1B] hover:bg-[#F5F5F5]">
+            <IconButton onClick={() => onDelete(row.original)} title="Excluir" className="text-[var(--primary)] hover:bg-[var(--surface-muted)]">
               <Trash2 size={15} />
             </IconButton>
           </div>
@@ -118,14 +118,14 @@ export function MedicoesTable({
   });
 
   return (
-    <div className="overflow-hidden rounded-lg border border-[#d8dee8] bg-white">
+    <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]">
       <div className="max-h-[620px] overflow-auto">
         <table className="w-full min-w-[1080px] border-collapse text-sm">
-          <thead className="sticky top-0 z-10 bg-[#F5F5F5]">
+          <thead className="sticky top-0 z-10 bg-[var(--surface-muted)]">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <th key={header.id} className="border-b border-[#d8dee8] px-3 py-3 text-left text-xs font-bold uppercase text-[#1A1A1A]">
+                  <th key={header.id} className="border-b border-[var(--border)] px-3 py-3 text-left text-xs font-bold uppercase text-[var(--foreground)]">
                     {flexRender(header.column.columnDef.header, header.getContext())}
                   </th>
                 ))}
@@ -135,15 +135,15 @@ export function MedicoesTable({
           <tbody>
             {loading ? (
               <tr>
-                <td className="px-3 py-10 text-center text-[#1A1A1A]" colSpan={columns.length}>
+                <td className="px-3 py-10 text-center text-[var(--foreground)]" colSpan={columns.length}>
                   Carregando medições...
                 </td>
               </tr>
             ) : table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <tr key={row.id} className="border-b border-[#edf1f6] last:border-0 hover:bg-[#F5F5F5]">
+                <tr key={row.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-muted)]">
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-3 py-3 align-middle text-[#1A1A1A]">
+                    <td key={cell.id} className="px-3 py-3 align-middle text-[var(--foreground)]">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}
@@ -151,7 +151,7 @@ export function MedicoesTable({
               ))
             ) : (
               <tr>
-                <td className="px-3 py-10 text-center text-[#1A1A1A]" colSpan={columns.length}>
+                <td className="px-3 py-10 text-center text-[var(--foreground)]" colSpan={columns.length}>
                   Nenhuma medição encontrada.
                 </td>
               </tr>

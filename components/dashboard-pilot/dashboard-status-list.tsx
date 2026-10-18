@@ -38,7 +38,7 @@ export function DashboardStatusList({ statuses }: { statuses: Record<string, Sgc
             const sample = Object.values(statuses).find((entry) => getMapaPagamentoDisplayStatus(entry.status, entry.statusConferencia) === key)!;
             const meta = getMapaPagamentoStatusMeta(sample.status, sample.statusConferencia);
             return (
-              <div key={key} className="flex items-center justify-between gap-3 rounded-lg border border-[#EFEFED] px-3 py-2.5">
+              <div key={key} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] px-3 py-2.5">
                 <Badge variant={meta.badge}>{meta.label}</Badge>
                 <span className="font-technical text-[13px] font-bold text-[var(--foreground)]">{counts[key]}</span>
               </div>
@@ -46,7 +46,7 @@ export function DashboardStatusList({ statuses }: { statuses: Record<string, Sgc
           })}
         </div>
       ) : (
-        <div className="mt-4 flex h-[150px] items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-[#FAFAF8] text-[11px] text-[var(--muted-foreground)]">
+        <div className="mt-4 flex h-[150px] items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-muted)] text-[11px] text-[var(--muted-foreground)]">
           Nenhum BM disponível neste ciclo.
         </div>
       )}

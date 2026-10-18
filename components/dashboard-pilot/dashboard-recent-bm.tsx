@@ -52,7 +52,7 @@ export function DashboardRecentBm({
           <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">Resumo operacional com os dados já carregados da medição</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="rounded-md border border-[var(--border)] bg-[#FAFAF8] px-2 py-1 font-technical text-[10px] text-[var(--muted-foreground)]">
+          <span className="rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-2 py-1 font-technical text-[10px] text-[var(--muted-foreground)]">
             Ciclo {ciclo === "GERAL" ? "geral" : cicloLegivel(ciclo)}
           </span>
           {onVerTodos && (
@@ -71,7 +71,7 @@ export function DashboardRecentBm({
       {recent.length ? (
         <div className="max-w-full overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse">
-            <thead className="bg-[#FAFAF8]">
+            <thead className="bg-[var(--surface-muted)]">
               <tr>
                 {[
                   ["Fornecedor", "text-left"],
@@ -88,7 +88,7 @@ export function DashboardRecentBm({
                 const status = statuses[codigo];
                 const meta = getMapaPagamentoStatusMeta(status?.status ?? "AGUARDANDO_ENVIO", status?.statusConferencia);
                 return (
-                  <tr key={item.id} className="border-b border-[#EFEFED] last:border-0 hover:bg-[#FAFAF8]">
+                  <tr key={item.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-muted)]">
                     <td className="px-5 py-3">
                       <p className="max-w-[240px] truncate text-[12px] font-semibold text-[var(--foreground)]">{item.responsavel ?? codigo ?? "Fornecedor"}</p>
                       {codigo && <p className="mt-0.5 font-technical text-[9px] text-[var(--muted-foreground)]">{codigo}</p>}

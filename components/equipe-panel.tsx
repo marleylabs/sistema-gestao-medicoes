@@ -19,8 +19,8 @@ const PERFIL_LABEL: Record<string, string> = {
 };
 
 const PERFIL_COLOR: Record<string, string> = {
-  ADMIN:   "bg-[#AF1B1B]/10 text-[#AF1B1B]",
-  MEDICAO: "bg-[#EFF6FF] text-[#2563EB]",
+  ADMIN:   "bg-[var(--primary)]/10 text-[var(--primary)]",
+  MEDICAO: "bg-[var(--primary-soft)] text-[var(--primary)]",
 };
 
 function fmtDate(iso: string | null) {
@@ -64,29 +64,29 @@ export function EquipePanel() {
       {/* KPIs */}
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#555555]">Total</p>
-          <p className="mt-1 text-2xl font-bold text-[#1A1A1A]">{equipe.length}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Total</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{equipe.length}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#555555]">Administradores</p>
-          <p className="mt-1 text-2xl font-bold text-[#AF1B1B]">{admins}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Administradores</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--primary)]">{admins}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#555555]">Medição</p>
-          <p className="mt-1 text-2xl font-bold text-[#2563EB]">{medicao}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Medição</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--primary)]">{medicao}</p>
         </Card>
       </div>
 
       {loading ? (
         <Card className="p-6">
           <div className="flex items-center gap-3">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E5E7EB] border-t-[#AF1B1B]" />
-            <span className="text-sm text-[#555555]">Carregando equipe…</span>
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--primary)]" />
+            <span className="text-sm text-[var(--muted-foreground)]">Carregando equipe…</span>
           </div>
         </Card>
       ) : equipe.length === 0 ? (
         <Card className="p-6">
-          <div className="flex items-center gap-3 text-[#555555]">
+          <div className="flex items-center gap-3 text-[var(--muted-foreground)]">
             <Users size={18} />
             <span className="text-sm">Nenhum membro encontrado.</span>
           </div>
@@ -97,27 +97,27 @@ export function EquipePanel() {
             <div key={u.id} className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${
               u.ativo
                 ? u.perfil === "ADMIN"
-                  ? "border-[#AF1B1B]/25 bg-[#FFF5F5]"
-                  : "border-[#DBEAFE] bg-[#EFF6FF]/40"
-                : "border-[#F3F4F6] bg-[#FAFAFA] opacity-50"
+                  ? "border-[var(--primary)]/25 bg-[var(--error-soft)]"
+                  : "border-[var(--primary-soft)] bg-[var(--primary-soft)]/40"
+                : "border-[var(--surface-hover)] bg-[var(--surface-muted)] opacity-50"
             }`}>
               <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                u.perfil === "ADMIN" ? "bg-[#AF1B1B]/10 text-[#AF1B1B]" : "bg-[#DBEAFE] text-[#2563EB]"
+                u.perfil === "ADMIN" ? "bg-[var(--primary)]/10 text-[var(--primary)]" : "bg-[var(--primary-soft)] text-[var(--primary)]"
               }`}>
                 <ShieldCheck size={15} />
               </span>
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className={`text-sm font-semibold ${u.perfil === "ADMIN" ? "text-[#AF1B1B]" : "text-[#1D4ED8]"}`}>
+                  <span className={`text-sm font-semibold ${u.perfil === "ADMIN" ? "text-[var(--primary)]" : "text-[var(--primary)]"}`}>
                     {u.nome || u.usuario}
                   </span>
                   <Badge variant={u.ativo ? "brand" : "neutral"}>{u.ativo ? "Ativo" : "Inativo"}</Badge>
-                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${PERFIL_COLOR[u.perfil] ?? "bg-[#F3F4F6] text-[#555555]"}`}>
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${PERFIL_COLOR[u.perfil] ?? "bg-[var(--surface-hover)] text-[var(--muted-foreground)]"}`}>
                     {PERFIL_LABEL[u.perfil] ?? u.perfil}
                   </span>
                 </div>
-                <p className="mt-0.5 text-[11px] text-[#9CA3AF]">
+                <p className="mt-0.5 text-[11px] text-[var(--muted-foreground)]">
                   <span className="font-mono">{u.usuario}</span>
                   {" · último acesso: "}{fmtDate(u.ultimo_login_at)}
                 </p>

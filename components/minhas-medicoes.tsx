@@ -72,7 +72,7 @@ export function MinhasMedicoes({
         <Card className="p-5">
           <p className="sr-only" role="status">Carregando medições…</p>
           <div className="grid gap-3" aria-hidden>
-            {[0, 1, 2].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-[#f1f1ef]" />)}
+            {[0, 1, 2].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-[var(--surface-hover)]" />)}
           </div>
         </Card>
       </div>
@@ -93,7 +93,7 @@ export function MinhasMedicoes({
   if (medicoes.length === 0) {
     return (
       <div data-testid="minhas-medicoes-vazio"><Card className="p-8 text-center">
-        <span className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[#f1f1ef] text-[var(--muted-foreground)]"><FileText size={18} aria-hidden /></span>
+        <span className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[var(--surface-hover)] text-[var(--muted-foreground)]"><FileText size={18} aria-hidden /></span>
         <h2 className="text-card-title text-[var(--foreground)]">Você ainda não possui medições disponíveis.</h2>
         <p className="mt-1 text-[13px] text-[var(--muted-foreground)]">As medições aparecem aqui depois que você aprova o boletim no Portal.</p>
       </Card></div>
@@ -111,7 +111,7 @@ export function MinhasMedicoes({
               type="button"
               aria-pressed={status === r.status}
               onClick={() => setStatus(r.status)}
-              className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold transition-colors ${status === r.status ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]" : "border-[var(--border)] bg-white text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
+              className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold transition-colors ${status === r.status ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]" : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"}`}
             >
               {r.label} <span className="tabular-nums">{r.total}</span>
             </button>
@@ -120,7 +120,7 @@ export function MinhasMedicoes({
         <label className="relative block w-full sm:w-60">
           <span className="sr-only">Buscar por ciclo ou competência</span>
           <Search size={14} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
-          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar ciclo ou competência..." aria-label="Buscar por ciclo ou competência" className="h-9 w-full rounded-lg border border-[var(--border)] bg-white pl-8 pr-3 text-[13px] outline-none focus:border-[var(--primary)]" />
+          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar ciclo ou competência..." aria-label="Buscar por ciclo ou competência" className="h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] pl-8 pr-3 text-[13px] outline-none focus:border-[var(--primary)]" />
         </label>
       </div>
 
@@ -131,7 +131,7 @@ export function MinhasMedicoes({
           {/* Desktop: lista leve, linha inteira abre o detalhe. */}
           <table className="hidden w-full border-collapse text-[13px] md:table" data-testid="minhas-medicoes-tabela">
             <thead>
-              <tr className="bg-[#fafaf8]">
+              <tr className="bg-[var(--surface-muted)]">
                 {["Ciclo", "Competência", "Status", "Total da medição", "Total a pagar", "Atualização", ""].map((h, i) => (
                   <th key={i} scope="col" className={`text-table-header border-b border-[var(--border)] px-4 py-2.5 text-[var(--muted-foreground)] ${h.startsWith("Total") ? "text-right" : "text-left"}`}>{h}</th>
                 ))}
@@ -147,7 +147,7 @@ export function MinhasMedicoes({
                     aria-label={`Abrir medição do ciclo ${m.ciclo}`}
                     onClick={() => setAbertaId(m.id)}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setAbertaId(m.id); } }}
-                    className="cursor-pointer border-b border-[var(--border)] last:border-0 hover:bg-[#fafaf8] focus-visible:bg-[#fafaf8]"
+                    className="cursor-pointer border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)]"
                     data-ciclo={m.ciclo}
                   >
                     <td className="px-4 py-3 font-technical font-semibold text-[var(--foreground)]">{m.ciclo}{m.revisaoLabel && <span className="ml-2 font-sans text-[11px] font-medium text-[var(--muted-foreground)]">{m.revisaoLabel}</span>}</td>
@@ -168,7 +168,7 @@ export function MinhasMedicoes({
               const v = valoresMedicao(m);
               return (
                 <li key={m.id}>
-                  <button type="button" onClick={() => setAbertaId(m.id)} aria-label={`Abrir medição do ciclo ${m.ciclo}`} className="flex w-full items-start justify-between gap-3 px-4 py-4 text-left hover:bg-[#fafaf8]">
+                  <button type="button" onClick={() => setAbertaId(m.id)} aria-label={`Abrir medição do ciclo ${m.ciclo}`} className="flex w-full items-start justify-between gap-3 px-4 py-4 text-left hover:bg-[var(--surface-muted)]">
                     <span className="min-w-0">
                       <span className="block font-technical text-[14px] font-semibold text-[var(--foreground)]">Ciclo {m.ciclo}</span>
                       <span className="block text-[12px] text-[var(--muted-foreground)]">{competenciaCiclo(m.ciclo) ?? "–"}{m.revisaoLabel ? ` · ${m.revisaoLabel}` : ""}</span>
@@ -228,7 +228,7 @@ function DetalheMedicao({ medicao: m, fornecedorNome, onClose, onRecarregar }: {
             <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">Total da medição</dt><dd className="tabular-nums text-[var(--foreground)]" data-testid="minhas-medicoes-total-medicao">{brl.format(v.totalMedicao)}</dd></div>
             {v.rev !== 0 && <div className="flex justify-between gap-4"><dt className="text-[var(--muted-foreground)]">REV / Ajustes</dt><dd className="tabular-nums text-[var(--foreground)]" data-testid="minhas-medicoes-rev">{v.rev > 0 ? "+ " : ""}{brl.format(v.rev)}</dd></div>}
           </dl>
-          {passo && <p role="note" className="rounded-lg border border-[var(--border)] bg-[#fafaf8] px-3 py-2 text-[13px] text-[var(--foreground)]" data-testid="minhas-medicoes-proximo-passo">{passo}</p>}
+          {passo && <p role="note" className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-[13px] text-[var(--foreground)]" data-testid="minhas-medicoes-proximo-passo">{passo}</p>}
         </PanelSection>
 
         <PanelSection title="Nota fiscal">
@@ -240,7 +240,7 @@ function DetalheMedicao({ medicao: m, fornecedorNome, onClose, onRecarregar }: {
                 <p className="font-medium text-[var(--foreground)]">Recebida</p>
                 <p className="break-all text-[12px] text-[var(--muted-foreground)]">{m.nfArquivoNome}{fmtDataHora(m.nfCarregadoAt) ? ` · ${fmtDataHora(m.nfCarregadoAt)}` : ""}</p>
               </div>
-              <a href={`/api/colaborador/nf/${m.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center rounded-lg border border-[var(--border-strong)] px-3 text-[12px] font-semibold text-[var(--foreground)] hover:bg-[#fafaf8]">Visualizar NF</a>
+              <a href={`/api/colaborador/nf/${m.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center rounded-lg border border-[var(--border-strong)] px-3 text-[12px] font-semibold text-[var(--foreground)] hover:bg-[var(--surface-muted)]">Visualizar NF</a>
             </div>
           ) : (
             <p className="text-[13px] text-[var(--muted-foreground)]">Sem nota fiscal registrada.</p>
@@ -254,7 +254,7 @@ function DetalheMedicao({ medicao: m, fornecedorNome, onClose, onRecarregar }: {
                 <p className="font-medium text-[var(--foreground)]">Comprovante disponível</p>
                 <p className="break-all text-[12px] text-[var(--muted-foreground)]">{m.comprovanteArquivoNome}{fmtDataHora(m.comprovanteCarregadoAt) ? ` · ${fmtDataHora(m.comprovanteCarregadoAt)}` : ""}</p>
               </div>
-              <a href={`/api/colaborador/comprovante/${m.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center rounded-lg border border-[var(--border-strong)] px-3 text-[12px] font-semibold text-[var(--foreground)] hover:bg-[#fafaf8]">Ver comprovante</a>
+              <a href={`/api/colaborador/comprovante/${m.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center rounded-lg border border-[var(--border-strong)] px-3 text-[12px] font-semibold text-[var(--foreground)] hover:bg-[var(--surface-muted)]">Ver comprovante</a>
             </div>
           </PanelSection>
         )}
@@ -283,7 +283,7 @@ function DetalheMedicao({ medicao: m, fornecedorNome, onClose, onRecarregar }: {
 
       {bmAberto && (
         <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:p-4 sm:pt-10" role="dialog" aria-modal="true" aria-label="Boletim de Medição">
-          <div className="min-h-screen w-full max-w-5xl rounded-none bg-white shadow-2xl sm:min-h-0 sm:rounded-xl">
+          <div className="min-h-screen w-full max-w-5xl rounded-none bg-[var(--surface)] shadow-2xl sm:min-h-0 sm:rounded-xl">
             <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
               <p className="text-sm font-semibold text-[var(--foreground)]">Boletim de Medição · Ciclo {m.ciclo}</p>
               <IconButton onClick={() => setBmAberto(false)} title="Fechar boletim" aria-label="Fechar boletim"><X size={16} /></IconButton>
@@ -376,7 +376,7 @@ function EnvioNotaFiscal({ onEnviada }: { onEnviada: () => void }) {
         role="button"
         tabIndex={0}
         aria-label="Escolher arquivo da Nota Fiscal"
-        className={`rounded-lg border border-dashed px-4 py-5 text-center transition ${draggingNf ? "border-[var(--primary)] bg-[var(--primary-soft)]" : "border-[var(--border-strong)] bg-white hover:bg-[#fafaf8]"}`}
+        className={`rounded-lg border border-dashed px-4 py-5 text-center transition ${draggingNf ? "border-[var(--primary)] bg-[var(--primary-soft)]" : "border-[var(--border-strong)] bg-[var(--surface)] hover:bg-[var(--surface-muted)]"}`}
         onClick={() => nfInputRef.current?.click()}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
@@ -392,7 +392,7 @@ function EnvioNotaFiscal({ onEnviada }: { onEnviada: () => void }) {
         <p className="mt-0.5 text-[12px] text-[var(--muted-foreground)]">PDF pesquisável</p>
       </div>
       {nfFile && (
-        <div className="rounded-lg border border-[var(--border)] bg-white p-3">
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
           <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13px] font-semibold text-[var(--foreground)]">{nfFile.name}</p>
@@ -401,7 +401,7 @@ function EnvioNotaFiscal({ onEnviada }: { onEnviada: () => void }) {
             {nfError ? <IconButton onClick={uploadNf} title="Tentar novamente" aria-label="Tentar novamente"><RotateCcw size={15} /></IconButton> : null}
             <IconButton onClick={() => selectNfFile(null)} disabled={nfUploading} title="Remover arquivo" aria-label="Remover arquivo"><Trash2 size={15} /></IconButton>
           </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#efefec]">
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--surface-hover)]">
             <div className={`h-full rounded-full transition-all duration-200 ${nfError ? "bg-[var(--error)]" : "bg-[var(--success)]"}`} style={{ width: `${nfError ? 100 : nfProgress}%` }} />
           </div>
           <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

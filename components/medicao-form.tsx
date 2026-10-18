@@ -105,12 +105,12 @@ export function MedicaoForm({
   const update = (key: keyof FormState, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-[#1A1A1A]/35 p-4">
-      <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-[#d8dee8] px-5 py-4">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4">
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg bg-[var(--surface)] shadow-xl">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
           <div>
-            <h2 className="text-lg font-bold text-[#1A1A1A]">{medicao ? "Editar medição" : "Nova medição"}</h2>
-            <p className="text-sm text-[#1A1A1A]">Campos relacionais usam os cadastros carregados do PostgreSQL.</p>
+            <h2 className="text-lg font-bold text-[var(--foreground)]">{medicao ? "Editar medição" : "Nova medição"}</h2>
+            <p className="text-sm text-[var(--foreground)]">Campos relacionais usam os cadastros carregados do PostgreSQL.</p>
           </div>
           <IconButton onClick={onClose} title="Fechar">
             <X size={17} />
@@ -219,8 +219,8 @@ export function MedicaoForm({
             <Textarea value={form.obs} onChange={(event) => update("obs", event.target.value)} />
           </Field>
 
-          <div className="flex justify-end gap-2 border-t border-[#d8dee8] pt-4">
-            <Button type="button" className="border-[#cfd7e3] bg-white text-[#1A1A1A] hover:bg-[#f2f4f7]" onClick={onClose}>
+          <div className="flex justify-end gap-2 border-t border-[var(--border)] pt-4">
+            <Button type="button" className="border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] hover:bg-[var(--surface-hover)]" onClick={onClose}>
               Cancelar
             </Button>
             <Button type="submit" disabled={submitting}>

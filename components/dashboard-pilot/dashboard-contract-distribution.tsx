@@ -62,7 +62,7 @@ export function DashboardContractDistribution({ contexto }: { contexto: Dashboar
           </div>
         </div>
       ) : (
-        <div className="mt-4 flex h-[150px] items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-[#FAFAF8] text-[11px] text-[var(--muted-foreground)]">
+        <div className="mt-4 flex h-[150px] items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-muted)] text-[11px] text-[var(--muted-foreground)]">
           Sem distribuição disponível neste ciclo.
         </div>
       )}

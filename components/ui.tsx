@@ -5,6 +5,7 @@ import { Card as HeroCard, Chip as HeroChip } from "@heroui/react";
 import { Filter, X } from "lucide-react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { useBlur } from "@/components/providers";
+import { AnimatedText } from "@/components/motion";
 
 // ─── BlurValue ────────────────────────────────────────────────────────────────
 
@@ -43,13 +44,13 @@ export function Button({
     <button
       {...nativeProps}
       className={clsx(
-        "inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-transparent px-3.5 text-[12px] font-semibold shadow-none transition-all duration-150 focus-visible:outline-none",
-        variant === "primary"   && "bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)]",
-        variant === "secondary" && "border-[var(--border)] bg-white text-[var(--foreground)] hover:border-[var(--border-strong)] hover:bg-[#f7f7f5]",
-        variant === "outline"   && "border-[var(--primary)] bg-white text-[var(--primary)] hover:bg-[var(--primary-soft)]",
-        variant === "danger"    && "bg-[var(--error)] text-white hover:bg-[#a91f1f]",
-        variant === "success"   && "bg-[var(--success)] text-white hover:bg-[#116b32]",
-        variant === "ghost"     && "bg-transparent text-[var(--muted-foreground)] hover:bg-[#efefec] hover:text-[var(--foreground)]",
+        "inline-flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-transparent px-3.5 text-[12px] font-semibold shadow-none transition-all duration-150 focus-visible:outline-none active:scale-[0.97] motion-reduce:active:scale-100",
+        variant === "primary"   && "bg-[var(--primary)] text-[var(--on-solid)] hover:bg-[var(--primary-hover)]",
+        variant === "secondary" && "border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]",
+        variant === "outline"   && "border-[var(--primary)] bg-[var(--surface)] text-[var(--primary)] hover:bg-[var(--primary-soft)]",
+        variant === "danger"    && "bg-[var(--error)] text-[var(--on-solid)] hover:bg-[var(--error)]/90",
+        variant === "success"   && "bg-[var(--success)] text-[var(--on-solid)] hover:bg-[var(--success)]/90",
+        variant === "ghost"     && "bg-transparent text-[var(--muted-foreground)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]",
         aura && variant === "primary" && "shadow-[0_0_0_3px_color-mix(in_srgb,var(--primary)_12%,transparent),0_3px_10px_color-mix(in_srgb,var(--primary)_18%,transparent)]",
         disabled && "cursor-not-allowed opacity-50",
         className,
@@ -70,8 +71,8 @@ export function IconButton({ className, children, disabled, type = "button", ...
     <button
       {...props}
       className={clsx(
-        "inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[var(--muted-foreground)]",
-        "shadow-none transition-all duration-150 hover:border-[var(--border-strong)] hover:bg-[#f7f7f5] hover:text-[var(--foreground)] focus-visible:outline-none",
+        "inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)]",
+        "shadow-none transition-all duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] focus-visible:outline-none active:scale-[0.97] motion-reduce:active:scale-100",
         disabled && "cursor-not-allowed opacity-50",
         className,
       )}
@@ -90,8 +91,8 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={clsx(
-        "h-9 w-full rounded-lg border border-[var(--border)] bg-white px-3 text-[13px] text-[var(--foreground)] outline-none",
-        "placeholder:text-[#999] transition-all duration-150 hover:border-[var(--border-strong)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary)_14%,transparent)]",
+        "h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] text-[var(--foreground)] outline-none",
+        "placeholder:text-[var(--muted-foreground)]/70 transition-all duration-150 hover:border-[var(--border-strong)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary)_14%,transparent)]",
         props.className,
       )}
     />
@@ -105,7 +106,7 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={clsx(
-        "h-9 w-full rounded-lg border border-[var(--border)] bg-white px-3 text-[13px] text-[var(--foreground)] outline-none transition-all duration-150 hover:border-[var(--border-strong)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary)_14%,transparent)]",
+        "h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] text-[var(--foreground)] outline-none transition-all duration-150 hover:border-[var(--border-strong)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary)_14%,transparent)]",
         props.className,
       )}
     />
@@ -119,9 +120,9 @@ export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
     <textarea
       {...props}
       className={clsx(
-        "min-h-24 w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[13px] text-[var(--foreground)] outline-none",
-        "placeholder:text-[#9CA3AF] transition-all duration-150",
-        "hover:border-[#D1D5DB]",
+        "min-h-24 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none",
+        "placeholder:text-[var(--muted-foreground)]/70 transition-all duration-150",
+        "hover:border-[var(--border-strong)]",
         "focus:border-[var(--primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary)_14%,transparent)]",
         props.className,
       )}
@@ -145,12 +146,12 @@ export function Field({ label, children }: { label: string; children: React.Reac
 type BadgeVariant = "brand" | "primary" | "success" | "warning" | "danger" | "neutral";
 
 const CHIP_STYLES: Record<BadgeVariant, string> = {
-  brand:   "bg-[var(--primary-soft)] text-[var(--primary)] border border-[#f0caca]",
-  primary: "bg-[var(--primary-soft)] text-[var(--primary)] border border-[#f0caca]",
-  success: "bg-[var(--success-soft)] text-[var(--success)] border border-[#cde9d5]",
-  warning: "bg-[var(--warning-soft)] text-[var(--warning)] border border-[#f2dbb7]",
-  danger:  "bg-[var(--error-soft)] text-[var(--error)] border border-[#efc6c6]",
-  neutral: "bg-[var(--info-soft)] text-[var(--info)] border border-[#dfe2e5]",
+  brand:   "bg-[var(--primary-soft)] text-[var(--primary)] border border-[var(--error)]/30",
+  primary: "bg-[var(--primary-soft)] text-[var(--primary)] border border-[var(--error)]/30",
+  success: "bg-[var(--success-soft)] text-[var(--success)] border border-[var(--success)]/30",
+  warning: "bg-[var(--warning-soft)] text-[var(--warning)] border border-[var(--warning)]/35",
+  danger:  "bg-[var(--error-soft)] text-[var(--error)] border border-[var(--error)]/30",
+  neutral: "bg-[var(--info-soft)] text-[var(--info)] border border-[var(--border)]",
 };
 
 export function Badge({
@@ -224,7 +225,7 @@ export function PageHeader({
     <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
       <div className="min-w-0">
         {eyebrow && <p className="text-eyebrow mb-1 text-[var(--primary)]">{eyebrow}</p>}
-        <h1 className="text-page-title text-[var(--foreground)]">{title}</h1>
+        <AnimatedText as="h1" texto={title} className="text-page-title text-[var(--foreground)]" />
         {description && <p className="text-page-description mt-1 max-w-3xl text-[var(--muted-foreground)]">{description}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
@@ -258,15 +259,15 @@ export function FilterButton({
       type="button"
       onClick={onClick}
       className={clsx(
-        "inline-flex h-9 items-center gap-2 rounded-lg border bg-white px-3 text-xs font-semibold transition",
-        count > 0 ? "border-[var(--primary)] text-[var(--primary)]" : "border-[var(--border)] text-[#555555] hover:border-[var(--border-strong)]",
+        "inline-flex h-9 items-center gap-2 rounded-lg border bg-[var(--surface)] px-3 text-xs font-semibold transition",
+        count > 0 ? "border-[var(--primary)] text-[var(--primary)]" : "border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--border-strong)]",
         className,
       )}
     >
       <Filter size={14} />
       Filtros
       {count > 0 && (
-        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-white">
+        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-[var(--on-solid)]">
           {count}
         </span>
       )}
@@ -279,7 +280,7 @@ export function FilterChip({ label, onRemove }: { label: string; onRemove: () =>
     <button
       type="button"
       onClick={onRemove}
-      className="inline-flex h-6 items-center gap-1 rounded-full border border-[var(--border)] bg-[#F9FAFB] px-2.5 text-[11px] font-semibold text-[#374151] transition hover:border-[var(--border-strong)]"
+      className="inline-flex h-6 items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 text-[11px] font-semibold text-[var(--muted-foreground)] transition hover:border-[var(--border-strong)]"
     >
       {label}
       <X size={10} />

@@ -22,7 +22,7 @@ function LinkArquivo({ href, children }: { href: string; children: ReactNode }) 
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 text-[12px] font-semibold text-[var(--foreground)] transition hover:border-[var(--border-strong)] hover:bg-[#f7f7f5]"
+      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-[12px] font-semibold text-[var(--foreground)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)]"
     >
       <FileText size={13} />
       {children}
@@ -123,7 +123,7 @@ export function FinanceiroDrawer({
       }
     >
       <PanelSection title="Resumo">
-        <div className="rounded-lg border border-[var(--border)] bg-[#FAFAF8] px-4 py-3">
+        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
           <p className="text-[11px] text-[var(--muted-foreground)]">Valor a pagar</p>
           <p className="mt-0.5 text-2xl font-semibold tabular-nums text-[var(--foreground)]" data-testid="financeiro-detalhe-valor">
             <BlurValue>{currency.format(aPagar)}</BlurValue>
@@ -179,7 +179,7 @@ export function FinanceiroDrawer({
 
       {resumo && resumo.documentosDesconto.length > 0 && (
         <PanelSection title="Descontos">
-          <ul className="divide-y divide-[#EFEFED] rounded-lg border border-[var(--border)]">
+          <ul className="divide-y divide-[var(--border)] rounded-lg border border-[var(--border)]">
             {resumo.documentosDesconto.map((doc) => (
               <li key={doc.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                 <span className="min-w-0 truncate text-[var(--foreground)]">{doc.obs || doc.numeroDocumento || "Dedução"}</span>
@@ -214,7 +214,7 @@ export function FinanceiroDrawer({
               : <span className="text-[12px] text-[var(--muted-foreground)]">Registrado sem comprovante</span>}
           </div>
         ) : confirmando ? (
-          <div className="grid gap-3 rounded-lg border border-[#cde9d5] bg-[var(--success-soft)] p-3" data-testid="financeiro-confirmar-pagamento">
+          <div className="grid gap-3 rounded-lg border border-[var(--success)]/30 bg-[var(--success-soft)] p-3" data-testid="financeiro-confirmar-pagamento">
             <p className="flex items-center gap-2 text-sm font-semibold text-[var(--success)]">
               <CheckCircle2 size={15} />
               Confirmar pagamento — {item.colaboradorNome}
@@ -224,7 +224,7 @@ export function FinanceiroDrawer({
               <input
                 type="file"
                 accept=".pdf,.jpg,.jpeg,.png"
-                className="block w-full text-sm text-[var(--foreground)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--success)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white"
+                className="block w-full text-sm text-[var(--foreground)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--success)] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-[var(--on-solid)]"
                 onChange={(e) => onArquivo(e.target.files?.[0] ?? null)}
               />
             </label>

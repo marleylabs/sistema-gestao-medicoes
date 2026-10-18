@@ -264,7 +264,7 @@ export function FornecedoresPage({
       <FornecedoresKpis itens={itens} statuses={sgcStatus} />
 
       {cadastrosPendentes > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#f2dbb7] bg-[var(--warning-soft)] px-4 py-3 text-[13px]" data-testid="fornecedores-cadastros-pendentes">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--warning)]/35 bg-[var(--warning-soft)] px-4 py-3 text-[13px]" data-testid="fornecedores-cadastros-pendentes">
           <p className="text-[var(--foreground)]">
             <strong>{cadastrosPendentes === 1 ? "1 cadastro pendente de vínculo" : `${cadastrosPendentes} cadastros pendentes de vínculo`}</strong>
             <span className="text-[var(--muted-foreground)]"> — estão no ciclo e nos totais; o envio de BM fica indisponível até o vínculo.</span>
@@ -274,16 +274,16 @@ export function FornecedoresPage({
       )}
 
       <Card className="min-w-0 overflow-hidden">
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-[var(--border)] bg-[#FAFAF8] px-5 py-3">
-          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-[#9CA3AF]">Fluxo medição</span>
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-3">
+          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Fluxo medição</span>
           {[
-            { label: "Envio do BM", bg: "bg-[#F3F4F6]", color: "text-[#555555]" },
-            { label: "Validação", bg: "bg-[#FFFBEB]", color: "text-[#D97706]" },
-            { label: "Conclusão", bg: "bg-[#F0FDF4]", color: "text-[#16A34A]" },
+            { label: "Envio do BM", bg: "bg-[var(--surface-hover)]", color: "text-[var(--muted-foreground)]" },
+            { label: "Validação", bg: "bg-[var(--warning-soft)]", color: "text-[var(--warning)]" },
+            { label: "Conclusão", bg: "bg-[var(--success-soft)]", color: "text-[var(--success)]" },
           ].map((etapa, index, lista) => (
             <div key={etapa.label} className="flex items-center gap-1">
               <span className={`rounded-lg ${etapa.bg} px-2.5 py-1 text-[11px] font-semibold ${etapa.color}`}>{etapa.label}</span>
-              {index < lista.length - 1 && <ArrowRight size={12} className="text-[#9CA3AF]" />}
+              {index < lista.length - 1 && <ArrowRight size={12} className="text-[var(--muted-foreground)]" />}
             </div>
           ))}
         </div>
@@ -292,7 +292,7 @@ export function FornecedoresPage({
           <label className="grid gap-1.5 text-label text-[var(--muted-foreground)] sm:col-span-2 md:col-span-3 xl:col-span-1">
             Pesquisar
             <span className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" size={14} />
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" size={14} />
               <Input className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nome, código ou empresa" />
             </span>
           </label>
@@ -441,7 +441,7 @@ export function FornecedoresPage({
       )}
 
       {toast && (
-        <div className="fixed bottom-5 right-5 z-[60] rounded-lg bg-[#16A34A] px-4 py-3 text-sm font-semibold text-white shadow-lg">
+        <div className="fixed bottom-5 right-5 z-[60] rounded-lg bg-[var(--success)] px-4 py-3 text-sm font-semibold text-[var(--on-solid)] shadow-lg">
           {toast}
         </div>
       )}

@@ -32,7 +32,7 @@ export function DashboardPilot({
     return (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
-          <Card key={index} className="h-[112px] animate-pulse bg-[#F0F0ED]"><span /></Card>
+          <Card key={index} className="h-[112px] animate-pulse bg-[var(--surface-hover)]"><span /></Card>
         ))}
       </div>
     );

@@ -26,7 +26,7 @@ function Linha({ label, onOpen, children }: { label: string; onOpen: () => void;
       aria-label={label}
       onClick={onOpen}
       onKeyDown={(e) => onKey(e, onOpen)}
-      className="cursor-pointer border-b border-[#EFEFED] transition-colors last:border-0 hover:bg-[#FAFAF8] focus-visible:bg-[#FAFAF8] focus-visible:outline-none"
+      className="cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)] focus-visible:outline-none"
     >
       {children}
       <td className="w-8 px-2 py-3 text-[var(--muted-foreground)]"><ChevronRight size={15} /></td>
@@ -37,7 +37,7 @@ function Linha({ label, onOpen, children }: { label: string; onOpen: () => void;
 function ItemMobile({ onOpen, label, titulo, subtitulo, meta, valor }: { onOpen: () => void; label: string; titulo: string; subtitulo?: ReactNode; meta?: ReactNode; valor?: ReactNode }) {
   return (
     <li>
-      <button type="button" onClick={onOpen} aria-label={label} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
+      <button type="button" onClick={onOpen} aria-label={label} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[var(--surface-muted)]">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-[var(--foreground)]">{titulo}</p>
           {subtitulo && <p className="truncate text-[12px] text-[var(--muted-foreground)]">{subtitulo}</p>}
@@ -56,7 +56,7 @@ function Contratos({ participacoes, nomes, max = 2 }: { participacoes: Record<st
   return (
     <div className="flex flex-wrap items-center gap-1">
       {lista.slice(0, max).map(([id, p]) => (
-        <span key={id} className="inline-flex max-w-[170px] items-center gap-1 rounded-md border border-[var(--border)] bg-[#FAFAF8] px-1.5 py-0.5 text-[11px]" title={`${nomes.get(id) ?? id}: ${formatParticipacao(p)}`}>
+        <span key={id} className="inline-flex max-w-[170px] items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface-muted)] px-1.5 py-0.5 text-[11px]" title={`${nomes.get(id) ?? id}: ${formatParticipacao(p)}`}>
           <span className="truncate">{nomes.get(id) ?? id}</span>
           <span className="shrink-0 tabular-nums text-[var(--muted-foreground)]">{formatParticipacao(p)}</span>
         </span>
@@ -72,7 +72,7 @@ export function MedicoesLista({ itens, nomesContrato, onOpen }: { itens: Medicao
     <>
       <div className="hidden max-w-full overflow-x-auto md:block">
         <table className="w-full border-collapse text-sm" data-testid="historico-medicoes">
-          <thead className="bg-[#FAFAF8]">
+          <thead className="bg-[var(--surface-muted)]">
             <tr>
               <Th className="w-20">Ciclo</Th>
               <Th>Fornecedor</Th>
@@ -98,7 +98,7 @@ export function MedicoesLista({ itens, nomesContrato, onOpen }: { itens: Medicao
           </tbody>
         </table>
       </div>
-      <ul className="divide-y divide-[#EFEFED] md:hidden" data-testid="historico-medicoes-mobile">
+      <ul className="divide-y divide-[var(--border)] md:hidden" data-testid="historico-medicoes-mobile">
         {itens.map((m) => (
           <ItemMobile
             key={m.key}
@@ -121,7 +121,7 @@ export function FornecedoresLista({ itens, onOpen }: { itens: FornecedorHistoric
     <>
       <div className="hidden max-w-full overflow-x-auto md:block">
         <table className="w-full border-collapse text-sm" data-testid="historico-fornecedores">
-          <thead className="bg-[#FAFAF8]">
+          <thead className="bg-[var(--surface-muted)]">
             <tr>
               <Th>Fornecedor</Th>
               <Th className="text-right">Total histórico</Th>
@@ -147,7 +147,7 @@ export function FornecedoresLista({ itens, onOpen }: { itens: FornecedorHistoric
           </tbody>
         </table>
       </div>
-      <ul className="divide-y divide-[#EFEFED] md:hidden" data-testid="historico-fornecedores-mobile">
+      <ul className="divide-y divide-[var(--border)] md:hidden" data-testid="historico-fornecedores-mobile">
         {itens.map((f) => (
           <ItemMobile
             key={f.codigo}
@@ -170,7 +170,7 @@ export function ContratosLista({ itens, onOpen }: { itens: ContratoHistorico[]; 
     <>
       <div className="hidden max-w-full overflow-x-auto md:block">
         <table className="w-full border-collapse text-sm" data-testid="historico-contratos">
-          <thead className="bg-[#FAFAF8]">
+          <thead className="bg-[var(--surface-muted)]">
             <tr>
               <Th>Contrato</Th>
               <Th className="text-right">Valor atribuído</Th>
@@ -193,7 +193,7 @@ export function ContratosLista({ itens, onOpen }: { itens: ContratoHistorico[]; 
           </tbody>
         </table>
       </div>
-      <ul className="divide-y divide-[#EFEFED] md:hidden" data-testid="historico-contratos-mobile">
+      <ul className="divide-y divide-[var(--border)] md:hidden" data-testid="historico-contratos-mobile">
         {itens.map((c) => (
           <ItemMobile
             key={c.id}

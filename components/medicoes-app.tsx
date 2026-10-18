@@ -475,7 +475,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
         <div className="fixed right-5 top-4 z-30 sm:right-6 sm:top-5">
           <button
             type="button"
-            className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--border)] bg-white text-[var(--muted-foreground)] shadow-sm transition-colors hover:bg-[#f2f2ef] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/30"
+            className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)] shadow-sm transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/30"
             onClick={() => { setNotifOpen((v) => !v); markSeen(); }}
             title="Notificações"
             aria-label="Notificações"
@@ -483,38 +483,38 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
             {hasUnread ? <BellRing size={17} /> : <Bell size={17} />}
           </button>
           {sgcAlertas.length > 0 && (
-            <span className="absolute -right-1 -top-1 inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[9px] font-bold text-white">
+            <span className="absolute -right-1 -top-1 inline-flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[9px] font-bold text-[var(--on-solid)]">
               {sgcAlertas.length}
             </span>
           )}
 
           {notifOpen && (
-            <div className="absolute right-0 top-12 z-40 w-[min(360px,calc(100vw-40px))] overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-xl">
-              <div className="border-b border-[#E5E7EB] px-4 py-3">
-                <p className="text-sm font-bold text-[#1A1A1A]">Notificações</p>
-                <p className="text-xs text-[#555555]">{sgcAlertas.length} solicitação(ões) pendente(s)</p>
+            <div className="absolute right-0 top-12 z-40 w-[min(360px,calc(100vw-40px))] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-xl">
+              <div className="border-b border-[var(--border)] px-4 py-3">
+                <p className="text-sm font-bold text-[var(--foreground)]">Notificações</p>
+                <p className="text-xs text-[var(--muted-foreground)]">{sgcAlertas.length} solicitação(ões) pendente(s)</p>
               </div>
               <div className="max-h-72 overflow-auto">
                 {sgcAlertas.length ? (
                   sgcAlertas.map((a) => (
                     <button
                       key={a.id}
-                      className="block w-full border-b border-[#F3F4F6] px-4 py-3 text-left last:border-0 hover:bg-[#F9FAFB] transition-colors"
+                      className="block w-full border-b border-[var(--surface-hover)] px-4 py-3 text-left last:border-0 hover:bg-[var(--surface-muted)] transition-colors"
                       onClick={() => { setSelectedAlerta(a); setNotifOpen(false); markSeen(a); }}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold text-[#1A1A1A]">{a.colaboradorNome ?? "Fornecedor"}</span>
+                        <span className="text-sm font-semibold text-[var(--foreground)]">{a.colaboradorNome ?? "Fornecedor"}</span>
                         <Badge variant="warning">{a.proximaRevisaoLabel}</Badge>
                       </div>
-                      <p className="mt-1 text-xs text-[#9CA3AF] line-clamp-1">Solicitação de revisão</p>
+                      <p className="mt-1 text-xs text-[var(--muted-foreground)] line-clamp-1">Solicitação de revisão</p>
                     </button>
                   ))
                 ) : (
-                  <p className="px-4 py-6 text-sm text-[#9CA3AF]">Nenhuma solicitação pendente.</p>
+                  <p className="px-4 py-6 text-sm text-[var(--muted-foreground)]">Nenhuma solicitação pendente.</p>
                 )}
               </div>
               <button
-                className="block w-full border-t border-[#E5E7EB] px-4 py-3 text-left text-sm font-semibold text-[#2563EB] hover:bg-[#F9FAFB] transition-colors"
+                className="block w-full border-t border-[var(--border)] px-4 py-3 text-left text-sm font-semibold text-[var(--primary)] hover:bg-[var(--surface-muted)] transition-colors"
                 onClick={() => { setNotifOpen(false); }}
               >
                 Fechar
@@ -627,9 +627,9 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
               ref={filtrosDashboardPainelRef}
               data-testid="dashboard-filtros"
               style={filtrosDashboardPosicao}
-              className="absolute left-0 top-10 z-40 w-[min(340px,calc(100vw-2rem))] rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-xl"
+              className="absolute left-0 top-10 z-40 w-[min(340px,calc(100vw-2rem))] rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-xl"
             >
-              <p className="mb-3 text-sm font-bold text-[#1A1A1A]">Filtros</p>
+              <p className="mb-3 text-sm font-bold text-[var(--foreground)]">Filtros</p>
 
               <div className="grid gap-3">
                 {/* Ciclo de trabalho (contexto interno; o ciclo publicado no portal fica em /fornecedores) */}
@@ -654,16 +654,16 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
                         <IconButton
                           title="Novo ciclo"
                           onClick={() => { setNovoCicloOpen((v) => !v); setNovoCiclo(""); }}
-                          className={novoCicloOpen ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]" : ""}
+                          className={novoCicloOpen ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]" : ""}
                         >
                           <Plus size={15} />
                         </IconButton>
                         {novoCicloOpen && (
-                          <div className="absolute right-0 top-10 z-50 w-64 rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-xl">
-                            <p className="mb-2 text-sm font-bold text-[#1A1A1A]">Novo ciclo</p>
-                            <p className="mb-3 text-xs text-[#555555]">Formato YYMM — ex: <strong>2606</strong></p>
+                          <div className="absolute right-0 top-10 z-50 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-xl">
+                            <p className="mb-2 text-sm font-bold text-[var(--foreground)]">Novo ciclo</p>
+                            <p className="mb-3 text-xs text-[var(--muted-foreground)]">Formato YYMM — ex: <strong>2606</strong></p>
                             <input
-                              className="mb-3 h-9 w-full rounded-lg border border-[#E5E7EB] px-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+                              className="mb-3 h-9 w-full rounded-lg border border-[var(--border)] px-3 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20"
                               placeholder="Ex: 2606"
                               maxLength={4}
                               value={novoCiclo}
@@ -690,15 +690,15 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
                       <div className="flex flex-wrap items-center gap-1.5">
                         <input
                           type="date"
-                          className="h-9 min-w-[8.5rem] flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20"
+                          className="h-9 min-w-[8.5rem] flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2 text-sm text-[var(--foreground)] outline-none hover:border-[var(--border-strong)] focus:border-[var(--primary)] focus:bg-[var(--surface)] focus:ring-2 focus:ring-[var(--primary)]/20"
                           defaultValue={producaoInicio}
                           key={producaoInicio}
                           onBlur={(e) => { if (e.target.value && e.target.value !== producaoInicio) saveContextDates(e.target.value, producaoFim); }}
                         />
-                        <span className="text-xs text-[#9CA3AF]">a</span>
+                        <span className="text-xs text-[var(--muted-foreground)]">a</span>
                         <input
                           type="date"
-                          className="h-9 min-w-[8.5rem] flex-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A] outline-none hover:border-[#D1D5DB] focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20"
+                          className="h-9 min-w-[8.5rem] flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2 text-sm text-[var(--foreground)] outline-none hover:border-[var(--border-strong)] focus:border-[var(--primary)] focus:bg-[var(--surface)] focus:ring-2 focus:ring-[var(--primary)]/20"
                           defaultValue={producaoFim}
                           key={producaoFim}
                           onBlur={(e) => { if (e.target.value && e.target.value !== producaoFim) saveContextDates(producaoInicio, e.target.value); }}
@@ -709,9 +709,9 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
                     <div className="grid gap-1.5">
                       <span className="text-label text-[var(--muted-foreground)]">ATO</span>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <div className="flex h-9 min-w-[8.5rem] flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A]">{fmtDate(atoInicio)}</div>
-                        <span className="text-xs text-[#9CA3AF]">a</span>
-                        <div className="flex h-9 min-w-[8.5rem] flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-2 text-sm text-[#1A1A1A]">{fmtDate(atoFim)}</div>
+                        <div className="flex h-9 min-w-[8.5rem] flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2 text-sm text-[var(--foreground)]">{fmtDate(atoInicio)}</div>
+                        <span className="text-xs text-[var(--muted-foreground)]">a</span>
+                        <div className="flex h-9 min-w-[8.5rem] flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-2 text-sm text-[var(--foreground)]">{fmtDate(atoFim)}</div>
                       </div>
                     </div>
                   </>
@@ -738,18 +738,18 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
                 </label>
               </div>
 
-              <div className="mt-4 flex items-center justify-between border-t border-[#E5E7EB] pt-3">
+              <div className="mt-4 flex items-center justify-between border-t border-[var(--border)] pt-3">
                 <button
                   type="button"
                   onClick={() => handleCicloChange(CICLO_GERAL)}
-                  className="text-xs font-semibold text-[#6B7280] transition hover:text-[#374151]"
+                  className="text-xs font-semibold text-[var(--muted-foreground)] transition hover:text-[var(--foreground)]"
                 >
                   Limpar filtros
                 </button>
                 <button
                   type="button"
                   onClick={() => setFiltrosDashboardOpen(false)}
-                  className="text-xs font-bold text-[#AF1B1B]"
+                  className="text-xs font-bold text-[var(--primary)]"
                 >
                   Concluído
                 </button>
@@ -986,8 +986,8 @@ function latestChatMessage(alerta: SgcAlerta) {
 function Detail({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[10px] font-bold uppercase tracking-wider text-[#9CA3AF]">{label}</p>
-      <p className="mt-0.5 text-sm font-medium text-[#1A1A1A]">{value || "–"}</p>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">{label}</p>
+      <p className="mt-0.5 text-sm font-medium text-[var(--foreground)]">{value || "–"}</p>
     </div>
   );
 }
@@ -999,12 +999,12 @@ function SgcReviewModal({
 }: { alerta: SgcAlerta; saving: boolean; onClose: () => void; onReenviar: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-0 sm:p-4 sm:items-center backdrop-blur-sm">
-      <section className="w-full max-w-4xl overflow-hidden rounded-none sm:rounded-2xl border-0 sm:border border-[#E5E7EB] bg-white shadow-2xl min-h-screen sm:min-h-0 sm:max-h-[90vh]">
+      <section className="w-full max-w-4xl overflow-hidden rounded-none sm:rounded-2xl border-0 sm:border border-[var(--border)] bg-[var(--surface)] shadow-2xl min-h-screen sm:min-h-0 sm:max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-[#E5E7EB] px-4 py-4 sm:px-6">
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] px-4 py-4 sm:px-6">
           <div>
-            <h2 className="text-base font-bold text-[#1A1A1A]">Análise da solicitação SGC</h2>
-            <p className="mt-0.5 text-sm text-[#555555]">Revise o comentário, ajuste a medição e reenvie para validação.</p>
+            <h2 className="text-base font-bold text-[var(--foreground)]">Análise da solicitação SGC</h2>
+            <p className="mt-0.5 text-sm text-[var(--muted-foreground)]">Revise o comentário, ajuste a medição e reenvie para validação.</p>
           </div>
           <IconButton onClick={onClose} title="Fechar"><X size={16} /></IconButton>
         </div>
@@ -1042,8 +1042,8 @@ function SgcReviewModal({
                 ],
               },
             ].map(({ title, fields }) => (
-              <div key={title} className="rounded-xl border border-[#E5E7EB] p-4">
-                <p className="mb-3 text-sm font-bold text-[#1A1A1A]">{title}</p>
+              <div key={title} className="rounded-xl border border-[var(--border)] p-4">
+                <p className="mb-3 text-sm font-bold text-[var(--foreground)]">{title}</p>
                 <div className="grid gap-3">
                   {fields.map(([l, v]) => (
                     <Detail key={String(l)} label={String(l)} value={v as React.ReactNode} />
@@ -1054,37 +1054,37 @@ function SgcReviewModal({
           </div>
 
           {/* Discordance */}
-          <div className="mt-4 rounded-xl border border-[#FCA5A5] bg-[#FEF2F2] p-4">
-            <p className="text-sm font-bold text-[#DC2626]">Comentário enviado</p>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-[#1A1A1A]">{alerta.pontosDiscordancia}</p>
+          <div className="mt-4 rounded-xl border border-[var(--error)]/30 bg-[var(--error-soft)] p-4">
+            <p className="text-sm font-bold text-[var(--error)]">Comentário enviado</p>
+            <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--foreground)]">{alerta.pontosDiscordancia}</p>
           </div>
 
           {/* Documents */}
-          <div className="mt-4 overflow-hidden rounded-xl border border-[#E5E7EB]">
-            <div className="border-b border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3">
-              <p className="text-sm font-bold text-[#1A1A1A]">Documentos da medição</p>
+          <div className="mt-4 overflow-hidden rounded-xl border border-[var(--border)]">
+            <div className="border-b border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
+              <p className="text-sm font-bold text-[var(--foreground)]">Documentos da medição</p>
             </div>
             <div className="overflow-auto">
               <table className="w-full min-w-[720px] border-collapse text-sm">
                 <thead>
-                  <tr className="bg-[#F9FAFB]">
+                  <tr className="bg-[var(--surface-muted)]">
                     {["Projeto", "Título", "Data", "Formato", "Valor"].map((h, i) => (
-                      <th key={h} className={`text-table-header border-b border-[#E5E7EB] px-4 py-2.5 text-[var(--muted-foreground)] ${i === 4 ? "text-right" : "text-left"}`}>{h}</th>
+                      <th key={h} className={`text-table-header border-b border-[var(--border)] px-4 py-2.5 text-[var(--muted-foreground)] ${i === 4 ? "text-right" : "text-left"}`}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {alerta.medicao.documentos.map((d) => (
-                    <tr key={d.id} className="border-b border-[#F3F4F6] last:border-0 hover:bg-[#FAFAFA]">
-                      <td className="px-4 py-3 font-medium text-[#1A1A1A]">{d.projetoReferente}</td>
-                      <td className="px-4 py-3 text-[#555555]">{d.tituloPrimario ?? "–"}</td>
-                      <td className="px-4 py-3 text-[#555555]">{dateLabel(d.dataCadastro)}</td>
-                      <td className="px-4 py-3 text-[#555555]">{d.formato ?? "–"}</td>
-                      <td className="px-4 py-3 text-right tabular-nums text-[#1A1A1A]">{currency.format(d.valorMedicao)}</td>
+                    <tr key={d.id} className="border-b border-[var(--surface-hover)] last:border-0 hover:bg-[var(--surface-muted)]">
+                      <td className="px-4 py-3 font-medium text-[var(--foreground)]">{d.projetoReferente}</td>
+                      <td className="px-4 py-3 text-[var(--muted-foreground)]">{d.tituloPrimario ?? "–"}</td>
+                      <td className="px-4 py-3 text-[var(--muted-foreground)]">{dateLabel(d.dataCadastro)}</td>
+                      <td className="px-4 py-3 text-[var(--muted-foreground)]">{d.formato ?? "–"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[var(--foreground)]">{currency.format(d.valorMedicao)}</td>
                     </tr>
                   ))}
                   {!alerta.medicao.documentos.length && (
-                    <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-[#9CA3AF]">Nenhum documento vinculado.</td></tr>
+                    <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-[var(--muted-foreground)]">Nenhum documento vinculado.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1093,7 +1093,7 @@ function SgcReviewModal({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 border-t border-[#E5E7EB] px-6 py-4">
+        <div className="flex justify-end gap-2 border-t border-[var(--border)] px-6 py-4">
           <Button variant="secondary" onClick={onClose} disabled={saving}>Fechar</Button>
           <Button variant="success" onClick={onReenviar} disabled={saving}>
             {saving ? "Reenviando…" : `Reenviar ${alerta.proximaRevisaoLabel}`}
@@ -1150,8 +1150,8 @@ function ResumoIdentidadesImportacao({ resultado }: { resultado: Record<string, 
   // `identidades_resolvidas` do ETL inclui as automáticas — aqui "reconhecidos" são só os que já tinham código/alias.
   const reconhecidas = Math.max(0, (typeof resultado.identidades_resolvidas === "number" ? resultado.identidades_resolvidas : 0) - automaticas.length);
   return (
-    <div className="grid gap-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3 text-xs text-[#555555]" data-testid="etl-resumo-identidades">
-      <p className="text-sm font-semibold text-[#1A1A1A]">Importação concluída</p>
+    <div className="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-xs text-[var(--muted-foreground)]" data-testid="etl-resumo-identidades">
+      <p className="text-sm font-semibold text-[var(--foreground)]">Importação concluída</p>
       <ul className="grid gap-0.5">
         <li><strong>{reconhecidas}</strong> fornecedor(es) reconhecido(s)</li>
         <li><strong>{automaticas.length}</strong> correspondência(s) resolvida(s) automaticamente</li>
@@ -1159,11 +1159,11 @@ function ResumoIdentidadesImportacao({ resultado }: { resultado: Record<string, 
         <li><strong>{descartadas.length + linhasDescartadas}</strong> item(ns) descartado(s){linhasDescartadas ? ` (${linhasDescartadas} linha(s) sem PROJETISTA)` : ""}</li>
       </ul>
       {pendentes.length > 0 && (
-        <p className="rounded-md bg-[var(--warning-soft)] p-2 text-[#92400E]">As medições pendentes permanecerão no ciclo, mas o envio de BM ficará indisponível até o vínculo cadastral.</p>
+        <p className="rounded-md bg-[var(--warning-soft)] p-2 text-[var(--warning)]">As medições pendentes permanecerão no ciclo, mas o envio de BM ficará indisponível até o vínculo cadastral.</p>
       )}
       {automaticas.length > 0 && (
         <details>
-          <summary className="cursor-pointer font-semibold text-[#1A1A1A]">Resolvidos automaticamente</summary>
+          <summary className="cursor-pointer font-semibold text-[var(--foreground)]">Resolvidos automaticamente</summary>
           <ul className="mt-1 grid gap-0.5" data-testid="etl-correspondencias-automaticas">
             {automaticas.map((a) => <li key={a}>{a.replace(" -> ", " → ")} · <span className="text-[var(--success)]">Resolvido automaticamente</span></li>)}
           </ul>
@@ -1299,7 +1299,7 @@ function ImportarPlanilhaSection({
     }
   }
 
-  const msgColors = { success: "bg-[#DCFCE7] text-[#15803D]", error: "bg-[#FEE2E2] text-[#B91C1C]", info: "bg-[#EFF6FF] text-[#1D4ED8]" };
+  const msgColors = { success: "bg-[var(--success-soft)] text-[var(--success)]", error: "bg-[var(--error-soft)] text-[var(--error)]", info: "bg-[var(--primary-soft)] text-[var(--primary)]" };
 
   return (
     <div className="grid gap-6">
@@ -1308,14 +1308,14 @@ function ImportarPlanilhaSection({
         <a
           href="/api/admin/templates/medicoes"
           download
-          className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 text-xs font-semibold text-[#555555] shadow-sm transition hover:border-[#2563EB] hover:text-[#2563EB]"
+          className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--muted-foreground)] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
         >
           <Download size={14} />
           Baixar máscara
         </a>
         {status?.running && (
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#EFF6FF] px-3 py-1.5 text-xs font-semibold text-[#2563EB]">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-[#2563EB]" />
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--primary-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--primary)]">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--primary)]" />
             Importando…
           </span>
         )}
@@ -1323,14 +1323,14 @@ function ImportarPlanilhaSection({
 
       {/* Upload card */}
       <Card className="overflow-hidden">
-        <div className="border-b border-[#E5E7EB] px-5 py-4">
+        <div className="border-b border-[var(--border)] px-5 py-4">
           <div className="flex items-center gap-3">
-            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#FFF0F0] text-[#AF1B1B]">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--error-soft)] text-[var(--primary)]">
               <Upload size={16} />
             </span>
             <div>
-              <p className="text-sm font-semibold text-[#1A1A1A]">Arquivo Excel</p>
-              <p className="text-[11px] text-[#9CA3AF]">Formato aceito: .xlsm ou .xlsx; dados cadastrais vêm do Painel Administrativo</p>
+              <p className="text-sm font-semibold text-[var(--foreground)]">Arquivo Excel</p>
+              <p className="text-[11px] text-[var(--muted-foreground)]">Formato aceito: .xlsm ou .xlsx; dados cadastrais vêm do Painel Administrativo</p>
             </div>
           </div>
         </div>
@@ -1338,21 +1338,21 @@ function ImportarPlanilhaSection({
         <form onSubmit={handleSubmit} className="grid gap-5 p-5">
           {/* File picker */}
           <div
-            className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#E5E7EB] bg-[#FAFAFA] py-8 text-center transition hover:border-[#AF1B1B] hover:bg-[#FFF5F5]"
+            className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[var(--border)] bg-[var(--surface-muted)] py-8 text-center transition hover:border-[var(--primary)] hover:bg-[var(--error-soft)]"
             onClick={() => document.getElementById("etl-file-input")?.click()}
           >
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#F3F4F6] text-[#9CA3AF]">
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--surface-hover)] text-[var(--muted-foreground)]">
               <Upload size={20} />
             </span>
             {file ? (
               <>
-                <span className="text-sm font-semibold text-[#AF1B1B]">{file.name}</span>
-                <span className="text-[11px] text-[#9CA3AF]">Clique para trocar o arquivo</span>
+                <span className="text-sm font-semibold text-[var(--primary)]">{file.name}</span>
+                <span className="text-[11px] text-[var(--muted-foreground)]">Clique para trocar o arquivo</span>
               </>
             ) : (
               <>
-                <span className="text-sm font-semibold text-[#555555]">Clique para selecionar o arquivo</span>
-                <span className="text-[11px] text-[#9CA3AF]">.xlsm ou .xlsx</span>
+                <span className="text-sm font-semibold text-[var(--muted-foreground)]">Clique para selecionar o arquivo</span>
+                <span className="text-[11px] text-[var(--muted-foreground)]">.xlsm ou .xlsx</span>
               </>
             )}
           </div>
@@ -1379,10 +1379,10 @@ function ImportarPlanilhaSection({
                 placeholder="Ou digite (ex: 2607)"
                 value={ciclo}
                 onChange={(e) => setCiclo(e.target.value)}
-                className="h-9 w-40 rounded-lg border border-[#E5E7EB] px-3 text-xs outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
+                className="h-9 w-40 rounded-lg border border-[var(--border)] px-3 text-xs outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20"
               />
             </div>
-            <p className="text-[11px] text-[#9CA3AF]">O ciclo informado separa as cargas. Se o ciclo já existir, a importação atualiza somente os fornecedores presentes no arquivo.</p>
+            <p className="text-[11px] text-[var(--muted-foreground)]">O ciclo informado separa as cargas. Se o ciclo já existir, a importação atualiza somente os fornecedores presentes no arquivo.</p>
           </div>
 
           {msg && (
@@ -1392,7 +1392,7 @@ function ImportarPlanilhaSection({
           <button
             type="submit"
             disabled={uploading || status?.running}
-            className="w-full rounded-xl bg-[#AF1B1B] py-2.5 text-sm font-semibold text-white transition hover:bg-[#8C1616] disabled:opacity-50"
+            className="w-full rounded-xl bg-[var(--primary)] py-2.5 text-sm font-semibold text-[var(--on-solid)] transition hover:bg-[var(--primary-hover)] disabled:opacity-50"
           >
             {uploading ? "Enviando…" : status?.running ? "Importando…" : "Iniciar importação"}
           </button>
@@ -1402,12 +1402,12 @@ function ImportarPlanilhaSection({
       {/* Resultado */}
       {status && (status.lastResult || status.lastError) && (
         <Card className="overflow-hidden">
-          <div className="border-b border-[#E5E7EB] px-5 py-4">
-            <p className="text-sm font-semibold text-[#1A1A1A]">Último resultado</p>
+          <div className="border-b border-[var(--border)] px-5 py-4">
+            <p className="text-sm font-semibold text-[var(--foreground)]">Último resultado</p>
           </div>
           <div className="p-5">
             {status.lastError ? (
-              <div className="grid gap-3 rounded-lg bg-[#FEF2F2] p-3 text-xs text-[#B91C1C]">
+              <div className="grid gap-3 rounded-lg bg-[var(--error-soft)] p-3 text-xs text-[var(--error)]">
                 <p className="whitespace-pre-line font-medium">
                   {status.lastErrorDetails?.length && status.lastErrorDetails.every(isUnresolvedIdentity)
                     ? identityBlockMessage(status.lastErrorDetails)
@@ -1416,7 +1416,7 @@ function ImportarPlanilhaSection({
                     : status.lastError}
                 </p>
                 {!!status.lastErrorDetails?.length && status.lastErrorDetails.every(isUnresolvedIdentity) && (
-                  <div className="rounded-lg bg-white p-3">
+                  <div className="rounded-lg bg-[var(--surface)] p-3">
                     <PendenciasEstruturais
                       detalhes={status.lastErrorDetails}
                       ciclo={status.lastErrorDetails.find((d) => d.ciclo)?.ciclo ?? null}
@@ -1446,27 +1446,27 @@ function ImportarPlanilhaSection({
                 <ResumoIdentidadesImportacao resultado={status.lastResult} />
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {Object.entries(status.lastResult).filter(([key, val]) => typeof val === "number" && !CHAVES_RESUMO_IDENTIDADE.has(key)).map(([key, val]) => (
-                    <div key={key} className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-[#9CA3AF]">{key.replace(/_/g, " ")}</p>
-                      <p className="mt-1 text-lg font-bold text-[#1A1A1A]">{val as number}</p>
+                    <div key={key} className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">{key.replace(/_/g, " ")}</p>
+                      <p className="mt-1 text-lg font-bold text-[var(--foreground)]">{val as number}</p>
                     </div>
                   ))}
                 </div>
                 {Array.isArray(status.lastResult.aliases_utilizados) && status.lastResult.aliases_utilizados.length > 0 && (
-                  <div className="text-xs text-[#555555]" data-testid="etl-aliases-utilizados">
-                    <p className="font-semibold text-[#1A1A1A]">Nomes resolvidos por alias</p>
+                  <div className="text-xs text-[var(--muted-foreground)]" data-testid="etl-aliases-utilizados">
+                    <p className="font-semibold text-[var(--foreground)]">Nomes resolvidos por alias</p>
                     <ul className="mt-1 grid gap-0.5">
                       {(status.lastResult.aliases_utilizados as string[]).map((a) => <li key={a}>{a.replace(" -> ", " → ")}</li>)}
                     </ul>
                   </div>
                 )}
                 {typeof status.lastResult.ciclo === "string" && (
-                  <div className="rounded-lg border border-[#E5E7EB] p-3">
+                  <div className="rounded-lg border border-[var(--border)] p-3">
                     <IdentidadesDoCicloPanel ciclo={status.lastResult.ciclo} onNovoFornecedor={onNovoFornecedor} />
                   </div>
                 )}
                 {Array.isArray(status.lastResult.sugestoes_cadastro_nao_aplicadas) && status.lastResult.sugestoes_cadastro_nao_aplicadas.length > 0 && (
-                  <div className="rounded-lg bg-[var(--warning-soft)] p-3 text-xs text-[#92400E]" data-testid="etl-sugestoes-cadastro">
+                  <div className="rounded-lg bg-[var(--warning-soft)] p-3 text-xs text-[var(--warning)]" data-testid="etl-sugestoes-cadastro">
                     <p className="font-semibold">Cadastros sugeridos por nome aproximado — não aplicados</p>
                     <p>Se for a mesma pessoa, cadastre o nome como alias do fornecedor e reimporte.</p>
                     <ul className="mt-1 grid gap-0.5">
@@ -1477,7 +1477,7 @@ function ImportarPlanilhaSection({
                   </div>
                 )}
                 {Array.isArray(status.lastResult.divergencias_bm_bloqueado) && status.lastResult.divergencias_bm_bloqueado.length > 0 && (
-                  <div className="rounded-lg bg-[var(--warning-soft)] p-3 text-xs text-[#92400E]" data-testid="etl-divergencias-bm-bloqueado">
+                  <div className="rounded-lg bg-[var(--warning-soft)] p-3 text-xs text-[var(--warning)]" data-testid="etl-divergencias-bm-bloqueado">
                     <p className="font-semibold">BMs aprovados ou pagos não foram alterados</p>
                     <p>A planilha diverge destes BMs já aprovados pelo fornecedor. Os valores do sistema foram mantidos; a correção exige tratamento manual.</p>
                     <ul className="mt-1 grid gap-0.5">
@@ -1495,11 +1495,11 @@ function ImportarPlanilhaSection({
         </Card>
       )}
 
-      <Card className="overflow-hidden border-[#FCA5A5]">
+      <Card className="overflow-hidden border-[var(--error)]/30">
         <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-bold text-[#1A1A1A]">Ambiente de testes</p>
-            <p className="mt-0.5 text-xs text-[#555555]">Limpa os dados importados e mantém os usuários internos para novo teste.</p>
+            <p className="text-sm font-bold text-[var(--foreground)]">Ambiente de testes</p>
+            <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">Limpa os dados importados e mantém os usuários internos para novo teste.</p>
           </div>
           <Button
             variant="danger"

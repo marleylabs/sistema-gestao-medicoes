@@ -683,7 +683,7 @@ function PaymentModal({
               <button
                 type="button"
                 onClick={onBack}
-                className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] font-semibold text-[var(--muted-foreground)] hover:bg-[#F7F7F5] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/30"
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] font-semibold text-[var(--muted-foreground)] hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/30"
               >
                 <ArrowLeft size={14} />
                 Voltar ao fornecedor
@@ -702,7 +702,7 @@ function PaymentModal({
               {ciclo !== "GERAL" && <span className="font-technical text-[11px]">{ciclo}</span>}
               {form.projetistaCodigo && <span className="font-technical text-[11px]">· {form.projetistaCodigo}</span>}
               {!item && selecionado && !selecionado.cadastroAdministrativo && (
-                <span className="text-[#92400E]">· Legado · sem cadastro administrativo</span>
+                <span className="text-[var(--warning)]">· Legado · sem cadastro administrativo</span>
               )}
             </div>
           </div>
@@ -712,11 +712,11 @@ function PaymentModal({
         <div className="min-h-0 flex-1 overflow-y-auto">
 
           {/* Resumo — mesmos valores de sempre (item.valor salvo e os totais já calculados neste formulário). */}
-          {mostrarResumo && <section className={`grid grid-cols-2 gap-2 border-b border-[var(--border)] bg-[#FAFAF8] px-5 py-4 sm:grid-cols-3 sm:px-6 ${item ? "lg:grid-cols-5" : "lg:grid-cols-4"}`} aria-label="Resumo do pagamento">
+          {mostrarResumo && <section className={`grid grid-cols-2 gap-2 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4 sm:grid-cols-3 sm:px-6 ${item ? "lg:grid-cols-5" : "lg:grid-cols-4"}`} aria-label="Resumo do pagamento">
             {resumo.map((r) => (
-              <div key={r.label} className={`min-w-0 rounded-lg border border-[var(--border)] bg-white px-3 py-2 ${r.tom === "strong" ? "col-span-2 sm:col-span-1" : ""}`}>
+              <div key={r.label} className={`min-w-0 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 ${r.tom === "strong" ? "col-span-2 sm:col-span-1" : ""}`}>
                 <p className="truncate text-[11px] text-[var(--muted-foreground)]">{r.label}</p>
-                <p className={`mt-0.5 truncate text-sm tabular-nums ${r.tom === "danger" ? "font-semibold text-[#DC2626]" : r.tom === "strong" ? "font-bold text-[var(--foreground)]" : "font-semibold text-[var(--foreground)]"}`}>
+                <p className={`mt-0.5 truncate text-sm tabular-nums ${r.tom === "danger" ? "font-semibold text-[var(--error)]" : r.tom === "strong" ? "font-bold text-[var(--foreground)]" : "font-semibold text-[var(--foreground)]"}`}>
                   <BlurValue>{r.valor}</BlurValue>
                 </p>
               </div>
@@ -734,7 +734,7 @@ function PaymentModal({
                 <MField label="Nome" className="md:col-span-2">
                   <div className="relative" ref={suggestionsRef}>
                     <input
-                      className="h-9 w-full rounded-lg border border-[#E5E7EB] bg-white px-3 text-sm text-[#1A1A1A] outline-none placeholder:text-[#9CA3AF] hover:border-[#D1D5DB] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/15"
+                      className="h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]/70 hover:border-[var(--border-strong)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/15"
                       placeholder="Buscar fornecedor..."
                       value={codigoQuery}
                       onChange={(e) => {
@@ -749,29 +749,29 @@ function PaymentModal({
                       autoComplete="off"
                     />
                     {showSuggestions && suggestions.length > 0 && (
-                      <div className="absolute left-0 top-10 z-10 w-full overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white shadow-lg" style={{ maxHeight: "240px" }}>
+                      <div className="absolute left-0 top-10 z-10 w-full overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg" style={{ maxHeight: "240px" }}>
                         {suggestions.map((p) => (
                           <button
                             key={p.id}
                             type="button"
-                            className="flex w-full flex-col border-b border-[#F3F4F6] px-3 py-2 text-left last:border-0 hover:bg-[#F5F5F5]"
+                            className="flex w-full flex-col border-b border-[var(--surface-hover)] px-3 py-2 text-left last:border-0 hover:bg-[var(--surface-muted)]"
                             onMouseDown={() => selectProfissional(p)}
                           >
                             {/* Nome em destaque; razão social/CNPJ distinguem homônimos. */}
-                            <span className="text-sm font-semibold text-[#1A1A1A]">{p.nomeCompleto || p.nome}</span>
+                            <span className="text-sm font-semibold text-[var(--foreground)]">{p.nomeCompleto || p.nome}</span>
                             {(p.razaoSocial || p.cnpj) && (
-                              <span className="text-xs text-[#555555]">{[p.razaoSocial, p.cnpj ? maskCpfCnpj(p.cnpj) : null].filter(Boolean).join(" · ")}</span>
+                              <span className="text-xs text-[var(--muted-foreground)]">{[p.razaoSocial, p.cnpj ? maskCpfCnpj(p.cnpj) : null].filter(Boolean).join(" · ")}</span>
                             )}
                             {/* Origem da identidade (sem afirmar duplicidade): identidades distintas nunca são fundidas aqui. */}
                             <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]" data-testid="sugestao-origem">
                               {p.cadastroAdministrativo ? (
-                                <span className="rounded border border-[#cde9d5] bg-[var(--success-soft)] px-1.5 py-0.5 font-semibold text-[var(--success)]">Cadastro administrativo</span>
+                                <span className="rounded border border-[var(--success)]/30 bg-[var(--success-soft)] px-1.5 py-0.5 font-semibold text-[var(--success)]">Cadastro administrativo</span>
                               ) : (
-                                <span className="rounded border border-[#f2dbb7] bg-[var(--warning-soft)] px-1.5 py-0.5 font-semibold text-[#92400E]">Legado · sem cadastro administrativo</span>
+                                <span className="rounded border border-[var(--warning)]/35 bg-[var(--warning-soft)] px-1.5 py-0.5 font-semibold text-[var(--warning)]">Legado · sem cadastro administrativo</span>
                               )}
-                              <span className="font-technical text-[#71717A]">{p.codigo || p.nome}</span>
+                              <span className="font-technical text-[var(--muted-foreground)]">{p.codigo || p.nome}</span>
                               {aliasEncontrado(p, codigoQuery.trim().toLowerCase()) && (
-                                <span className="text-[#71717A]" data-testid="sugestao-alias">· Encontrado por: {aliasEncontrado(p, codigoQuery.trim().toLowerCase())}</span>
+                                <span className="text-[var(--muted-foreground)]" data-testid="sugestao-alias">· Encontrado por: {aliasEncontrado(p, codigoQuery.trim().toLowerCase())}</span>
                               )}
                             </span>
                           </button>
@@ -783,13 +783,13 @@ function PaymentModal({
 
                 {/* CNPJ e Razão social — somente leitura: fonte única é o cadastro administrativo. */}
                 <MField label="CNPJ">
-                  <Input value={form.cpfCnpj} readOnly placeholder="Preenchido automaticamente" className="cursor-not-allowed bg-[#F9FAFB] font-technical text-[#555555]" />
+                  <Input value={form.cpfCnpj} readOnly placeholder="Preenchido automaticamente" className="cursor-not-allowed bg-[var(--surface-muted)] font-technical text-[var(--muted-foreground)]" />
                 </MField>
                 {!item && selecionado && !selecionado.cadastroAdministrativo && (
-                  <p className="text-[12px] text-[#92400E] md:col-span-2" data-testid="aviso-sem-cadastro">Sem cadastro administrativo vinculado.</p>
+                  <p className="text-[12px] text-[var(--warning)] md:col-span-2" data-testid="aviso-sem-cadastro">Sem cadastro administrativo vinculado.</p>
                 )}
                 <MField label="Razão social">
-                  <Input value={form.razaoSocial} readOnly placeholder="Preenchida automaticamente" className="cursor-not-allowed bg-[#F9FAFB] text-[#555555]" />
+                  <Input value={form.razaoSocial} readOnly placeholder="Preenchida automaticamente" className="cursor-not-allowed bg-[var(--surface-muted)] text-[var(--muted-foreground)]" />
                 </MField>
               </div>
             </section>
@@ -800,7 +800,7 @@ function PaymentModal({
               {item && contratos.length > 0 ? (
                 <ul className={`grid gap-x-6 rounded-lg border border-[var(--border)] px-3 ${contratos.length > 1 ? "sm:grid-cols-2" : ""}`}>
                   {contratos.map((c) => (
-                    <li key={c.id} className="flex items-center justify-between gap-3 border-b border-[#EFEFED] py-2 text-sm last:border-0 sm:[&:nth-last-child(2):nth-child(odd)]:border-0">
+                    <li key={c.id} className="flex items-center justify-between gap-3 border-b border-[var(--border)] py-2 text-sm last:border-0 sm:[&:nth-last-child(2):nth-child(odd)]:border-0">
                       <span className="min-w-0 truncate text-[var(--foreground)]">{c.nome}</span>
                       <span className="shrink-0 tabular-nums font-semibold text-[var(--foreground)]">{formatParticipacao(item.participacaoContratos[c.id])}</span>
                     </li>
@@ -812,7 +812,7 @@ function PaymentModal({
                 </p>
               )}
               {item && item.documentosPendentesContrato > 0 && (
-                <p className="flex items-start gap-1.5 text-xs text-[#B45309]">
+                <p className="flex items-start gap-1.5 text-xs text-[var(--warning)]">
                   <AlertTriangle size={13} className="mt-0.5 shrink-0" />
                   {item.documentosPendentesContrato} documento(s) medido(s) sem contrato (CTO) válido — {money(item.valorNaoClassificadoContrato)} ({percent.format(item.percentualNaoClassificadoContrato / 100)} do total) ainda não classificado. Os percentuais acima já refletem essa pendência (não somam 100%).
                 </p>
@@ -868,7 +868,7 @@ function PaymentModal({
                   {descontos.map((desconto) => {
                     const isDeleting = desconto.id ? deletingDocIds.has(desconto.id) : false;
                     return (
-                      <div key={desconto._key} className="grid gap-2 border-b border-[#EFEFED] p-3 last:border-0 sm:grid-cols-[1fr_170px_auto] sm:items-end">
+                      <div key={desconto._key} className="grid gap-2 border-b border-[var(--border)] p-3 last:border-0 sm:grid-cols-[1fr_170px_auto] sm:items-end">
                         <label className="grid gap-1 text-[11px] text-[var(--muted-foreground)]">
                           Descrição do desconto
                           <Input value={desconto.obs} onChange={(e) => updateDiscount(desconto._key, "obs", e.target.value)} placeholder="Ex: retenção, ajuste, abatimento..." />
@@ -881,12 +881,12 @@ function PaymentModal({
                             onChange={(e) => updateDiscount(desconto._key, "condicao", e.target.value)}
                             onBlur={(e) => updateDiscount(desconto._key, "condicao", currencyInputValue(Math.abs(parseCurrencyNumber(e.target.value))))}
                             placeholder="R$ 0,00"
-                            className="font-semibold text-[#DC2626]"
+                            className="font-semibold text-[var(--error)]"
                           />
                         </label>
                         <div className="flex gap-1 sm:justify-end">
                           <Button variant="secondary" className="h-9 px-3 text-xs" disabled={docsSaving} onClick={() => saveDocLine(desconto)}>Salvar</Button>
-                          <IconButton className="h-9 w-9 hover:border-[#DC2626] hover:text-[#DC2626]" disabled={isDeleting} onClick={() => deleteDocLine(desconto)} title="Excluir desconto">
+                          <IconButton className="h-9 w-9 hover:border-[var(--error)] hover:text-[var(--error)]" disabled={isDeleting} onClick={() => deleteDocLine(desconto)} title="Excluir desconto">
                             <Trash2 size={14} />
                           </IconButton>
                         </div>
@@ -898,7 +898,7 @@ function PaymentModal({
               {totalDescontos > 0 && (
                 <p className="flex justify-end gap-3 text-xs">
                   <span className="text-[var(--muted-foreground)]">Total de descontos</span>
-                  <span className="font-bold text-[#DC2626]">- {currency.format(totalDescontos)}</span>
+                  <span className="font-bold text-[var(--error)]">- {currency.format(totalDescontos)}</span>
                 </p>
               )}
             </section>
@@ -934,24 +934,24 @@ function PaymentModal({
               {docsLoading ? (
                 <p className="text-center text-xs text-[var(--muted-foreground)]">Carregando documentos…</p>
               ) : docs.length === 0 && totalCondicoesFixas <= 0 ? (
-                <p className="rounded-lg border border-dashed border-[var(--border)] bg-[#FAFAF8] px-3 py-4 text-center text-xs text-[var(--muted-foreground)]">
+                <p className="rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-3 py-4 text-center text-xs text-[var(--muted-foreground)]">
                   Nenhum documento medido adicionado. Use &quot;Adicionar linha&quot; para incluir.
                 </p>
               ) : (
                 <div className="max-w-full overflow-x-auto rounded-lg border border-[var(--border)]">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="border-b border-[#E5E7EB] bg-[#FAFAF8]">
+                      <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)]">
                         {["SE", "CTO", "NR VALE", "Formato", "A1eq/HH", "% Emissão", "TIPO DG/DOC/HH", "Preço Unit.", "Valor Medido", "Observação", ""].map((h) => (
-                          <th key={h} className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[#555555]">{h}</th>
+                          <th key={h} className="whitespace-nowrap px-2 py-2 text-left font-semibold text-[var(--muted-foreground)]">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {totalCondicoesFixas > 0 && (
-                        <tr className="border-b border-[#EFEFED] bg-[#FAFAF8]">
+                        <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)]">
                           <td className="px-2 py-2">
-                            <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--foreground)] ring-1 ring-[var(--border)]">Fixo</span>
+                            <span className="rounded-full bg-[var(--surface)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--foreground)] ring-1 ring-[var(--border)]">Fixo</span>
                           </td>
                           <td className="px-2 py-2 font-semibold text-[var(--foreground)]">{form.tipoContratacao || "FIXO (PJ)"}</td>
                           <td className="px-2 py-2 text-[var(--muted-foreground)]" colSpan={6}>
@@ -968,9 +968,9 @@ function PaymentModal({
                         const isDeleting = doc.id ? deletingDocIds.has(doc.id) : false;
                         if (desconto) {
                           return (
-                            <tr key={doc._key} className="border-b border-[#FEE2E2] bg-white text-[#DC2626] last:border-0">
+                            <tr key={doc._key} className="border-b border-[var(--error-soft)] bg-[var(--surface)] text-[var(--error)] last:border-0">
                               <td className="px-2 py-2">
-                                <span className="rounded-full bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-bold uppercase text-[#DC2626] ring-1 ring-[#FECACA]">Desconto</span>
+                                <span className="rounded-full bg-[var(--error-soft)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--error)] ring-1 ring-[var(--error)]/30">Desconto</span>
                               </td>
                               <td className="px-2 py-2" colSpan={7}><span className="font-semibold">{doc.obs || "Desconto aplicado"}</span></td>
                               <td className="px-2 py-2 text-right font-bold">- {currency.format(Math.abs(valorMedido))}</td>
@@ -980,41 +980,41 @@ function PaymentModal({
                           );
                         }
                         return (
-                          <tr key={doc._key} className="border-b border-[#F3F4F6] last:border-0 hover:bg-[#FAFAFA]">
+                          <tr key={doc._key} className="border-b border-[var(--surface-hover)] last:border-0 hover:bg-[var(--surface-muted)]">
                             <td className="px-2 py-1.5">
-                              <input className="h-7 w-20 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.se} onChange={(e) => updateDoc(doc._key, "se", e.target.value)} placeholder="SE-001" />
+                              <input className="h-7 w-20 rounded border border-[var(--border)] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.se} onChange={(e) => updateDoc(doc._key, "se", e.target.value)} placeholder="SE-001" />
                             </td>
                             <td className="px-2 py-1.5">
-                              <input className="h-7 w-24 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.contrato} onChange={(e) => updateDoc(doc._key, "contrato", e.target.value)} placeholder="CTO-X" />
+                              <input className="h-7 w-24 rounded border border-[var(--border)] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.contrato} onChange={(e) => updateDoc(doc._key, "contrato", e.target.value)} placeholder="CTO-X" />
                             </td>
                             <td className="px-2 py-1.5">
-                              <input className="h-7 w-24 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.numeroDocumento} onChange={(e) => updateDoc(doc._key, "numeroDocumento", e.target.value)} placeholder="NR-0001" />
+                              <input className="h-7 w-24 rounded border border-[var(--border)] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.numeroDocumento} onChange={(e) => updateDoc(doc._key, "numeroDocumento", e.target.value)} placeholder="NR-0001" />
                             </td>
                             <td className="px-2 py-1.5">
-                              <input className="h-7 w-16 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.formato} onChange={(e) => updateDoc(doc._key, "formato", e.target.value)} placeholder="A1" />
+                              <input className="h-7 w-16 rounded border border-[var(--border)] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.formato} onChange={(e) => updateDoc(doc._key, "formato", e.target.value)} placeholder="A1" />
                             </td>
                             <td className="px-2 py-1.5">
-                              <input className="h-7 w-16 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.equivalenteA1Horas} onChange={(e) => updateDoc(doc._key, "equivalenteA1Horas", e.target.value)} placeholder="0" inputMode="decimal" />
-                            </td>
-                            <td className="px-2 py-1.5">
-                              <div className="relative">
-                                <input className="h-7 w-16 rounded border border-[#E5E7EB] px-2 pr-5 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.percentualEmissao} onChange={(e) => updateDoc(doc._key, "percentualEmissao", e.target.value)} placeholder="100" inputMode="decimal" />
-                                <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-[#9CA3AF]">%</span>
-                              </div>
-                            </td>
-                            <td className="px-2 py-1.5">
-                              <input className="h-7 w-28 rounded border border-[#E5E7EB] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.tipo2} onChange={(e) => updateDoc(doc._key, "tipo2", e.target.value)} placeholder="Tipo" />
+                              <input className="h-7 w-16 rounded border border-[var(--border)] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.equivalenteA1Horas} onChange={(e) => updateDoc(doc._key, "equivalenteA1Horas", e.target.value)} placeholder="0" inputMode="decimal" />
                             </td>
                             <td className="px-2 py-1.5">
                               <div className="relative">
-                                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-[#9CA3AF]">R$</span>
-                                <input className="h-7 w-24 rounded border border-[#E5E7EB] pl-7 pr-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.condicao} onChange={(e) => updateDoc(doc._key, "condicao", e.target.value)} placeholder="0" inputMode="decimal" />
+                                <input className="h-7 w-16 rounded border border-[var(--border)] px-2 pr-5 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.percentualEmissao} onChange={(e) => updateDoc(doc._key, "percentualEmissao", e.target.value)} placeholder="100" inputMode="decimal" />
+                                <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-[var(--muted-foreground)]">%</span>
                               </div>
                             </td>
-                            <td className="px-2 py-1.5 text-right font-semibold text-[#1A1A1A]">{currency.format(valorMedido)}</td>
+                            <td className="px-2 py-1.5">
+                              <input className="h-7 w-28 rounded border border-[var(--border)] px-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.tipo2} onChange={(e) => updateDoc(doc._key, "tipo2", e.target.value)} placeholder="Tipo" />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <div className="relative">
+                                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-[var(--muted-foreground)]">R$</span>
+                                <input className="h-7 w-24 rounded border border-[var(--border)] pl-7 pr-2 text-xs focus:border-[var(--primary)] focus:outline-none" value={doc.condicao} onChange={(e) => updateDoc(doc._key, "condicao", e.target.value)} placeholder="0" inputMode="decimal" />
+                              </div>
+                            </td>
+                            <td className="px-2 py-1.5 text-right font-semibold text-[var(--foreground)]">{currency.format(valorMedido)}</td>
                             <td className="px-2 py-1.5">
                               <input
-                                className={`h-7 w-40 rounded border px-2 text-xs focus:outline-none focus:ring-1 ${doc._dirty ? "border-[#F59E0B]/60 bg-[#FFFBEB] placeholder:text-[#D97706]/60 focus:border-[#F59E0B] focus:ring-[#F59E0B]/30" : "border-[#E5E7EB] bg-white placeholder:text-[#D1D5DB] focus:border-[var(--primary)] focus:ring-[var(--primary)]/15"}`}
+                                className={`h-7 w-40 rounded border px-2 text-xs focus:outline-none focus:ring-1 ${doc._dirty ? "border-[var(--warning)]/60 bg-[var(--warning-soft)] placeholder:text-[var(--warning)]/60 focus:border-[var(--warning)] focus:ring-[var(--warning)]/30" : "border-[var(--border)] bg-[var(--surface)] placeholder:text-[var(--border-strong)] focus:border-[var(--primary)] focus:ring-[var(--primary)]/15"}`}
                                 value={doc.obs}
                                 onChange={(e) => updateDoc(doc._key, "obs", e.target.value)}
                                 placeholder="Observação…"
@@ -1022,10 +1022,10 @@ function PaymentModal({
                             </td>
                             <td className="px-2 py-1.5">
                               <div className="flex gap-1">
-                                <button type="button" disabled={docsSaving} className="rounded p-1 text-[var(--foreground)] hover:bg-[#F4F4F2] disabled:opacity-40" onClick={() => saveDocLine(doc)} title="Salvar linha">
+                                <button type="button" disabled={docsSaving} className="rounded p-1 text-[var(--foreground)] hover:bg-[var(--surface-muted)] disabled:opacity-40" onClick={() => saveDocLine(doc)} title="Salvar linha">
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                                 </button>
-                                <button type="button" disabled={isDeleting} className="rounded p-1 text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-40" onClick={() => deleteDocLine(doc)} title="Excluir linha">
+                                <button type="button" disabled={isDeleting} className="rounded p-1 text-[var(--error)] hover:bg-[var(--error-soft)] disabled:opacity-40" onClick={() => deleteDocLine(doc)} title="Excluir linha">
                                   <Trash2 size={13} />
                                 </button>
                               </div>
@@ -1044,7 +1044,7 @@ function PaymentModal({
         {/* Footer fixo no fim do painel — ações sempre visíveis durante a rolagem. */}
         <footer className="border-t border-[var(--border)] bg-[var(--surface)] px-5 py-3 sm:px-6">
           {savePaymentError && (
-            <div role="alert" className="mb-2 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] px-3 py-2 text-sm font-semibold text-[#AF1B1B]">
+            <div role="alert" className="mb-2 rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-3 py-2 text-sm font-semibold text-[var(--primary)]">
               {savePaymentError}
             </div>
           )}

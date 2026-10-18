@@ -24,7 +24,7 @@ export function FinanceiroTable({ itens, onOpen }: { itens: FinanceiroItem[]; on
     <>
       <div className="hidden w-full max-w-full overflow-x-auto md:block">
         <table className="w-full border-collapse text-sm" data-testid="financeiro-tabela">
-          <thead className="bg-[#FAFAF8]">
+          <thead className="bg-[var(--surface-muted)]">
             <tr>
               {[
                 ["Fornecedor", "text-left", ""],
@@ -54,7 +54,7 @@ export function FinanceiroTable({ itens, onOpen }: { itens: FinanceiroItem[]; on
                     }
                   }}
                   aria-label={`Abrir pagamento de ${item.colaboradorNome}`}
-                  className="cursor-pointer border-b border-[#EFEFED] transition-colors last:border-0 hover:bg-[#FAFAF8] focus-visible:bg-[#FAFAF8] focus-visible:outline-none"
+                  className="cursor-pointer border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--surface-muted)] focus-visible:bg-[var(--surface-muted)] focus-visible:outline-none"
                 >
                   <td className="px-3 py-3 xl:px-4">
                     <p className="max-w-[240px] truncate font-semibold text-[var(--foreground)] xl:max-w-[300px]">{item.colaboradorNome}</p>
@@ -81,7 +81,7 @@ export function FinanceiroTable({ itens, onOpen }: { itens: FinanceiroItem[]; on
             })}
           </tbody>
           <tfoot>
-            <tr className="border-t border-[var(--border)] bg-[#FAFAF8]">
+            <tr className="border-t border-[var(--border)] bg-[var(--surface-muted)]">
               <td className="px-3 py-2.5 text-[12px] text-[var(--muted-foreground)] xl:px-4">{itens.length} fornecedor(es)</td>
               <td className="hidden xl:table-cell" />
               <td className="hidden lg:table-cell" />
@@ -95,12 +95,12 @@ export function FinanceiroTable({ itens, onOpen }: { itens: FinanceiroItem[]; on
         </table>
       </div>
 
-      <ul className="divide-y divide-[#EFEFED] md:hidden" data-testid="financeiro-lista-mobile">
+      <ul className="divide-y divide-[var(--border)] md:hidden" data-testid="financeiro-lista-mobile">
         {itens.map((item) => {
           const status = statusInfo(item.status);
           return (
             <li key={item.id}>
-              <button type="button" onClick={() => onOpen(item)} aria-label={`Abrir pagamento de ${item.colaboradorNome}`} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[#FAFAF8]">
+              <button type="button" onClick={() => onOpen(item)} aria-label={`Abrir pagamento de ${item.colaboradorNome}`} className="flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left hover:bg-[var(--surface-muted)]">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-[var(--foreground)]">{item.colaboradorNome}</p>
                   <p className="truncate text-[12px] text-[var(--muted-foreground)]">{item.razaoSocial ?? item.colaboradorCodigo}</p>

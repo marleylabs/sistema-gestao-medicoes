@@ -30,19 +30,19 @@ export function AlterarSenhaModal({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-xl border border-[#E5E7EB] bg-white p-6 shadow-2xl">
+      <div className="w-full max-w-md rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl">
         <div className="mb-5 flex items-center gap-3">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#FFFBEB] text-[#D97706]">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--warning-soft)] text-[var(--warning)]">
             <KeyRound size={20} />
           </span>
           <div>
-            <h2 className="text-base font-bold text-[#1A1A1A]">Criar sua senha</h2>
-            <p className="text-xs text-[#555555]">Este é seu primeiro acesso. Defina uma senha pessoal.</p>
+            <h2 className="text-base font-bold text-[var(--foreground)]">Criar sua senha</h2>
+            <p className="text-xs text-[var(--muted-foreground)]">Este é seu primeiro acesso. Defina uma senha pessoal.</p>
           </div>
         </div>
 
         <form className="grid gap-4" onSubmit={submit}>
-          <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
+          <label className="grid gap-1.5 text-sm font-semibold text-[var(--foreground)]">
             Nova senha
             <Input
               type="password"
@@ -53,7 +53,7 @@ export function AlterarSenhaModal({ onSuccess }: { onSuccess: () => void }) {
               autoFocus
             />
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-[#1A1A1A]">
+          <label className="grid gap-1.5 text-sm font-semibold text-[var(--foreground)]">
             Confirmar senha
             <Input
               type="password"
@@ -63,7 +63,7 @@ export function AlterarSenhaModal({ onSuccess }: { onSuccess: () => void }) {
               required
             />
           </label>
-          {error && <p className="rounded-md bg-[#FEF2F2] px-3 py-2 text-sm text-[#B91C1C]">{error}</p>}
+          {error && <p className="rounded-md bg-[var(--error-soft)] px-3 py-2 text-sm text-[var(--error)]">{error}</p>}
           <Button type="submit" className="mt-1 w-full" disabled={loading}>
             {loading ? "Salvando…" : "Definir senha e entrar"}
           </Button>

@@ -4,11 +4,13 @@ atualizado: 2026-10-18
 # Status
 
 ## Em andamento
+- **Layout: tema claro/escuro e motion** ([spec](specs/layout-tema-motion.md) aprovada em 2026-10-17, [plano do M1](specs/layout-tema-motion-plano.md) aprovado). Fundação (M1) primeiro, depois login/dashboard, setores e portal. T1 (tokens escuros, `lib/tema.ts`), T2 (alternador Claro/Escuro/Sistema no menu da conta, script anti-flash no `app/layout.tsx`) e T3 (45 arquivos de hex fixo para tokens) feitas, sem commit. Checkpoint A aprovado. T4 (primitivas em `components/motion.tsx`, press nos botões, título animado) feita: `test:targeted` 517/517, E2E 207/207. T5 (troca de seção animada, indicador do menu, entrada dos diálogos) feita. M1 completo, sem commit: `test:targeted` 520/520, E2E 207/207. `/review` e `/ponytail-review` feitos em 2026-10-18; os itens 1 a 7 foram corrigidos (sem animação na carga inicial, press com motion reduzido, contraste da sidebar, hovers, seletor acessível, primitivas sem uso removidas, guardas novas). `test:targeted` 523/523, E2E 207/207. Falta o commit (só com pedido); depois, M2 (login e dashboard, incluindo as cores do recharts, `Stagger` e `CountUp`).
 - **P2 — P0 como único ID do fornecedor** ([spec](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)). T1 a T5 prontas e testadas no ambiente local; nada implantado. **Pré-produção migrada e implantada em 2026-10-18 (UTC)** com 2e1a9a4: 55/55 migrados, medição ok antes e depois do deploy, smoke ok ([plano, T6](specs/p2-vinculo-login-profissional-plano.md), [runbook](../runbook-p0-pre-producao.md)). Falta a produção: novo ensaio local com um backup dela, runbook ajustado, `/review` e `/ponytail-review` antes.
   - Ordem combinada em 2026-10-17: tudo no ambiente local primeiro. O ensaio com dados reais roda numa cópia local de um backup da pré-produção; o servidor só é tocado na T6.
   - Tudo enviado ao GitHub em 2026-10-17: `release/2026-10-02-import-identities` em 6fec06d (spec, T1 a T5, E2E do financeiro, ensaio e runbook). Candidato a `APPROVED_SHA` do runbook: este commit ou o seguinte, que só atualiza o status. `layout2.0` continua em 58375bb.
 - Pré-produção roda 2e1a9a4 (8 migrations, dados no P0). Rollback: imagens `local/medicoes-{web,etl}-rollback:20261018T011856Z` + `~/backups-medicoes/p0_20261018T011856Z/` (dump, JSONs, logs). Ficou lá um fornecedor de teste do smoke, com medição.
 - Pré-produção: o volume antigo `projetocrud-medio_postgres_data` não é usado (o banco está no `_v2`); avaliar a remoção fora de janela, com backup.
+- Intermitência vista em 2026-10-18: numa rodada de `test:targeted` logo depois do E2E, 2 testes de `tests/migrar-codigo-p0.test.ts` (medir e reverter) falharam. Passaram isolados (16/16) e em duas rodadas completas seguidas (520/520). Suspeita: estado residual do E2E no banco compartilhado. Não investigado.
 - Testes em 2026-10-17, com a T5 no ambiente local: `test:targeted` 506/506, `pytest etl/` 44/44 e E2E 207/207 em duas rodadas seguidas, no `medicoes_e2e_bm`, depois de `npm run test:e2e:seed` nesse banco.
 - Integração em `layout2.0`/`release/*`; `main` (13b7cd7) está 85 commits atrás.
 
@@ -29,13 +31,14 @@ atualizado: 2026-10-18
 - O banco `medicoes_e2e` está sem as migrations de 2026-09-28 em diante; use `medicoes_e2e_bm`. Um banco de teste novo precisa de `prisma migrate deploy` e de `npm run test:e2e:seed`; sem o seed, `tests/identidade-importacao.test.ts` falha (ver [pendências](pendencias.md)).
 
 ## Cuidados operacionais
+- `next dev` reescreve `tsconfig.json` (acrescenta `.next/dev/dev/types`): reverta com `git checkout -- tsconfig.json` antes de commitar. Para ver o app contra o banco de teste, use `.claude/launch.json` (`dev-banco-teste`, porta 3100), que carrega o `.env.test`.
 - O banco DEV local (`medicoes`) deste notebook está sem as migrations recentes (não tem `profissional_aliases`).
 - Nunca usar `docker compose down -v`, `docker volume rm` nem `prune`: apagam o banco.
 - `npm run build` e o Playwright compartilham `.next`: rode `rm -rf .next` depois do build.
 
 ## Últimas mudanças (máx. 5, mais recente primeiro)
+- 2026-10-18: M1 do layout completo (T1 a T5): modo escuro com contraste medido, alternador no menu da conta, cores fixas migradas para tokens, primitivas de motion (`components/motion.tsx`), títulos e troca de seção animados, entrada dos diálogos. Sem commit.
 - 2026-10-18: T6 da P2 na pré-produção: 55/55 fornecedores no P0, deploy de 2e1a9a4, medição e smoke ok.
 - 2026-10-17: E2E do financeiro com projeto próprio. O projeto arbitrário podia se chamar "DESCONTO" e transformar documentos em desconto; o E2E completo agora passa 206/206 em duas rodadas seguidas.
 - 2026-10-17: T4 da P2: o app não liga mais usuário e cadastro do fornecedor pelo nome (portal, NF, listagem, inativação, exclusão, edição). Regra única em `usuariosDoFornecedor` (`lib/codigo-p0.ts`); a migração inclui os inativos. `test:targeted` 506/506, E2E 206/206.
 - 2026-10-17: T3 da P2: fornecedor novo nasce com P0 (nome vira alias `CADASTRO`); identidade antiga reativada passa para o P0 do login (`lib/codigo-p0.ts`); usuário de outro fornecedor nunca é reaproveitado pelo nome. `test:targeted` 498/498, E2E de fornecedor 46/46 (2 rodadas).
-- 2026-10-17: T2 da P2 (P0 como ID): migração com aplicar, medir e reverter (`lib/migracao-codigo-p0.ts`, `scripts/migrar-codigo-p0.ts`), sem mudança no ETL. `test:targeted` 493/493, `pytest etl/` 44/44.

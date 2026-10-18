@@ -234,7 +234,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
               </div>
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
                 <span className="relative min-w-0 sm:w-[300px]">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#9CA3AF]" size={14} />
+                  <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[var(--muted-foreground)]" size={14} />
                   <Input
                     className="pl-8"
                     aria-label="Buscar pagamentos"
@@ -279,7 +279,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
       {/* Modal BM — boletim completo (mesmo componente/endpoint de sempre), acima do detalhe. */}
       {modalAberto && (
         <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-0 backdrop-blur-[1px] sm:p-4 sm:pt-10">
-          <div className="min-h-screen w-full max-w-5xl rounded-none bg-white shadow-2xl sm:min-h-0 sm:rounded-xl">
+          <div className="min-h-screen w-full max-w-5xl rounded-none bg-[var(--surface)] shadow-2xl sm:min-h-0 sm:rounded-xl">
             <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
               <p className="text-sm font-semibold text-[var(--foreground)]">Boletim de Medição</p>
               <IconButton onClick={() => { setBmData(null); setBmLoading(false); setBmError(null); }} title="Fechar boletim">
@@ -293,7 +293,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
                   Carregando boletim…
                 </div>
               ) : bmError ? (
-                <div className="rounded-lg border border-[#efc6c6] bg-[var(--error-soft)] px-4 py-3 text-sm font-medium text-[var(--error)]">{bmError}</div>
+                <div className="rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-4 py-3 text-sm font-medium text-[var(--error)]">{bmError}</div>
               ) : bmData ? (
                 <BoletimMedicao data={bmData} />
               ) : null}
@@ -303,7 +303,7 @@ export function FinanceiroPanel({ ciclos, exportOnly = false }: { ciclos: CicloE
       )}
 
       {toast && (
-        <div className="fixed bottom-5 right-5 z-[80] rounded-lg bg-[#16A34A] px-4 py-3 text-sm font-semibold text-white shadow-lg">{toast}</div>
+        <div className="fixed bottom-5 right-5 z-[80] rounded-lg bg-[var(--success)] px-4 py-3 text-sm font-semibold text-[var(--on-solid)] shadow-lg">{toast}</div>
       )}
     </PageContainer>
   );

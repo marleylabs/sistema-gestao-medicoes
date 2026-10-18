@@ -1,10 +1,12 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, CheckCircle2, ChevronRight, Clock3, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, Monitor, Pencil, Settings, ShieldCheck, Smartphone, Trash2, X } from "lucide-react";
+import { Camera, CheckCircle2, ChevronRight, Clock3, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, Monitor, Moon, Pencil, Settings, ShieldCheck, Smartphone, Sun, Trash2, X } from "lucide-react";
 import { clsx } from "clsx";
 import { Button, Input } from "@/components/ui";
+import { useTema } from "@/components/providers";
 import type { AuthUser } from "@/lib/session";
+import type { PreferenciaTema } from "@/lib/tema";
 import { podeAlterarProprioNome, validateUserDisplayName } from "@/lib/usuario-nome";
 import { MIN_PASSWORD_LENGTH } from "@/lib/password-policy";
 
@@ -38,6 +40,12 @@ type AccountMenuProps = {
   compact?: boolean;
 };
 
+const TEMA_OPCOES: { valor: PreferenciaTema; rotulo: string; Icone: typeof Sun }[] = [
+  { valor: "claro", rotulo: "Claro", Icone: Sun },
+  { valor: "escuro", rotulo: "Escuro", Icone: Moon },
+  { valor: null, rotulo: "Sistema", Icone: Monitor },
+];
+
 function initials(value: string | null | undefined) {
   const parts = (value ?? "").trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
@@ -62,12 +70,12 @@ function dateLabel(value: string | null | undefined) {
 
 function ReadOnlyField({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-3 shadow-sm">
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-3 shadow-sm">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">{label}</p>
-        <LockKeyhole size={13} className="shrink-0 text-[#9CA3AF]" aria-hidden="true" />
+        <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">{label}</p>
+        <LockKeyhole size={13} className="shrink-0 text-[var(--muted-foreground)]" aria-hidden="true" />
       </div>
-      <p className="mt-1.5 break-words text-sm font-semibold text-[#111827]">{value || "-"}</p>
+      <p className="mt-1.5 break-words text-sm font-semibold text-[var(--foreground)]">{value || "-"}</p>
     </div>
   );
 }
@@ -95,26 +103,26 @@ function NameField({
 }) {
   if (!editing) {
     return (
-      <div className="rounded-lg border border-[#E5E7EB] bg-white px-3 py-3 shadow-sm">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-3 shadow-sm">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">Nome</p>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Nome</p>
           <button
             type="button"
             onClick={onEdit}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold text-[#2563EB] transition hover:bg-[#EFF6FF] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold text-[var(--primary)] transition hover:bg-[var(--primary-soft)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/25"
           >
             <Pencil size={12} />
             Editar
           </button>
         </div>
-        <p className="mt-1.5 break-words text-sm font-semibold text-[#111827]">{value || "-"}</p>
+        <p className="mt-1.5 break-words text-sm font-semibold text-[var(--foreground)]">{value || "-"}</p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-[#2563EB] bg-white px-3 py-3 shadow-sm">
-      <label htmlFor="account-nome" className="text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">
+    <div className="rounded-lg border border-[var(--primary)] bg-[var(--surface)] px-3 py-3 shadow-sm">
+      <label htmlFor="account-nome" className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
         Nome
       </label>
       <Input
@@ -130,7 +138,7 @@ function NameField({
         disabled={saving}
         className="mt-1.5"
       />
-      {error && <p className="mt-1.5 text-xs font-semibold text-[#B91C1C]">{error}</p>}
+      {error && <p className="mt-1.5 text-xs font-semibold text-[var(--error)]">{error}</p>}
       <div className="mt-2.5 flex justify-end gap-2">
         <Button type="button" variant="ghost" className="h-8 px-3 text-xs" onClick={onCancel} disabled={saving}>
           Cancelar
@@ -163,7 +171,7 @@ function PasswordField({
   helper?: string;
 }) {
   return (
-    <label className="grid gap-1.5 text-sm font-semibold text-[#111827]" htmlFor={id}>
+    <label className="grid gap-1.5 text-sm font-semibold text-[var(--foreground)]" htmlFor={id}>
       {label}
       <span className="relative">
         <Input
@@ -176,22 +184,22 @@ function PasswordField({
         />
         <button
           type="button"
-          className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[#4B5563] transition hover:bg-[#F3F4F6] hover:text-[#111827] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25"
+          className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-[var(--muted-foreground)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/25"
           onClick={onToggle}
           aria-label={visible ? `Ocultar ${label.toLowerCase()}` : `Mostrar ${label.toLowerCase()}`}
         >
           {visible ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
       </span>
-      {helper && <span className="text-xs font-normal text-[#6B7280]">{helper}</span>}
+      {helper && <span className="text-xs font-normal text-[var(--muted-foreground)]">{helper}</span>}
     </label>
   );
 }
 
 function Requirement({ ok, children }: { ok: boolean; children: React.ReactNode }) {
   return (
-    <li className={clsx("flex items-center gap-2 text-xs font-medium", ok ? "text-[#15803D]" : "text-[#6B7280]")}>
-      <span className={clsx("h-1.5 w-1.5 rounded-full", ok ? "bg-[#16A34A]" : "bg-[#D1D5DB]")} />
+    <li className={clsx("flex items-center gap-2 text-xs font-medium", ok ? "text-[var(--success)]" : "text-[var(--muted-foreground)]")}>
+      <span className={clsx("h-1.5 w-1.5 rounded-full", ok ? "bg-[var(--success)]" : "bg-[var(--border-strong)]")} />
       {children}
     </li>
   );
@@ -208,7 +216,7 @@ function Avatar({
 }) {
   const sizeClass = size === "lg" ? "h-28 w-28 text-3xl" : size === "sm" ? "h-[34px] w-[34px] text-xs" : "h-12 w-12 text-sm";
   return (
-    <span className={clsx("inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#EFF6FF] font-bold text-[#2563EB]", sizeClass)}>
+    <span className={clsx("inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--primary-soft)] font-bold text-[var(--primary)]", sizeClass)}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt="" className="h-full w-full object-cover" />
@@ -220,6 +228,7 @@ function Avatar({
 }
 
 export function AccountMenu({ user, roleLabel, onLogout, compact = false }: AccountMenuProps) {
+  const { preferencia, setPreferencia } = useTema();
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [tab, setTab] = useState<"account" | "security">("account");
@@ -438,7 +447,7 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
           onClick={() => setMenuOpen((value) => !value)}
           className={clsx(
             "flex items-center gap-2 rounded-lg border border-transparent px-1.5 py-1 text-left transition-colors",
-            compact ? "min-w-0 flex-1 text-white hover:bg-white/[0.06]" : "w-full hover:border-[var(--border)] hover:bg-[#f7f7f5]",
+            compact ? "min-w-0 flex-1 text-white hover:bg-white/[0.06]" : "w-full hover:border-[var(--border)] hover:bg-[var(--surface-muted)]",
           )}
           title="Conta"
         >
@@ -463,16 +472,16 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
 
         {menuOpen && (
           <div className={clsx(
-            "absolute z-50 w-[288px] overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-xl",
+            "absolute z-50 w-[288px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-xl transition-[opacity,translate] duration-150 ease-out starting:translate-y-1 starting:opacity-0 motion-reduce:transition-none",
             compact ? "bottom-12 left-0" : "right-0 top-12",
           )}>
-            <div className="border-b border-[#E5E7EB] bg-[#FAFAFA] px-4 py-5">
+            <div className="border-b border-[var(--border)] bg-[var(--surface-muted)] px-4 py-5">
               <div className="flex items-center gap-3">
                 <Avatar name={displayProfile.nome} src={avatarSrc} />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-[#111827]">{displayProfile.nome}</p>
-                  <p className="mt-0.5 truncate font-mono text-xs font-semibold text-[#4B5563]">{displayProfile.usuario}</p>
-                  <span className="mt-2 inline-flex max-w-full items-center rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2 py-0.5 text-[11px] font-bold text-[#1D4ED8]">
+                  <p className="truncate text-sm font-bold text-[var(--foreground)]">{displayProfile.nome}</p>
+                  <p className="mt-0.5 truncate font-mono text-xs font-semibold text-[var(--muted-foreground)]">{displayProfile.usuario}</p>
+                  <span className="mt-2 inline-flex max-w-full items-center rounded-full border border-[var(--primary)]/30 bg-[var(--primary-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--primary)]">
                     {roleLabel}
                   </span>
                 </div>
@@ -482,46 +491,69 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
             <div className="grid gap-1 p-2">
               <button
                 type="button"
-                className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[#111827] transition hover:bg-[#EFF6FF] hover:text-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25"
+                className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--primary-soft)] hover:text-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/25"
                 onClick={() => openSettings("account")}
               >
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#F3F4F6] text-[#4B5563]">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-hover)] text-[var(--muted-foreground)]">
                   <Settings size={16} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">Configurações</span>
-                  <span className="block truncate text-xs font-medium text-[#6B7280]">Conta e dados pessoais</span>
+                  <span className="block truncate text-xs font-medium text-[var(--muted-foreground)]">Conta e dados pessoais</span>
                 </span>
-                <ChevronRight size={15} className="shrink-0 text-[#9CA3AF]" />
+                <ChevronRight size={15} className="shrink-0 text-[var(--muted-foreground)]" />
               </button>
               <button
                 type="button"
-                className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[#111827] transition hover:bg-[#EFF6FF] hover:text-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25"
+                className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--primary-soft)] hover:text-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/25"
                 onClick={() => openSettings("security")}
               >
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#F3F4F6] text-[#4B5563]">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-hover)] text-[var(--muted-foreground)]">
                   <KeyRound size={16} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">Segurança</span>
-                  <span className="block truncate text-xs font-medium text-[#6B7280]">Senha e sessões</span>
+                  <span className="block truncate text-xs font-medium text-[var(--muted-foreground)]">Senha e sessões</span>
                 </span>
-                <ChevronRight size={15} className="shrink-0 text-[#9CA3AF]" />
+                <ChevronRight size={15} className="shrink-0 text-[var(--muted-foreground)]" />
               </button>
             </div>
 
-            <div className="border-t border-[#E5E7EB] bg-white p-2">
+            <div className="border-t border-[var(--border)] px-4 py-3">
+              <p id="tema-rotulo" className="text-label mb-2 text-[var(--muted-foreground)]">Tema</p>
+              <div role="group" aria-labelledby="tema-rotulo" className="grid grid-cols-3 gap-1 rounded-lg bg-[var(--surface-muted)] p-1">
+                {TEMA_OPCOES.map(({ valor, rotulo, Icone }) => (
+                  <button
+                    key={rotulo}
+                    type="button"
+                    aria-pressed={preferencia === valor}
+                    onClick={() => setPreferencia(valor)}
+                    className={clsx(
+                      "inline-flex h-8 items-center justify-center gap-1.5 rounded-md text-[12px] font-semibold transition-colors",
+                      preferencia === valor
+                        ? "bg-[var(--surface)] text-[var(--foreground)] shadow-sm"
+                        : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
+                    )}
+                  >
+                    <Icone size={14} aria-hidden />
+                    {rotulo}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-[var(--border)] bg-[var(--surface)] p-2">
               <button
                 type="button"
-                className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-bold text-[#B91C1C] transition hover:bg-[#FEF2F2] focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20"
+                className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-bold text-[var(--error)] transition hover:bg-[var(--error-soft)] focus:outline-none focus:ring-2 focus:ring-[var(--error)]/20"
                 onClick={onLogout}
               >
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#FEF2F2] text-[#B91C1C]">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--error-soft)] text-[var(--error)]">
                   <LogOut size={16} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">Sair</span>
-                  <span className="block truncate text-xs font-semibold text-[#991B1B]">Encerrar sessão atual</span>
+                  <span className="block truncate text-xs font-semibold text-[var(--error)]">Encerrar sessão atual</span>
                 </span>
               </button>
             </div>
@@ -531,19 +563,19 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
 
       {modalOpen && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/35 p-3 pt-8 sm:p-8">
-          <div className="flex max-h-[min(720px,calc(100vh-48px))] w-full max-w-[760px] flex-col overflow-hidden rounded-lg border border-[#E5E7EB] bg-white shadow-2xl">
-            <div className="flex h-10 items-center justify-between border-b border-[#E5E7EB] px-3">
+          <div className="flex max-h-[min(720px,calc(100vh-48px))] w-full max-w-[760px] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+            <div className="flex h-10 items-center justify-between border-b border-[var(--border)] px-3">
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  className={clsx("rounded-md px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25", tab === "account" ? "bg-[#2563EB] text-white shadow-sm" : "text-[#4B5563] hover:bg-[#F3F4F6] hover:text-[#111827]")}
+                  className={clsx("rounded-md px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/25", tab === "account" ? "bg-[var(--primary)] text-[var(--on-solid)] shadow-sm" : "text-[var(--muted-foreground)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]")}
                   onClick={() => setTab("account")}
                 >
                   Conta
                 </button>
                 <button
                   type="button"
-                  className={clsx("rounded-md px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#2563EB]/25", tab === "security" ? "bg-[#2563EB] text-white shadow-sm" : "text-[#4B5563] hover:bg-[#F3F4F6] hover:text-[#111827]")}
+                  className={clsx("rounded-md px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/25", tab === "security" ? "bg-[var(--primary)] text-[var(--on-solid)] shadow-sm" : "text-[var(--muted-foreground)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]")}
                   onClick={() => setTab("security")}
                 >
                   Segurança
@@ -551,7 +583,7 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
               </div>
               <button
                 type="button"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[#6B7280] transition hover:bg-[#F3F4F6] hover:text-[#1A1A1A]"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--muted-foreground)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
                 onClick={() => setModalOpen(false)}
                 aria-label="Fechar"
               >
@@ -563,7 +595,7 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
               {feedback && (
                 <div className={clsx(
                   "mb-5 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
-                  feedback.type === "success" ? "border-[#BBF7D0] bg-[#F0FDF4] text-[#166534]" : "border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]",
+                  feedback.type === "success" ? "border-[var(--success)]/30 bg-[var(--success-soft)] text-[var(--success)]" : "border-[var(--error)]/30 bg-[var(--error-soft)] text-[var(--error)]",
                 )}>
                   <CheckCircle2 size={16} />
                   {feedback.text}
@@ -572,14 +604,14 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
 
               {tab === "account" ? (
                 <div className="grid gap-7">
-                  <section className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-5">
+                  <section className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-5">
                     <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
                       <div className="relative h-28 w-28 shrink-0">
                         <Avatar name={displayProfile.nome} src={avatarSrc} size="lg" />
                         <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={uploadAvatar} />
                         <button
                           type="button"
-                          className="absolute bottom-1 right-1 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#D1D5DB] bg-white text-[#374151] shadow-sm transition hover:border-[#2563EB] hover:text-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/30"
+                          className="absolute bottom-1 right-1 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border-strong)] bg-[var(--surface)] text-[var(--muted-foreground)] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/30"
                           onClick={() => fileInputRef.current?.click()}
                           disabled={avatarUploading}
                           aria-label="Alterar foto de perfil"
@@ -591,16 +623,16 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
 
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="truncate text-2xl font-bold text-[#111827]">{displayProfile.nome}</h2>
-                          <span className="inline-flex items-center rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-1 text-xs font-bold text-[#1D4ED8]">
+                          <h2 className="truncate text-2xl font-bold text-[var(--foreground)]">{displayProfile.nome}</h2>
+                          <span className="inline-flex items-center rounded-full border border-[var(--primary)]/30 bg-[var(--primary-soft)] px-2.5 py-1 text-xs font-bold text-[var(--primary)]">
                             {roleLabel}
                           </span>
                         </div>
-                        <p className="mt-1 text-sm font-medium text-[#4B5563]">ID de acesso {displayProfile.usuario}</p>
+                        <p className="mt-1 text-sm font-medium text-[var(--muted-foreground)]">ID de acesso {displayProfile.usuario}</p>
                         <div className="mt-4 flex flex-wrap gap-2">
                           <button
                             type="button"
-                            className="inline-flex items-center gap-2 rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm font-semibold text-[#374151] shadow-sm transition hover:border-[#2563EB] hover:text-[#2563EB] disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--muted-foreground)] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-60"
                             onClick={() => fileInputRef.current?.click()}
                             disabled={avatarUploading}
                           >
@@ -610,7 +642,7 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                           {avatarSrc && (
                             <button
                               type="button"
-                              className="inline-flex items-center gap-2 rounded-lg border border-[#FECACA] bg-white px-3 py-2 text-sm font-semibold text-[#991B1B] shadow-sm transition hover:bg-[#FEF2F2] disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex items-center gap-2 rounded-lg border border-[var(--error)]/30 bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--error)] shadow-sm transition hover:bg-[var(--error-soft)] disabled:cursor-not-allowed disabled:opacity-60"
                               onClick={() => {
                                 if (window.confirm("Remover a foto de perfil?")) removeAvatar();
                               }}
@@ -627,8 +659,8 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
 
                   <section className="grid gap-4">
                     <div>
-                      <h3 className="text-base font-bold text-[#111827]">Dados pessoais</h3>
-                      <p className="mt-1 text-sm text-[#4B5563]">
+                      <h3 className="text-base font-bold text-[var(--foreground)]">Dados pessoais</h3>
+                      <p className="mt-1 text-sm text-[var(--muted-foreground)]">
                         {podeAlterarProprioNome(displayProfile.perfil)
                           ? "Gerencie as informações da sua conta."
                           : "Seu nome é atualizado pelo Painel Administrativo."}
@@ -653,8 +685,8 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                   {displayProfile.dadosCadastrais && (
                     <section className="grid gap-4">
                       <div>
-                        <h3 className="text-base font-bold text-[#111827]">Dados cadastrais</h3>
-                        <p className="mt-1 text-sm text-[#4B5563]">Atualizados pelo Painel Administrativo.</p>
+                        <h3 className="text-base font-bold text-[var(--foreground)]">Dados cadastrais</h3>
+                        <p className="mt-1 text-sm text-[var(--muted-foreground)]">Atualizados pelo Painel Administrativo.</p>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <ReadOnlyField label="Responsável" value={displayProfile.dadosCadastrais.responsavel} />
@@ -670,21 +702,21 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                   )}
 
                   <section className="grid gap-4">
-                    <h3 className="text-base font-bold text-[#111827]">Dados de acesso</h3>
+                    <h3 className="text-base font-bold text-[var(--foreground)]">Dados de acesso</h3>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-3">
+                      <div className="rounded-lg border border-[var(--primary)]/30 bg-[var(--primary-soft)] px-4 py-3">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-[#1D4ED8]">ID de acesso</p>
-                          <LockKeyhole size={13} className="text-[#2563EB]" aria-hidden="true" />
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--primary)]">ID de acesso</p>
+                          <LockKeyhole size={13} className="text-[var(--primary)]" aria-hidden="true" />
                         </div>
-                        <p className="mt-2 font-mono text-lg font-bold tracking-wide text-[#111827]">{displayProfile.usuario}</p>
+                        <p className="mt-2 font-mono text-lg font-bold tracking-wide text-[var(--foreground)]">{displayProfile.usuario}</p>
                       </div>
-                      <div className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 shadow-sm">
+                      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 shadow-sm">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">Perfil</p>
-                          <ShieldCheck size={14} className="text-[#16A34A]" aria-hidden="true" />
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Perfil</p>
+                          <ShieldCheck size={14} className="text-[var(--success)]" aria-hidden="true" />
                         </div>
-                        <p className="mt-2 text-sm font-bold text-[#111827]">{roleLabel}</p>
+                        <p className="mt-2 text-sm font-bold text-[var(--foreground)]">{roleLabel}</p>
                       </div>
                     </div>
                   </section>
@@ -693,11 +725,11 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                 <div className="grid gap-7">
                   <section className="grid gap-4">
                     <div>
-                      <h3 className="text-base font-bold text-[#111827]">Alterar senha</h3>
-                      <p className="mt-1 text-sm text-[#4B5563]">Atualize sua senha mantendo os requisitos mínimos de segurança.</p>
+                      <h3 className="text-base font-bold text-[var(--foreground)]">Alterar senha</h3>
+                      <p className="mt-1 text-sm text-[var(--muted-foreground)]">Atualize sua senha mantendo os requisitos mínimos de segurança.</p>
                     </div>
 
-                    <form className="grid gap-5 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-5" onSubmit={changePassword}>
+                    <form className="grid gap-5 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-5" onSubmit={changePassword}>
                       <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
                         <div className="grid gap-4">
                           <PasswordField
@@ -732,8 +764,8 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                           />
                         </div>
 
-                        <div className="rounded-lg border border-[#E5E7EB] bg-white p-4">
-                          <p className="text-sm font-bold text-[#111827]">Requisitos</p>
+                        <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+                          <p className="text-sm font-bold text-[var(--foreground)]">Requisitos</p>
                           <ul className="mt-3 grid gap-2">
                             <Requirement ok={passwordRules.length}>{MIN_PASSWORD_LENGTH} ou mais caracteres</Requirement>
                             <Requirement ok={passwordRules.uppercase}>Ao menos uma letra maiúscula</Requirement>
@@ -743,8 +775,8 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E5E7EB] pt-4">
-                        <p className="text-xs text-[#6B7280]">A alteração será aplicada imediatamente após a confirmação.</p>
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-4">
+                        <p className="text-xs text-[var(--muted-foreground)]">A alteração será aplicada imediatamente após a confirmação.</p>
                         <Button
                           type="submit"
                           disabled={passwordSaving || !currentPassword || !passwordRules.length || !passwordRules.uppercase || !passwordRules.number || !passwordRules.match}
@@ -756,14 +788,14 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                     </form>
                   </section>
 
-                  <section className="grid gap-4 border-t border-[#E5E7EB] pt-7">
+                  <section className="grid gap-4 border-t border-[var(--border)] pt-7">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <div className="flex items-center gap-2">
-                          <ShieldCheck size={18} className="text-[#2563EB]" />
-                          <h3 className="text-base font-bold text-[#111827]">Sessões ativas</h3>
+                          <ShieldCheck size={18} className="text-[var(--primary)]" />
+                          <h3 className="text-base font-bold text-[var(--foreground)]">Sessões ativas</h3>
                         </div>
-                        <p className="mt-1 text-sm text-[#4B5563]">Acompanhe os acessos e encerre sessões que você não reconhece.</p>
+                        <p className="mt-1 text-sm text-[var(--muted-foreground)]">Acompanhe os acessos e encerre sessões que você não reconhece.</p>
                       </div>
                       <Button variant="secondary" onClick={onLogout}>
                         <LogOut size={14} />
@@ -771,26 +803,26 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                       </Button>
                     </div>
 
-                    <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+                    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-sm">
                       <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
                         <div className="flex min-w-0 items-start gap-3">
-                          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#EFF6FF] text-[#2563EB]">
+                          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
                             {sessionInfo.device === "mobile" ? <Smartphone size={20} /> : <Monitor size={20} />}
                           </span>
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <p className="font-bold text-[#111827]">{sessionInfo.browser} em {sessionInfo.os}</p>
-                              <span className="rounded-full bg-[#DCFCE7] px-2 py-0.5 text-xs font-bold text-[#15803D]">Atual</span>
+                              <p className="font-bold text-[var(--foreground)]">{sessionInfo.browser} em {sessionInfo.os}</p>
+                              <span className="rounded-full bg-[var(--success-soft)] px-2 py-0.5 text-xs font-bold text-[var(--success)]">Atual</span>
                             </div>
-                            <p className="mt-1 text-sm text-[#4B5563]">{sessionInfo.location}</p>
+                            <p className="mt-1 text-sm text-[var(--muted-foreground)]">{sessionInfo.location}</p>
                           </div>
                         </div>
                         <div className="grid gap-1 text-sm sm:text-right">
-                          <span className="inline-flex items-center gap-1.5 font-semibold text-[#111827] sm:justify-end">
-                            <Clock3 size={14} className="text-[#6B7280]" />
+                          <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--foreground)] sm:justify-end">
+                            <Clock3 size={14} className="text-[var(--muted-foreground)]" />
                             {dateTimeLabel(displayProfile.ultimoLoginAt)}
                           </span>
-                          <span className="text-xs font-medium text-[#6B7280]">Último acesso registrado</span>
+                          <span className="text-xs font-medium text-[var(--muted-foreground)]">Último acesso registrado</span>
                         </div>
                       </div>
                     </div>
