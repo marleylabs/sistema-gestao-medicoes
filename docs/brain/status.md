@@ -4,10 +4,9 @@ atualizado: 2026-10-17
 # Status
 
 ## Em andamento
-- **P2 — P0 como único ID do fornecedor** ([spec](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)). T1 a T5 prontas e testadas no ambiente local; nada implantado. T6 em andamento: ensaio numa cópia local do backup da pré-produção com 55/55 migrados, medição ok, valores e status idênticos e reversão que volta exatamente ao original ([plano](specs/p2-vinculo-login-profissional-plano.md)). Falta a pré-produção ([runbook](../runbook-p0-pre-producao.md); pré-requisito: push da release e SHA aprovado) e a produção.
+- **P2 — P0 como único ID do fornecedor** ([spec](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)). T1 a T5 prontas e testadas no ambiente local; nada implantado. T6 em andamento: ensaio numa cópia local do backup da pré-produção com 55/55 migrados, medição ok, valores e status idênticos e reversão que volta exatamente ao original ([plano](specs/p2-vinculo-login-profissional-plano.md)). Falta a pré-produção ([runbook](../runbook-p0-pre-producao.md); pré-requisito: SHA aprovado) e a produção.
   - Ordem combinada em 2026-10-17: tudo no ambiente local primeiro. O ensaio com dados reais roda numa cópia local de um backup da pré-produção; o servidor só é tocado na T6.
-  - Commits locais em `release/2026-10-02-import-identities`, **ainda não enviados ao GitHub**: e500081 (spec), bf38665 (T1), 7412ab9 (T2), 0bf0157 (T3), 93a52cd (T4), 2263ccd (E2E do financeiro com projeto próprio) e a atualização do cérebro.
-- No GitHub, `layout2.0` e `release/2026-10-02-import-identities` estão em 58375bb (P1 fechadas).
+  - Tudo enviado ao GitHub em 2026-10-17: `release/2026-10-02-import-identities` em 6fec06d (spec, T1 a T5, E2E do financeiro, ensaio e runbook). Candidato a `APPROVED_SHA` do runbook: este commit ou o seguinte, que só atualiza o status. `layout2.0` continua em 58375bb.
 - Pré-produção roda 7482a2d (8 migrations). Rollback: imagens `projetocrud-medio-{web,etl}:pre-import-identities-3830ba4` + backup `pre_import_identities_7482a2d_20261002_155132`.
 - Testes em 2026-10-17, com a T5 no ambiente local: `test:targeted` 506/506, `pytest etl/` 44/44 e E2E 207/207 em duas rodadas seguidas, no `medicoes_e2e_bm`, depois de `npm run test:e2e:seed` nesse banco.
 - Integração em `layout2.0`/`release/*`; `main` (13b7cd7) está 85 commits atrás.
