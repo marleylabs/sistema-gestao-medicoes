@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { clsx } from "clsx";
 import { Card } from "@/components/ui";
 
 export function DashboardKpiCard({
@@ -8,6 +9,7 @@ export function DashboardKpiCard({
   icon,
   tone = "neutral",
   compact = false,
+  realce = false,
 }: {
   title: string;
   value: ReactNode;
@@ -16,6 +18,8 @@ export function DashboardKpiCard({
   tone?: "neutral" | "brand" | "warning" | "danger" | "success";
   /** Abaixo de sm: card menor para caber em grade 2×2 (título, valor, ícone e detalhe preservados). */
   compact?: boolean;
+  /** Hover que levanta o card. Só no dashboard: nos painéis o card não é clicável e o efeito sugeriria um clique. */
+  realce?: boolean;
 }) {
   const tones = {
     neutral: "bg-[var(--surface-muted)] text-[var(--muted-foreground)]",
@@ -26,7 +30,12 @@ export function DashboardKpiCard({
   } as const;
 
   return (
-    <Card className={compact ? "min-h-0 p-3 sm:min-h-[112px] sm:p-5" : "min-h-[112px] p-4 sm:p-5"}>
+    <Card
+      className={clsx(
+        compact ? "min-h-0 p-3 sm:min-h-[112px] sm:p-5" : "min-h-[112px] p-4 sm:p-5",
+        realce && "transition-[translate,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-[var(--border-strong)] hover:shadow-md motion-reduce:hover:translate-y-0",
+      )}
+    >
       <div className={`flex h-full items-start justify-between ${compact ? "gap-2 sm:gap-3" : "gap-3"}`}>
         <div className="min-w-0">
           <p className={`font-semibold text-[var(--muted-foreground)] ${compact ? "text-[10px] leading-tight sm:text-[11px]" : "text-[11px]"}`}>{title}</p>

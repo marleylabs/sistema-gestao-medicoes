@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
 import path from "node:path";
-import { lerPreferenciaTema, resolverTema, SCRIPT_TEMA_INICIAL, TEMA_STORAGE_KEY } from "../lib/tema";
+import { assinarPreferencia, lerPreferenciaSalva, lerPreferenciaTema, resolverTema, salvarPreferencia, SCRIPT_TEMA_INICIAL, TEMA_STORAGE_KEY } from "../lib/tema";
 
 function read(file: string) {
   return fs.readFileSync(path.join(__dirname, "..", file), "utf8");
@@ -136,7 +136,13 @@ test("motion.tsx exporta as primitivas e respeita useReducedMotion", () => {
   assert.match(motion, /useReducedMotion\(\)/);
   // no SSR useReducedMotion() é null: um initial que dependa dele diverge na hidratação e esconde o HTML do servidor
   assert.doesNotMatch(motion, /initial=\{reduzir/);
-  assert.match(motion, /useSyncExternalStore\(/, "animação de entrada só em montagens depois da hidratação");
+  // título só com CSS (@starting-style): anima na carga do servidor e na troca de tela, sem depender de hidratação
+  const inicio = motion.indexOf("export function AnimatedText");
+  const fim = motion.indexOf("export function", inicio + 1);
+  const animatedText = motion.slice(inicio, fim === -1 ? undefined : fim);
+  assert.match(animatedText, /starting:opacity-0/);
+  assert.match(animatedText, /motion-reduce:transition-none/);
+  assert.doesNotMatch(animatedText, /motion\.|useReducedMotion/);
   assert.match(motion, /aria-label=\{/, "AnimatedText precisa expor o texto inteiro");
   assert.match(motion, /aria-hidden/);
 });
@@ -174,4 +180,119 @@ test("todo ds-dialog tem animação de entrada só com classes (starting:)", () 
       assert.match(m[0], /motion-reduce:transition-none/, `${arquivo}: ds-dialog sem motion-reduce`);
     }
   }
+});
+
+/** M2 — login (T2). */
+
+test("login: seletor de tema, entrada só em CSS, painel decorativo e erro com tokens de erro", () => {
+  const login = read("components/login-form.tsx");
+  assert.match(login, /useTema\(\)/);
+  assert.match(login, /aria-label=\{descricao\}/);
+  assert.match(login, /starting:opacity-0/);
+  assert.match(login, /<AnimatedText as="h2"/);
+  assert.match(login, /useReducedMotion\(\)/, "o brilho em loop para com motion reduzido");
+  assert.match(login, /aria-hidden/);
+  assert.match(login, /role="alert"[^>]*bg-\[var\(--error-soft\)\][^>]*text-\[var\(--error\)\]/);
+});
+
+test("preferência de tema não diverge na hidratação (useSyncExternalStore com snapshot de servidor)", () => {
+  const providers = read("components/providers.tsx");
+  assert.match(providers, /useSyncExternalStore\(assinarPreferencia, lerPreferenciaSalva, \(\) => null\)/);
+  // o efeito lê a preferência real: na hidratação o estado ainda é null e aplicaria o tema do sistema
+  assert.match(providers, /resolverTema\(lerPreferenciaSalva\(\)/);
+  assert.doesNotMatch(providers, /typeof window === "undefined"/);
+});
+
+function comLocalStorage(storage: unknown, fn: () => void) {
+  const g = globalThis as { localStorage?: unknown };
+  const anterior = g.localStorage;
+  g.localStorage = storage;
+  try {
+    fn();
+  } finally {
+    g.localStorage = anterior;
+  }
+}
+
+test("store do tema: salva, apaga no Sistema e avisa quem assina", () => {
+  const dados = new Map<string, string>();
+  comLocalStorage({ getItem: (k: string) => dados.get(k) ?? null, setItem: (k: string, v: string) => dados.set(k, v), removeItem: (k: string) => dados.delete(k) }, () => {
+    let avisos = 0;
+    const g = globalThis as { window?: unknown };
+    const janelaAnterior = g.window;
+    g.window = { addEventListener: () => {}, removeEventListener: () => {} };
+    try {
+      const cancelar = assinarPreferencia(() => { avisos++; });
+      salvarPreferencia("escuro");
+      assert.equal(dados.get(TEMA_STORAGE_KEY), "escuro");
+      assert.equal(lerPreferenciaSalva(), "escuro");
+      salvarPreferencia(null);
+      assert.equal(dados.has(TEMA_STORAGE_KEY), false, "Sistema apaga a chave");
+      assert.equal(lerPreferenciaSalva(), null);
+      assert.equal(avisos, 2);
+      cancelar();
+      salvarPreferencia("claro");
+      assert.equal(avisos, 2, "depois de cancelar não avisa mais");
+    } finally {
+      g.window = janelaAnterior;
+    }
+  });
+});
+
+test("store do tema: com localStorage bloqueado, a escolha vale em memória", () => {
+  const bloqueado = { getItem: () => { throw new Error("bloqueado"); }, setItem: () => { throw new Error("bloqueado"); }, removeItem: () => { throw new Error("bloqueado"); } };
+  comLocalStorage(bloqueado, () => {
+    salvarPreferencia("escuro");
+    assert.equal(lerPreferenciaSalva(), "escuro");
+    salvarPreferencia(null);
+    assert.equal(lerPreferenciaSalva(), null);
+  });
+});
+
+/** M2 — gráficos no tema (T3). */
+
+test("dashboard: gráficos sem cor fixa nem estilo inline, linha animada só sem motion reduzido", () => {
+  for (const arquivo of fontes("components/dashboard-pilot")) {
+    const fonte = read(arquivo);
+    assert.doesNotMatch(fonte, /["'`]#[0-9a-fA-F]{3,8}["'`]/, `${arquivo}: cor fixa em string`);
+    assert.doesNotMatch(fonte, /contentStyle|style=\{/, `${arquivo}: estilo inline`);
+  }
+  assert.match(read("components/dashboard-pilot/dashboard-evolution-chart.tsx"), /isAnimationActive=\{!reduzir\}/);
+});
+
+/** M2 — KPIs, cascata e hover (T4). */
+
+test("motion.tsx: CountUp sem re-render por frame e Stagger só depois da hidratação", () => {
+  const motion = read("components/motion.tsx");
+  for (const nome of ["Stagger", "StaggerItem", "CountUp"]) assert.match(motion, new RegExp(`export function ${nome}\\b`));
+  const countUp = motion.slice(motion.indexOf("export function CountUp"));
+  assert.match(countUp, /useMotionValue\(/);
+  assert.match(countUp, /useTransform\(/);
+  assert.doesNotMatch(countUp, /useState\(/, "setState por frame re-renderiza o card inteiro");
+  assert.match(countUp, /className="sr-only"/);
+  const stagger = motion.slice(motion.indexOf("export function Stagger("), motion.indexOf("export function StaggerGrupo"));
+  assert.match(stagger, /useMontadoAposHidratacao\(\)/);
+  assert.match(stagger, /initial=\{animar \? "oculto" : false\}/);
+  // grupo aninhado herda do pai: com initial/animate próprios ficaria fora da cascata
+  const grupo = motion.slice(motion.indexOf("export function StaggerGrupo"), motion.indexOf("export function StaggerItem"));
+  assert.match(grupo, /variants=\{staggerPai\}/);
+  assert.doesNotMatch(grupo, /initial=|animate=/);
+});
+
+test("dashboard: KPIs com CountUp e cascata; card de KPI com hover que respeita motion reduzido", () => {
+  const pilot = read("components/dashboard-pilot/index.tsx");
+  assert.equal((pilot.match(/<CountUp /g) ?? []).length, 4);
+  assert.equal((pilot.match(/<Stagger /g) ?? []).length, 1, "um único Stagger: os KPIs entram como grupo dentro da cascata");
+  assert.match(pilot, /<StaggerGrupo /);
+  assert.equal((pilot.match(/\brealce\b/g) ?? []).length, 4, "só o dashboard liga o realce");
+  const card = read("components/dashboard-pilot/dashboard-kpi-card.tsx");
+  assert.match(card, /realce && "[^"]*hover:-translate-y-0\.5[^"]*motion-reduce:hover:translate-y-0/);
+});
+
+test("login: brilho só anima visível; botão de tema diz para qual tema vai e tem alvo de 40px", () => {
+  const login = read("components/login-form.tsx");
+  assert.match(login, /useInView\(/);
+  assert.match(login, /`Tema: \$\{rotulo\}\. Mudar para \$\{rotuloProximo\}`/);
+  assert.match(login, /aria-label=\{descricao\}/);
+  assert.match(login, /h-10 w-10/);
 });

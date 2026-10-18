@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Banknote, CircleCheckBig, Clock3 } from "lucide-react";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem } from "@/components/types";
+import { CountUp, Stagger, StaggerGrupo, StaggerItem } from "@/components/motion";
 import { BlurValue, Card } from "@/components/ui";
 import { getMapaPagamentoDisplayStatus, type SgcStatusEntry } from "@/lib/sgc-display-status";
 import { DashboardContractDistribution } from "./dashboard-contract-distribution";
@@ -44,46 +45,64 @@ export function DashboardPilot({
   const aguardandoPagamento = displayStatuses.filter((status) => status === "APROVADO").length;
 
   return (
-    <section className="grid min-w-0 gap-5 sm:gap-6">
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <DashboardKpiCard
-          title="Valor medido"
-          value={<BlurValue>{currency.format(data.cards.totalMedido)}</BlurValue>}
-          detail={`${data.cards.totalRegistros} registros · ${number.format(data.cards.totalHoras)} HH`}
-          icon={<Banknote size={17} />}
-          tone="brand"
-        />
-        <DashboardKpiCard
-          title="Aguardando fornecedor"
-          value={number.format(aguardandoFornecedor)}
-          detail={`${displayStatuses.length} BMs acompanhados no ciclo`}
-          icon={<Clock3 size={17} />}
-          tone="warning"
-        />
-        <DashboardKpiCard
-          title="Divergências"
-          value={number.format(divergencias)}
-          detail={divergencias ? "Requerem análise da equipe" : "Nenhuma pendência identificada"}
-          icon={<AlertTriangle size={17} />}
-          tone={divergencias ? "danger" : "neutral"}
-        />
-        <DashboardKpiCard
-          title="Aguardando pagamento"
-          value={number.format(aguardandoPagamento)}
-          detail="BMs aprovados com NF validada"
-          icon={<CircleCheckBig size={17} />}
-          tone="success"
-        />
-      </div>
+    <section className="min-w-0">
+      <Stagger className="grid min-w-0 gap-5 sm:gap-6">
+        <StaggerGrupo className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <StaggerItem className="grid">
+            <DashboardKpiCard
+              realce
+              title="Valor medido"
+              value={<BlurValue><CountUp valor={data.cards.totalMedido} formatar={currency.format} /></BlurValue>}
+              detail={`${data.cards.totalRegistros} registros · ${number.format(data.cards.totalHoras)} HH`}
+              icon={<Banknote size={17} />}
+              tone="brand"
+            />
+          </StaggerItem>
+          <StaggerItem className="grid">
+            <DashboardKpiCard
+              realce
+              title="Aguardando fornecedor"
+              value={<CountUp valor={aguardandoFornecedor} formatar={number.format} />}
+              detail={`${displayStatuses.length} BMs acompanhados no ciclo`}
+              icon={<Clock3 size={17} />}
+              tone="warning"
+            />
+          </StaggerItem>
+          <StaggerItem className="grid">
+            <DashboardKpiCard
+              realce
+              title="Divergências"
+              value={<CountUp valor={divergencias} formatar={number.format} />}
+              detail={divergencias ? "Requerem análise da equipe" : "Nenhuma pendência identificada"}
+              icon={<AlertTriangle size={17} />}
+              tone={divergencias ? "danger" : "neutral"}
+            />
+          </StaggerItem>
+          <StaggerItem className="grid">
+            <DashboardKpiCard
+              realce
+              title="Aguardando pagamento"
+              value={<CountUp valor={aguardandoPagamento} formatar={number.format} />}
+              detail="BMs aprovados com NF validada"
+              icon={<CircleCheckBig size={17} />}
+              tone="success"
+            />
+          </StaggerItem>
+        </StaggerGrupo>
 
-      <DashboardEvolutionChart data={data.porCiclo} />
+        <StaggerItem className="min-w-0">
+          <DashboardEvolutionChart data={data.porCiclo} />
+        </StaggerItem>
 
-      <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
-        <DashboardContractDistribution contexto={data.contextoMapa} />
-        <DashboardStatusList statuses={statuses} />
-      </div>
+        <StaggerItem className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
+          <DashboardContractDistribution contexto={data.contextoMapa} />
+          <DashboardStatusList statuses={statuses} />
+        </StaggerItem>
 
-      <DashboardRecentBm items={mapaItens} contratos={contratos} statuses={statuses} ciclo={ciclo} onVerTodos={onVerTodosFornecedores} />
+        <StaggerItem className="min-w-0">
+          <DashboardRecentBm items={mapaItens} contratos={contratos} statuses={statuses} ciclo={ciclo} onVerTodos={onVerTodosFornecedores} />
+        </StaggerItem>
+      </Stagger>
     </section>
   );
 }

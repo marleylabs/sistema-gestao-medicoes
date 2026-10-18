@@ -30,7 +30,7 @@ Dependência só para baixo: M2, M3 e M4 dependem de M1 e não dependem entre si
 | M3 | Painéis dos setores | Planejamento, Administrativo e Financeiro: cabeçalhos animados, drawers e modais com transição, ajustes de hierarquia | M1 |
 | M4 | Portal do fornecedor | Telas do COLABORADOR com o mesmo padrão | M1 |
 
-Esta spec detalha o M1. M2, M3 e M4 ganham uma seção própria quando começarem.
+Esta spec detalha o M1 e o M2. M3 e M4 ganham uma seção própria quando começarem.
 
 ## M1: Fundação
 
@@ -86,6 +86,77 @@ Arquivo novo: `components/motion.tsx`. Usa o `framer-motion`, que já é depend�
 - As superfícies passam para tokens.
 
 O mesmo vale para o `components/ui.tsx` (Card, PageHeader com `AnimatedText`, Badge, Input, Select).
+
+## M2: Login e dashboard (aprovada em 2026-10-18)
+
+Decisões do usuário em 2026-10-18:
+- Login com o texto entrando e um fundo vivo no painel escuro.
+- Seletor de tema discreto no login.
+- No dashboard: contadores nos KPIs, cards em cascata, gráfico que se desenha, hover nos cards.
+
+Pronto quando:
+- as duas telas têm o motion abaixo nos dois temas;
+- o HTML do servidor nunca fica escondido esperando o JS (entradas da carga inicial só com `starting:` em CSS), e com motion reduzido nada anima;
+- o gráfico segue o tema (eixos, grade, rótulos e tooltip), sem cor fixa;
+- `tsc`, `test:targeted` e E2E completo passam.
+
+### 1. Login (`components/login-form.tsx`)
+- **Painel escuro da direita:**
+  - a frase "Decisões financeiras…" entra palavra por palavra com `AnimatedText as="h2"`, que já aceita `h2`;
+  - fundo vivo com uma grade sutil (gradiente em classes `bg-[linear-gradient(...)]` + `bg-[size:...]`) e um brilho radial na cor primária, que deriva devagar (loop de cerca de 20 s via `motion.div`, só `x`/`y`/`opacity`);
+  - o painel é decorativo: fica com `aria-hidden` no brilho e na grade, e o texto continua legível.
+- **Formulário:** o cartão entra só com CSS, pela variante `starting:` (`starting:opacity-0 starting:translate-y-2`, cerca de 400 ms, `motion-reduce:transition-none`). O `@starting-style` roda na primeira pintura sem depender do JS, então o HTML do servidor nunca fica escondido além da própria transição. Com o JS desligado, a página aparece igual.
+- **`AnimatedText` passa a ser só CSS** (mudança em `components/motion.tsx`):
+  - cada palavra com `starting:opacity-0 starting:translate-y-[0.35em] starting:blur-sm`, `transition-[opacity,translate,filter]` e atraso por índice, vindo de uma lista fixa de classes `delay-*` (o Tailwind precisa de classes estáticas);
+  - o `@starting-style` vale na primeira pintura e em todo elemento inserido depois, então os títulos animam tanto na carga do servidor quanto na troca de tela, sem divergência de hidratação;
+  - sai o framer e o `useSyncExternalStore` do `AnimatedText`; o `FadeIn` continua no framer, porque precisa repetir a entrada sem remontar.
+- **Tema:** botão pequeno no canto superior direito que alterna Claro → Escuro → Sistema, com ícone sol/lua/monitor e `aria-label` com o tema atual. Usa o `useTema()` do `components/providers.tsx`.
+- **Erro de login:** a mensagem passa a usar os tokens de erro (`--error`/`--error-soft`), em vez da primária sobre `surface-muted`.
+- O fluxo não muda: mesmos campos, mesma chamada `/api/auth/login`, mesmo modal de troca de senha.
+
+### 2. Dashboard (`components/dashboard-pilot/`)
+- **KPIs:**
+  - `CountUp` nos 4 valores (Valor medido em BRL e as contagens), criado agora em `components/motion.tsx`;
+  - anima ao abrir a tela e quando o valor muda (troca de ciclo/filtro);
+  - o primeiro valor exibido parte de 0 só em montagem pós-hidratação;
+  - o leitor de tela recebe sempre o valor final (`sr-only`);
+  - continua dentro do `BlurValue`, que esconde valores no modo de privacidade;
+  - implementação com `useMotionValue` + `useTransform` num `motion.span`, sem re-render por frame;
+  - só exibição: o número chega pronto de `data.cards`.
+- **Cascata:** `Stagger`/`StaggerItem` (criados agora) na grade dos 4 KPIs e nos blocos abaixo (gráfico, distribuição por contrato, status, BMs recentes). Passo de 60 ms; tabelas internas sem animação.
+- **Hover nos cards:**
+  - `DashboardKpiCard` ganha `transition`, `hover:-translate-y-0.5`, `hover:shadow-md` e `hover:border-[var(--border-strong)]`, com `motion-reduce:hover:translate-y-0`;
+  - o card é compartilhado, então o hover vale também para os KPIs de Administrativo, Evidências, Financeiro e Fornecedores (consistência de propósito).
+- **Gráfico de evolução (`dashboard-evolution-chart.tsx`):**
+  - cores por tokens: `var(--primary)`, `var(--border)`, `var(--muted-foreground)`, `var(--surface)`, `var(--foreground)`, que funcionam em atributos SVG do recharts;
+  - tooltip com `content` próprio só com classes Tailwind (sai o `contentStyle`, que era estilo inline);
+  - a linha se desenha com `isAnimationActive` (cerca de 800 ms, ease-out), desligada com motion reduzido;
+  - o guarda de cor passa a cobrir hex em props/strings dos gráficos (`"#xxxxxx"` em `components/dashboard-pilot/`).
+- Tooltip padrão branca do recharts nos outros gráficos: `dashboard-contract-distribution.tsx` passa pelo mesmo tratamento, se usar recharts.
+
+### Correções da revisão do M2 (2026-10-18)
+`/review` e `/ponytail-review` não acharam nada crítico. Corrigidos os itens 1 a 7:
+- O store da preferência de tema (`lerPreferenciaSalva`, `assinarPreferencia`, `salvarPreferencia`) foi para `lib/tema.ts`, com testes de comportamento: salvar, apagar no Sistema, avisar e cancelar a assinatura, e a cópia em memória com o `localStorage` bloqueado.
+- Cascata única: a grade de KPIs é um `StaggerGrupo` (só `variants`, herda do pai) dentro do `Stagger` do dashboard. Antes, o `Stagger` aninhado controlava a própria animação e os KPIs começavam junto com o gráfico.
+- O hover que levanta o card virou a prop `realce` do `DashboardKpiCard`, ligada só no dashboard. Nos painéis o card não é clicável, e o efeito sugeriria um clique.
+- O brilho do login só anima visível (`useInView`). Medido no Chromium headless: no desktop ele se move; abaixo de `lg`, com o painel `display:none`, fica parado.
+- O botão de tema diz para onde vai (`Tema: Sistema. Mudar para Claro`) e tem alvo de 40 px.
+- As guardas recortam a função certa (`Stagger`, `StaggerGrupo`) e conferem a chamada completa do `useSyncExternalStore` e a leitura real no efeito.
+
+### Fora do escopo do M2
+- Mudar dados, cálculos ou a ordem dos blocos do dashboard.
+- Redesenhar o layout do login além do painel e do seletor de tema.
+- Animar a saída de diálogos (M3/M4).
+
+### Testes do M2
+- Guardas em `tests/tema-tokens.test.ts`:
+  - `motion.tsx` exporta `Stagger`, `StaggerItem` e `CountUp` sem `initial` dependente de `useReducedMotion`;
+  - nenhum hex em `components/dashboard-pilot/` (classes, props e strings);
+  - o tooltip do gráfico não usa `contentStyle`;
+  - o login usa `useTema()` e o botão tem `aria-label`;
+  - o `DashboardKpiCard` tem `motion-reduce` no hover.
+- O E2E existente cobre o login e o dashboard (`data-testid="evolution-data-label"` precisa continuar existindo).
+- Conferência no navegador: login e dashboard nos dois temas; contador e cascata ao trocar para o dashboard e ao trocar o ciclo.
 
 ## Comandos
 - Tipos: `npx tsc --noEmit`

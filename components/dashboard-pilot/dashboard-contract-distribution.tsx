@@ -3,9 +3,18 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import type { DashboardData } from "@/components/types";
 import { BlurValue, Card } from "@/components/ui";
+import { GraficoTooltip } from "./grafico-tooltip";
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1 });
-const palette = ["#AF1B1B", "#D85B5B", "#6B7280", "#A1A1AA", "#D97706", "#16A34A"];
+// fill para o SVG; ponto com a mesma cor em classe estática (o Tailwind só gera classes escritas no código)
+const PALETA = [
+  { fill: "var(--primary)", ponto: "bg-[var(--primary)]" },
+  { fill: "color-mix(in srgb, var(--primary) 55%, var(--surface))", ponto: "bg-[color-mix(in_srgb,var(--primary)_55%,var(--surface))]" },
+  { fill: "var(--muted-foreground)", ponto: "bg-[var(--muted-foreground)]" },
+  { fill: "var(--border-strong)", ponto: "bg-[var(--border-strong)]" },
+  { fill: "var(--warning)", ponto: "bg-[var(--warning)]" },
+  { fill: "var(--success)", ponto: "bg-[var(--success)]" },
+];
 
 export function DashboardContractDistribution({ contexto }: { contexto: DashboardData["contextoMapa"] }) {
   const items = (contexto?.contratos ?? [])
@@ -39,9 +48,15 @@ export function DashboardContractDistribution({ contexto }: { contexto: Dashboar
                   stroke="none"
                   isAnimationActive={false}
                 >
-                  {chartData.map((item, index) => <Cell key={item.name} fill={palette[index % palette.length]} />)}
+                  {chartData.map((item, index) => <Cell key={item.name} fill={PALETA[index % PALETA.length].fill} />)}
                 </Pie>
-                <Tooltip formatter={(value) => currency.format(Number(value ?? 0))} />
+                <Tooltip
+                  content={({ active, payload }) =>
+                    active && payload?.length ? (
+                      <GraficoTooltip titulo={String(payload[0].name)} rotulo="Valor" valor={currency.format(Number(payload[0].value ?? 0))} />
+                    ) : null
+                  }
+                />
               </PieChart>
             </ResponsiveContainer>
             <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] font-semibold text-[var(--foreground)]">
@@ -52,7 +67,7 @@ export function DashboardContractDistribution({ contexto }: { contexto: Dashboar
           <div className="grid min-w-0 gap-2.5">
             {chartData.slice(0, 6).map((item, index) => (
               <div key={item.name} className="grid grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: palette[index % palette.length] }} />
+                <span className={`h-2 w-2 rounded-full ${PALETA[index % PALETA.length].ponto}`} />
                 <span className="truncate text-[10px] text-[var(--muted-foreground)]" title={item.name}>{item.name}</span>
                 <span className="font-technical text-[10px] font-semibold text-[var(--foreground)]">
                   {total > 0 ? `${((item.value / total) * 100).toFixed(1)}%` : "0%"}

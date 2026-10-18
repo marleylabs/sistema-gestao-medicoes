@@ -1,10 +1,12 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { useReducedMotion } from "framer-motion";
 import { Area, AreaChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { DashboardData } from "@/components/types";
 import { BlurValue, Card } from "@/components/ui";
 import { cicloToMesReferencia, formatCicloLabel } from "@/lib/ciclo";
+import { GraficoTooltip } from "./grafico-tooltip";
 
 const compactCurrency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -39,6 +41,7 @@ function safeCiclo(ciclo: string, format: (value: string) => string) {
 
 export function DashboardEvolutionChart({ data }: { data: DashboardData["porCiclo"] }) {
   const isMobile = useIsMobile();
+  const reduzir = useReducedMotion();
   // Ordem cronológica pelo próprio YYMM (4 dígitos: ordem textual = ordem temporal), nunca pelo rótulo.
   const pontos = [...data].sort((a, b) => a.ciclo.localeCompare(b.ciclo));
   // No mobile, com muitos pontos, mantém o último ciclo e espaça os demais para evitar sobreposição.
@@ -65,42 +68,50 @@ export function DashboardEvolutionChart({ data }: { data: DashboardData["porCicl
             <AreaChart data={pontos} margin={{ top: 24, right: 16, left: 4, bottom: 0 }}>
               <defs>
                 <linearGradient id="dashboardMeasurementFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#AF1B1B" stopOpacity={0.18} />
-                  <stop offset="100%" stopColor="#AF1B1B" stopOpacity={0.01} />
+                  <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.22} />
+                  <stop offset="100%" stopColor="var(--primary)" stopOpacity={0.01} />
                 </linearGradient>
               </defs>
-              <CartesianGrid vertical={false} stroke="#ECECEA" strokeDasharray="3 3" />
+              <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
               <XAxis
                 dataKey="ciclo"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fill: "#71717A", fontSize: 10 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
                 tickFormatter={(ciclo) => safeCiclo(String(ciclo), formatCicloLabel)}
                 padding={{ left: 36, right: 36 }}
                 dy={8}
               />
-              <YAxis axisLine={false} tickLine={false} tick={{ fill: "#71717A", fontSize: 10 }} tickFormatter={(value) => compactCurrency.format(Number(value))} width="auto" tickMargin={6} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} tickFormatter={(value) => compactCurrency.format(Number(value))} width="auto" tickMargin={6} />
               <Tooltip
-                cursor={{ stroke: "#D4D4D0", strokeDasharray: "3 3" }}
-                contentStyle={{ border: "1px solid #E4E4E7", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.08)", fontSize: 11 }}
-                formatter={(value) => [currency.format(Number(value ?? 0)), "Valor medido"]}
-                labelFormatter={(ciclo) => safeCiclo(String(ciclo), cicloToMesReferencia)}
+                cursor={{ stroke: "var(--border-strong)", strokeDasharray: "3 3" }}
+                content={({ active, payload, label }) =>
+                  active && payload?.length ? (
+                    <GraficoTooltip
+                      titulo={safeCiclo(String(label), cicloToMesReferencia)}
+                      rotulo="Valor medido"
+                      valor={currency.format(Number(payload[0].value ?? 0))}
+                    />
+                  ) : null
+                }
               />
               <Area
                 type="monotone"
                 dataKey="totalMedido"
-                stroke="#AF1B1B"
+                stroke="var(--primary)"
                 strokeWidth={2}
                 fill="url(#dashboardMeasurementFill)"
-                dot={{ r: 3, fill: "#FFFFFF", stroke: "#AF1B1B", strokeWidth: 2 }}
-                activeDot={{ r: 4, fill: "#AF1B1B", stroke: "#FFFFFF", strokeWidth: 2 }}
-                isAnimationActive={false}
+                dot={{ r: 3, fill: "var(--surface)", stroke: "var(--primary)", strokeWidth: 2 }}
+                activeDot={{ r: 4, fill: "var(--primary)", stroke: "var(--surface)", strokeWidth: 2 }}
+                isAnimationActive={!reduzir}
+                animationDuration={800}
+                animationEasing="ease-out"
               >
                 <LabelList
                   dataKey="totalMedido"
                   content={({ x, y, value, index }) =>
                     typeof index === "number" && mostrarLabel(index) ? (
-                      <text x={Number(x)} y={Number(y) - 10} textAnchor="middle" fill="#1A1A1A" fontSize={10} fontWeight={600} stroke="#FFFFFF" strokeWidth={3} paintOrder="stroke" data-testid="evolution-data-label">
+                      <text x={Number(x)} y={Number(y) - 10} textAnchor="middle" fill="var(--foreground)" fontSize={10} fontWeight={600} stroke="var(--surface)" strokeWidth={3} paintOrder="stroke" data-testid="evolution-data-label">
                         {compactCurrency.format(Number(value ?? 0))}
                       </text>
                     ) : null

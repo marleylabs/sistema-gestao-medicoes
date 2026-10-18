@@ -1,7 +1,7 @@
 "use client";
 
-import { motion, useAnimationControls, useReducedMotion } from "framer-motion";
-import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { animate, motion, useAnimationControls, useMotionValue, useReducedMotion, useTransform, type Variants } from "framer-motion";
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 
 // Primitivas de motion (spec docs/brain/specs/layout-tema-motion.md). Com prefers-reduced-motion,
 // todas renderizam o estado final na hora. Nunca usar em linhas de tabela nem com overshoot em valores.
@@ -9,10 +9,7 @@ import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 const EASE_SAIDA = [0.22, 1, 0.36, 1] as const;
 
 const semInscricao = () => () => {};
-/**
- * false no servidor e na hidratação, true em montagens depois dela. O HTML do servidor já sai visível
- * (sem esperar o JS) e não diverge na hidratação; só o que monta depois (troca de tela) anima a entrada.
- */
+/** false no servidor e na hidratação, true em montagens depois dela: só o que monta no cliente parte do estado inicial. */
 function useMontadoAposHidratacao() {
   return useSyncExternalStore(semInscricao, () => true, () => false);
 }
@@ -39,26 +36,89 @@ export function FadeIn({ children, chave }: { children: React.ReactNode; chave?:
   );
 }
 
-/** Título que entra palavra por palavra. O leitor de tela lê o texto inteiro pelo aria-label do heading. */
+// Classes estáticas: o Tailwind só gera o que encontra escrito no código. Palavras além da lista usam o último atraso.
+const ATRASO_PALAVRA = ["delay-0", "delay-[50ms]", "delay-[100ms]", "delay-[150ms]", "delay-[200ms]", "delay-[250ms]", "delay-[300ms]", "delay-[350ms]"];
+
+/**
+ * Título que entra palavra por palavra, só com CSS (@starting-style): anima na carga do servidor e quando o
+ * título é montado depois (troca de tela), sem JS e sem divergência de hidratação. O leitor de tela lê o aria-label.
+ */
 export function AnimatedText({ texto, as: Tag = "h1", className }: { texto: string; as?: "h1" | "h2"; className?: string }) {
-  const reduzir = useReducedMotion();
-  const animar = useMontadoAposHidratacao() && !reduzir;
   const palavras = texto.split(" ");
   return (
     <Tag className={className} aria-label={texto}>
       {palavras.map((palavra, i) => (
         <span key={`${texto}-${i}`} aria-hidden>
-          <motion.span
-            className="inline-block"
-            initial={animar ? { opacity: 0, y: "0.35em", filter: "blur(6px)" } : false}
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            transition={{ duration: 0.45, ease: EASE_SAIDA, delay: i * 0.05 }}
+          <span
+            className={`inline-block transition-[opacity,translate,filter] duration-500 ease-out starting:translate-y-[0.35em] starting:opacity-0 starting:blur-sm motion-reduce:transition-none ${ATRASO_PALAVRA[Math.min(i, ATRASO_PALAVRA.length - 1)]}`}
           >
             {palavra}
-          </motion.span>
+          </span>
           {i < palavras.length - 1 && " "}
         </span>
       ))}
     </Tag>
+  );
+}
+
+const staggerPai: Variants = { oculto: {}, visivel: { transition: { staggerChildren: 0.06 } } };
+const staggerFilho: Variants = {
+  oculto: { opacity: 0, y: 12 },
+  visivel: { opacity: 1, y: 0, transition: { duration: 0.35, ease: EASE_SAIDA } },
+};
+
+/** Cascata para grades curtas de cards (até ~12 itens). No SSR e com motion reduzido, já renderiza o estado final. */
+export function Stagger({ children, className }: { children: React.ReactNode; className?: string }) {
+  const montado = useMontadoAposHidratacao();
+  const reduzir = useReducedMotion();
+  const animar = montado && !reduzir;
+  return (
+    <motion.div className={className} variants={staggerPai} initial={animar ? "oculto" : false} animate="visivel">
+      {children}
+    </motion.div>
+  );
+}
+
+/** Grupo dentro de um Stagger (ex.: grade de KPIs): entra na vez dele na cascata e escalona os próprios filhos. */
+export function StaggerGrupo({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <motion.div className={className} variants={staggerPai}>
+      {children}
+    </motion.div>
+  );
+}
+
+export function StaggerItem({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <motion.div className={className} variants={staggerFilho}>
+      {children}
+    </motion.div>
+  );
+}
+
+/**
+ * Número que conta até o valor final. Só exibição: o valor chega pronto do cálculo e `formatar` aplica a máscara.
+ * O texto é um MotionValue (sem re-render por frame); o leitor de tela recebe sempre o valor final.
+ */
+export function CountUp({ valor, formatar }: { valor: number; formatar: (n: number) => string }) {
+  const reduzir = useReducedMotion();
+  const partirDoZero = useMontadoAposHidratacao() && !reduzir;
+  const atual = useMotionValue(partirDoZero ? 0 : valor);
+  const texto = useTransform(atual, formatar);
+
+  useEffect(() => {
+    if (reduzir) {
+      atual.set(valor);
+      return;
+    }
+    const controle = animate(atual, valor, { duration: 0.8, ease: EASE_SAIDA });
+    return () => controle.stop();
+  }, [valor, reduzir, atual]);
+
+  return (
+    <span>
+      <motion.span aria-hidden>{texto}</motion.span>
+      <span className="sr-only">{formatar(valor)}</span>
+    </span>
   );
 }
