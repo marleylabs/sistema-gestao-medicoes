@@ -12,3 +12,5 @@ tags: [decisao]
 **Alternativas descartadas:** ação `set_nome` em Gestão de Usuários (deixaria nome e cadastro dessincronizados e o fornecedor perderia o acesso); manter a edição livre (permite tomar a identidade de outro).
 
 **Consequências:** a regra é paliativa. A solução definitiva é o vínculo explícito login → Profissional ([pendências](../pendencias.md)). Usuários internos continuam editando o próprio nome.
+
+**Atualização (2026-10-17):** com a [decisão 012](012-p0-como-id-do-fornecedor.md) (P0 como único ID), o nome deixou de ser o elo entre usuário e cadastro, e a troca de nome não é mais um risco de segurança. A regra foi mantida por decisão do usuário: o nome continua espelhando o `responsavel` do cadastro. A edição pelo Administrativo renomeia o usuário achado pelo código (`renomearUsuarioDoFornecedor` em `lib/cadastro-fornecedor.ts`). Liberar a troca de nome pelo fornecedor fica para outra entrega.

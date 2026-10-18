@@ -30,3 +30,11 @@ As duas primeiras criam um segundo vínculo, e o CNPJ não é único.
 - Exige uma migração de dados única: troca de chave em BM, mapa, divergência, BM auxiliar, logs e cadastro, inclusive em BM aprovado ou pago, sem mudar valores nem status. Roda em janela sem importação, com backup.
 - `admin_audit_logs` guarda o código da época.
 - A decisão 011 continua valendo até ser revista.
+
+**Implementação (2026-10-17):** T1 a T4 do [plano](../specs/p2-vinculo-login-profissional-plano.md) estão na branch `release/2026-10-02-import-identities`:
+- `lib/codigo-p0.ts`: regras do P0;
+- `lib/migracao-codigo-p0.ts` + `scripts/migrar-codigo-p0.ts`: migração;
+- fornecedor novo com P0;
+- fim da ligação por nome no app.
+
+Ainda não implantado: falta o ensaio com os dados reais e a migração na pré-produção e na produção (T6). A migração inclui os fornecedores inativos.

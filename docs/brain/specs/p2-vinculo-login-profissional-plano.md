@@ -1,6 +1,6 @@
 ---
 atualizado: 2026-10-17
-status: em andamento (T1 a T3 feitas no banco de teste)
+status: em andamento (T1 a T4 feitas no banco de teste; T5 parcialmente adiantada)
 tags: [spec, plano]
 ---
 # Plano: P0 como único ID do fornecedor
@@ -95,7 +95,14 @@ Nenhum passo vale rodar em paralelo.
     - `e2e/administrativo-novo-fornecedor.spec.ts`.
   - Arquivos: `lib/cadastro-fornecedor.ts`, a rota `manual` se precisar, os testes.
 
-- [ ] **T4: fim da busca por nome**
+- [x] **T4: fim da busca por nome**: feita em 2026-10-17.
+  - Escopo do portal, NF, listagem do Administrativo, primeiro acesso em lote, resumo de candidatos e relatório de inconsistências acham usuário e cadastro só pelo código (= login).
+  - `usuariosDoFornecedor` (`lib/codigo-p0.ts`) é a regra única de "usuário do fornecedor". É usada por inativação, exclusão definitiva, edição (`renomearUsuarioDoFornecedor`) e upsert. Ela busca pelo login; só para identidade de antes do P0 cai no nome, e nunca no usuário de outro fornecedor já em P0.
+  - A migração deixou de usar o escopo do portal e lê a cadeia antiga por nome por conta própria (`profissionalAntesDoP0`). É o único lugar que precisa dela. A migração agora inclui os fornecedores **inativos**, não só os ativos: ao serem reativados, já estão em P0.
+  - Ficou de propósito: a trava da exclusão definitiva que recusa excluir cadastro antigo **sem código** quando há Profissional ou usuário com o mesmo nome. Ela só bloqueia; não liga nem expõe nada.
+  - Testes: `tests/fornecedor-sem-busca-por-nome.test.ts` (6, todos falhavam antes). Ajustados à regra nova: `tests/cadastro-identity.test.ts`, as fixtures de `tests/colaborador-alias.test.ts` (código = login) e o `select` fixado em `tests/temporary-password-security.test.ts`. `test:targeted` 506/506; `tsc` limpo.
+  - E2E: fixtures com código = login em `e2e/isolamento-homonimos.spec.ts`, `e2e/administrativo-primeiro-acesso-lote.spec.ts` e `e2e/seguranca-senha-temporaria.spec.ts`. O `scripts/seed-e2e.ts` ganhou `limparFornecedorPorPrefixo`, que apaga BM e mapa também pelos códigos atuais (P0); antes, sobras de uma rodada quebravam a seguinte.
+  - E2E completo 206/206 depois do seed. Rodando duas vezes seguidas, só `e2e/financeiro-redesign.spec.ts` (DETALHE) falha na segunda rodada. É um problema anterior, sem relação com o P0: o spec usa `prisma.projeto.findFirstOrThrow()` (um projeto qualquer do banco). Corrigido em 2026-10-17: o spec cria o próprio projeto, porque um projeto chamado "DESCONTO" fazia todo documento virar desconto (`isDocumentoDesconto` em `lib/boletim-calculo.ts`). E2E completo 206/206 em duas rodadas seguidas.
   - Aceite:
     - `selectCadastroForAuthenticatedUser` (só pelo código), `getColaboradorEscopo` e `validateFornecedorForNfUpload` deixam de buscar cadastro por `responsavel = nome`.
     - A inativação (`usuariosPorNome`), a exclusão definitiva (busca do usuário e checagem de cadastro legado) e a edição do cadastro (`fornecedores/[id]`) acham o usuário pelo código.

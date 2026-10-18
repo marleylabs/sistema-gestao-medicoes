@@ -1,5 +1,5 @@
 ---
-atualizado: 2026-10-16
+atualizado: 2026-10-17
 tags: [modulo]
 ---
 # Identidades e aliases
@@ -16,6 +16,10 @@ tags: [modulo]
 
 **Regras e armadilhas:**
 - Nunca cria um `Profissional`, nunca usa CNPJ e não faz match aproximado ([003](../decisoes/003-identidade-por-codigo-e-alias.md)).
+- Com o P0 ([012](../decisoes/012-p0-como-id-do-fornecedor.md)), o código canônico é o login do fornecedor, e as planilhas, que trazem o nome, resolvem pelo alias:
+  - origem `MIGRACAO_P0`: o código antigo, quase sempre o nome normalizado;
+  - origem `CADASTRO`: o nome do responsável de fornecedor novo.
+- O ETL não precisou mudar: grava o código canônico devolvido pelo resolver, que passa a ser o P0. A reimportação apaga as linhas do mapa do Profissional pelo código e pelo nome e regrava, então o `source_row_hash` novo não duplica.
 - Uma medição pendente fica com `idProfissional` nulo e `identidadeImportacaoId` preenchido; o envio do BM fica bloqueado.
 - Listar: MEDICAO/ADMIN. Resolver: só ADMIN.
 

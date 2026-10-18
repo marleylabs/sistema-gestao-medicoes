@@ -1,6 +1,6 @@
 ---
 atualizado: 2026-10-17
-status: aprovada em 2026-10-16 (v2)
+status: aprovada em 2026-10-16 (v2); T1 a T4 implementadas em 2026-10-17, não implantada
 tags: [spec]
 ---
 # Spec: P0 como único ID do fornecedor
@@ -82,7 +82,7 @@ A comparação é `upper(trim())`, como em `lib/ciclo-cleanup.ts`.
 ## Migração dos 55 fornecedores sem perder acesso
 Um script único, `scripts/migrar-codigo-p0.ts`, roda em janela **sem importação** e depois de um backup (`pg_dump`).
 
-1. **Dry-run (padrão), só leitura.** Para cada usuário COLABORADOR ativo, monta o par (P0, código atual) pela cadeia de hoje (`getColaboradorEscopo`: `profissionalId` e `cadastroId`) e classifica:
+1. **Dry-run (padrão), só leitura.** Para cada usuário COLABORADOR não excluído (ativo ou inativo), monta o par (P0, código atual) pela cadeia de antes do P0 (cadastro pelo login ou pelo nome exato, falhando fechado; `profissionalAntesDoP0` em `lib/migracao-codigo-p0.ts`) e classifica:
    - `MIGRAVEL`;
    - `JA_E_P0`;
    - `SEM_IDENTIDADE`;

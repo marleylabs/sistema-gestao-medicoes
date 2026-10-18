@@ -1,5 +1,5 @@
 ---
-atualizado: 2026-10-16
+atualizado: 2026-10-17
 tags: [glossario]
 ---
 # Glossário
@@ -11,7 +11,8 @@ tags: [glossario]
 - **Período ATO / Produção:** ATO vai do dia 21 do mês anterior ao dia 20; Produção é um mês antes.
 - **Ciclo ativo:** o ciclo marcado com `ativoMedicao` em `MapaPagamentoContexto` (`lib/ciclo-ativo.ts`).
 - **Fornecedor / Colaborador / Projetista / Profissional:** a mesma pessoa jurídica prestadora. O perfil de login é COLABORADOR; o cadastro operacional é `Profissional`; o administrativo é `CadastroFornecedor`.
-- **Colaborador código:** a identidade operacional do fornecedor (`Profissional.codigo`, ou o nome quando não há código). O login do fornecedor deriva dele.
+- **Colaborador código:** a identidade operacional do fornecedor (`Profissional.codigo`, ou o nome quando não há código). Com o P0, é igual ao login.
+- **P0:** o login do fornecedor (`P0` + 6 dígitos) e, pela [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md), o único ID dele na plataforma: login = `Profissional.codigo` = código do cadastro = código gravado em BM, mapa, divergência, BM auxiliar e logs. O código antigo (nome) vira alias.
 - **Alias:** um nome alternativo de planilha ligado a um `Profissional` (`ProfissionalAlias`).
 - **Identidade pendente:** um nome da planilha que ainda não tem vínculo (`ImportacaoIdentidade`). Pode ser vinculada ou descartada.
 - **Coordenador:** o profissional coordenador da medição (`Medicao.idCoordenador`).

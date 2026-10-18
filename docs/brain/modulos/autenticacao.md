@@ -1,5 +1,5 @@
 ---
-atualizado: 2026-10-16
+atualizado: 2026-10-17
 tags: [modulo]
 ---
 # Autenticação e permissões
@@ -19,7 +19,8 @@ tags: [modulo]
 - `lib/rate-limit.ts`: limite em memória por processo (8 tentativas a cada 15 min), só no login. Também há bloqueio no banco após 5 falhas.
 
 **Regras e armadilhas:**
-- O fornecedor é identificado por `toColaboradorCodigo(user.usuario)` + aliases (`lib/colaborador-alias.ts`), nunca por um id do request.
+- O fornecedor é identificado pelo login da sessão, que é o P0: o mesmo valor do `Profissional.codigo` e do código do cadastro ([decisão 012](../decisoes/012-p0-como-id-do-fornecedor.md)). Os aliases vêm de `lib/colaborador-alias.ts`. Nunca por um id do request nem pelo nome do usuário.
+- O login do fornecedor é gerado por `generateUniqueInternalAccessCode` (`P0` + 6 dígitos). Para fornecedor novo, `gerarP0Livre` (`lib/codigo-p0.ts`) garante que ele também não é código, nome legado nem alias de nenhum Profissional.
 - Muitas rotas fazem `user.perfil === "ADMIN"` inline depois de `requireAdmin`. Confira as duas camadas.
 - A permissão extra só vale para MEDICAO/FINANCEIRO/ADMINISTRATIVO e só é gravada em `app/api/admin/usuarios/[id]` (com auditoria).
 - `primeiroLogin` não é bloqueado no servidor fora da troca de senha (só na UI).
