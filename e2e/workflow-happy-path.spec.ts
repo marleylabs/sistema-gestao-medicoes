@@ -134,7 +134,8 @@ test.describe.serial("Happy path — MEDICAO envia BM → FORNECEDOR conclui →
     await financeiro.expectStatusBadge(FORNECEDOR_NOME, "Aguardando pgto.");
     await financeiro.verBm(FORNECEDOR_NOME);
     await expect(page.getByText(/BOLETIM DE MEDIÇÃO/i)).toBeVisible();
-    await expect(page.getByRole("cell", { name: FORNECEDOR_NOME })).toBeVisible();
+    // exact: a linha da lista atrás do modal também contém o nome ("Nome P09…")
+    await expect(page.getByRole("cell", { name: FORNECEDOR_NOME, exact: true })).toBeVisible();
     // Navegação nova fecha o modal de forma confiável (o próprio botão "X" mostrou flakiness real
     // de timing nesta suíte — navegar de novo é uma interação mais robusta que vale mais a pena
     // aqui do que persistir caçando a causa exata de um clique instável).
@@ -192,7 +193,8 @@ test.describe.serial("Happy path — MEDICAO envia BM → FORNECEDOR conclui →
     await evidencias.selectFornecedor(FORNECEDOR_NOME);
     await evidencias.verBoletim(FORNECEDOR_NOME);
     await expect(page.getByText(/BOLETIM DE MEDIÇÃO/i)).toBeVisible();
-    await expect(page.getByRole("cell", { name: FORNECEDOR_NOME })).toBeVisible();
+    // exact: a linha da lista atrás do modal também contém o nome ("Nome P09…")
+    await expect(page.getByRole("cell", { name: FORNECEDOR_NOME, exact: true })).toBeVisible();
 
     await page.request.post("/api/auth/logout");
   });

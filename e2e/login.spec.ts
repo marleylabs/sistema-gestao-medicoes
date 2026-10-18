@@ -8,6 +8,15 @@ import { e2eUsers } from "./fixtures";
  */
 
 test.describe("Login por perfil", () => {
+  test("login() só devolve o controle depois da navegação pós-login", async ({ page }) => {
+    // Regressão: o helper esperava só o POST; o window.location.assign("/") do formulário vinha depois
+    // e abortava o page.goto seguinte do teste (net::ERR_ABORTED) ou recarregava a tela no meio dele.
+    const login = new LoginPage(page);
+    await login.goto();
+    await login.login(e2eUsers.admin.usuario, e2eUsers.admin.senha);
+    expect(new URL(page.url()).pathname).not.toBe("/login"); // sem retry de propósito: mede o instante do retorno
+  });
+
   test("ADMIN: login, sessão criada, sidebar com todas as seções administrativas", async ({ page }) => {
     const login = new LoginPage(page);
     await login.goto();

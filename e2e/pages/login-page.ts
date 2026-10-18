@@ -17,7 +17,12 @@ export class LoginPage {
     // frente do POST /api/auth/login ainda em voo).
     const loginResponse = this.page.waitForResponse((res) => res.url().endsWith("/api/auth/login") && res.request().method() === "POST");
     await this.page.getByRole("button", { name: /Entrar/i }).click();
-    await loginResponse;
+    const resposta = await loginResponse;
+    // Sucesso sem troca de senha: o formulário ainda faz window.location.assign("/") depois do POST. Sem
+    // esperar essa navegação, o page.goto seguinte do teste corre contra ela e é abortado (net::ERR_ABORTED).
+    const corpo: unknown = resposta.ok() ? await resposta.json().catch(() => null) : null;
+    const trocaSenha = typeof corpo === "object" && corpo !== null && "requirePasswordChange" in corpo && Boolean(corpo.requirePasswordChange);
+    if (resposta.ok() && !trocaSenha) await this.page.waitForURL((url) => url.pathname !== "/login");
   }
 
   async expectErrorMessage(pattern: RegExp) {
