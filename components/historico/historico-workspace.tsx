@@ -93,7 +93,7 @@ export function HistoricoWorkspace({ ciclos }: { ciclos: CicloHistorico[] }) {
         </div>
       </div>
 
-      <Card className="w-full min-w-0 max-w-full overflow-hidden">
+      <Card className="w-full min-w-0 max-w-full">
         <div className="flex flex-col gap-3 border-b border-[var(--border)] px-5 py-3 xl:flex-row xl:items-center xl:justify-between">
           <div role="tablist" aria-label="Perspectiva" className="-mx-5 flex gap-x-5 overflow-x-auto whitespace-nowrap px-5 xl:mx-0 xl:overflow-visible xl:px-0">
             {VISOES.map((v) => (

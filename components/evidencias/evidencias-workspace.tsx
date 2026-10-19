@@ -104,7 +104,7 @@ export function EvidenciasWorkspace({
         </div>
       )}
 
-      <Card className="w-full min-w-0 max-w-full overflow-hidden">
+      <Card className="w-full min-w-0 max-w-full">
         <div className="flex flex-col gap-2 border-b border-[var(--border)] px-5 py-3 sm:flex-row sm:items-center sm:justify-end">
           <span className="relative min-w-0 sm:w-[300px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[var(--muted-foreground)]" size={14} />

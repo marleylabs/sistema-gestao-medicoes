@@ -1303,7 +1303,7 @@ export function AdministrativoPanel({
         </div>
       )}
 
-      <Card className="min-w-0 overflow-hidden">
+      <Card className="min-w-0">
         <div className="flex flex-col gap-3 border-b border-[var(--border)] px-5 py-3 xl:flex-row xl:items-center xl:justify-between">
           <div role="tablist" aria-label="Tipo de cadastro" className="flex gap-5">
             {([

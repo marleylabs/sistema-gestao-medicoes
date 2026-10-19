@@ -167,4 +167,21 @@ test.describe("Hotfix — máscara limpa, gráfico e filtros responsivos", () =>
     }
     await page.request.post("/api/auth/logout");
   });
+
+  test("FILTROS (bug): com poucos resultados, o popover não é cortado pelo card da lista", async ({ page }) => {
+    await login(page, e2eUsers.admin);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    for (const [secao, busca] of [["historico", "Buscar no histórico"], ["evidencias", "Buscar evidências"], ["administrativo", "Buscar cadastros"]]) {
+      await page.goto(`/?section=${secao}`);
+      // Busca sem resultado deixa o card da lista mais baixo que o popover.
+      await page.getByRole("textbox", { name: busca }).fill("zz-sem-resultado-zz");
+      await page.getByRole("button", { name: /^Filtros/ }).first().click();
+      const painel = page.locator("div.absolute.z-40").filter({ hasText: "Limpar filtros" }).first();
+      await expect(painel).toBeVisible();
+      const limpar = (await painel.getByRole("button", { name: "Limpar filtros" }).boundingBox())!;
+      const visivel = await painel.evaluate((el, p) => el.contains(document.elementFromPoint(p.x, p.y)), { x: limpar.x + limpar.width / 2, y: limpar.y + limpar.height / 2 });
+      expect(visivel, `${secao}: "Limpar filtros" visível`).toBe(true);
+    }
+    await page.request.post("/api/auth/logout");
+  });
 });
