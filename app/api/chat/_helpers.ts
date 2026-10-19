@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import type { AuthUser } from "@/lib/session";
 import { normalizeAccessUsername, toColaboradorCodigo } from "@/lib/usuario-format";
 import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
+import { findFornecedorConversa } from "@/lib/chat-teams";
 
 function isUniqueConstraintError(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
@@ -33,7 +34,7 @@ export function directChatKey(a: string, b: string) {
   return ["DIRECT", ...[a, b].sort()].join(":");
 }
 
-export { isDisabledTeamChave, teamPerfilFromChave } from "@/lib/chat-teams";
+export { findFornecedorConversa, isDisabledTeamChave, teamPerfilFromChave } from "@/lib/chat-teams";
 
 export async function ensureChatParticipant(conversaId: string, usuarioId: string) {
   return prisma.chatParticipante.findUnique({
@@ -123,6 +124,7 @@ export async function importSgcChatsForUser(user: AuthUser) {
       .forEach((cadastro) => cadastro.colaboradorCodigo && fornecedorByCodigo.set(cadastro.colaboradorCodigo, fornecedor.id));
   }
 
+  const conversaByFornecedor = new Map<string, { id: string } | null>();
   for (const log of logs) {
     const fornecedorId = fornecedorByCodigo.get(log.colaboradorCodigo);
     if (!fornecedorId) continue;
@@ -133,8 +135,9 @@ export async function importSgcChatsForUser(user: AuthUser) {
     if (user.perfil !== "COLABORADOR" && !isInternalPerfil(user.perfil)) continue;
 
     const chave = `DIRECT:${[fornecedorId, medicaoAutorId].sort().join(":")}`;
-    let conversa: { id: string };
-    try {
+    if (!conversaByFornecedor.has(fornecedorId)) conversaByFornecedor.set(fornecedorId, await findFornecedorConversa(prisma, fornecedorId));
+    let conversa = conversaByFornecedor.get(fornecedorId) ?? null;
+    if (!conversa) try {
       conversa = await prisma.chatConversa.upsert({
         where: { chave },
         create: {
@@ -159,6 +162,7 @@ export async function importSgcChatsForUser(user: AuthUser) {
       if (!isUniqueConstraintError(err)) throw err;
       conversa = await prisma.chatConversa.findUniqueOrThrow({ where: { chave }, select: { id: true } });
     }
+    conversaByFornecedor.set(fornecedorId, conversa);
 
     try {
       await prisma.chatMensagem.upsert({

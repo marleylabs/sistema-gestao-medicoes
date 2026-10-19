@@ -1,5 +1,5 @@
 ---
-atualizado: 2026-10-16
+atualizado: 2026-10-19
 tags: [modulo]
 ---
 # Chat
@@ -17,6 +17,8 @@ tags: [modulo]
 **Regras e armadilhas:**
 - Não há WebSocket nem SSE: tudo é polling ([005](../decisoes/005-polling-para-tempo-real.md)). O widget atualiza a cada 5 s.
 - Os anexos ficam em `Bytes` no banco. `ChatMensagem.origem` é único e serve de idempotência para mensagens do sistema.
+- Cada fornecedor tem uma única conversa com a equipe interna. Todo caminho que cria conversa com fornecedor (POST de `/api/chat/conversas`, importação do SGC) reusa `findFornecedorConversa` (`lib/chat-teams.ts`), que ignora as equipes desabilitadas.
+- Duplicatas antigas: `scripts/mesclar-chat-duplicado.ts` mantém a conversa mais recente de cada fornecedor e move para ela as mensagens e os participantes das outras.
 - Excluir um usuário apagaria o chat em cascata; por isso o fornecedor é só soft-deleted.
 
 **Depende de:** [Autenticação](autenticacao.md)

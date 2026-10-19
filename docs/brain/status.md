@@ -24,6 +24,7 @@ atualizado: 2026-10-19
   - 2026-10-18 (checkpoint B do M4): falhas intermitentes isoladas em `portal-fornecedor-redesign:162` e `importacao-identidades:128`, uma em cada rodada; repetidos isolados, passaram (44/44 e 16/16).
 - Intermitência vista em 2026-10-18: numa rodada de `test:targeted` logo depois do E2E, 2 testes de `tests/migrar-codigo-p0.test.ts` (medir e reverter) falharam. Passaram isolados (16/16) e em duas rodadas completas seguidas (520/520). Suspeita: estado residual do E2E no banco compartilhado. Não investigado.
 - Testes em 2026-10-17, com a T5 no ambiente local: `test:targeted` 506/506, `pytest etl/` 44/44 e E2E 207/207 em duas rodadas seguidas, no `medicoes_e2e_bm`, depois de `npm run test:e2e:seed` nesse banco.
+- **Chat: fornecedor duplicado na lista da equipe** (2026-10-19, sem commit). A equipe abria uma conversa DIRECT com o fornecedor e, depois, o fornecedor clicava em "Equipe de Medição", que criava `TEAM:MEDICAO:<id>` sem procurar a existente. Agora todo caminho de criação reusa `findFornecedorConversa` (`lib/chat-teams.ts`). Teste: `tests/chat-fornecedor-conversa-unica.test.ts`. As duplicatas que já existem são mescladas por `scripts/mesclar-chat-duplicado.ts` (dry-run por padrão; `--aplicar` exige backup antes; lógica em `lib/chat-mesclar-duplicadas.ts`, teste em `tests/chat-mesclar-duplicadas.test.ts`). Ainda não rodado na produção. `test:targeted` 548/548 no `medicoes_e2e_bm`.
 - Integração em `layout2.0`/`release/*`; `main` (13b7cd7) está 85 commits atrás.
 
 ## Próximos passos
