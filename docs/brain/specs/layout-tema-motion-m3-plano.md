@@ -63,7 +63,7 @@ As tarefas 3 a 5 não dependem entre si, mas tocam os mesmos arquivos grandes (`
 
 - [x] **T2: `Modal` único** — feita em 2026-10-18.
   - `Modal` em `components/ui.tsx`: overlay, contêiner, `role`/`aria-*`, entrada com escala e fade, saída rápida com `pointer-events-none` via `useIsPresent`; variante `tela` para os visualizadores de BM.
-  - 19 modais migrados (16 `ds-dialog`, o de credencial e os visualizadores de BM de Evidências e de Histórico, que passaram a ter `role="dialog"` com o nome "Boletim de Medição"). A conversão foi mecânica (só o invólucro), com `AnimatePresence` e `key` própria nos pontos que abrem dentro do escopo.
+  - 19 modais migrados (16 `ds-dialog`, o de credencial e os visualizadores de BM de Evidências e de Histórico, que passaram a ter `role="dialog"` com o nome "Boletim de Medição"). A conversão foi mecânica (só o invólucro), com `AnimatePresence` e `key` própria nos pontos que abrem dentro do escopo. Em 2026-10-19 o modal "Configurações da conta" (`components/account-menu.tsx`) também passou para o `Modal`, num portal no `body`, porque no celular ele nascia dentro da gaveta lateral e ficava cortado.
   - Os modais do Administrativo que não tinham `role` passaram a ter `role="dialog"`; todos os seletores de diálogo do E2E usam nome, então nada ficou ambíguo.
   - O `PortalDialog` (M4) já usa o `Modal`; o `AnimatePresence` dos pontos dele fica para o M4.
   - Medido no Chromium headless: o modal entra (opacidade de 0,13 a 1 e escala de 0,97 a 1), sai com `pointer-events: none` e reabre logo depois de cancelar. A guarda antiga do M1 (`starting:` em cada `ds-dialog`) foi trocada pela do `Modal`, e `tests/portal-fornecedor.test.ts` passou a conferir os atributos do diálogo no `Modal` (o portal passa `role` e título).

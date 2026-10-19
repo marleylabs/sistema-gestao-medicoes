@@ -1,9 +1,12 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence } from "framer-motion";
 import { Camera, CheckCircle2, ChevronRight, Clock3, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, Monitor, Moon, Pencil, Settings, ShieldCheck, Smartphone, Sun, Trash2, X } from "lucide-react";
 import { clsx } from "clsx";
-import { Button, Input } from "@/components/ui";
+import { Button, Input, Modal } from "@/components/ui";
+import { useMontadoAposHidratacao } from "@/components/motion";
 import { useTema } from "@/components/providers";
 import type { AuthUser } from "@/lib/session";
 import type { PreferenciaTema } from "@/lib/tema";
@@ -214,7 +217,7 @@ function Avatar({
   src?: string | null;
   size?: "sm" | "md" | "lg";
 }) {
-  const sizeClass = size === "lg" ? "h-28 w-28 text-3xl" : size === "sm" ? "h-[34px] w-[34px] text-xs" : "h-12 w-12 text-sm";
+  const sizeClass = size === "lg" ? "h-16 w-16 text-xl" : size === "sm" ? "h-[34px] w-[34px] text-xs" : "h-12 w-12 text-sm";
   return (
     <span className={clsx("inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--primary-soft)] font-bold text-[var(--primary)]", sizeClass)}>
       {src ? (
@@ -231,6 +234,7 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
   const { preferencia, setPreferencia } = useTema();
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const montado = useMontadoAposHidratacao();
   const [tab, setTab] = useState<"account" | "security">("account");
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -561,10 +565,12 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
         )}
       </div>
 
-      {modalOpen && (
-        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/35 p-3 pt-8 sm:p-8">
-          <div className="flex max-h-[min(720px,calc(100vh-48px))] w-full max-w-[760px] flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
-            <div className="flex h-10 items-center justify-between border-b border-[var(--border)] px-3">
+      {/* Portal no body: no celular o menu fica na gaveta lateral (com transform), que prenderia o `fixed` do modal. */}
+      {montado && createPortal(
+        <AnimatePresence>
+          {modalOpen && (
+          <Modal rotulo="Configurações da conta" sobreposicao="z-[80] items-start sm:items-center" className="flex max-h-[calc(100dvh-16px)] w-full max-w-[760px] flex-col overflow-hidden sm:max-h-[min(720px,calc(100dvh-32px))]">
+            <div className="flex h-12 shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
               <div className="flex items-center gap-1">
                 <button
                   type="button"
@@ -591,7 +597,7 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
               </button>
             </div>
 
-            <div className="overflow-y-auto px-6 py-8 sm:px-10">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-7">
               {feedback && (
                 <div className={clsx(
                   "mb-5 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
@@ -604,55 +610,39 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
 
               {tab === "account" ? (
                 <div className="grid gap-7">
-                  <section className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-5">
-                    <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-                      <div className="relative h-28 w-28 shrink-0">
-                        <Avatar name={displayProfile.nome} src={avatarSrc} size="lg" />
-                        <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={uploadAvatar} />
+                  <section className="flex items-center gap-4">
+                    <Avatar name={displayProfile.nome} src={avatarSrc} size="lg" />
+                    <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={uploadAvatar} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="min-w-0 truncate text-lg font-bold text-[var(--foreground)] sm:text-xl">{displayProfile.nome}</h2>
+                        <span className="inline-flex items-center rounded-full border border-[var(--primary)]/30 bg-[var(--primary-soft)] px-2 py-0.5 text-xs font-bold text-[var(--primary)]">
+                          {roleLabel}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
                         <button
                           type="button"
-                          className="absolute bottom-1 right-1 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border-strong)] bg-[var(--surface)] text-[var(--muted-foreground)] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/30"
+                          className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-1.5 text-sm font-semibold text-[var(--muted-foreground)] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-60"
                           onClick={() => fileInputRef.current?.click()}
                           disabled={avatarUploading}
-                          aria-label="Alterar foto de perfil"
-                          title="Alterar foto"
                         >
-                          <Camera size={16} />
+                          <Camera size={15} />
+                          Alterar foto
                         </button>
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="truncate text-2xl font-bold text-[var(--foreground)]">{displayProfile.nome}</h2>
-                          <span className="inline-flex items-center rounded-full border border-[var(--primary)]/30 bg-[var(--primary-soft)] px-2.5 py-1 text-xs font-bold text-[var(--primary)]">
-                            {roleLabel}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-sm font-medium text-[var(--muted-foreground)]">ID de acesso {displayProfile.usuario}</p>
-                        <div className="mt-4 flex flex-wrap gap-2">
+                        {avatarSrc && (
                           <button
                             type="button"
-                            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--muted-foreground)] shadow-sm transition hover:border-[var(--primary)] hover:text-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-60"
-                            onClick={() => fileInputRef.current?.click()}
+                            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[var(--error)]/30 bg-[var(--surface)] px-3 py-1.5 text-sm font-semibold text-[var(--error)] shadow-sm transition hover:bg-[var(--error-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => {
+                              if (window.confirm("Remover a foto de perfil?")) removeAvatar();
+                            }}
                             disabled={avatarUploading}
                           >
-                            <Camera size={15} />
-                            Alterar foto
+                            <Trash2 size={15} />
+                            Remover
                           </button>
-                          {avatarSrc && (
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-2 rounded-lg border border-[var(--error)]/30 bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--error)] shadow-sm transition hover:bg-[var(--error-soft)] disabled:cursor-not-allowed disabled:opacity-60"
-                              onClick={() => {
-                                if (window.confirm("Remover a foto de perfil?")) removeAvatar();
-                              }}
-                              disabled={avatarUploading}
-                            >
-                              <Trash2 size={15} />
-                              Remover
-                            </button>
-                          )}
-                        </div>
+                        )}
                       </div>
                     </div>
                   </section>
@@ -666,7 +656,7 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                           : "Seu nome é atualizado pelo Painel Administrativo."}
                       </p>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3">
                       {podeAlterarProprioNome(displayProfile.perfil) ? <NameField
                         value={displayProfile.nome}
                         editing={nameEditing}
@@ -678,7 +668,6 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                         onCancel={cancelNameEdit}
                         onSave={saveName}
                       /> : <ReadOnlyField label="Nome" value={displayProfile.nome} />}
-                      <ReadOnlyField label="Permissão" value={roleLabel} />
                     </div>
                   </section>
 
@@ -689,7 +678,6 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                         <p className="mt-1 text-sm text-[var(--muted-foreground)]">Atualizados pelo Painel Administrativo.</p>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <ReadOnlyField label="Responsável" value={displayProfile.dadosCadastrais.responsavel} />
                         <ReadOnlyField label="Cargo" value={displayProfile.dadosCadastrais.cargo} />
                         <ReadOnlyField label="Razão social" value={displayProfile.dadosCadastrais.razaoSocial} />
                         <ReadOnlyField label="CNPJ" value={displayProfile.dadosCadastrais.cnpj} />
@@ -702,7 +690,7 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                   )}
 
                   <section className="grid gap-4">
-                    <h3 className="text-base font-bold text-[var(--foreground)]">Dados de acesso</h3>
+                    <h3 className="text-base font-bold text-[var(--foreground)]">Acesso</h3>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="rounded-lg border border-[var(--primary)]/30 bg-[var(--primary-soft)] px-4 py-3">
                         <div className="flex items-center justify-between gap-2">
@@ -830,8 +818,10 @@ export function AccountMenu({ user, roleLabel, onLogout, compact = false }: Acco
                 </div>
               )}
             </div>
-          </div>
-        </div>
+          </Modal>
+          )}
+        </AnimatePresence>,
+        document.body,
       )}
     </>
   );
