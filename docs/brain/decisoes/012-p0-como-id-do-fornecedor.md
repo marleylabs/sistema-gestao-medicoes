@@ -37,4 +37,4 @@ As duas primeiras criam um segundo vínculo, e o CNPJ não é único.
 - fornecedor novo com P0;
 - fim da ligação por nome no app.
 
-Ainda não implantado: falta o ensaio com os dados reais e a migração na pré-produção e na produção (T6). A migração inclui os fornecedores inativos.
+Implantado na produção em 2026-10-18 (UTC), com o ensaio local antes (T6); a migração incluiu os fornecedores inativos. O servidor chamado de pré-produção é a produção ([decisão 013](013-servidor-unico-e-producao.md)).

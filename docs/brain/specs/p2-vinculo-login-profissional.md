@@ -1,6 +1,6 @@
 ---
-atualizado: 2026-10-17
-status: aprovada em 2026-10-16 (v2); T1 a T4 implementadas em 2026-10-17, não implantada
+atualizado: 2026-10-19
+status: concluída; implantada na produção em 2026-10-18 (UTC) (a "pré-produção" desta spec é a produção, ver decisão 013)
 tags: [spec]
 ---
 # Spec: P0 como único ID do fornecedor

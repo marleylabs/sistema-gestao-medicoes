@@ -7,7 +7,6 @@ atualizado: 2026-10-17
 - Nenhuma em aberto (última revisão: 2026-10-16).
 
 ## P2: integridade e robustez
-- Não há vínculo explícito entre o login do fornecedor e o Profissional: a identidade vem do nome exato do usuário igual ao `responsavel` do cadastro (diagnóstico de 2026-10-16 na [spec do escopo](specs/p1-escopo-fornecedor-por-identidade.md)). Homônimo novo bloqueia o acesso (falha fechado), mas o elo é frágil. Solução aprovada: P0 como único ID ([spec](specs/p2-vinculo-login-profissional.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)). Implementada no código (T1 a T5, 2026-10-17) e migrada na pré-produção (2026-10-18); a pendência só sai depois da migração de dados na produção (T6).
 - Ações de NF, pagamento e do fornecedor sem lock nem compare-and-swap (só o envio do BM tem).
 - `logBmAction` grava a auditoria fora da transação e engole erros (`lib/bm-log.ts`).
 - Boletim calcula com `number`, não `Decimal` (`lib/boletim-calculo.ts`).

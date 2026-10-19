@@ -38,12 +38,13 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [010 Reimportação preserva BM](decisoes/010-reimportacao-preserva-bm.md): BM aprovado/pago imutável na importação; divergência reportada
 - [011 Nome do fornecedor só pelo Administrativo](decisoes/011-nome-do-fornecedor-so-pelo-administrativo.md): o nome é o elo com o cadastro; o fornecedor não o altera
 - [012 P0 como ID do fornecedor](decisoes/012-p0-como-id-do-fornecedor.md): login = código do Profissional = código do cadastro; código antigo vira alias
+- [013 Servidor único é a produção](decisoes/013-servidor-unico-e-producao.md): 192.168.15.101:3020 é a produção; "pré-produção" nas notas antigas é ela
 
 ## Specs
 - [P1 escopo do fornecedor por identidade](specs/p1-escopo-fornecedor-por-identidade.md): lista de aliases do portal só com valores que resolvem para o próprio Profissional (implementada)
 - [Plano da P1 escopo do fornecedor](specs/p1-escopo-fornecedor-por-identidade-plano.md): T1 diagnóstico só leitura → filtro → aliases → Documentos Medidos → E2E (concluído)
 - [P2 P0 como único ID do fornecedor](specs/p2-vinculo-login-profissional.md): recodificar Profissional, cadastro e dados para o P0 do login; código antigo vira alias (aprovada)
-- [Plano da P2 P0 como ID](specs/p2-vinculo-login-profissional-plano.md): dry-run → migração → P0 no cadastro novo → fim da busca por nome → E2E → pré-produção
+- [Plano da P2 P0 como ID](specs/p2-vinculo-login-profissional-plano.md): dry-run → migração → P0 no cadastro novo → fim da busca por nome → E2E → produção (concluído)
 - [Layout: tema claro/escuro e motion](specs/layout-tema-motion.md): mapa M1 fundação → M2 login/dashboard, M3 setores, M4 portal; spec do M1 e do M2 (feitos) e do M3 (aprovada)
 - [Plano do M1 tema e motion](specs/layout-tema-motion-plano.md): tokens escuros → alternador → codemod de cores → motion → shell (concluído em 2026-10-18)
 - [Plano do M2 login e dashboard](specs/layout-tema-motion-m2-plano.md): AnimatedText em CSS → login → gráficos no tema → KPIs e cascata (concluído em 2026-10-18)

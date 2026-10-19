@@ -1,6 +1,6 @@
 ---
-atualizado: 2026-10-17
-status: em andamento (T1 a T5 feitas; T6 concluída na pré-produção; falta a produção)
+atualizado: 2026-10-19
+status: concluído (T1 a T6; a "pré-produção" deste plano é a produção, ver decisão 013)
 tags: [spec, plano]
 ---
 # Plano: P0 como único ID do fornecedor
@@ -127,7 +127,8 @@ Nenhum passo vale rodar em paralelo.
   - Verificar: `npm run test:e2e:seed` e o E2E completo verde (hoje 206/206).
   - Arquivos: `scripts/seed-e2e.ts`, specs E2E.
 
-- [ ] **T6: ensaio local com dados reais, pré-produção e fechamento**
+- [x] **T6: ensaio local com dados reais, pré-produção e fechamento**
+  - 2026-10-19: o usuário confirmou que o servidor chamado aqui de pré-produção é a produção ([decisão 013](../decisoes/013-servidor-unico-e-producao.md)). A migração de 2026-10-18 já é a da produção; o bloco "Produção" abaixo não se aplica.
   - Aceite:
     0. Ensaio: restaurar um backup da pré-produção numa base **local** e rodar nela o dry-run, o `--aplicar` e a medição. Conflitos encontrados são resolvidos com o Administrativo antes de seguir.
        - 2026-10-17: backup da pré-produção (`pg_dump`, 2026-10-18T01:00Z) restaurado na base local `medicoes_ensaio_p0`. Ela tem as mesmas 8 migrations do projeto, 55 fornecedores com login, 61 Profissionais e 55 cadastros.
