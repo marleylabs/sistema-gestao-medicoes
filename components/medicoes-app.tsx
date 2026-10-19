@@ -1268,8 +1268,6 @@ function ImportarPlanilhaSection({
     }
   }
 
-
-
   const msgColors = { success: "bg-[var(--success-soft)] text-[var(--success)]", error: "bg-[var(--error-soft)] text-[var(--error)]", info: "bg-[var(--primary-soft)] text-[var(--primary)]" };
 
   return (
@@ -1425,11 +1423,10 @@ function ImportarPlanilhaSection({
                     <details data-testid="etl-aliases-utilizados">
                       <summary className="cursor-pointer font-semibold text-[var(--foreground)]">Nomes resolvidos por alias ({status.lastResult.aliases_utilizados.length})</summary>
                       <ul className="mt-1 grid gap-0.5">
-                        {(status.lastResult.aliases_utilizados as string[]).map((a) => <li key={a}>{a.replace(" -> ", " → ")}</li>)}
+                        {status.lastResult.aliases_utilizados.filter((a): a is string => typeof a === "string").map((a) => <li key={a}>{a.replace(" -> ", " → ")}</li>)}
                       </ul>
                     </details>
                   )}
-                  {/* Contadores brutos do ETL: só para diagnóstico, fechados por padrão. */}
                   <details data-testid="etl-detalhes-tecnicos">
                     <summary className="cursor-pointer font-semibold text-[var(--foreground)]">Detalhes técnicos</summary>
                     <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-4 gap-y-0.5 sm:max-w-sm">

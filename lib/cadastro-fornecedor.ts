@@ -7,7 +7,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { excelSerialToDate, parseSimpleXlsx } from "@/lib/xlsx";
 import { selectCadastroForAuthenticatedUser } from "@/lib/cadastro-identity";
-import { gerarP0Livre, trocarCodigoParaP0, usuariosDoFornecedor } from "@/lib/codigo-p0";
+import { chaveCodigo, gerarP0Livre, trocarCodigoParaP0, usuariosDoFornecedor } from "@/lib/codigo-p0";
 
 export const CADASTRO_FORNECEDOR_SHEET = "CONTRATOS_ATIVOS";
 
@@ -1069,16 +1069,19 @@ export async function upsertCadastroFornecedor(
 /**
  * Edição do Administrativo: o usuário fornecedor espelha o `responsavel` (decisão 011) e o e-mail do
  * cadastro, que é o destino do primeiro acesso. O usuário é o do código (P0, decisão 012); com
- * ambiguidade, não altera ninguém. E-mail apagado no cadastro não apaga o de acesso: usuário ativo
- * precisa de e-mail (mesma regra do `set_email` em /api/admin/usuarios/[id]).
+ * ambiguidade, não altera ninguém. O e-mail só vai para o usuário achado pelo login: o achado pelo
+ * nome (identidade de antes do P0) pode ser um homônimo, e receberia credenciais de outro. E-mail
+ * apagado no cadastro não apaga o de acesso: usuário ativo precisa de e-mail (mesma regra do
+ * `set_email` em /api/admin/usuarios/[id]).
  */
 export async function sincronizarUsuarioDoFornecedor(tx: Prisma.TransactionClient, colaboradorCodigo: string | null, dados: { nome: string; email: string | null }, nomeAnterior?: string) {
   if (!colaboradorCodigo) return;
   const usuarios = await usuariosDoFornecedor(tx, { codigo: colaboradorCodigo, nomeLegado: nomeAnterior });
   if (usuarios.length !== 1) return;
+  const peloLogin = usuarios[0].usuario === chaveCodigo(colaboradorCodigo);
   await tx.usuario.update({
     where: { id: usuarios[0].id },
-    data: { nome: dados.nome, ...(dados.email ? { email: encryptSensitive(dados.email) } : {}), updatedAt: new Date() },
+    data: { nome: dados.nome, ...(dados.email && peloLogin ? { email: encryptSensitive(dados.email) } : {}), updatedAt: new Date() },
   });
 }
 

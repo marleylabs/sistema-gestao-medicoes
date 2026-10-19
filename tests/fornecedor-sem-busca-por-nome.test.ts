@@ -75,6 +75,23 @@ test("renomear o responsável renomeia só o usuário do código, mesmo com hom�
   await db.usuario.update({ where: { usuario: loginA }, data: { nome } });
 });
 
+const emailDe = (login: string) => db.usuario.findUniqueOrThrow({ where: { usuario: login }, select: { email: true } }).then((u) => u.email);
+
+test("editar o e-mail do cadastro grava o e-mail de acesso do usuário do código; vazio não apaga", async () => {
+  await db.$transaction((tx) => cad.sincronizarUsuarioDoFornecedor(tx, loginA, { nome, email: "a@example.test" }));
+  const gravado = await emailDe(loginA);
+  assert.ok(gravado);
+  await db.$transaction((tx) => cad.sincronizarUsuarioDoFornecedor(tx, loginA, { nome, email: null }));
+  assert.equal(await emailDe(loginA), gravado);
+  assert.equal(await emailDe(loginH), null);
+});
+
+test("e-mail nunca vai para usuário achado só pelo nome (homônimo legado sem P0)", async () => {
+  const nomeLegado = `SO PELO NOME ${sufixo}`;
+  await db.$transaction((tx) => cad.sincronizarUsuarioDoFornecedor(tx, `X ${sufixo}`, { nome: nomeLegado, email: "x@example.test" }, nomeLegado));
+  assert.equal(await emailDe(loginSemVinculo), null);
+});
+
 test("inativar e reativar o fornecedor atinge só o usuário do código, nunca o homônimo", async () => {
   await cad.setFornecedoresAtivos([cadastroA], false, admin);
   assert.equal((await usuario(loginA)).ativo, false);

@@ -1352,6 +1352,8 @@ export function AdministrativoPanel({
             </div>
           </div>
         </div>
+        {/* Recorte só abaixo da barra: o popover de Filtros mora nela e precisa sair do card. */}
+        <div className="overflow-hidden rounded-b-[10px]">
 
         {filtroChips.length > 0 && (
           <div className="flex flex-wrap gap-1.5 border-b border-[var(--border)] px-5 py-2.5">
@@ -1422,6 +1424,7 @@ export function AdministrativoPanel({
             {visiveisAba === totalAba ? `${totalAba} ${aba === "fornecedores" ? "fornecedores" : "funcionários"}` : `${visiveisAba} de ${totalAba} ${aba === "fornecedores" ? "fornecedores" : "funcionários"}`}
           </span>
           {loading && totalAba > 0 && <span>Atualizando…</span>}
+        </div>
         </div>
       </Card>
 

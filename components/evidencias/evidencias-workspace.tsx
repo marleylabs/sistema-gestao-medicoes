@@ -166,6 +166,8 @@ export function EvidenciasWorkspace({
             </div>
           </div>
         </div>
+        {/* Recorte só abaixo da barra: o popover de Filtros mora nela e precisa sair do card. */}
+        <div className="overflow-hidden rounded-b-[10px]">
 
         {chips.length > 0 && (
           <div className="flex flex-wrap gap-1.5 border-b border-[var(--border)] px-5 py-2.5">
@@ -191,6 +193,7 @@ export function EvidenciasWorkspace({
             <span className="font-semibold tabular-nums text-[var(--foreground)]" data-testid="evidencias-total"><BlurValue>{brl.format(total)}</BlurValue></span>
           </div>
         )}
+        </div>
       </Card>
 
       {/* Filho estável: trocar de evidência é instantâneo (sem dois painéis ao mesmo tempo); fechar anima. */}

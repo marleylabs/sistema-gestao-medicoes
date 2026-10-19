@@ -22,7 +22,6 @@ type ProfileData = {
   ultimoLoginAt: string | null;
   createdAt: string;
   dadosCadastrais: {
-    responsavel: string;
     razaoSocial: string;
     cnpj: string | null;
     cpf: string | null;

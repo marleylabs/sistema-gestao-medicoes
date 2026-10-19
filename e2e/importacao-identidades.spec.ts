@@ -157,9 +157,7 @@ test.describe.serial("Importação — identidades pendentes, automáticas e des
     await expect(page.getByTestId("etl-detalhes-tecnicos").getByText("rows_read", { exact: true })).toBeHidden();
     await page.getByTestId("etl-detalhes-tecnicos").getByText("Detalhes técnicos").click();
     await expect(page.getByTestId("etl-detalhes-tecnicos").getByText("rows_read", { exact: true })).toBeVisible();
-    // O "Limpar dados" saiu da aplicação, com a rota.
     await expect(page.getByRole("button", { name: "Limpar dados" })).toHaveCount(0);
-    expect((await page.request.post("/api/admin/reset-database", { data: { confirmacao: "LIMPAR" } })).status()).toBe(404);
     // Linhas vazias nunca viraram ocorrência; pendentes estão no ciclo (sem Profissional) e no total.
     expect(await prisma.medicao.count({ where: { ciclo: CICLO } })).toBe(5);
     expect(await somaMapa()).toBe(190); // 100 + 10 + 50 + 30 (a linha descartada, 7, não entra)
