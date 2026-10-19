@@ -49,8 +49,8 @@ atualizado: 2026-10-18
 - `npm run build` e o Playwright compartilham `.next`: rode `rm -rf .next` depois do build.
 
 ## Últimas mudanças (máx. 5, mais recente primeiro)
+- 2026-10-18: bug corrigido: editar o e-mail do fornecedor no Administrativo não atualizava o e-mail de acesso (`Usuario.email`), e "Enviar primeiro acesso" ia para o endereço antigo. A edição agora sincroniza nome e e-mail do usuário do código (`sincronizarUsuarioDoFornecedor`). E-mail apagado no cadastro não apaga o de acesso. Cadastros que já estão divergentes se corrigem ao salvar a edição de novo. Teste: `e2e/administrativo-editar-email.spec.ts`. `test:targeted` 542/542. Sem commit.
 - 2026-10-18: M4 do layout (portal do fornecedor): Minhas Medições com Modal, painel animado e realce; diálogos com saída inerte; ação pendente em destaque; títulos animados e cascata; chat com entrada animada. Achados da revisão corrigidos (valores do BM sem contagem, Esc desligado na saída).
 - 2026-10-18: M3 do layout (painéis, `Modal`, abas, `Toast`, `Skeleton`, realce da linha) com os achados da revisão corrigidos. Inclui: painéis e modais ficam `inert` durante a saída, e fechar o BM durante o carregamento não reabre mais (`useVisualizadorBm`). Commit 7fb1499 (sem push).
 - 2026-10-18: M2 do layout (login e dashboard) e correção da corrida do login nos testes E2E (`LoginPage.login` espera a navegação pós-login). `test:targeted` 531/531, E2E 208/208 em 2 de 3 rodadas. Sem commit.
 - 2026-10-18: M1 do layout completo (T1 a T5): modo escuro com contraste medido, alternador no menu da conta, cores fixas migradas para tokens, primitivas de motion (`components/motion.tsx`), títulos e troca de seção animados, entrada dos diálogos. Sem commit.
-- 2026-10-18: T6 da P2 na pré-produção: 55/55 fornecedores no P0, deploy de 2e1a9a4, medição e smoke ok.

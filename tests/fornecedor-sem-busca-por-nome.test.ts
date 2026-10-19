@@ -69,7 +69,7 @@ test("resumo de candidatos: usuário do Profissional é o do código", async () 
 });
 
 test("renomear o responsável renomeia só o usuário do código, mesmo com homônimo", async () => {
-  await db.$transaction((tx) => cad.renomearUsuarioDoFornecedor(tx, loginA, `${nome} NOVO`));
+  await db.$transaction((tx) => cad.sincronizarUsuarioDoFornecedor(tx, loginA, { nome: `${nome} NOVO`, email: null }));
   assert.equal((await usuario(loginA)).nome, `${nome} NOVO`);
   assert.equal((await usuario(loginH)).nome, nome);
   await db.usuario.update({ where: { usuario: loginA }, data: { nome } });

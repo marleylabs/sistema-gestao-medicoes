@@ -1067,13 +1067,19 @@ export async function upsertCadastroFornecedor(
 }
 
 /**
- * Decisão 011: o nome do usuário fornecedor espelha o `responsavel` do cadastro e só muda pela edição
- * do Administrativo. O usuário é o do código (P0, decisão 012); com ambiguidade, não renomeia ninguém.
+ * Edição do Administrativo: o usuário fornecedor espelha o `responsavel` (decisão 011) e o e-mail do
+ * cadastro, que é o destino do primeiro acesso. O usuário é o do código (P0, decisão 012); com
+ * ambiguidade, não altera ninguém. E-mail apagado no cadastro não apaga o de acesso: usuário ativo
+ * precisa de e-mail (mesma regra do `set_email` em /api/admin/usuarios/[id]).
  */
-export async function renomearUsuarioDoFornecedor(tx: Prisma.TransactionClient, colaboradorCodigo: string | null, responsavel: string, nomeAnterior?: string) {
+export async function sincronizarUsuarioDoFornecedor(tx: Prisma.TransactionClient, colaboradorCodigo: string | null, dados: { nome: string; email: string | null }, nomeAnterior?: string) {
   if (!colaboradorCodigo) return;
   const usuarios = await usuariosDoFornecedor(tx, { codigo: colaboradorCodigo, nomeLegado: nomeAnterior });
-  if (usuarios.length === 1) await tx.usuario.update({ where: { id: usuarios[0].id }, data: { nome: responsavel, updatedAt: new Date() } });
+  if (usuarios.length !== 1) return;
+  await tx.usuario.update({
+    where: { id: usuarios[0].id },
+    data: { nome: dados.nome, ...(dados.email ? { email: encryptSensitive(dados.email) } : {}), updatedAt: new Date() },
+  });
 }
 
 /** Lançada quando a resolução manual não pode prosseguir — código escolhido não é um dos

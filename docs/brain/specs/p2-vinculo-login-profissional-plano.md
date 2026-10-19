@@ -97,7 +97,7 @@ Nenhum passo vale rodar em paralelo.
 
 - [x] **T4: fim da busca por nome**: feita em 2026-10-17.
   - Escopo do portal, NF, listagem do Administrativo, primeiro acesso em lote, resumo de candidatos e relatório de inconsistências acham usuário e cadastro só pelo código (= login).
-  - `usuariosDoFornecedor` (`lib/codigo-p0.ts`) é a regra única de "usuário do fornecedor". É usada por inativação, exclusão definitiva, edição (`renomearUsuarioDoFornecedor`) e upsert. Ela busca pelo login; só para identidade de antes do P0 cai no nome, e nunca no usuário de outro fornecedor já em P0.
+  - `usuariosDoFornecedor` (`lib/codigo-p0.ts`) é a regra única de "usuário do fornecedor". É usada por inativação, exclusão definitiva, edição (`sincronizarUsuarioDoFornecedor`) e upsert. Ela busca pelo login; só para identidade de antes do P0 cai no nome, e nunca no usuário de outro fornecedor já em P0.
   - A migração deixou de usar o escopo do portal e lê a cadeia antiga por nome por conta própria (`profissionalAntesDoP0`). É o único lugar que precisa dela. A migração agora inclui os fornecedores **inativos**, não só os ativos: ao serem reativados, já estão em P0.
   - Ficou de propósito: a trava da exclusão definitiva que recusa excluir cadastro antigo **sem código** quando há Profissional ou usuário com o mesmo nome. Ela só bloqueia; não liga nem expõe nada.
   - Testes: `tests/fornecedor-sem-busca-por-nome.test.ts` (6, todos falhavam antes). Ajustados à regra nova: `tests/cadastro-identity.test.ts`, as fixtures de `tests/colaborador-alias.test.ts` (código = login) e o `select` fixado em `tests/temporary-password-security.test.ts`. `test:targeted` 506/506; `tsc` limpo.

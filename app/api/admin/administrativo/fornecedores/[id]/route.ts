@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdministrativo } from "@/lib/admin";
-import { formatCnpj, normalizeCnpjDigits, onlyDigits, renomearUsuarioDoFornecedor, serializeCadastroFornecedor } from "@/lib/cadastro-fornecedor";
+import { formatCnpj, normalizeCnpjDigits, onlyDigits, serializeCadastroFornecedor, sincronizarUsuarioDoFornecedor } from "@/lib/cadastro-fornecedor";
 import { validateTipoCondicaoFixaForWrite } from "@/lib/condicao-fixa";
 import { validateFonteMedicaoForWrite } from "@/lib/fonte-medicao";
 import { encryptSensitive } from "@/lib/encryption";
@@ -140,10 +140,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         updatedAt: new Date(),
       },
     });
-    // Decisão 011: o nome do usuário fornecedor espelha o responsável e só muda por aqui.
-    if (anterior.responsavel !== responsavel) {
-      await renomearUsuarioDoFornecedor(tx, cadastro.colaboradorCodigo, responsavel, anterior.responsavel);
-    }
+    // Nome (decisão 011) e e-mail do acesso acompanham o cadastro; o primeiro acesso usa o e-mail do usuário.
+    await sincronizarUsuarioDoFornecedor(tx, cadastro.colaboradorCodigo, { nome: responsavel, email }, anterior.responsavel);
     return cadastro;
   });
 

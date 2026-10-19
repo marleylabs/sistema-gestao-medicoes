@@ -23,7 +23,7 @@ tags: [modulo]
 - O CNPJ não é identidade nem tem UNIQUE: cadastros diferentes podem compartilhar CNPJ.
 - O mesmo nome com 2 ou mais sinais contraditórios (e-mail, telefone, razão social) vira CONFLICT.
 - **Fornecedor novo** (CREATE ou "Nenhuma dessas identidades") nasce com o P0 como login, `Profissional.codigo`, `Profissional.nome` e código do cadastro. O nome do responsável vira alias (origem `CADASTRO`) para a planilha resolver. Com homônimo, o nome fica ambíguo e a importação pede decisão do ADMIN.
-- **Usuário do fornecedor**: em importação, inativação, exclusão definitiva e edição (`renomearUsuarioDoFornecedor`), é sempre o do login igual ao código. O nome só vale para identidade de antes do P0, e nunca acha o usuário de outro fornecedor já em P0.
+- **Usuário do fornecedor**: em importação, inativação, exclusão definitiva e edição (`sincronizarUsuarioDoFornecedor`), é sempre o do login igual ao código. O nome só vale para identidade de antes do P0, e nunca acha o usuário de outro fornecedor já em P0.
 - Reativar ou recriar uma identidade de antes do P0 passa o código para o P0 do login na mesma transação. O código antigo vira alias `MIGRACAO_P0`; o Profissional e o histórico continuam os mesmos.
 - A listagem e o primeiro acesso em lote acham o acesso pelo código do cadastro (`findColaboradorUsuarios`), não pelo nome.
 - Ficou de propósito: a exclusão definitiva recusa excluir cadastro antigo **sem código** quando existe Profissional ou usuário com o mesmo nome. Ela só bloqueia; não liga nada.
