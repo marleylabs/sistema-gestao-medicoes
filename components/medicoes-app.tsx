@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Bell,
@@ -13,7 +13,6 @@ import {
   MessageCircle,
   Plus,
   SlidersHorizontal,
-  Trash2,
   Upload,
   Users,
   Wallet,
@@ -1140,6 +1139,11 @@ function identityBlockMessage(details: EtlUnresolvedIdentity[]) {
 /** Chaves do resultado do ETL que têm resumo próprio (não viram cartão numérico genérico). */
 const CHAVES_RESUMO_IDENTIDADE = new Set(["identidades_resolvidas", "linhas_descartadas"]);
 
+/** Contador numérico do resultado do ETL; ausente vira 0. */
+function numeroDoResultado(resultado: Record<string, unknown>, chave: string) {
+  return typeof resultado[chave] === "number" ? resultado[chave] : 0;
+}
+
 /** Resumo da importação concluída: reconhecidos, automáticos, pendentes de vínculo e descartados. */
 function ResumoIdentidadesImportacao({ resultado }: { resultado: Record<string, unknown> }) {
   const lista = (chave: string) => (Array.isArray(resultado[chave]) ? (resultado[chave] as unknown[]) : []);
@@ -1163,7 +1167,7 @@ function ResumoIdentidadesImportacao({ resultado }: { resultado: Record<string, 
       )}
       {automaticas.length > 0 && (
         <details>
-          <summary className="cursor-pointer font-semibold text-[var(--foreground)]">Resolvidos automaticamente</summary>
+          <summary className="cursor-pointer font-semibold text-[var(--foreground)]">Resolvidos automaticamente ({automaticas.length})</summary>
           <ul className="mt-1 grid gap-0.5" data-testid="etl-correspondencias-automaticas">
             {automaticas.map((a) => <li key={a}>{a.replace(" -> ", " → ")} · <span className="text-[var(--success)]">Resolvido automaticamente</span></li>)}
           </ul>
@@ -1197,7 +1201,6 @@ function ImportarPlanilhaSection({
   const [file, setFile]         = useState<File | null>(null);
   const [ciclo, setCiclo]       = useState("");
   const [uploading, setUploading] = useState(false);
-  const [resetting, setResetting] = useState(false);
   const [msg, setMsg]           = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [status, setStatus]     = useState<EtlStatus | null>(null);
   const pollingRef              = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1265,39 +1268,7 @@ function ImportarPlanilhaSection({
     }
   }
 
-  async function handleResetDatabase() {
-    const confirmed = window.confirm(
-      "Limpar dados de teste? Esta ação apaga medições, profissionais, projetos, mapa de pagamento, SGC e contratos importados. Os usuários internos de acesso serão preservados.",
-    );
-    if (!confirmed) return;
 
-    setResetting(true);
-    setMsg({ type: "info", text: "Limpando dados de teste…" });
-    try {
-      const res = await fetch("/api/admin/reset-database", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirmacao: "LIMPAR" }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setMsg({ type: "error", text: data.error ?? "Não foi possível limpar os dados." });
-        return;
-      }
-      setFile(null);
-      setCiclo("");
-      setStatus(null);
-      setMsg({
-        type: "success",
-        text: `Dados limpos. ${data.removed?.medicoes ?? 0} medição(ões), ${data.removed?.profissionais ?? 0} profissional(is) e ${data.removed?.mapaPagamentoItens ?? 0} item(ns) de pagamento removidos.`,
-      });
-      onImported();
-    } catch {
-      setMsg({ type: "error", text: "Erro de conexão ao limpar os dados." });
-    } finally {
-      setResetting(false);
-    }
-  }
 
   const msgColors = { success: "bg-[var(--success-soft)] text-[var(--success)]", error: "bg-[var(--error-soft)] text-[var(--error)]", info: "bg-[var(--primary-soft)] text-[var(--primary)]" };
 
@@ -1444,22 +1415,33 @@ function ImportarPlanilhaSection({
             ) : status.lastResult ? (
               <div className="grid gap-4">
                 <ResumoIdentidadesImportacao resultado={status.lastResult} />
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {Object.entries(status.lastResult).filter(([key, val]) => typeof val === "number" && !CHAVES_RESUMO_IDENTIDADE.has(key)).map(([key, val]) => (
-                    <div key={key} className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">{key.replace(/_/g, " ")}</p>
-                      <p className="mt-1 text-lg font-bold text-[var(--foreground)]">{val as number}</p>
-                    </div>
-                  ))}
+                <div className="grid gap-2 text-xs text-[var(--muted-foreground)]">
+                  <p data-testid="etl-linhas">
+                    <strong className="text-[var(--foreground)]">{numeroDoResultado(status.lastResult, "rows_read")}</strong> linhas lidas ·{" "}
+                    <strong className="text-[var(--foreground)]">{numeroDoResultado(status.lastResult, "rows_processed")}</strong> processadas ·{" "}
+                    <strong className="text-[var(--foreground)]">{numeroDoResultado(status.lastResult, "rows_skipped")}</strong> ignoradas
+                  </p>
+                  {Array.isArray(status.lastResult.aliases_utilizados) && status.lastResult.aliases_utilizados.length > 0 && (
+                    <details data-testid="etl-aliases-utilizados">
+                      <summary className="cursor-pointer font-semibold text-[var(--foreground)]">Nomes resolvidos por alias ({status.lastResult.aliases_utilizados.length})</summary>
+                      <ul className="mt-1 grid gap-0.5">
+                        {(status.lastResult.aliases_utilizados as string[]).map((a) => <li key={a}>{a.replace(" -> ", " → ")}</li>)}
+                      </ul>
+                    </details>
+                  )}
+                  {/* Contadores brutos do ETL: só para diagnóstico, fechados por padrão. */}
+                  <details data-testid="etl-detalhes-tecnicos">
+                    <summary className="cursor-pointer font-semibold text-[var(--foreground)]">Detalhes técnicos</summary>
+                    <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-4 gap-y-0.5 sm:max-w-sm">
+                      {Object.entries(status.lastResult).filter(([key, val]) => typeof val === "number" && !CHAVES_RESUMO_IDENTIDADE.has(key)).map(([key, val]) => (
+                        <Fragment key={key}>
+                          <dt className="font-technical">{key}</dt>
+                          <dd className="text-right font-technical text-[var(--foreground)]">{val as number}</dd>
+                        </Fragment>
+                      ))}
+                    </dl>
+                  </details>
                 </div>
-                {Array.isArray(status.lastResult.aliases_utilizados) && status.lastResult.aliases_utilizados.length > 0 && (
-                  <div className="text-xs text-[var(--muted-foreground)]" data-testid="etl-aliases-utilizados">
-                    <p className="font-semibold text-[var(--foreground)]">Nomes resolvidos por alias</p>
-                    <ul className="mt-1 grid gap-0.5">
-                      {(status.lastResult.aliases_utilizados as string[]).map((a) => <li key={a}>{a.replace(" -> ", " → ")}</li>)}
-                    </ul>
-                  </div>
-                )}
                 {typeof status.lastResult.ciclo === "string" && (
                   <div className="rounded-lg border border-[var(--border)] p-3">
                     <IdentidadesDoCicloPanel ciclo={status.lastResult.ciclo} onNovoFornecedor={onNovoFornecedor} />
@@ -1495,23 +1477,6 @@ function ImportarPlanilhaSection({
         </Card>
       )}
 
-      <Card className="overflow-hidden border-[var(--error)]/30">
-        <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-bold text-[var(--foreground)]">Ambiente de testes</p>
-            <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">Limpa os dados importados e mantém os usuários internos para novo teste.</p>
-          </div>
-          <Button
-            variant="danger"
-            onClick={handleResetDatabase}
-            disabled={resetting || uploading || status?.running}
-            className="sm:w-auto"
-          >
-            <Trash2 size={14} />
-            {resetting ? "Limpando…" : "Limpar dados"}
-          </Button>
-        </div>
-      </Card>
     </div>
   );
 }

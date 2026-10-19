@@ -36,4 +36,4 @@ Os perfis são strings em `lib/perfis.ts`: ADMIN, MEDICAO, ADMINISTRATIVO, FINAN
 - `docker-compose.test.yml`: postgres de teste em 127.0.0.1:15433.
 - `docker-compose.prod.yml` está desatualizado: ainda tem SMTP e não tem as variáveis do Resend.
 - Runbooks: `docs/deploy-linux-docker.md`, `docs/reset-pre-producao.md`, `docs/plano-pre-deploy-producao.md`.
-- Health: `app/api/health`. Reset do banco: `app/api/admin/reset-database` (só ADMIN, exige confirmação; bloqueado em produção sem `ALLOW_DATABASE_RESET`).
+- Health: `app/api/health`. O reset do banco pela aplicação (botão "Limpar dados" e `app/api/admin/reset-database`) foi removido em 2026-10-19; o reset de dev fica nos scripts de `scripts/`.
