@@ -92,7 +92,8 @@ export function AppShell({
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileOpen(false);
+      // Com um diálogo aberto por cima da gaveta, o Esc é dele: fecha só o diálogo.
+      if (event.key === "Escape" && !document.querySelector('[aria-modal="true"]')) setMobileOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => {

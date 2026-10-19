@@ -108,7 +108,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const anterior = await prisma.cadastroFornecedor.findUnique({ where: { id }, select: { responsavel: true } });
   if (!anterior) return NextResponse.json({ error: "Cadastro não encontrado." }, { status: 404 });
 
-  const updated = await prisma.$transaction(async (tx) => {
+  const admin = { id: auth.user.id, usuario: auth.user.usuario, nome: auth.user.nome };
+  const { cadastro: updated, sincronizacao } = await prisma.$transaction(async (tx) => {
     const cadastro = await tx.cadastroFornecedor.update({
       where: { id },
       data: {
@@ -141,8 +142,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       },
     });
     // Nome (decisão 011) e e-mail do acesso acompanham o cadastro; o primeiro acesso usa o e-mail do usuário.
-    await sincronizarUsuarioDoFornecedor(tx, cadastro.colaboradorCodigo, { nome: responsavel, email }, anterior.responsavel);
-    return cadastro;
+    const sincronizacao = await sincronizarUsuarioDoFornecedor(tx, cadastro.colaboradorCodigo, { nome: responsavel, email }, { nomeAnterior: anterior.responsavel, admin, cadastroId: id });
+    return { cadastro, sincronizacao };
   });
 
   if (updated.colaboradorCodigo) {
@@ -181,5 +182,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     });
   }
 
-  return NextResponse.json(serializeCadastroFornecedor(updated));
+  // A tela avisa quando o e-mail novo não chegou ao acesso (usuário ambíguo ou achado só pelo nome).
+  return NextResponse.json({ ...serializeCadastroFornecedor(updated), acessoSincronizado: sincronizacao !== "nao-sincronizado" });
 }

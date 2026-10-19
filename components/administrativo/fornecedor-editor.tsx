@@ -271,7 +271,7 @@ export function FornecedorEditor(props: {
   item: CadastroFornecedor;
   onClose: () => void;
   onBack: () => void;
-  onSaved: () => void;
+  onSaved: (acessoSincronizado: boolean) => void;
   onError: (message: string) => void;
   escEnabled?: boolean;
 }) {
@@ -317,7 +317,7 @@ export function FornecedorEditor(props: {
           props.onError(payload.error ?? "Não foi possível salvar o cadastro.");
           return;
         }
-        props.onSaved();
+        props.onSaved(payload.acessoSincronizado !== false);
       }
     } finally {
       setSaving(false);

@@ -1066,23 +1066,42 @@ export async function upsertCadastroFornecedor(
   return result;
 }
 
+/** Resultado da sincronização do e-mail de acesso; "nao-sincronizado" deve virar aviso na tela. */
+export type SincronizacaoAcesso = "ok" | "sem-acesso" | "nao-sincronizado";
+
 /**
  * Edição do Administrativo: o usuário fornecedor espelha o `responsavel` (decisão 011) e o e-mail do
  * cadastro, que é o destino do primeiro acesso. O usuário é o do código (P0, decisão 012); com
  * ambiguidade, não altera ninguém. O e-mail só vai para o usuário achado pelo login: o achado pelo
  * nome (identidade de antes do P0) pode ser um homônimo, e receberia credenciais de outro. E-mail
  * apagado no cadastro não apaga o de acesso: usuário ativo precisa de e-mail (mesma regra do
- * `set_email` em /api/admin/usuarios/[id]).
+ * `set_email` em /api/admin/usuarios/[id]). A troca efetiva do e-mail de acesso fica auditada.
  */
-export async function sincronizarUsuarioDoFornecedor(tx: Prisma.TransactionClient, colaboradorCodigo: string | null, dados: { nome: string; email: string | null }, nomeAnterior?: string) {
-  if (!colaboradorCodigo) return;
+export async function sincronizarUsuarioDoFornecedor(
+  tx: Prisma.TransactionClient,
+  colaboradorCodigo: string | null,
+  dados: { nome: string; email: string | null },
+  { nomeAnterior, admin, cadastroId }: { nomeAnterior?: string; admin: AdminActor; cadastroId: string },
+): Promise<SincronizacaoAcesso> {
+  if (!colaboradorCodigo) return "sem-acesso";
   const usuarios = await usuariosDoFornecedor(tx, { codigo: colaboradorCodigo, nomeLegado: nomeAnterior });
-  if (usuarios.length !== 1) return;
-  const peloLogin = usuarios[0].usuario === chaveCodigo(colaboradorCodigo);
+  if (!usuarios.length) return "sem-acesso";
+  if (usuarios.length > 1) return dados.email ? "nao-sincronizado" : "ok";
+  const usuario = usuarios[0];
+  const peloLogin = usuario.usuario === chaveCodigo(colaboradorCodigo);
+  const atual = await tx.usuario.findUniqueOrThrow({ where: { id: usuario.id }, select: { email: true } });
+  const trocaEmail = Boolean(dados.email && peloLogin && decryptSensitive(atual.email)?.toLowerCase() !== dados.email.toLowerCase());
   await tx.usuario.update({
-    where: { id: usuarios[0].id },
-    data: { nome: dados.nome, ...(dados.email && peloLogin ? { email: encryptSensitive(dados.email) } : {}), updatedAt: new Date() },
+    where: { id: usuario.id },
+    data: { nome: dados.nome, ...(trocaEmail ? { email: encryptSensitive(dados.email) } : {}), updatedAt: new Date() },
   });
+  if (trocaEmail) {
+    // Sem os endereços na auditoria: só quem trocou, quando e de quem.
+    await tx.adminAuditLog.create({
+      data: { action: "EMAIL_ACESSO_ALTERADO", adminId: admin.id, adminUsuario: admin.usuario, adminNome: admin.nome, targetType: "Usuario", targetId: usuario.id, targetCodigo: colaboradorCodigo, metadata: { origem: "EDICAO_CADASTRO", cadastroId } },
+    });
+  }
+  return dados.email && !peloLogin ? "nao-sincronizado" : "ok";
 }
 
 /** Lançada quando a resolução manual não pode prosseguir — código escolhido não é um dos

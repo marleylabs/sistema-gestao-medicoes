@@ -17,6 +17,23 @@ async function abrirConta(page: Page, largura: number) {
   return page.getByRole("dialog", { name: "Configurações da conta" });
 }
 
+test("modal da conta: foco entra e fica no diálogo; Esc fecha só o modal, não a gaveta", async ({ page }) => {
+  const login = new LoginPage(page);
+  await login.goto();
+  await login.login(e2eUsers.admin.usuario, e2eUsers.admin.senha);
+  const modal = await abrirConta(page, 375);
+  await expect(modal).toBeVisible();
+  const focoNoModal = () => modal.evaluate((el) => el.contains(document.activeElement));
+  await expect.poll(focoNoModal).toBe(true);
+  for (const tecla of ["Tab", "Shift+Tab"]) {
+    for (let i = 0; i < 15; i += 1) await page.keyboard.press(tecla);
+    expect(await focoNoModal(), `${tecla} não sai do diálogo`).toBe(true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(modal).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Fechar menu" })).toBeVisible();
+});
+
 for (const [perfil, usuario] of [["interno", e2eUsers.admin], ["fornecedor", e2eUsers.fornecedorA]] as const) {
   test(`modal da conta (${perfil}) ocupa a viewport, sem corte, do celular ao desktop`, async ({ page }) => {
     const login = new LoginPage(page);

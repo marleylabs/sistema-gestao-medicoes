@@ -69,7 +69,7 @@ test("resumo de candidatos: usuário do Profissional é o do código", async () 
 });
 
 test("renomear o responsável renomeia só o usuário do código, mesmo com homônimo", async () => {
-  await db.$transaction((tx) => cad.sincronizarUsuarioDoFornecedor(tx, loginA, { nome: `${nome} NOVO`, email: null }));
+  await db.$transaction((tx) => cad.sincronizarUsuarioDoFornecedor(tx, loginA, { nome: `${nome} NOVO`, email: null }, { admin, cadastroId: cadastroA }));
   assert.equal((await usuario(loginA)).nome, `${nome} NOVO`);
   assert.equal((await usuario(loginH)).nome, nome);
   await db.usuario.update({ where: { usuario: loginA }, data: { nome } });
@@ -77,18 +77,31 @@ test("renomear o responsável renomeia só o usuário do código, mesmo com hom�
 
 const emailDe = (login: string) => db.usuario.findUniqueOrThrow({ where: { usuario: login }, select: { email: true } }).then((u) => u.email);
 
-test("editar o e-mail do cadastro grava o e-mail de acesso do usuário do código; vazio não apaga", async () => {
-  await db.$transaction((tx) => cad.sincronizarUsuarioDoFornecedor(tx, loginA, { nome, email: "a@example.test" }));
+const auditoriasEmail = () => db.adminAuditLog.count({ where: { action: "EMAIL_ACESSO_ALTERADO", adminUsuario: admin.usuario, targetCodigo: loginA } });
+const sincronizar = (codigo: string, dados: { nome: string; email: string | null }, nomeAnterior?: string) =>
+  db.$transaction((tx) => cad.sincronizarUsuarioDoFornecedor(tx, codigo, dados, { nomeAnterior, admin, cadastroId: cadastroA }));
+
+test("editar o e-mail do cadastro grava o e-mail de acesso do usuário do código, com auditoria só quando muda; vazio não apaga", async () => {
+  assert.equal(await sincronizar(loginA, { nome, email: "a@example.test" }), "ok");
   const gravado = await emailDe(loginA);
   assert.ok(gravado);
-  await db.$transaction((tx) => cad.sincronizarUsuarioDoFornecedor(tx, loginA, { nome, email: null }));
+  assert.equal(await auditoriasEmail(), 1);
+  // Mesmo e-mail de novo: nada a auditar.
+  assert.equal(await sincronizar(loginA, { nome, email: "A@example.test".toLowerCase() }), "ok");
+  assert.equal(await auditoriasEmail(), 1);
+  assert.equal(await sincronizar(loginA, { nome, email: null }), "ok");
   assert.equal(await emailDe(loginA), gravado);
+  assert.equal(await auditoriasEmail(), 1);
   assert.equal(await emailDe(loginH), null);
+});
+
+test("sem usuário de acesso pelo código, a sincronização avisa que não há acesso", async () => {
+  assert.equal(await sincronizar(`P03${n}9`, { nome, email: "z@example.test" }), "sem-acesso");
 });
 
 test("e-mail nunca vai para usuário achado só pelo nome (homônimo legado sem P0)", async () => {
   const nomeLegado = `SO PELO NOME ${sufixo}`;
-  await db.$transaction((tx) => cad.sincronizarUsuarioDoFornecedor(tx, `X ${sufixo}`, { nome: nomeLegado, email: "x@example.test" }, nomeLegado));
+  assert.equal(await sincronizar(`X ${sufixo}`, { nome: nomeLegado, email: "x@example.test" }, nomeLegado), "nao-sincronizado");
   assert.equal(await emailDe(loginSemVinculo), null);
 });
 

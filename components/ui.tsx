@@ -4,6 +4,7 @@ import { clsx } from "clsx";
 import { Card as HeroCard, Chip as HeroChip } from "@heroui/react";
 import { Filter, X } from "lucide-react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { useEffect, useRef } from "react";
 import { useBlur } from "@/components/providers";
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "framer-motion";
 import { AnimatedText, EASE_SAIDA, useMontadoAposHidratacao } from "@/components/motion";
@@ -406,6 +407,44 @@ export function Toast({
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
+const SELETOR_FOCAVEL = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+/** Modais abertos, do mais antigo ao mais novo: só o do topo prende o foco. */
+const modaisAbertos: HTMLElement[] = [];
+
+/** Foco do diálogo: entra ao abrir (se nada lá dentro já tem foco), o Tab circula só nele e volta ao elemento anterior ao fechar. */
+function usePrenderFoco(caixaRef: React.RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const caixa = caixaRef.current;
+    if (!caixa) return;
+    const anterior = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focaveis = () => [...caixa.querySelectorAll<HTMLElement>(SELETOR_FOCAVEL)].filter((el) => el.getClientRects().length > 0);
+    modaisAbertos.push(caixa);
+    if (!caixa.contains(document.activeElement)) (focaveis()[0] ?? caixa).focus({ preventScroll: true });
+    function prender(event: KeyboardEvent) {
+      if (event.key !== "Tab" || modaisAbertos[modaisAbertos.length - 1] !== caixa) return;
+      const lista = focaveis();
+      const dentro = caixa!.contains(document.activeElement);
+      if (!lista.length) {
+        event.preventDefault();
+        return;
+      }
+      if (event.shiftKey && (!dentro || document.activeElement === lista[0])) {
+        event.preventDefault();
+        lista[lista.length - 1].focus();
+      } else if (!event.shiftKey && (!dentro || document.activeElement === lista[lista.length - 1])) {
+        event.preventDefault();
+        lista[0].focus();
+      }
+    }
+    document.addEventListener("keydown", prender);
+    return () => {
+      document.removeEventListener("keydown", prender);
+      modaisAbertos.splice(modaisAbertos.indexOf(caixa), 1);
+      if (anterior?.isConnected) anterior.focus({ preventScroll: true });
+    };
+  }, [caixaRef]);
+}
+
 /**
  * Invólucro único dos modais (overlay + contêiner `ds-dialog`). Entra com escala e fade e sai mais rápido;
  * a saída exige AnimatePresence no ponto que abre. Durante a saída fica inerte (sem clique, teclado nem leitor de tela).
@@ -439,6 +478,8 @@ export function Modal({
   const presente = useIsPresent();
   const reduzir = useReducedMotion();
   const animar = useMontadoAposHidratacao() && !reduzir;
+  const caixaRef = useRef<HTMLDivElement>(null);
+  usePrenderFoco(caixaRef);
   const duracao = (s: number) => (reduzir ? 0 : s);
   return (
     // O motion.div não repassa `inert` ao DOM: o invólucro "contents" (sem caixa própria) leva o atributo.
@@ -461,7 +502,9 @@ export function Modal({
           aria-label={rotulo}
           aria-busy={ocupado}
           data-testid={testId}
-          className={clsx(variante === "caixa" && "ds-dialog", className)}
+          ref={caixaRef}
+          tabIndex={-1}
+          className={clsx(variante === "caixa" && "ds-dialog", "outline-none", className)}
           initial={animar ? { opacity: 0, scale: 0.97 } : false}
           animate={{ opacity: 1, scale: 1, transition: { duration: duracao(0.2), ease: EASE_SAIDA } }}
           exit={{ opacity: 0, scale: 0.98, transition: { duration: duracao(0.14), ease: "easeIn" } }}

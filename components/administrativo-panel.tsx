@@ -1454,9 +1454,11 @@ export function AdministrativoPanel({
           escEnabled={!algumModalAberto}
           onClose={() => setPainel(null)}
           onBack={() => setPainel({ tipo: "fornecedor", id: fornecedorAberto.id, modo: "detalhe" })}
-          onSaved={async () => {
+          onSaved={async (acessoSincronizado) => {
             setPainel({ tipo: "fornecedor", id: fornecedorAberto.id, modo: "detalhe" });
-            setToast({ tone: "success", message: "Fornecedor atualizado com sucesso." });
+            setToast(acessoSincronizado
+              ? { tone: "success", message: "Fornecedor atualizado com sucesso." }
+              : { tone: "error", message: "Cadastro salvo, mas o e-mail de acesso não foi atualizado: o usuário deste fornecedor não foi identificado pelo código. Revise o acesso antes de enviar o primeiro acesso." });
             await load();
           }}
           onError={(message) => setToast({ tone: "error", message })}
