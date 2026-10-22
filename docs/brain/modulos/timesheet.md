@@ -32,7 +32,7 @@ tags: [modulo]
 - Excluir um feriado recalcula uma folha já enviada sem nenhum aviso; só a criação depois do envio gera aviso (`feriadoAposEnvio`).
 - Não use `toISOString()` para a data de "hoje": é UTC e muda de dia às 21:00 de Brasília.
 
-**Pendente:** a página de impressão (PDF) ainda é o layout próprio, não o do modelo.
+- PDF = página de impressão no mesmo visual do modelo: tabela de 14 colunas (A–N) com as proporções do modelo, mesclagens, logos (`public/timesheet/vale.png` e `projeta.png`, tirados do modelo), cinza em sábado/domingo/feriado e rodapé; A4 retrato, uma página. O `globals.css` fixa `table { font-size: 12px }` fora das camadas do Tailwind, então o tamanho vai nas células (`[&_td]:text-[8px]`) e os tamanhos especiais usam `!`. O cinza usa `[print-color-adjust:exact]` para sair mesmo sem "gráficos de plano de fundo".
 
 **Produção:** desde 2026-10-22 (bf53ea0). Nenhum fornecedor tem status ATO pela importação, então a habilitação é manual (configuração por fornecedor). Feriado por contrato (migration `20261022180000_timesheet_feriado_contrato`) e ciclo publicado do timesheet (`20261022200000_timesheet_ciclo_publicado`): ainda não implantados.
 

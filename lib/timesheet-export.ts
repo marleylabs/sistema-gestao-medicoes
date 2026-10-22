@@ -12,23 +12,6 @@ import type { FolhaTimesheet } from "@/lib/timesheet";
 
 export const CONTRATADA = "Projeta Consultoria";
 
-export function linhasCabecalho(folha: FolhaTimesheet): Array<[string, string]> {
-  const c = folha.cabecalho;
-  return [
-    ["Contrato N.º", c.contratoNumero ?? c.contratoNome ?? ""],
-    ["Doc. N.º", c.docNumero ?? ""],
-    ["Tipo de Serviço", "ATO"],
-    ["Contratada", CONTRATADA],
-    ["Colaborador", folha.fornecedor.nome],
-    ["Função", c.funcao ?? ""],
-    ["Item da PQ", c.itemPq ?? ""],
-    ["Nº da SE", c.numeroSe ?? ""],
-    ["Área", c.area ?? ""],
-    ["Local", c.local ?? ""],
-    ["Período", `${formatarData(folha.periodo.inicio)} a ${formatarData(folha.periodo.fim)}`],
-  ];
-}
-
 const MODELO = path.join(process.cwd(), "app-assets", "templates", "Timesheet_ATO.xlsx");
 const PLANILHA = "xl/worksheets/sheet1.xml";
 const PRIMEIRA_LINHA = 12; // dias nas linhas 12–42 do modelo (até 31 dias)
