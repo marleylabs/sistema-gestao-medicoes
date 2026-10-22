@@ -1,5 +1,5 @@
 ---
-atualizado: 2026-10-21
+atualizado: 2026-10-22
 ---
 # Status
 

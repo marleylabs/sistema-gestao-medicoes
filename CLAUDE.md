@@ -61,7 +61,7 @@ Se uma nota contradizer o código, o código vale: corrija a nota e avise.
 
 ## Estado atual
 - As regras deste arquivo descrevem o alvo. Divergências conhecidas estão em docs/brain/status.md: não corrija fora de uma tarefa dedicada a elas, e não presuma que o código já segue a regra.
-- Branch de integração: layout2.0 e release/*. A main está desatualizada: nunca use como base nem abra PR contra ela.
+- Branch de integração: a release/* em uso (hoje release/2026-10-02-import-identities); a layout2.0 está parada em 58375bb. A main está desatualizada: nunca use como base nem abra PR contra ela.
 - Não existe biblioteca de validação: a validação de entrada é manual (padronização pendente, ver status.md).
 
 ## Não fazer
