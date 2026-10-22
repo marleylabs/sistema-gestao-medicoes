@@ -25,6 +25,8 @@ const ACOES: Record<string, string> = {
   TIMESHEET_ENVIADA: "Folha enviada",
   TIMESHEET_REABERTA: "Folha reaberta",
   TIMESHEET_EXPORTADA: "Folha exportada",
+  TIMESHEET_DIAS_APROVADOS: "Dias aprovados pelo fiscal",
+  TIMESHEET_DIAS_REPROVADOS: "Dias reprovados pelo fiscal",
 };
 // Mesmo visual do Button "secondary" (components/ui.tsx), em <a> para download e nova aba.
 const LINK_ACAO = "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[12px] font-semibold text-[var(--foreground)] transition-all duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/30";
@@ -117,7 +119,7 @@ export function TimesheetDrawer({
 
   return (
     <AdminSidePanel
-      size="wide"
+      size="full"
       eyebrow={`Timesheet ATO · Ciclo ${ciclo}`}
       title={nome}
       subtitle={folha ? <span className="font-technical text-[12.5px]">{folha.fornecedor.codigo}</span> : undefined}

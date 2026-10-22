@@ -46,7 +46,7 @@ export async function listarFolhasDoCiclo(cicloParam: unknown) {
       where: { ciclo },
       select: {
         profissionalId: true, status: true, enviadaAt: true,
-        dias: { select: { data: true, entrada1: true, saida1: true, entrada2: true, saida2: true, updatedAt: true } },
+        dias: { select: { data: true, entrada1: true, saida1: true, entrada2: true, saida2: true, updatedAt: true, aprovacao: true } },
       },
     }),
     feriadosDoPeriodo(atoInicio, atoFim),
@@ -75,6 +75,12 @@ export async function listarFolhasDoCiclo(cicloParam: unknown) {
       // Decisão 2 da spec: recalcula sempre e avisa quando um feriado novo caiu depois do envio.
       feriadoAposEnvio: !!enviadaAt && feriadosDaFolha.some((f) => f.criadoEm !== null && new Date(f.criadoEm) > enviadaAt),
       totais: somarHoras(dias.map((d) => calcularDia(d, tipoDoDia(isoDate(d.data), datasFeriado)))),
+      // Decisões do fiscal nos dias lançados (spec timesheet-aprovacao-fiscal).
+      aprovacoes: {
+        aprovados: dias.filter((d) => d.aprovacao === "APROVADO").length,
+        reprovados: dias.filter((d) => d.aprovacao === "REPROVADO").length,
+        pendentes: dias.filter((d) => !d.aprovacao).length,
+      },
     };
   });
   itens.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));

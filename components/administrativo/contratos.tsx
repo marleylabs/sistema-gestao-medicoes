@@ -8,9 +8,11 @@ import { AdminSidePanel } from "@/components/administrativo/admin-side-panel";
 import { StatusBadge, Th, openOnKey } from "@/components/administrativo/listagem";
 import { money } from "@/components/administrativo/shared";
 import type { ContratoCadastro } from "@/lib/contratos-cadastro";
+import type { FiscalCadastro } from "@/lib/fiscais";
 
-type Form = { codigo: string; nome: string; gestor: string; fiscal: string; dataInicio: string; dataFim: string; valorTotal: string };
-const VAZIO: Form = { codigo: "", nome: "", gestor: "", fiscal: "", dataInicio: "", dataFim: "", valorTotal: "" };
+type Form = { codigo: string; nome: string; gestor: string; fiscalId: string; dataInicio: string; dataFim: string; valorTotal: string };
+const VAZIO: Form = { codigo: "", nome: "", gestor: "", fiscalId: "", dataInicio: "", dataFim: "", valorTotal: "" };
+type FiscalOpcao = Pick<FiscalCadastro, "id" | "nome" | "ativo">;
 
 const dataBr = (d: string | null) => (d ? d.split("-").reverse().join("/") : "–");
 const vigencia = (c: ContratoCadastro) => (c.dataInicio || c.dataFim ? `${dataBr(c.dataInicio)} → ${dataBr(c.dataFim)}` : "–");
@@ -150,11 +152,15 @@ export function ContratosCadastro({ onTotal }: { onTotal?: (total: number) => vo
 
 function ContratoEditor({ contrato, onClose, onSalvo }: { contrato: ContratoCadastro | null; onClose: () => void; onSalvo: () => Promise<void> }) {
   const [form, setForm] = useState<Form>(() => (contrato ? {
-    codigo: contrato.codigo ?? "", nome: contrato.nome, gestor: contrato.gestor ?? "", fiscal: contrato.fiscal ?? "",
+    codigo: contrato.codigo ?? "", nome: contrato.nome, gestor: contrato.gestor ?? "", fiscalId: contrato.fiscalId ?? "",
     dataInicio: contrato.dataInicio ?? "", dataFim: contrato.dataFim ?? "", valorTotal: contrato.valorTotal?.replace(".", ",") ?? "",
   } : VAZIO));
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [fiscais, setFiscais] = useState<FiscalOpcao[]>([]);
+  useEffect(() => {
+    fetch("/api/admin/administrativo/fiscais").then((r) => (r.ok ? r.json() : [])).then((l: FiscalOpcao[]) => setFiscais(l)).catch(() => setFiscais([]));
+  }, []);
   const campo = (nome: keyof Form) => ({ value: form[nome], onChange: (e: { target: { value: string } }) => setForm({ ...form, [nome]: e.target.value }) });
 
   async function enviar(corpo: object) {
@@ -192,7 +198,12 @@ function ContratoEditor({ contrato, onClose, onSalvo }: { contrato: ContratoCada
         <Field label="Nº do contrato"><Input maxLength={200} placeholder="Ex.: 5900128908" {...campo("codigo")} /></Field>
         <Field label="Nome do contrato"><Input maxLength={200} autoFocus {...campo("nome")} /></Field>
         <Field label="Gestor"><Input maxLength={200} {...campo("gestor")} /></Field>
-        <Field label="Fiscal (assina a folha do timesheet)"><Input maxLength={200} {...campo("fiscal")} /></Field>
+        <Field label="Fiscal (aprova as horas e assina a folha do timesheet)">
+          <Select value={form.fiscalId} onChange={(e) => setForm({ ...form, fiscalId: e.target.value })}>
+            <option value="">{contrato?.fiscal && !contrato.fiscalId ? `Sem fiscal cadastrado (antigo: ${contrato.fiscal})` : "Sem fiscal"}</option>
+            {fiscais.filter((f) => f.ativo || f.id === form.fiscalId).map((f) => <option key={f.id} value={f.id}>{f.nome}{f.ativo ? "" : " (inativo)"}</option>)}
+          </Select>
+        </Field>
         <Field label="Início"><Input type="date" {...campo("dataInicio")} /></Field>
         <Field label="Término"><Input type="date" min={form.dataInicio || undefined} {...campo("dataFim")} /></Field>
         <Field label="Valor contratual (R$)"><Input inputMode="decimal" placeholder="0,00" {...campo("valorTotal")} /></Field>

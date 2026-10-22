@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { AuthUser } from "@/lib/session";
+import { isUuid } from "@/lib/file-security";
 
 /**
  * Cadastro de contratos (aba Contratos do Administrativo; spec docs/brain/specs/contratos-cadastro.md).
@@ -25,13 +26,15 @@ type Ator = Pick<AuthUser, "id" | "usuario" | "nome">;
 
 const SELECT = {
   id: true, nome: true, codigo: true, gestor: true, fiscal: true, dataInicio: true, dataFim: true, valorTotal: true, ativo: true,
+  fiscalId: true, fiscalUsuario: { select: { nome: true } },
 } as const;
 
 type Linha = Prisma.ContratoGetPayload<{ select: typeof SELECT }>;
 
 const iso = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
-function serializar(c: Linha) {
-  return { ...c, dataInicio: iso(c.dataInicio), dataFim: iso(c.dataFim), valorTotal: c.valorTotal?.toFixed(2) ?? null };
+function serializar({ fiscalUsuario, ...c }: Linha) {
+  // `fiscal` exibido = o usuário FISCAL vinculado; o texto antigo só quando não há vínculo.
+  return { ...c, fiscal: fiscalUsuario?.nome ?? c.fiscal, dataInicio: iso(c.dataInicio), dataFim: iso(c.dataFim), valorTotal: c.valorTotal?.toFixed(2) ?? null };
 }
 export type ContratoCadastro = ReturnType<typeof serializar>;
 
@@ -70,6 +73,10 @@ function lerCampos(body: Record<string, unknown>) {
   if ("codigo" in body) campos.codigo = texto(body.codigo, "Nº do contrato");
   if ("gestor" in body) campos.gestor = texto(body.gestor, "Gestor");
   if ("fiscal" in body) campos.fiscal = texto(body.fiscal, "Fiscal");
+  if ("fiscalId" in body) {
+    if (body.fiscalId !== null && body.fiscalId !== "" && (typeof body.fiscalId !== "string" || !isUuid(body.fiscalId))) throw new ContratoError("Fiscal inválido.", 400);
+    campos.fiscalId = body.fiscalId || null;
+  }
   if ("dataInicio" in body) campos.dataInicio = data(body.dataInicio, "Data de início");
   if ("dataFim" in body) campos.dataFim = data(body.dataFim, "Data de término");
   if ("valorTotal" in body) campos.valorTotal = valorContratual(body.valorTotal);
@@ -88,6 +95,13 @@ function auditoria(ator: Ator, action: string, id: string, codigo: string | null
   return { action, adminId: ator.id, adminUsuario: ator.usuario, adminNome: ator.nome, targetType: "CONTRATO", targetId: id, targetCodigo: codigo, metadata };
 }
 
+/** O fiscal do contrato precisa ser um usuário FISCAL ativo. */
+async function exigirFiscalValido(tx: Prisma.TransactionClient, fiscalId: unknown) {
+  if (typeof fiscalId !== "string") return;
+  const ok = await tx.usuario.findFirst({ where: { id: fiscalId, perfil: "FISCAL", ativo: true, excluidoAt: null }, select: { id: true } });
+  if (!ok) throw new ContratoError("Fiscal não encontrado ou inativo.", 400);
+}
+
 function conflitoDeNome(e: unknown): never {
   if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") throw new ContratoError("Já existe um contrato com esse nome.", 409);
   throw e;
@@ -103,6 +117,7 @@ export async function criarContrato(input: { body: unknown; ator: Ator }) {
   exigirVigencia(campos.dataInicio as Date | null, campos.dataFim as Date | null);
   try {
     return await prisma.$transaction(async (tx) => {
+      await exigirFiscalValido(tx, campos.fiscalId);
       const criado = await tx.contrato.create({ data: campos as Prisma.ContratoUncheckedCreateInput, select: SELECT });
       const c = serializar(criado);
       await tx.adminAuditLog.create({ data: auditoria(input.ator, "CONTRATO_CRIADO", c.id, c.codigo, { depois: c }) });
@@ -120,6 +135,7 @@ export async function atualizarContrato(input: { id: string; body: unknown; ator
     return await prisma.$transaction(async (tx) => {
       const antes = await tx.contrato.findUnique({ where: { id: input.id }, select: SELECT });
       if (!antes) throw new ContratoError("Contrato não encontrado.", 404);
+      if (campos.fiscalId !== antes.fiscalId) await exigirFiscalValido(tx, campos.fiscalId);
       exigirVigencia(
         "dataInicio" in campos ? (campos.dataInicio as Date | null) : antes.dataInicio,
         "dataFim" in campos ? (campos.dataFim as Date | null) : antes.dataFim,

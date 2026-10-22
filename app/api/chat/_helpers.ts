@@ -23,7 +23,7 @@ export function canChatWith(current: AuthUser, targetPerfil: string) {
 }
 
 export function canUseChatPerfil(perfil: string) {
-  return perfil !== "ADMINISTRATIVO";
+  return perfil !== "ADMINISTRATIVO" && perfil !== "FISCAL";
 }
 
 export function isInternalPerfil(perfil: string) {

@@ -128,7 +128,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (isInternalUserProfile(perfil) && !/^P0\d{6}$/.test(user.usuario)) {
       data.usuario = await generateUniqueInternalAccessCode();
     }
-    if (perfil === "COLABORADOR" && !/^P0\d{6}$/.test(user.usuario)) {
+    if ((perfil === "COLABORADOR" || perfil === "FISCAL") && !/^P0\d{6}$/.test(user.usuario)) {
       data.usuario = await generateUniqueInternalAccessCode();
     }
     await prisma.usuario.update({ where: { id }, data });

@@ -11,12 +11,18 @@ import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prism
  */
 
 const NOME = `E2E Contrato ${randomUUID().slice(0, 6).toUpperCase()}`;
+const FISCAL = { usuario: "P0909975", nome: "E2E Fiscal Contrato" };
 
-test.beforeAll(assertConnectedToE2eDatabase);
+test.beforeAll(async () => {
+  await assertConnectedToE2eDatabase();
+  await prisma.usuario.deleteMany({ where: { usuario: FISCAL.usuario } });
+  await prisma.usuario.create({ data: { usuario: FISCAL.usuario, nome: FISCAL.nome, perfil: "FISCAL", senhaHash: "x" } });
+});
 test.afterAll(async () => {
   const c = await prisma.contrato.findUnique({ where: { nome: NOME }, select: { id: true } });
   if (c) await prisma.adminAuditLog.deleteMany({ where: { targetType: "CONTRATO", targetId: c.id } });
   await prisma.contrato.deleteMany({ where: { nome: NOME } });
+  await prisma.usuario.deleteMany({ where: { usuario: FISCAL.usuario } });
 });
 
 async function entrar(page: Page, usuario: { usuario: string; senha: string }) {
@@ -36,7 +42,7 @@ test.describe.serial("Contratos no Administrativo", () => {
     await painel.getByLabel("Nº do contrato").fill("5900999001");
     await painel.getByLabel("Nome do contrato").fill(NOME);
     await painel.getByLabel("Gestor").fill("Gestor E2E");
-    await painel.getByLabel("Fiscal (assina a folha do timesheet)").fill("Fiscal E2E");
+    await painel.getByLabel("Fiscal (aprova as horas e assina a folha do timesheet)").selectOption({ label: FISCAL.nome });
     await painel.getByLabel("Início").fill("2026-01-01");
     await painel.getByLabel("Término").fill("2025-12-31");
     await painel.getByLabel("Valor contratual (R$)").fill("1.250.000,50");
@@ -64,7 +70,7 @@ test.describe.serial("Contratos no Administrativo", () => {
   test("Medição lê os contratos do timesheet; Financeiro não acessa o cadastro", async ({ page }) => {
     await entrar(page, e2eUsers.medicao);
     const lista = await (await page.request.get("/api/admin/contratos")).json() as Array<{ nome: string; fiscal: string | null; ativo: boolean }>;
-    expect(lista.find((c) => c.nome === NOME)).toMatchObject({ fiscal: "Fiscal E2E", ativo: false });
+    expect(lista.find((c) => c.nome === NOME)).toMatchObject({ fiscal: FISCAL.nome, ativo: false });
     await page.request.post("/api/auth/logout");
 
     await entrar(page, e2eUsers.financeiro);

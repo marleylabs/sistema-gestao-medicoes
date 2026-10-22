@@ -33,6 +33,7 @@ model Usuario {
   permissoesExtras  UsuarioPermissao[] @relation("PermissoesDoUsuario")
   sgcLogs           SgcLog[]           @relation("SgcLogUsuario")
   divergenciasResolvidas DivergenciaMedicao[] @relation("DivergenciaResolvidaPor")
+  contratosFiscalizados  Contrato[]           @relation("FiscalDoContrato")
 
   @@index([ativo], map: "idx_usuarios_ativo")
   @@map("usuarios")
@@ -485,6 +486,10 @@ model Contrato {
   valorTotal Decimal?  @map("valor_total") @db.Decimal(18, 2)
   colunaMapa String?   @map("coluna_mapa")
   ativo      Boolean   @default(true)
+  /// Usuário FISCAL que aprova as horas do timesheet dos fornecedores deste contrato (spec timesheet-aprovacao-fiscal).
+  /// `fiscal` (texto) fica como nome antigo, usado só quando não há fiscal vinculado.
+  fiscalId   String?   @map("fiscal_id") @db.Uuid
+  fiscalUsuario Usuario? @relation("FiscalDoContrato", fields: [fiscalId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt  DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
@@ -492,6 +497,7 @@ model Contrato {
   feriados         Feriado[]
 
   @@index([ativo], map: "idx_contratos_ativo")
+  @@index([fiscalId], map: "idx_contratos_fiscal_id")
   @@map("contratos")
 }
 
@@ -680,6 +686,12 @@ model TimesheetDia {
   updatedById   String?        @map("updated_by_id") @db.Uuid
   updatedByNome String?        @map("updated_by_nome")
   updatedAt     DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  /// Decisão do fiscal: null = pendente | APROVADO | REPROVADO. Volta a null quando o fornecedor altera o dia.
+  aprovacao        String?
+  aprovacaoMotivo  String?   @map("aprovacao_motivo")
+  aprovacaoPorId   String?   @map("aprovacao_por_id") @db.Uuid
+  aprovacaoPorNome String?   @map("aprovacao_por_nome")
+  aprovacaoEm      DateTime? @map("aprovacao_em") @db.Timestamptz
 
   @@unique([folhaId, data])
   @@map("timesheet_dias")

@@ -56,4 +56,5 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [Timesheet: feriados por contrato](specs/timesheet-feriados-por-contrato.md): feriado manual geral ou de um contrato, filtro por contrato na aba Feriados; spec e plano juntos (implementada, não implantada)
 - [Timesheet: ciclo publicado próprio](specs/timesheet-ciclo-publicado.md): a medição publica o ciclo do timesheet separado do ciclo do portal, para o preenchimento não começar atrasado (implementada, não implantada)
 - [Cadastro de contratos](specs/contratos-cadastro.md): aba Contratos no Administrativo (nº, nome, gestor, fiscal, vigência e valor), só inativação, auditoria (implementada, não implantada)
+- [Timesheet: aprovação pelo fiscal](specs/timesheet-aprovacao-fiscal.md): perfil FISCAL (P0, aba Fiscais), fiscal no contrato, aprovação/reprovação por dia em lote, tela própria e brechas de "não é COLABORADOR" fechadas; spec e plano juntos (implementada, não implantada)
 - [Plano do M4 portal do fornecedor](specs/layout-tema-motion-m4-plano.md): Minhas Medições e NF → diálogos → ação principal em destaque → motion expressivo → chat (concluído)

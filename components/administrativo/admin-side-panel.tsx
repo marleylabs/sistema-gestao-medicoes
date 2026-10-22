@@ -31,7 +31,7 @@ export function AdminSidePanel({
   title: string;
   subtitle?: ReactNode;
   meta?: ReactNode;
-  size?: "detail" | "wide";
+  size?: "detail" | "wide" | "full";
   onClose: () => void;
   /** Esc — padrão fecha; no modo edição volta ao detalhe. */
   onEscape?: () => void;
@@ -64,7 +64,8 @@ export function AdminSidePanel({
     return () => document.removeEventListener("keydown", onKey);
   }, [escEnabled, presente, closeDisabled, onEscape, onClose]);
 
-  const width = size === "wide" ? "sm:w-[88vw] lg:w-[clamp(720px,62vw,900px)]" : "sm:w-[520px]";
+  // "full": tabelas largas (folha do timesheet com Solicitante e Aprovação) sem esconder a última coluna.
+  const width = size === "full" ? "sm:w-[94vw] lg:w-[min(1240px,92vw)]" : size === "wide" ? "sm:w-[88vw] lg:w-[clamp(720px,62vw,900px)]" : "sm:w-[520px]";
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" inert={!presente} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid={testId}>

@@ -26,7 +26,7 @@ create table if not exists usuarios (
     created_at       timestamptz not null default now(),
     updated_at       timestamptz not null default now(),
     constraint usuarios_perfil_check check (
-        perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','ADMINISTRATIVO')
+        perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','ADMINISTRATIVO','FISCAL')
     )
 );
 
@@ -42,7 +42,7 @@ alter table usuarios add column if not exists email text;
 update usuarios set perfil = 'ADMINISTRATIVO' where perfil = 'DEPARTAMENTO_PESSOAL';
 alter table usuarios drop constraint if exists usuarios_perfil_check;
 alter table usuarios add constraint usuarios_perfil_check check (
-    perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','ADMINISTRATIVO')
+    perfil in ('ADMIN','MEDICAO','COLABORADOR','FINANCEIRO','ADMINISTRATIVO','FISCAL')
 );
 
 -- ─── usuarios_permissoes ─────────────────────────────────────

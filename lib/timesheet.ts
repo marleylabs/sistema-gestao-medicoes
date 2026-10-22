@@ -154,6 +154,7 @@ export async function carregarFolha(profissionalId: string | null, cicloParam: u
           select: {
             data: true, entrada1: true, saida1: true, entrada2: true, saida2: true,
             projetoPep: true, descricao: true, solicitante: true, updatedAt: true, updatedByNome: true,
+            aprovacao: true, aprovacaoMotivo: true, aprovacaoPorNome: true, aprovacaoEm: true,
           },
         },
       },
@@ -162,7 +163,7 @@ export async function carregarFolha(profissionalId: string | null, cicloParam: u
       where: { profissionalId: profissional.id },
       select: {
         contratoId: true, funcao: true, itemPq: true, local: true, area: true, numeroSe: true, docNumero: true,
-        contrato: { select: { codigo: true, nome: true, fiscal: true } },
+        contrato: { select: { codigo: true, nome: true, fiscal: true, fiscalUsuario: { select: { nome: true } } } },
       },
     }),
   ]);
@@ -195,6 +196,12 @@ export async function carregarFolha(profissionalId: string | null, cicloParam: u
       editavel: status === "ABERTA" && diaLiberado(data, liberacao, hoje),
       atualizadoEm: salvo?.updatedAt.toISOString() ?? null,
       atualizadoPor: salvo?.updatedByNome ?? null,
+      // Decisão do fiscal (spec timesheet-aprovacao-fiscal); null = pendente. Só dias lançados recebem decisão.
+      lancado: horarios.entrada1 !== null || horarios.entrada2 !== null,
+      aprovacao: salvo?.aprovacao === "APROVADO" || salvo?.aprovacao === "REPROVADO" ? salvo.aprovacao : null,
+      aprovacaoMotivo: salvo?.aprovacaoMotivo ?? null,
+      aprovacaoPor: salvo?.aprovacaoPorNome ?? null,
+      aprovacaoEm: salvo?.aprovacaoEm?.toISOString() ?? null,
     };
   });
 
@@ -208,7 +215,7 @@ export async function carregarFolha(profissionalId: string | null, cicloParam: u
     cabecalho: {
       contratoNumero: config?.contrato?.codigo ?? null,
       contratoNome: config?.contrato?.nome ?? null,
-      fiscal: config?.contrato?.fiscal ?? null,
+      fiscal: config?.contrato?.fiscalUsuario?.nome ?? config?.contrato?.fiscal ?? null,
       funcao: config?.funcao ?? null,
       itemPq: config?.itemPq ?? null,
       local: config?.local ?? null,
@@ -277,7 +284,12 @@ export async function salvarDia(input: { profissionalId: string | null; ciclo: u
       where: { folhaId_data: { folhaId: folha.id, data: dataDb } },
       select: { entrada1: true, saida1: true, entrada2: true, saida2: true, projetoPep: true, descricao: true, solicitante: true },
     });
-    const valores = { ...horarios, ...textos, updatedById: input.ator.id, updatedByNome: input.ator.nome };
+    // Dia alterado volta a pendente para o fiscal; regravar igual mantém a decisão.
+    const mudou = !antes || (Object.keys({ ...horarios, ...textos }) as Array<keyof typeof antes>).some((k) => antes[k] !== { ...horarios, ...textos }[k]);
+    const valores = {
+      ...horarios, ...textos, updatedById: input.ator.id, updatedByNome: input.ator.nome,
+      ...(mudou ? { aprovacao: null, aprovacaoMotivo: null, aprovacaoPorId: null, aprovacaoPorNome: null, aprovacaoEm: null } : {}),
+    };
     await tx.timesheetDia.upsert({
       where: { folhaId_data: { folhaId: folha.id, data: dataDb } },
       create: { folhaId: folha.id, data: dataDb, ...valores },

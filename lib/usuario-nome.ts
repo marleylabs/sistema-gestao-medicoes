@@ -24,7 +24,8 @@ export function validateUserDisplayName(raw: string | null | undefined): string 
  * (lib/colaborador-alias.ts): só o Administrativo o altera, pela edição do cadastro.
  */
 export function podeAlterarProprioNome(perfil: string): boolean {
-  return perfil !== "COLABORADOR";
+  // O nome do FISCAL assina a folha do timesheet ("Visto fiscalização"): também só o Administrativo altera.
+  return perfil !== "COLABORADOR" && perfil !== "FISCAL";
 }
 
 export type NomeUpdateResult =

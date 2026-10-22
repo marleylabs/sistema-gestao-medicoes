@@ -197,11 +197,12 @@ function onKey(event: KeyboardEvent<HTMLElement>, abrir: () => void) {
   }
 }
 
-function ListaFolhas({ itens, abertoId, onAbrir }: { itens: Item[]; abertoId: string | null; onAbrir: (f: Item) => void }) {
+/** Lista das folhas do ciclo; reusada na tela do fiscal (components/timesheet/fiscal-app.tsx). */
+export function ListaFolhas({ itens, abertoId, onAbrir }: { itens: Item[]; abertoId: string | null; onAbrir: (f: Item) => void }) {
   const th = "text-table-header border-b border-[var(--border)] px-3 py-2.5 text-left text-[var(--muted-foreground)] xl:px-4";
   return (
     <div className="max-w-full overflow-x-auto">
-      <table className="w-full min-w-[820px] border-collapse text-sm" data-testid="timesheet-lista">
+      <table className="w-full min-w-[920px] border-collapse text-sm" data-testid="timesheet-lista">
         <thead className="bg-[var(--surface-muted)]">
           <tr>
             <th className={th}>Fornecedor</th>
@@ -212,6 +213,7 @@ function ListaFolhas({ itens, abertoId, onAbrir }: { itens: Item[]; abertoId: st
             <th className={`${th} text-right`}>HE 50%</th>
             <th className={`${th} text-right`}>HE 100%</th>
             <th className={`${th} text-right`}>Total</th>
+            <th className={th}>Aprovação</th>
           </tr>
         </thead>
         <tbody>
@@ -245,6 +247,14 @@ function ListaFolhas({ itens, abertoId, onAbrir }: { itens: Item[]; abertoId: st
                   {formatarDuracao(f.totais[k])}
                 </td>
               ))}
+              <td className="px-3 py-3 xl:px-4" data-testid={`timesheet-aprovacoes-${f.codigo}`}>
+                <span className="flex flex-wrap gap-1">
+                  {f.aprovacoes.aprovados > 0 && <Badge variant="success">{f.aprovacoes.aprovados} aprov.</Badge>}
+                  {f.aprovacoes.reprovados > 0 && <Badge variant="danger">{f.aprovacoes.reprovados} reprov.</Badge>}
+                  {f.aprovacoes.pendentes > 0 && <Badge variant="neutral">{f.aprovacoes.pendentes} pend.</Badge>}
+                  {!f.diasPreenchidos && <span className="text-[var(--muted-foreground)]/60">—</span>}
+                </span>
+              </td>
             </tr>
           ))}
         </tbody>

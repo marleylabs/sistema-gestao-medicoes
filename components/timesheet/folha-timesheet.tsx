@@ -267,8 +267,31 @@ export function TotaisTimesheet({ totais }: { totais: Horas }) {
   );
 }
 
-/** Tabela dos dias do ciclo. Sem `onEditar` (painel da medição) é só leitura e mostra a descrição e o solicitante. */
-export function TabelaDiasTimesheet({ dias, enviada, onEditar }: { dias: Dia[]; enviada: boolean; onEditar?: (dia: Dia) => void }) {
+/** Estado da decisão do fiscal num dia (spec timesheet-aprovacao-fiscal). Dia sem lançamento não tem decisão. */
+export function SeloAprovacao({ dia }: { dia: Dia }) {
+  if (!dia.lancado) return <span className="text-[var(--muted-foreground)]/60">—</span>;
+  if (dia.aprovacao === "APROVADO") return <Badge variant="success">Aprovado</Badge>;
+  if (dia.aprovacao === "REPROVADO") {
+    return (
+      <span className="grid justify-items-start gap-0.5">
+        <Badge variant="danger">Reprovado</Badge>
+        {dia.aprovacaoMotivo && <span className="max-w-[220px] whitespace-normal text-[11.5px] leading-snug text-[var(--muted-foreground)]">{dia.aprovacaoMotivo}</span>}
+      </span>
+    );
+  }
+  return <Badge variant="neutral">Pendente</Badge>;
+}
+
+export type SelecaoDias = { selecionadas: ReadonlySet<string>; alternar: (data: string) => void; alternarTodas: (datas: string[]) => void };
+
+/**
+ * Tabela dos dias do ciclo. Sem `onEditar` (painel da medição e do fiscal) é só leitura e mostra a descrição e
+ * o solicitante. A coluna "Aprovação" mostra a decisão do fiscal; `selecao` (só na tela do fiscal) liga as
+ * caixas de seleção dos dias lançados para aprovar ou reprovar em lote.
+ */
+export function TabelaDiasTimesheet({ dias, enviada, onEditar, selecao }: { dias: Dia[]; enviada: boolean; onEditar?: (dia: Dia) => void; selecao?: SelecaoDias }) {
+  const lancados = dias.filter((d) => d.lancado).map((d) => d.data);
+  const todasMarcadas = !!selecao && lancados.length > 0 && lancados.every((d) => selecao.selecionadas.has(d));
   return (
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">
@@ -276,6 +299,18 @@ export function TabelaDiasTimesheet({ dias, enviada, onEditar }: { dias: Dia[]; 
           <caption className="sr-only">Dias do ciclo com horários e horas calculadas</caption>
           <thead className="bg-[var(--surface-muted)] text-[11px] uppercase tracking-[0.02em] text-[var(--muted-foreground)]">
             <tr>
+              {selecao && (
+                <th scope="col" className="w-10 px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 cursor-pointer accent-[var(--primary)]"
+                    aria-label="Selecionar todos os dias lançados"
+                    checked={todasMarcadas}
+                    disabled={!lancados.length}
+                    onChange={() => selecao.alternarTodas(todasMarcadas ? [] : lancados)}
+                  />
+                </th>
+              )}
               <th scope="col" className="px-3 py-2.5 font-semibold">Dia</th>
               {onEditar && <th scope="col" className="px-1 py-2.5"><span className="sr-only">Ação</span></th>}
               <th scope="col" className="px-3 py-2.5 font-semibold">Manhã</th>
@@ -287,6 +322,7 @@ export function TabelaDiasTimesheet({ dias, enviada, onEditar }: { dias: Dia[]; 
               <th scope="col" className="px-3 py-2.5 font-semibold">Projeto/PEP</th>
               {!onEditar && <th scope="col" className="px-3 py-2.5 font-semibold">Descrição</th>}
               {!onEditar && <th scope="col" className="px-3 py-2.5 font-semibold">Solicitante</th>}
+              <th scope="col" className="px-3 py-2.5 font-semibold">Aprovação</th>
             </tr>
           </thead>
           <tbody>
@@ -301,6 +337,19 @@ export function TabelaDiasTimesheet({ dias, enviada, onEditar }: { dias: Dia[]; 
                   data-destaque={destaque || undefined}
                   className={clsx("border-t border-[var(--border)]", destaque && "bg-[var(--success-soft)]")}
                 >
+                  {selecao && (
+                    <td className="px-3 py-2">
+                      {dia.lancado && (
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 cursor-pointer accent-[var(--primary)]"
+                          aria-label={`Selecionar ${formatarData(dia.data)}`}
+                          checked={selecao.selecionadas.has(dia.data)}
+                          onChange={() => selecao.alternar(dia.data)}
+                        />
+                      )}
+                    </td>
+                  )}
                   <th
                     scope="row"
                     className={clsx(
@@ -336,6 +385,7 @@ export function TabelaDiasTimesheet({ dias, enviada, onEditar }: { dias: Dia[]; 
                   <td className="max-w-[160px] truncate px-3 py-2 text-[var(--muted-foreground)]" title={dia.projetoPep ?? undefined}>{dia.projetoPep ?? "—"}</td>
                   {!onEditar && <td className="max-w-[200px] truncate px-3 py-2 text-[var(--muted-foreground)]" title={dia.descricao ?? undefined}>{dia.descricao ?? "—"}</td>}
                   {!onEditar && <td className="max-w-[140px] truncate px-3 py-2 text-[var(--muted-foreground)]" title={dia.solicitante ?? undefined}>{dia.solicitante ?? "—"}</td>}
+                  <td className="px-3 py-2" data-testid={`timesheet-aprovacao-${dia.data}`}><SeloAprovacao dia={dia} /></td>
                 </tr>
               );
             })}

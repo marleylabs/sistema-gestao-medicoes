@@ -14,6 +14,7 @@ import { FornecedorEditor, FuncionarioCreatePanel } from "@/components/administr
 import { FornecedorDetalhe, FuncionarioDetalhe } from "@/components/administrativo/detalhes";
 import { AdministrativoKpis, FornecedoresCadastroTable, FuncionariosTable } from "@/components/administrativo/listagem";
 import { ContratosCadastro } from "@/components/administrativo/contratos";
+import { FiscaisCadastro } from "@/components/administrativo/fiscais";
 import { ImportarConsultaPanel, type ImportAtencaoDetalhe, type ImportResult } from "@/components/administrativo/importar-panel";
 import { PrimeiroAcessoLoteDialog } from "@/components/administrativo/primeiro-acesso-lote-dialog";
 import { BulkSelectionBar } from "@/components/bulk-selection-bar";
@@ -729,7 +730,7 @@ function ConfirmAcaoModal({
   );
 }
 
-type Aba = "fornecedores" | "funcionarios" | "contratos";
+type Aba = "fornecedores" | "funcionarios" | "fiscais" | "contratos";
 type StatusFiltro = "ativos" | "inativos" | "todos";
 
 /** Filtros secundários (popover discreto) — a toolbar fica só com busca + status. */
@@ -886,6 +887,9 @@ export function AdministrativoPanel({
 
   const [aba, setAba] = useState<Aba>("fornecedores");
   const [contratosTotal, setContratosTotal] = useState<number | null>(null);
+  const [fiscaisTotal, setFiscaisTotal] = useState<number | null>(null);
+  // Fiscais e Contratos têm busca, filtros e botões próprios (fiscais.tsx e contratos.tsx em components/administrativo).
+  const abaPropria = aba === "fiscais" || aba === "contratos";
   const [search, setSearch] = useState("");
   // Mesmo padrão de antes: inativos ocultos por padrão entre fornecedores; funcionários todos.
   const [statusFornecedor, setStatusFornecedor] = useState<StatusFiltro>("ativos");
@@ -1276,7 +1280,7 @@ export function AdministrativoPanel({
           <IconButton onClick={load} title="Atualizar" disabled={loading}>
             <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
           </IconButton>
-          {aba !== "contratos" && (
+          {!abaPropria && (
             <>
               <Button variant="secondary" onClick={() => setPainel({ tipo: "importar" })}>
                 <FileSpreadsheet size={15} />
@@ -1315,6 +1319,7 @@ export function AdministrativoPanel({
             {([
               ["fornecedores", "Fornecedores", items.length],
               ["funcionarios", "Funcionários", funcionarios.length],
+              ["fiscais", "Fiscais", fiscaisTotal ?? ""],
               ["contratos", "Contratos", contratosTotal ?? ""],
             ] as const).map(([value, label, count]) => (
               <Aba key={value} grupo="aba-cadastro" ativa={aba === value} onClick={() => { setAba(value); clearSelection(); }}>
@@ -1322,7 +1327,7 @@ export function AdministrativoPanel({
               </Aba>
             ))}
           </div>
-          {aba !== "contratos" && (
+          {!abaPropria && (
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
             <span className="relative min-w-0 sm:w-[340px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[var(--muted-foreground)]" size={14} />
@@ -1363,7 +1368,7 @@ export function AdministrativoPanel({
         </div>
         {/* Recorte só abaixo da barra: o popover de Filtros mora nela e precisa sair do card. */}
         <div className="overflow-hidden rounded-b-[10px]">
-        {aba === "contratos" ? <ContratosCadastro onTotal={setContratosTotal} /> : (<>
+        {aba === "contratos" ? <ContratosCadastro onTotal={setContratosTotal} /> : aba === "fiscais" ? <FiscaisCadastro onTotal={setFiscaisTotal} /> : (<>
 
         {filtroChips.length > 0 && (
           <div className="flex flex-wrap gap-1.5 border-b border-[var(--border)] px-5 py-2.5">

@@ -48,6 +48,18 @@ export async function requireContratos() {
   return admin.response && admin.user ? requireAdministrativo() : admin;
 }
 
+/** Fiscal do contrato: só o perfil FISCAL (nem ADMIN nem Medição decidem as horas). */
+export async function requireFiscal() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return { user: null, response: NextResponse.json({ error: "Não autenticado." }, { status: 401 }) };
+  }
+  if (user.perfil !== "FISCAL") {
+    return { user, response: NextResponse.json({ error: "Acesso restrito ao fiscal do contrato." }, { status: 403 }) };
+  }
+  return { user, response: null };
+}
+
 export async function requireHistorico() {
   const user = await getCurrentUser();
   if (!user) {

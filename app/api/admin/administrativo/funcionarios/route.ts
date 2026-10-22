@@ -15,7 +15,7 @@ export async function GET() {
   if (auth.response) return auth.response;
 
   const usuarios = await prisma.usuario.findMany({
-    where: { perfil: { not: "COLABORADOR" }, excluidoAt: null },
+    where: { perfil: { notIn: ["COLABORADOR", "FISCAL"] }, excluidoAt: null }, // fiscais têm aba própria
     select: {
       id: true, usuario: true, nome: true, perfil: true, ativo: true,
       primeiroLogin: true, email: true, ultimoLoginAt: true, createdAt: true,

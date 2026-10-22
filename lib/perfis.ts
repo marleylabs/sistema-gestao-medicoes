@@ -2,12 +2,19 @@
  * Fonte única dos perfis de `Usuario` — evita enumerações paralelas divergentes entre as rotas
  * de administração de usuários e o frontend (Painel Administrativo, antigo Gestão de Usuários).
  */
-export const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "ADMINISTRATIVO"] as const;
+export const VALID_PERFIS = ["ADMIN", "MEDICAO", "COLABORADOR", "FINANCEIRO", "ADMINISTRATIVO", "FISCAL"] as const;
 
 export type Perfil = (typeof VALID_PERFIS)[number];
 
-/** Perfis internos (equipe própria) — excluem COLABORADOR, que é sempre fornecedor. */
-export const INTERNAL_PERFIS = VALID_PERFIS.filter((p) => p !== "COLABORADOR") as Exclude<Perfil, "COLABORADOR">[];
+/** Perfis externos: COLABORADOR (fornecedor) e FISCAL (fiscal do contrato, só aprova horas do timesheet). */
+export const EXTERNAL_PERFIS = ["COLABORADOR", "FISCAL"] as const;
+
+/** Perfis internos (equipe própria). Use isto (allowlist), nunca "não é COLABORADOR". */
+export const INTERNAL_PERFIS = VALID_PERFIS.filter((p) => !(EXTERNAL_PERFIS as readonly string[]).includes(p)) as Exclude<Perfil, (typeof EXTERNAL_PERFIS)[number]>[];
+
+export function isPerfilInterno(perfil: string) {
+  return (INTERNAL_PERFIS as readonly string[]).includes(perfil);
+}
 
 export const PERFIL_LABEL: Record<Perfil, string> = {
   ADMIN: "Administrador",
@@ -15,6 +22,7 @@ export const PERFIL_LABEL: Record<Perfil, string> = {
   COLABORADOR: "Fornecedor",
   FINANCEIRO: "Financeiro",
   ADMINISTRATIVO: "Administrativo",
+  FISCAL: "Fiscal",
 };
 
 /** Mesmo conteúdo de `PERFIL_LABEL`, tipado para indexação com `string` livre (ex.: valor vindo de

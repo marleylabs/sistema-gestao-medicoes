@@ -19,5 +19,6 @@ tags: [modulo]
 - Não há exclusão pela API nem pela tela: o contrato é inativado. Um DELETE direto no banco ainda apagaria os feriados do timesheet dele (`CASCADE`) e o tiraria da configuração dos fornecedores. Ver [Timesheet ATO](timesheet.md).
 - Quem edita: Administrativo, Medição e ADMIN (`requireContratos`). O Financeiro não acessa.
 - O nº, o gestor e o fiscal vão para o cabeçalho e a assinatura da folha do timesheet.
+- Fiscal = `Contrato.fiscalId`, um usuário FISCAL ativo escolhido no formulário; ele aprova as horas do timesheet dos fornecedores do contrato. O texto antigo `fiscal` só aparece quando não há vínculo.
 
 **Depende de:** [Mapa de pagamento](mapa-pagamento.md)

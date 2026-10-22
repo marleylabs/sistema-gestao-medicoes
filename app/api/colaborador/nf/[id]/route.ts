@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { isUuid, safeDownloadName } from "@/lib/file-security";
 import { prisma } from "@/lib/prisma";
 import { getColaboradorCodigoAliases } from "@/lib/colaborador-alias";
+import { isPerfilInterno } from "@/lib/perfis";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -23,6 +24,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (!aliases.includes(sgc.colaboradorCodigo)) {
       return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
     }
+  } else if (!isPerfilInterno(user.perfil)) {
+    // Fora o fornecedor dono, só a equipe interna (o FISCAL, por exemplo, não).
+    return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
   }
 
   const nome = safeDownloadName(sgc.nfArquivoNome, "nota-fiscal");
