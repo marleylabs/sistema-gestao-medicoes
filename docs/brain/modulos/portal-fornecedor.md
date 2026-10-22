@@ -1,5 +1,5 @@
 ---
-atualizado: 2026-10-17
+atualizado: 2026-10-21
 tags: [modulo]
 ---
 # Portal do fornecedor
@@ -13,6 +13,7 @@ tags: [modulo]
 - `lib/colaborador-alias.ts`: monta a lista de códigos e aliases que delimita os dados do fornecedor; `lib/colaborador-alias-filtro.ts` tem a regra de filtro.
 - `lib/portal-fornecedor.ts`: rótulos de status para o fornecedor.
 - `lib/minhas-medicoes.ts`: mostra só AGUARDANDO_NF, APROVADO e PAGO.
+- Aba "Timesheet" (`components/timesheet/folha-timesheet.tsx`): só aparece com `usuario.timesheetHabilitado` de `/api/colaborador/me`. Ver [Timesheet ATO](timesheet.md).
 - `lib/cadastro-identity.ts`: escolhe o cadastro do usuário logado só pelo código igual ao login (P0); mais de um falha fechado.
 
 **Regras e armadilhas:**

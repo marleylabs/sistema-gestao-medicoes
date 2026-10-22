@@ -16,7 +16,7 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [Boletim](modulos/boletim-calculo.md): cálculo do total, condição fixa, fonte da medição
 - [Financeiro](modulos/financeiro.md): validação de NF, pagamento, comprovante
 - [Mapa de pagamento](modulos/mapa-pagamento.md): linhas de pagamento, REV, rateio
-- [Portal do fornecedor](modulos/portal-fornecedor.md): telas do COLABORADOR e isolamento por alias
+- [Portal do fornecedor](modulos/portal-fornecedor.md): telas do COLABORADOR (inclui a aba Timesheet) e isolamento por alias
 - [Cadastro de fornecedores](modulos/cadastro-fornecedores.md): Consulta PJ, inativação, exclusão definitiva
 - [Identidades e aliases](modulos/identidades-importacao.md): resolver de identidade, pendências
 - [ETL](modulos/etl.md): importação de planilhas em Python
@@ -24,6 +24,7 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [Histórico e dashboard](modulos/historico-dashboard.md): histórico, evidências, dashboard
 - [Chat](modulos/chat.md): conversas, anexos, presença (polling)
 - [E-mail](modulos/email.md): notificações via Resend, modo teste, EmailLog
+- [Timesheet ATO](modulos/timesheet.md): folha de horas do fornecedor ATO, cálculo HN/HE, feriados, liberação e envio
 
 ## Decisões
 - [001 Migrations Prisma](decisoes/001-migrations-prisma-fonte-de-verdade.md): baseline legado e banco só por migrations
@@ -49,4 +50,6 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [Plano do M1 tema e motion](specs/layout-tema-motion-plano.md): tokens escuros → alternador → codemod de cores → motion → shell (concluído em 2026-10-18)
 - [Plano do M2 login e dashboard](specs/layout-tema-motion-m2-plano.md): AnimatedText em CSS → login → gráficos no tema → KPIs e cascata (concluído em 2026-10-18)
 - [Plano do M3 painéis dos setores](specs/layout-tema-motion-m3-plano.md): painel lateral → Modal único → abas → Toast → Skeleton → realce de linha (concluído em 7fb1499)
+- [Timesheet ATO](specs/timesheet-ato.md): folha de apropriação de horas no portal, cálculo HN/HE 50%/HE 100%, feriados, acompanhamento da medição e exportação (implementada)
+- [Plano do Timesheet ATO](specs/timesheet-ato-plano.md): schema → cálculo → folha no portal → feriados → acompanhamento → configuração → XLSX/PDF → E2E (concluído em e94c195)
 - [Plano do M4 portal do fornecedor](specs/layout-tema-motion-m4-plano.md): Minhas Medições e NF → diálogos → ação principal em destaque → motion expressivo → chat (concluído)
