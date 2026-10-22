@@ -12,7 +12,7 @@ Passo a passo para continuar o projeto em outro notebook com o Claude Code. Os s
 
 ## 2. Arquivos fora do git (copiar da máquina atual)
 - `.env`: segredos do Docker de desenvolvimento (`AUTH_SESSION_SECRET`, `DATA_ENCRYPTION_KEY`, bootstrap do ADMIN, Resend). A `DATA_ENCRYPTION_KEY` precisa ser **a mesma** da máquina de origem, senão os dados cifrados (CPF, CNPJ, e-mail) de um backup restaurado não abrem.
-- `.env.test`: `DATABASE_URL_TEST` (banco `medicoes_e2e_bm` no Postgres do Docker, porta 15432), `E2E_DATABASE_NAME`, usuários e senhas do E2E e `E2E_CICLO`.
+- `.env.test`: `DATABASE_URL_TEST` (banco `medicoes_e2e_bm` no Postgres do Docker: porta 15432 num notebook; noutro, container separado `medicoes-postgres-test`, porta 15433), `E2E_DATABASE_NAME`, usuários e senhas do E2E e `E2E_CICLO`.
 - `.claude/launch.json`: configuração `dev-banco-teste` do preview (app na porta 3100 contra o banco de teste). A pasta `.claude/` nunca vai para o git. Conteúdo: um `node -e` que roda `process.loadEnvFile('.env.test')`, troca `DATABASE_URL` por `DATABASE_URL_TEST` e sobe `next dev -p 3100`.
 - `~/.ssh/config` com um host para a produção (`192.168.15.101`; ver [decisão 013](decisoes/013-servidor-unico-e-producao.md)), se for fazer deploy desta máquina. O alias muda de um notebook para outro (`medicoes-preprod` ou `medicoes-prod`), e fora da rede local o servidor só é alcançado pela VPN.
 - Opcional: `~/backups-medicoes/` (dumps de dev e de deploy), para restaurar o banco de desenvolvimento com dados.
