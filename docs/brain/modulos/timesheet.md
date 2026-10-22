@@ -1,5 +1,5 @@
 ---
-atualizado: 2026-10-21
+atualizado: 2026-10-22
 tags: [modulo]
 ---
 # Timesheet ATO
@@ -27,9 +27,10 @@ tags: [modulo]
 - A auditoria vai para `AdminAuditLog`, na mesma transação da mudança, com estes `targetType`: `TIMESHEET_FOLHA` (dias, envio, reabertura), `TIMESHEET_CICLO` (liberação), `FERIADO` e `PROFISSIONAL` (configuração).
 - Rotas da medição: `requireAdmin` em todos os handlers (teste por regex em `tests/timesheet-medicao.test.ts`). O `profissionalId` da URL é validado como UUID.
 - As FKs para o Profissional são `RESTRICT`. A limpeza de órfãos da exclusão de ciclo e o seed E2E apagam ou preservam o timesheet antes de tocar no Profissional.
+- Feriado manual por contrato ([spec](../specs/timesheet-feriados-por-contrato.md)): sem contrato vale para todos; com contrato, só para quem tem esse contrato em `TimesheetConfig.contratoId`. Quem não tem contrato recebe só os gerais. `feriadosDoPeriodo` devolve todos; cada folha filtra com `feriadosDoContrato`. Uma data não pode ter dois feriados que alcancem o mesmo fornecedor (409); dois contratos diferentes podem. Trocar o contrato do fornecedor muda os feriados da folha, inclusive da enviada. Excluir o contrato exclui os feriados dele (`CASCADE`).
 - Excluir um feriado recalcula uma folha já enviada sem nenhum aviso; só a criação depois do envio gera aviso (`feriadoAposEnvio`).
 - Não use `toISOString()` para a data de "hoje": é UTC e muda de dia às 21:00 de Brasília.
 
-**Produção:** desde 2026-10-22 (bf53ea0). Nenhum fornecedor tem status ATO pela importação, então a habilitação é manual (configuração por fornecedor).
+**Produção:** desde 2026-10-22 (bf53ea0). Nenhum fornecedor tem status ATO pela importação, então a habilitação é manual (configuração por fornecedor). Feriado por contrato (migration `20261022180000_timesheet_feriado_contrato`): ainda não implantado.
 
 **Depende de:** [Ciclos](ciclos.md), [Portal do fornecedor](portal-fornecedor.md), [Autenticação](autenticacao.md)

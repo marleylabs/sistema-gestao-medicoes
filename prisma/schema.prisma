@@ -487,6 +487,7 @@ model Contrato {
   updatedAt  DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
   timesheetConfigs TimesheetConfig[]
+  feriados         Feriado[]
 
   @@index([ativo], map: "idx_contratos_ativo")
   @@map("contratos")
@@ -583,17 +584,22 @@ model EtlExecucao {
 }
 
 /// Feriado estadual ou municipal cadastrado pela medição. Os nacionais não ficam aqui: são
-/// calculados em `lib/feriados.ts`. Vale para todos os fornecedores (spec timesheet-ato).
+/// calculados em `lib/feriados.ts`. Sem contrato vale para todos os fornecedores; com contrato, só
+/// para quem tem esse contrato na configuração do timesheet (spec timesheet-feriados-por-contrato).
+/// A migration também cria um único parcial em `data` para os sem contrato (o Prisma não modela).
 model Feriado {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  data          DateTime @unique @db.Date
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  data          DateTime  @db.Date
   nome          String
   /// ESTADUAL | MUNICIPAL
   abrangencia   String
-  createdById   String?  @map("created_by_id") @db.Uuid
-  createdByNome String?  @map("created_by_nome")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  contratoId    String?   @map("contrato_id") @db.Uuid
+  contrato      Contrato? @relation(fields: [contratoId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  createdById   String?   @map("created_by_id") @db.Uuid
+  createdByNome String?   @map("created_by_nome")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
+  @@unique([data, contratoId])
   @@map("feriados")
 }
 

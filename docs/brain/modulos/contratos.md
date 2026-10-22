@@ -1,5 +1,5 @@
 ---
-atualizado: 2026-10-16
+atualizado: 2026-10-22
 tags: [modulo]
 ---
 # Contratos
@@ -15,5 +15,6 @@ tags: [modulo]
 **Regras e armadilhas:**
 - `Contrato.nome` é único.
 - O rateio do mapa usa colunas `Decimal(18,8)`.
+- Excluir um contrato (DELETE físico) exclui os feriados do timesheet ligados a ele e tira o contrato da configuração do timesheet dos fornecedores. Ver [Timesheet ATO](timesheet.md).
 
 **Depende de:** [Mapa de pagamento](mapa-pagamento.md)

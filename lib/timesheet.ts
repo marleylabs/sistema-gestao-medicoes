@@ -30,7 +30,11 @@ export function respostaTimesheetErro(e: unknown) {
 
 export type Liberacao = "DIA_A_DIA" | "CICLO";
 export type Ator = Pick<AuthUser, "id" | "usuario" | "nome">;
-export type FeriadoDoPeriodo = { data: string; nome: string; origem: "NACIONAL" | "ESTADUAL" | "MUNICIPAL"; id: string | null; criadoEm: string | null };
+export type FeriadoDoPeriodo = {
+  data: string; nome: string; origem: "NACIONAL" | "ESTADUAL" | "MUNICIPAL"; id: string | null; criadoEm: string | null;
+  /** null = vale para todos os contratos (nacional ou manual sem contrato). */
+  contratoId: string | null; contratoNome: string | null;
+};
 
 const MAX_TEXTO = 200;
 
@@ -91,18 +95,24 @@ async function exigirHabilitado(profissionalId: string | null) {
   return p;
 }
 
+/** Todos os feriados do período, de todos os contratos. Para uma folha, filtre com `feriadosDoContrato`. */
 export async function feriadosDoPeriodo(inicio: string, fim: string): Promise<FeriadoDoPeriodo[]> {
   const manuais = await prisma.feriado.findMany({
     where: { data: { gte: new Date(`${inicio}T00:00:00Z`), lte: new Date(`${fim}T00:00:00Z`) } },
-    select: { id: true, data: true, nome: true, abrangencia: true, createdAt: true },
+    select: { id: true, data: true, nome: true, abrangencia: true, createdAt: true, contratoId: true, contrato: { select: { nome: true } } },
   });
   return [
-    ...feriadosNacionaisNoPeriodo(inicio, fim).map((f) => ({ ...f, origem: "NACIONAL" as const, id: null, criadoEm: null })),
+    ...feriadosNacionaisNoPeriodo(inicio, fim).map((f) => ({ ...f, origem: "NACIONAL" as const, id: null, criadoEm: null, contratoId: null, contratoNome: null })),
     ...manuais.map((f) => ({
       data: isoDate(f.data), nome: f.nome, origem: f.abrangencia === "MUNICIPAL" ? ("MUNICIPAL" as const) : ("ESTADUAL" as const),
-      id: f.id, criadoEm: f.createdAt.toISOString(),
+      id: f.id, criadoEm: f.createdAt.toISOString(), contratoId: f.contratoId, contratoNome: f.contrato?.nome ?? null,
     })),
   ].sort((a, b) => a.data.localeCompare(b.data));
+}
+
+/** Feriados que valem para um fornecedor: os gerais e os do contrato dele (sem contrato = só os gerais). */
+export function feriadosDoContrato(feriados: FeriadoDoPeriodo[], contratoId: string | null | undefined) {
+  return feriados.filter((f) => f.contratoId === null || f.contratoId === contratoId);
 }
 
 export async function getLiberacao(ciclo: string): Promise<Liberacao> {
@@ -132,7 +142,7 @@ export async function carregarFolha(profissionalId: string | null, cicloParam: u
   const profissional = opcoes.paraMedicao ? await getProfissionalAtivo(profissionalId) : await exigirHabilitado(profissionalId);
   if (!profissional) throw new TimesheetError("Fornecedor não encontrado.", 404);
   const { atoInicio, atoFim } = cicloToDates(ciclo);
-  const [feriados, liberacao, folha, config] = await Promise.all([
+  const [todosFeriados, liberacao, folha, config] = await Promise.all([
     feriadosDoPeriodo(atoInicio, atoFim),
     getLiberacao(ciclo),
     prisma.timesheetFolha.findUnique({
@@ -151,12 +161,13 @@ export async function carregarFolha(profissionalId: string | null, cicloParam: u
     prisma.timesheetConfig.findUnique({
       where: { profissionalId: profissional.id },
       select: {
-        funcao: true, itemPq: true, local: true, area: true, numeroSe: true, docNumero: true,
+        contratoId: true, funcao: true, itemPq: true, local: true, area: true, numeroSe: true, docNumero: true,
         contrato: { select: { codigo: true, nome: true, fiscal: true } },
       },
     }),
   ]);
 
+  const feriados = feriadosDoContrato(todosFeriados, config?.contratoId);
   const feriadoPorData = new Map(feriados.map((f) => [f.data, f.nome]));
   const datasFeriado = new Set(feriadoPorData.keys());
   const salvos = new Map((folha?.dias ?? []).map((d) => [isoDate(d.data), d]));

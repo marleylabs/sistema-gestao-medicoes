@@ -7,7 +7,7 @@ import { feriadosNacionais } from "@/lib/feriados";
 import { isUuid } from "@/lib/file-security";
 import { calcularDia, formatarData, isoDate, somarHoras, tipoDoDia } from "@/lib/timesheet-calculo";
 import {
-  TimesheetError, auditoria, exigirCiclo, feriadosDoPeriodo, getLiberacao, texto, timesheetHabilitado, type Ator, type Liberacao,
+  TimesheetError, auditoria, exigirCiclo, feriadosDoContrato, feriadosDoPeriodo, getLiberacao, texto, timesheetHabilitado, type Ator, type Liberacao,
 } from "@/lib/timesheet";
 
 /**
@@ -40,7 +40,7 @@ export async function listarFolhasDoCiclo(cicloParam: unknown) {
           { timesheetFolhas: { some: { ciclo } } },
         ],
       },
-      select: { id: true, codigo: true, nome: true, nomeCompleto: true, statusColaborador: true, timesheetConfig: { select: { habilitado: true } } },
+      select: { id: true, codigo: true, nome: true, nomeCompleto: true, statusColaborador: true, timesheetConfig: { select: { habilitado: true, contratoId: true } } },
     }),
     prisma.timesheetFolha.findMany({
       where: { ciclo },
@@ -53,11 +53,12 @@ export async function listarFolhasDoCiclo(cicloParam: unknown) {
     getLiberacao(ciclo),
   ]);
 
-  const datasFeriado = new Set(feriados.map((f) => f.data));
   const folhaPorProfissional = new Map(folhas.map((f) => [f.profissionalId, f]));
 
   const itens = profissionais.map((p) => {
     const folha = folhaPorProfissional.get(p.id);
+    const feriadosDaFolha = feriadosDoContrato(feriados, p.timesheetConfig?.contratoId);
+    const datasFeriado = new Set(feriadosDaFolha.map((f) => f.data));
     const dias = (folha?.dias ?? []).filter((d) => d.entrada1 !== null || d.entrada2 !== null);
     const ultimo = (folha?.dias ?? []).reduce<Date | null>((max, d) => (!max || d.updatedAt > max ? d.updatedAt : max), null);
     const status: StatusAcompanhamento = folha?.status === "ENVIADA" ? "ENVIADA" : dias.length ? "EM_PREENCHIMENTO" : "NAO_INICIADA";
@@ -72,7 +73,7 @@ export async function listarFolhasDoCiclo(cicloParam: unknown) {
       ultimoPreenchimento: ultimo?.toISOString() ?? null,
       enviadaEm: enviadaAt?.toISOString() ?? null,
       // Decisão 2 da spec: recalcula sempre e avisa quando um feriado novo caiu depois do envio.
-      feriadoAposEnvio: !!enviadaAt && feriados.some((f) => f.criadoEm !== null && new Date(f.criadoEm) > enviadaAt),
+      feriadoAposEnvio: !!enviadaAt && feriadosDaFolha.some((f) => f.criadoEm !== null && new Date(f.criadoEm) > enviadaAt),
       totais: somarHoras(dias.map((d) => calcularDia(d, tipoDoDia(isoDate(d.data), datasFeriado)))),
     };
   });
@@ -135,7 +136,8 @@ export async function definirLiberacao(input: { ciclo: unknown; liberacao: unkno
 
 // ─── Feriados manuais ────────────────────────────────────────────────────────
 
-export async function criarFeriado(input: { data: unknown; nome: unknown; abrangencia: unknown; ator: Ator }) {
+/** `contratoId` vazio = vale para todos os contratos. Uma data não pode ter dois feriados que alcancem o mesmo fornecedor. */
+export async function criarFeriado(input: { data: unknown; nome: unknown; abrangencia: unknown; contratoId?: unknown; ator: Ator }) {
   const data = typeof input.data === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.data) ? input.data : null;
   const dataDb = data ? new Date(`${data}T00:00:00Z`) : null;
   if (!data || !dataDb || Number.isNaN(dataDb.getTime()) || isoDate(dataDb) !== data) throw new TimesheetError("Data inválida.", 400);
@@ -144,14 +146,27 @@ export async function criarFeriado(input: { data: unknown; nome: unknown; abrang
   if (input.abrangencia !== "ESTADUAL" && input.abrangencia !== "MUNICIPAL") throw new TimesheetError("Abrangência inválida.", 400);
   const nacional = feriadosNacionais(Number(data.slice(0, 4))).find((f) => f.data === data);
   if (nacional) throw new TimesheetError(`${formatarData(data)} já é feriado nacional (${nacional.nome}).`, 409);
+  const contratoId = input.contratoId === null || input.contratoId === "" || input.contratoId === undefined ? null : exigirUuid(input.contratoId, "Contrato");
+  const contrato = contratoId ? await prisma.contrato.findUnique({ where: { id: contratoId }, select: { nome: true } }) : null;
+  if (contratoId && !contrato) throw new TimesheetError("Contrato não encontrado.", 400);
 
   try {
     return await prisma.$transaction(async (tx) => {
+      // shortcut: geral × contrato na mesma data só é checado aqui (os índices pegam só geral × geral e contrato × mesmo contrato); basta para o cadastro manual da medição.
+      const ocupado = await tx.feriado.findFirst({
+        where: { data: dataDb, ...(contratoId ? { OR: [{ contratoId: null }, { contratoId }] } : {}) },
+        select: { nome: true, contrato: { select: { nome: true } } },
+      });
+      if (ocupado) {
+        throw new TimesheetError(`Já existe um feriado nesta data (${ocupado.nome}, ${ocupado.contrato ? `contrato ${ocupado.contrato.nome}` : "todos os contratos"}).`, 409);
+      }
       const feriado = await tx.feriado.create({
-        data: { data: dataDb, nome, abrangencia: input.abrangencia as string, createdById: input.ator.id, createdByNome: input.ator.nome },
+        data: { data: dataDb, nome, abrangencia: input.abrangencia as string, contratoId, createdById: input.ator.id, createdByNome: input.ator.nome },
         select: { id: true },
       });
-      await tx.adminAuditLog.create({ data: auditoria(input.ator, "FERIADO_CRIADO", feriado.id, null, { data, nome, abrangencia: input.abrangencia }, "FERIADO") });
+      await tx.adminAuditLog.create({
+        data: auditoria(input.ator, "FERIADO_CRIADO", feriado.id, null, { data, nome, abrangencia: input.abrangencia, contratoId, contrato: contrato?.nome ?? null }, "FERIADO"),
+      });
       return feriado;
     });
   } catch (e) {
@@ -163,11 +178,13 @@ export async function criarFeriado(input: { data: unknown; nome: unknown; abrang
 export async function excluirFeriado(input: { id: unknown; ator: Ator }) {
   const id = exigirUuid(input.id, "Feriado");
   await prisma.$transaction(async (tx) => {
-    const feriado = await tx.feriado.findUnique({ where: { id }, select: { data: true, nome: true, abrangencia: true } });
+    const feriado = await tx.feriado.findUnique({ where: { id }, select: { data: true, nome: true, abrangencia: true, contratoId: true, contrato: { select: { nome: true } } } });
     if (!feriado) throw new TimesheetError("Feriado não encontrado.", 404);
     await tx.feriado.delete({ where: { id } });
     await tx.adminAuditLog.create({
-      data: auditoria(input.ator, "FERIADO_EXCLUIDO", id, null, { data: isoDate(feriado.data), nome: feriado.nome, abrangencia: feriado.abrangencia }, "FERIADO"),
+      data: auditoria(input.ator, "FERIADO_EXCLUIDO", id, null, {
+        data: isoDate(feriado.data), nome: feriado.nome, abrangencia: feriado.abrangencia, contratoId: feriado.contratoId, contrato: feriado.contrato?.nome ?? null,
+      }, "FERIADO"),
     });
   });
 }

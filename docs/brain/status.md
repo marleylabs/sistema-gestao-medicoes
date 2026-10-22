@@ -8,6 +8,7 @@ atualizado: 2026-10-22
   - Migrations `20261022010132_timesheet_ato` e `20261022021306_timesheet_audit_index` (só criam tabelas e um índice) aplicadas na produção (10/10), no DEV e no banco de teste.
   - **Na produção, nenhum dos 62 Profissionais ativos tem `status_colaborador = 'ATO'`** (no DEV, 0 de 63). Ninguém vê a aba até a medição habilitar cada fornecedor em Timesheet → "Habilitar fornecedor".
   - Verificação antes do push: `tsc` ok, `test:targeted` 589/589 (com a correção do chat mesclada), E2E completo 223/223 (antes da mesclagem). Smoke funcional na produção: ainda não feito pelo usuário.
+- **Timesheet, feriados por contrato** (2026-10-22, enviado ao GitHub, não implantado): o feriado manual pode ser geral ou de um contrato, e a aba Feriados filtra por contrato. Ver [spec](specs/timesheet-feriados-por-contrato.md). Migration nova `20261022180000_timesheet_feriado_contrato` (só acrescenta coluna e índices; os feriados atuais ficam gerais), aplicada só no banco de teste `medicoes_e2e_bm`. Verificação: `tsc` ok, `test:targeted` 590/590, E2E das duas specs do timesheet 8/8.
 - **Produção** (`192.168.15.101:3020`, `/opt/sistema-gestao-medicoes`; [decisão 013](decisoes/013-servidor-unico-e-producao.md)): roda bf53ea0 desde 2026-10-22 02:55 (UTC). Só o web foi recriado; o ETL e o Postgres ficaram intactos (o ETL não muda desde f856767). Inclui layout M1 a M4, P2, as correções de 2026-10-19, o chat sem duplicata e o Timesheet ATO. O alias SSH depende do notebook: `medicoes-preprod` num, `medicoes-prod` (só pela VPN) no outro. O servidor também hospeda outros sistemas (extrato-mensal, projeto-raio, projeta-hub): recrie só os serviços do medicoes.
   - Health 200, login 200, API do timesheet 401 sem sessão, 0 linhas de erro no log do web.
   - Rollback: imagem `local/medicoes-web-rollback:20261022T025047Z` + `~/backups-medicoes/deploy_20261022T025047Z/` (`postgres.dump` com sha256 e listagem de 22 tabelas, `deploy.env` com o SHA anterior d78535d, `build.log`, `migrate.log`, `web.log`). As tabelas novas não atrapalham a imagem anterior, então o rollback do web dispensa desfazer a migration.
@@ -21,16 +22,17 @@ atualizado: 2026-10-22
 1. **Timesheet na produção** (implantado em 2026-10-22):
    - smoke funcional pelo usuário;
    - a medição habilita os fornecedores ATO (hoje nenhum tem o status pela importação) e configura o cabeçalho de cada um.
-2. **Timesheet, fase 2** (fora do escopo atual):
+2. **Feriados por contrato**: deploy (web + `migrate deploy`, com backup antes, como no deploy de bf53ea0). Depois, a medição define o contrato de cada fornecedor ATO na configuração; sem isso ele só recebe os feriados gerais.
+3. **Timesheet, fase 2** (fora do escopo atual):
    - envio ao gestor do contrato e registro da aprovação pela plataforma;
    - lançamento do total de horas na medição/BM;
    - aviso quando um feriado é excluído depois do envio;
    - folha reaberta de ciclo passado alcançável pelo fornecedor.
-3. Criar rotina de backup automática (hoje só há `pg_dump` manual nos runbooks).
-4. Definir o fluxo manual para corrigir valores de BM aprovado ou pago (a planilha só reporta a divergência).
-5. Produção, já autorizado: limpar `senha_temporaria` antiga (`UPDATE usuarios SET senha_temporaria = NULL`) e rodar `diagnose_identities.py` na planilha real.
-6. Atualizar `docker-compose.prod.yml` para o Resend, `docs/database-source-of-truth.md` e `RELATORIO-EXCLUSAO-DEFINITIVA-FORNECEDORES.md`.
-7. Revisar `docs/plano-pre-deploy-producao.md` §7: quase tudo foi feito na P2; marcar o que resta (validação do Cristiano pela área de negócio) e arquivar.
+4. Criar rotina de backup automática (hoje só há `pg_dump` manual nos runbooks).
+5. Definir o fluxo manual para corrigir valores de BM aprovado ou pago (a planilha só reporta a divergência).
+6. Produção, já autorizado: limpar `senha_temporaria` antiga (`UPDATE usuarios SET senha_temporaria = NULL`) e rodar `diagnose_identities.py` na planilha real.
+7. Atualizar `docker-compose.prod.yml` para o Resend, `docs/database-source-of-truth.md` e `RELATORIO-EXCLUSAO-DEFINITIVA-FORNECEDORES.md`.
+8. Revisar `docs/plano-pre-deploy-producao.md` §7: quase tudo foi feito na P2; marcar o que resta (validação do Cristiano pela área de negócio) e arquivar.
 
 ## Bloqueios
 - `npm run lint` não roda (não há `eslint.config.*`). Use `npx tsc --noEmit`.
@@ -47,8 +49,8 @@ atualizado: 2026-10-22
 - `npm run build` e o Playwright compartilham `.next`: rode `rm -rf .next` depois do build.
 
 ## Últimas mudanças (máx. 5, mais recente primeiro)
+- 2026-10-22: feriados do timesheet por contrato (geral ou de um contrato, filtro na aba Feriados), com migration nova; enviado ao GitHub, não implantado.
 - 2026-10-22 (UTC): deploy de bf53ea0 na produção (Timesheet ATO + 2 migrations), com backup e rollback; DEV reconstruído com o mesmo commit.
 - 2026-10-21: Timesheet ATO implementado (fases A a D, commit e94c195, enviado ao GitHub; produção pendente). O fornecedor ATO preenche a folha 21→20 no portal; a medição acompanha, libera o preenchimento, reabre, cadastra feriados estaduais e municipais, configura o cabeçalho e exporta em XLSX ou PDF. Ver [módulo](modulos/timesheet.md).
 - 2026-10-19: chat duplicado corrigido (d78535d), implantado na produção e duplicata existente mesclada (ver Produção).
 - 2026-10-19: o usuário confirmou que o servidor `192.168.15.101:3020`, chamado até aqui de pré-produção, é a produção ([decisão 013](decisoes/013-servidor-unico-e-producao.md)). Com isso, a P2 (T6) fica concluída na produção desde 2026-10-18 (UTC). Atualizados: status, plano e spec da P2, decisão 012, portal do fornecedor, pendências (P2 removida) e índice. As notas antigas mantêm o termo "pré-produção" como registro.
-- 2026-10-19: lacunas do review tratadas. `Modal` compartilhado (`components/ui.tsx`): o foco entra no diálogo, o Tab circula só nele (só o modal do topo prende) e volta ao elemento anterior ao fechar; o fundo continua sem `inert`, só `aria-modal`. No celular, Esc com um diálogo aberto não fecha mais a gaveta (`components/app-shell.tsx`). Troca do e-mail de acesso pela edição do cadastro: auditada (`EMAIL_ACESSO_ALTERADO`, sem os endereços) e com aviso na tela quando não chega ao acesso. Testes: `tests/fornecedor-sem-busca-por-nome.test.ts` e `e2e/conta-modal.spec.ts`. E2E completo 216/216, `test:targeted` 545/545.

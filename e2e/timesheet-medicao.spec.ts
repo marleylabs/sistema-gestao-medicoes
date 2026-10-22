@@ -16,6 +16,7 @@ import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prism
 const ATO = { usuario: "P0909973", nome: "E2E Timesheet Medicao ATO" };
 const SENHA = `E2e-${randomBytes(6).toString("hex")}`;
 const FERIADO_NOME = "E2E Timesheet Feriado";
+const CONTRATO_NOME = "E2E Timesheet Outro Contrato";
 
 const scrypt = promisify(scryptCallback);
 async function hashPassword(password: string) {
@@ -33,6 +34,7 @@ let fornecedor: APIRequestContext;
 async function limpar() {
   const p = await prisma.profissional.findUnique({ where: { codigo: ATO.usuario }, select: { id: true } });
   await prisma.feriado.deleteMany({ where: { nome: FERIADO_NOME } });
+  await prisma.contrato.deleteMany({ where: { nome: CONTRATO_NOME } }); // leva junto o feriado dele (CASCADE)
   await prisma.adminAuditLog.deleteMany({ where: { OR: [{ adminUsuario: ATO.usuario }, { targetCodigo: ATO.usuario }] } });
   if (p) {
     await prisma.timesheetFolha.deleteMany({ where: { profissionalId: p.id } });
@@ -119,6 +121,31 @@ test.describe.serial("Timesheet ATO no painel da medição", () => {
     await expect(gaveta.getByText("Um feriado foi cadastrado depois do envio.", { exact: false })).toBeVisible();
     await expect(gaveta.getByTestId("timesheet-total-hn")).toHaveText("8:00");
     await expect(gaveta.getByTestId("timesheet-total-he100")).toHaveText("8:00");
+  });
+
+  test("feriado de outro contrato aparece só no filtro dele e não marca a folha do fornecedor", async ({ page }) => {
+    await prisma.contrato.create({ data: { nome: CONTRATO_NOME } });
+    await entrarComoMedicao(page);
+    await page.getByRole("tab", { name: "Feriados" }).click();
+    await page.getByLabel("Contrato dos feriados").selectOption({ label: CONTRATO_NOME });
+    await page.getByRole("button", { name: `Cadastrar feriado em ${dataBr(dias[1])}` }).click();
+    const dialogo = page.getByRole("dialog", { name: `Feriado em ${dataBr(dias[1])}` });
+    await expect(dialogo).toContainText(`Vale só para os fornecedores do contrato ${CONTRATO_NOME}.`);
+    await dialogo.getByLabel("Nome").fill(`${FERIADO_NOME} Contrato`);
+    await dialogo.getByRole("button", { name: "Cadastrar feriado" }).click();
+    await expect(dialogo).toBeHidden();
+    const lista = page.getByTestId("timesheet-feriados-lista");
+    await expect(lista).toContainText(`${FERIADO_NOME} Contrato`);
+    await expect(lista).toContainText(CONTRATO_NOME);
+
+    await page.getByLabel("Contrato dos feriados").selectOption({ label: "Todos os contratos" });
+    await expect(lista).toContainText(FERIADO_NOME);
+    await expect(lista).not.toContainText(`${FERIADO_NOME} Contrato`);
+
+    // O fornecedor não tem contrato na configuração: recebe só os gerais.
+    const folha = await (await fornecedor.get("/api/colaborador/timesheet")).json() as { dias: Array<{ data: string; feriado: string | null }> };
+    expect(folha.dias.find((d) => d.data === dias[1])?.feriado).toBeNull();
+    expect(folha.dias.find((d) => d.data === dias[0])?.feriado).toBe(FERIADO_NOME);
   });
 
   test("exporta XLSX e abre a folha para impressão; fornecedor não acessa a impressão", async ({ page }) => {

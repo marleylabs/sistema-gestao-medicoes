@@ -11,6 +11,7 @@ const HOJE = "2039-06-20";
 const sufixo = `TSM${Date.now()}`;
 const ator = { id: "00000000-0000-4000-8000-0000000000b2", usuario: `TESTE-${sufixo}`, nome: "Medição de teste" };
 const FERIADO = "2039-06-08"; // quarta
+const FERIADO2 = "2039-06-09";
 
 type Lib = typeof import("../lib/timesheet");
 type Med = typeof import("../lib/timesheet-medicao");
@@ -48,9 +49,9 @@ after(async () => {
   await db.timesheetFolha.deleteMany({ where: { profissionalId: { in: todos } } });
   await db.timesheetConfig.deleteMany({ where: { profissionalId: { in: todos } } });
   await db.timesheetCiclo.deleteMany({ where: { ciclo: CICLO } });
-  await db.feriado.deleteMany({ where: { data: new Date(`${FERIADO}T00:00:00Z`) } });
+  await db.feriado.deleteMany({ where: { data: { in: [FERIADO, FERIADO2].map((d) => new Date(`${d}T00:00:00Z`)) } } });
   await db.profissional.deleteMany({ where: { id: { in: todos } } });
-  await db.contrato.deleteMany({ where: { id: contratoId } });
+  await db.contrato.deleteMany({ where: { nome: { endsWith: sufixo } } });
 });
 
 const dia = (data: string, saida2 = "17:00") => ({ data, entrada1: "08:00", saida1: "12:00", entrada2: "13:00", saida2 });
@@ -202,4 +203,37 @@ test("rotas da medição: todas exigem requireAdmin antes de qualquer trabalho",
     const guardas = fonte.match(/const auth = await requireAdmin\(\);\s*if \(auth\.response\) return auth\.response;/g) ?? [];
     assert.ok(handlers.length > 0 && guardas.length === handlers.length, rota);
   }
+});
+
+test("feriado por contrato: vale só para o contrato da configuração; conflitos na mesma data; some com o contrato", async () => {
+  // Estado dos testes anteriores: ato e preenchendo estão no `contratoId`; manual, sem contrato.
+  const contrato2 = (await db.contrato.create({ data: { nome: `Contrato 2 ${sufixo}` }, select: { id: true } })).id;
+  await db.timesheetConfig.update({ where: { profissionalId: ids.manual }, data: { contratoId: contrato2 } });
+  const feriadoNaFolha = async (profissionalId: string, data = FERIADO) =>
+    (await ts.carregarFolha(profissionalId, CICLO, HOJE, { paraMedicao: true })).dias.find((d) => d.data === data)?.feriado ?? null;
+
+  await med.criarFeriado({ data: FERIADO, nome: "Feriado C1", abrangencia: "MUNICIPAL", contratoId, ator });
+  await rejeita(med.criarFeriado({ data: FERIADO, nome: "De novo", abrangencia: "MUNICIPAL", contratoId, ator }), 409, /Feriado C1, contrato/);
+  await rejeita(med.criarFeriado({ data: FERIADO, nome: "Geral", abrangencia: "ESTADUAL", ator }), 409, /Feriado C1, contrato/);
+  await med.criarFeriado({ data: FERIADO, nome: "Feriado C2", abrangencia: "ESTADUAL", contratoId: contrato2, ator });
+
+  assert.equal(await feriadoNaFolha(ids.ato), "Feriado C1");
+  assert.equal(await feriadoNaFolha(ids.manual), "Feriado C2");
+  await db.timesheetConfig.update({ where: { profissionalId: ids.manual }, data: { contratoId: null } });
+  assert.equal(await feriadoNaFolha(ids.manual), null, "sem contrato recebe só os gerais");
+
+  await med.criarFeriado({ data: FERIADO2, nome: "Geral C", abrangencia: "ESTADUAL", contratoId: "", ator });
+  await rejeita(med.criarFeriado({ data: FERIADO2, nome: "Do contrato", abrangencia: "MUNICIPAL", contratoId, ator }), 409, /todos os contratos/);
+  assert.deepEqual([await feriadoNaFolha(ids.manual, FERIADO2), await feriadoNaFolha(ids.ato, FERIADO2)], ["Geral C", "Geral C"]);
+
+  const lista = await med.listarFolhasDoCiclo(CICLO);
+  assert.deepEqual(
+    lista.feriados.filter((f) => f.id).map((f) => [f.nome, f.contratoNome]).sort(),
+    [["Feriado C1", `Contrato ${sufixo}`], ["Feriado C2", `Contrato 2 ${sufixo}`], ["Geral C", null]],
+  );
+  await rejeita(med.criarFeriado({ data: "2039-06-10", nome: "X", abrangencia: "MUNICIPAL", contratoId: "x", ator }), 400, /Contrato/);
+  await rejeita(med.criarFeriado({ data: "2039-06-10", nome: "X", abrangencia: "MUNICIPAL", contratoId: "00000000-0000-4000-8000-000000000999", ator }), 400, /Contrato/);
+
+  await db.contrato.delete({ where: { id: contrato2 } });
+  assert.equal(await db.feriado.count({ where: { nome: "Feriado C2" } }), 0, "excluir o contrato exclui os feriados dele");
 });

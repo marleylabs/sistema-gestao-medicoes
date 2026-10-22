@@ -6,7 +6,7 @@ import { AlertTriangle, RefreshCw, Search, Trash2, UserPlus } from "lucide-react
 import clsx from "clsx";
 import { Aba, Badge, Button, Card, Carregando, Field, IconButton, Input, PageHeader, Select, Toast, classeLinha } from "@/components/ui";
 import { ErroDialogo, PortalDialog } from "@/components/portal-fornecedor";
-import { TimesheetDrawer, type AbaDrawer } from "@/components/timesheet/timesheet-drawer";
+import { TimesheetDrawer, type AbaDrawer, type Contrato } from "@/components/timesheet/timesheet-drawer";
 import { erroDaApi } from "@/components/timesheet/folha-timesheet";
 import { diasDoCiclo, formatarData, formatarDuracao } from "@/lib/timesheet-calculo";
 import { isCicloValido } from "@/lib/ciclo";
@@ -247,15 +247,29 @@ function ListaFolhas({ itens, abertoId, onAbrir }: { itens: Item[]; abertoId: st
 
 const SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
-/** Grade dos dias do ciclo (21→20): clique numa data livre cria um feriado; num manual, exclui. */
-function CalendarioFeriados({ ciclo, periodo, feriados, onMudou }: { ciclo: string; periodo: { inicio: string; fim: string }; feriados: Feriado[]; onMudou: (texto: string) => Promise<void> }) {
+const paraQuem = (f: Feriado) => (f.contratoNome ? `contrato ${f.contratoNome}` : "todos os contratos");
+
+/**
+ * Grade dos dias do ciclo (21→20): clique numa data livre cria um feriado; num manual, exclui.
+ * O filtro de contrato mostra o que vale para ele (gerais + os dele) e é o contrato do feriado novo.
+ */
+function CalendarioFeriados({ ciclo, periodo, feriados: todos, onMudou }: { ciclo: string; periodo: { inicio: string; fim: string }; feriados: Feriado[]; onMudou: (texto: string) => Promise<void> }) {
   const [novo, setNovo] = useState<string | null>(null);
   const [excluir, setExcluir] = useState<Feriado | null>(null);
   const [nome, setNome] = useState("");
   const [abrangencia, setAbrangencia] = useState("MUNICIPAL");
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [contratos, setContratos] = useState<Contrato[]>([]);
+  const [contratoId, setContratoId] = useState("");
 
+  useEffect(() => {
+    fetch("/api/admin/contratos").then((r) => (r.ok ? r.json() : [])).then((lista: Contrato[]) => setContratos(lista)).catch(() => setContratos([]));
+  }, []);
+
+  const contrato = contratos.find((c) => c.id === contratoId) ?? null;
+  const opcoesContrato = contratos.filter((c) => c.ativo || c.id === contratoId || todos.some((f) => f.contratoId === c.id));
+  const feriados = todos.filter((f) => f.contratoId === null || f.contratoId === contratoId);
   const porData = new Map(feriados.map((f) => [f.data, f]));
   const dias = diasDoCiclo(ciclo);
   const vazios = new Date(`${periodo.inicio}T00:00:00Z`).getUTCDay();
@@ -264,7 +278,7 @@ function CalendarioFeriados({ ciclo, periodo, feriados, onMudou }: { ciclo: stri
     if (!novo) return;
     setOcupado(true); setErro(null);
     const res = await fetch("/api/admin/timesheet/feriados", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: novo, nome, abrangencia }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: novo, nome, abrangencia, contratoId: contratoId || null }),
     });
     setOcupado(false);
     if (!res.ok) { setErro(await erroDaApi(res, "Não foi possível cadastrar o feriado.")); return; }
@@ -285,8 +299,15 @@ function CalendarioFeriados({ ciclo, periodo, feriados, onMudou }: { ciclo: stri
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
       <Card className="p-4 sm:p-5">
+        <label className="mb-3 flex flex-wrap items-center gap-2 text-[12px] text-[var(--muted-foreground)]">
+          Contrato
+          <Select className="w-[260px]!" value={contratoId} onChange={(e) => setContratoId(e.target.value)} aria-label="Contrato dos feriados">
+            <option value="">Todos os contratos</option>
+            {opcoesContrato.map((c) => <option key={c.id} value={c.id}>{c.codigo ? `${c.codigo} · ${c.nome}` : c.nome}</option>)}
+          </Select>
+        </label>
         <p className="mb-3 text-[12px] text-[var(--muted-foreground)]">
-          {formatarData(periodo.inicio)} a {formatarData(periodo.fim)}. Clique numa data para cadastrar um feriado estadual ou municipal. Os nacionais já vêm marcados.
+          {formatarData(periodo.inicio)} a {formatarData(periodo.fim)}. Clique numa data para cadastrar um feriado estadual ou municipal {contrato ? `só do contrato ${contrato.nome}` : "para todos os contratos"}. Os nacionais já vêm marcados.
         </p>
         <div className="grid grid-cols-7 gap-1.5" data-testid="timesheet-calendario">
           {SEMANA.map((s) => <p key={s} className="pb-1 text-center text-[11px] font-semibold uppercase text-[var(--muted-foreground)]">{s}</p>)}
@@ -331,10 +352,13 @@ function CalendarioFeriados({ ciclo, periodo, feriados, onMudou }: { ciclo: stri
         ) : (
           <ul className="divide-y divide-[var(--border)]" data-testid="timesheet-feriados-lista">
             {feriados.map((f) => (
-              <li key={f.data} className="flex items-center justify-between gap-2 px-4 py-2.5">
+              <li key={f.id ?? f.data} className="flex items-center justify-between gap-2 px-4 py-2.5">
                 <div className="min-w-0">
                   <p className="truncate text-[13px] font-medium text-[var(--foreground)]">{f.nome}</p>
-                  <p className="text-[12px] text-[var(--muted-foreground)]">{formatarData(f.data)} · {f.origem === "NACIONAL" ? "Nacional" : f.origem === "ESTADUAL" ? "Estadual" : "Municipal"}</p>
+                  <p className="text-[12px] text-[var(--muted-foreground)]">
+                    {formatarData(f.data)} · {f.origem === "NACIONAL" ? "Nacional" : f.origem === "ESTADUAL" ? "Estadual" : "Municipal"}
+                    {f.id && ` · ${f.contratoNome ?? "Todos os contratos"}`}
+                  </p>
                 </div>
                 {f.id && (
                   <IconButton title={`Excluir ${f.nome}`} onClick={() => { setErro(null); setExcluir(f); }}>
@@ -352,7 +376,7 @@ function CalendarioFeriados({ ciclo, periodo, feriados, onMudou }: { ciclo: stri
           <PortalDialog
             key="novo-feriado"
             titulo={`Feriado em ${formatarData(novo)}`}
-            descricao="Vale para todos os fornecedores. Os dias trabalhados nesta data passam a contar como HE 100%."
+            descricao={`${contrato ? `Vale só para os fornecedores do contrato ${contrato.nome}.` : "Vale para todos os contratos."} Os dias trabalhados nesta data passam a contar como HE 100%.`}
             busy={ocupado}
             onClose={() => setNovo(null)}
             footer={
@@ -377,7 +401,7 @@ function CalendarioFeriados({ ciclo, periodo, feriados, onMudou }: { ciclo: stri
             key="excluir-feriado"
             role="alertdialog"
             titulo="Excluir feriado"
-            descricao={`${excluir.nome} (${formatarData(excluir.data)}) deixa de valer, e os dias trabalhados nesta data voltam ao cálculo normal.`}
+            descricao={`${excluir.nome} (${formatarData(excluir.data)}, ${paraQuem(excluir)}) deixa de valer, e os dias trabalhados nesta data voltam ao cálculo normal.`}
             busy={ocupado}
             onClose={() => setExcluir(null)}
             footer={

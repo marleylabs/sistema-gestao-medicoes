@@ -17,7 +17,7 @@ type Config = {
   atualizadoEm: string | null; atualizadoPor: string | null;
 };
 type Detalhe = { folha: FolhaTimesheet; historico: Historico[]; config: Config };
-type Contrato = { id: string; nome: string; codigo: string | null; ativo: boolean };
+export type Contrato = { id: string; nome: string; codigo: string | null; ativo: boolean };
 export type AbaDrawer = "folha" | "historico" | "config";
 
 const ACOES: Record<string, string> = {
