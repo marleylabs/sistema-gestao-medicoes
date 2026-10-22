@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin";
-import { carregarFolha, respostaTimesheetErro } from "@/lib/timesheet";
+import { carregarFolha, hojeSaoPaulo, respostaTimesheetErro } from "@/lib/timesheet";
 import { nomeArquivoTimesheet, planilhaTimesheet } from "@/lib/timesheet-export";
 import { exigirUuid, registrarExportacao } from "@/lib/timesheet-medicao";
 
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const profissionalId = exigirUuid((await params).profissionalId, "Fornecedor");
     const folha = await carregarFolha(profissionalId, request.nextUrl.searchParams.get("ciclo")?.trim(), undefined, { paraMedicao: true });
-    const arquivo = planilhaTimesheet(folha);
+    const arquivo = planilhaTimesheet(folha, hojeSaoPaulo());
     await registrarExportacao({ profissionalId, ciclo: folha.ciclo, formato: "XLSX", ator: auth.user });
     return new NextResponse(new Uint8Array(arquivo), {
       headers: {

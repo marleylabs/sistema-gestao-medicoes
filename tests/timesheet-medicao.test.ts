@@ -159,26 +159,39 @@ test("configuração: sobrescrita da habilitação, cabeçalho com contrato e va
   assert.equal(await db.adminAuditLog.count({ where: { adminUsuario: ator.usuario, action: "TIMESHEET_CONFIG" } }), 2);
 });
 
-test("exportação XLSX: cabeçalho, dias, total e assinatura; registra na auditoria", async () => {
+test("exportação XLSX: preenche o modelo oficial (cabeçalho, dias, total, assinaturas e linhas cinza); registra na auditoria", async () => {
   const { planilhaTimesheet, nomeArquivoTimesheet } = await import("../lib/timesheet-export");
-  const { parseSimpleXlsx } = await import("../lib/xlsx");
-  await med.salvarConfig({ profissionalId: ids.preenchendo, valores: { habilitado: null, contratoId, funcao: "Engenheiro Sênior", itemPq: "100" }, ator });
+  const { readZipEntries } = await import("../lib/xlsx");
+  await med.salvarConfig({ profissionalId: ids.preenchendo, valores: { habilitado: null, contratoId, funcao: "Engenheiro Sênior", itemPq: "100", numeroSe: "SE-7", area: "MINA DO SALOBO" }, ator });
   const folha = await ts.carregarFolha(ids.preenchendo, CICLO, HOJE, { paraMedicao: true });
-  const linhas = parseSimpleXlsx(planilhaTimesheet(folha)).timesheet;
-  const texto = (l: unknown[]) => l.map((c) => String(c ?? ""));
-  const achar = (rotulo: string) => linhas.find((l) => l[0] === rotulo);
+  const entradas = readZipEntries(planilhaTimesheet(folha, "2039-06-25"));
+  const xml = entradas.get("xl/worksheets/sheet1.xml")!.toString("utf8");
+  const celula = (ref: string) => {
+    const corpo = xml.match(new RegExp(`<c r="${ref}"[^>]*?(?:/>|>(.*?)</c>)`))?.[1] ?? "";
+    const textos = [...corpo.matchAll(/<t[^>]*>(.*?)<\/t>/g)].map((m) => m[1]).join("");
+    return textos || (corpo.match(/<v>(.*?)<\/v>/)?.[1] ?? "");
+  };
+  const minutos = (ref: string) => Math.round(Number(celula(ref)) * 1440);
+  const serial = (iso: string) => String(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))) / 86_400_000 + 25_569);
 
-  assert.equal(linhas[0][0], "Folha de Apropriação de Horas");
-  assert.deepEqual(texto(achar("Contrato N.º")!).slice(0, 2), ["Contrato N.º", "5900128908"]);
-  assert.deepEqual(texto(achar("Função")!).slice(0, 2), ["Função", "Engenheiro Sênior"]);
-  assert.deepEqual(texto(achar("Período")!).slice(0, 2), ["Período", "21/05/2039 a 20/06/2039"]);
-  const cabecalhoDias = linhas.findIndex((l) => l[0] === "DIA-MÊS");
-  assert.equal(linhas.findIndex((l) => l[0] === "TOTAL") - cabecalhoDias - 1, folha.dias.length, "uma linha por dia (31 em 21/05–20/06)");
-  const segunda = linhas[cabecalhoDias + 3]; // 23/05/2039
-  assert.deepEqual(texto(segunda).slice(1, 9), ["08:00", "12:00", "13:00", "20:00", "8:00", "3:00", "0:00", "11:00"]);
-  const total = achar("TOTAL")!;
-  assert.deepEqual(texto(total).slice(5, 9), [folha.totais.hn, folha.totais.he50, folha.totais.he100, folha.totais.total].map((m) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`));
-  assert.ok(linhas.some((l) => String(l[9] ?? "") === "Visto fiscalização da VALE: Fiscal Teste"));
+  // O modelo continua inteiro: logos (imagem na célula), estilos e só a aba "timesheet".
+  assert.ok(entradas.has("xl/richData/rdrichvalue.xml") && entradas.has("xl/media/image1.png"));
+  assert.match(entradas.get("xl/workbook.xml")!.toString("utf8"), /<sheets><sheet name="timesheet"[^>]*\/><\/sheets>/);
+  assert.deepEqual(
+    ["K4", "M3", "J6", "A7", "J7", "M7", "M8", "A9", "B46", "K46"].map(celula),
+    ["5900128908", "Doc. N.º: ", "Nº da SE: SE-7", folha.fornecedor.nome, "Função: Engenheiro Sênior", "21/05/2039 a 20/06/2039", "Item da PQ:  100", "MINA DO SALOBO", folha.fornecedor.nome, "Visto fiscalização da VALE:  Fiscal Teste"],
+  );
+  assert.deepEqual(["M2", "J48", "N48"].map(celula), Array(3).fill(serial("2039-06-25")), "data da exportação");
+  assert.equal(celula("K1"), "", "sem GAXLY");
+
+  // 23/05/2039 (segunda) na 3ª linha de dias: 08–12 e 13–20 → 8h normais + 3h HE 50%.
+  assert.equal(celula("A14"), serial("2039-05-23"));
+  assert.deepEqual(["B14", "C14", "D14", "E14", "F14", "G14", "H14", "I14"].map(minutos), [480, 720, 780, 1200, 480, 180, 0, 660]);
+  assert.deepEqual(["F43", "G43", "H43", "I43"].map(minutos), [folha.totais.hn, folha.totais.he50, folha.totais.he100, folha.totais.total]);
+
+  const cinza = folha.dias.flatMap((d, i) => (d.tipo === "UTIL" ? [] : [`A${12 + i}:N${12 + i}`])).join(" ");
+  assert.match(xml, new RegExp(`<conditionalFormatting sqref="${cinza}"><cfRule [^>]*><formula>TRUE</formula>`));
+  assert.equal(celula("A42"), serial("2039-06-20"), "31 dias ocupam as linhas 12–42");
   assert.match(nomeArquivoTimesheet(folha), /^timesheet_3906_PREENCHE-TSM\d+\.xlsx$/);
 
   await med.registrarExportacao({ profissionalId: ids.preenchendo, ciclo: CICLO, formato: "XLSX", ator });

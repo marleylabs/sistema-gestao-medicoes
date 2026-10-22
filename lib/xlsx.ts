@@ -2,7 +2,7 @@ import { deflateRawSync, inflateRawSync } from "node:zlib";
 
 export type CellValue = string | number | Date | null | undefined;
 
-type ZipEntry = {
+export type ZipEntry = {
   name: string;
   data: Buffer;
 };
@@ -49,7 +49,7 @@ function dosDateTime(date = new Date()) {
   return { dosTime, dosDate };
 }
 
-function createZip(entries: ZipEntry[]) {
+export function createZip(entries: ZipEntry[]) {
   const chunks: Buffer[] = [];
   const central: Buffer[] = [];
   let offset = 0;
@@ -242,7 +242,7 @@ function columnIndexFromRef(ref: string) {
   return match[0].toUpperCase().split("").reduce((total, char) => total * 26 + char.charCodeAt(0) - 64, 0) - 1;
 }
 
-function readZipEntries(buffer: Buffer) {
+export function readZipEntries(buffer: Buffer) {
   const entries = new Map<string, Buffer>();
   let eocdOffset = -1;
   for (let index = buffer.length - 22; index >= 0; index -= 1) {

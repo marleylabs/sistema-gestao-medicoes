@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["pdf-parse", "@napi-rs/canvas"],
   outputFileTracingIncludes: {
     "/api/admin/templates/[tipo]": ["./app-assets/templates/**/*"],
+    "/api/admin/timesheet/[profissionalId]/xlsx": ["./app-assets/templates/Timesheet_ATO.xlsx"],
     "/api/colaborador/nf": [
       "./node_modules/pdf-parse/**/*",
       "./node_modules/pdfjs-dist/**/*",
