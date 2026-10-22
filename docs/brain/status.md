@@ -29,7 +29,7 @@ atualizado: 2026-10-22
 1. **Timesheet na produção** (implantado em 2026-10-22):
    - smoke funcional pelo usuário;
    - a medição habilita os fornecedores ATO (hoje nenhum tem o status pela importação) e configura o cabeçalho de cada um.
-2. **Feriados por contrato, ciclo publicado do timesheet, cadastro de contratos, XLSX/PDF redesenhados e aprovação pelo fiscal**: deploy (web + `migrate deploy` das duas migrations novas, com backup antes, como no deploy de bf53ea0). Depois, a medição define o contrato de cada fornecedor ATO na configuração; sem isso ele só recebe os feriados gerais.
+2. **Feriados por contrato, ciclo publicado do timesheet, cadastro de contratos, XLSX/PDF redesenhados e aprovação pelo fiscal**: deploy (web + `migrate deploy` das três migrations novas: `20261022180000_timesheet_feriado_contrato`, `20261022200000_timesheet_ciclo_publicado` e `20261022220000_timesheet_aprovacao_fiscal`; backup antes, como no deploy de bf53ea0). Depois do deploy: cadastrar os fiscais (Administrativo → Fiscais) e vinculá-los aos contratos. Depois, a medição define o contrato de cada fornecedor ATO na configuração; sem isso ele só recebe os feriados gerais.
 3. **Timesheet, fase 2** (fora do escopo atual):
    - envio ao gestor do contrato e registro da aprovação pela plataforma;
    - lançamento do total de horas na medição/BM;
