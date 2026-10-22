@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { avatarUrlByUserId, canChatWith, canUseChatPerfil, directChatKey, importSgcChatsForUser, isDisabledTeamChave, isInternalPerfil, isOnline, joinSharedFornecedorChats } from "@/app/api/chat/_helpers";
+import { avatarUrlByUserId, canChatWith, canUseChatPerfil, directChatKey, findFornecedorConversa, importSgcChatsForUser, isDisabledTeamChave, isInternalPerfil, isOnline, joinSharedFornecedorChats } from "@/app/api/chat/_helpers";
 
 function serializePerfil(perfil: string) {
   if (perfil === "COLABORADOR") return "Fornecedor";
@@ -156,7 +156,8 @@ export async function POST(request: NextRequest) {
       ? `TEAM:${targetPerfil}:${user.id}`
       : `TEAM:${targetPerfil}:${user.perfil}`;
     const participantIds = Array.from(new Set([user.id, ...targets.map((target) => target.id)]));
-    const conversa = await prisma.chatConversa.upsert({
+    const existing = user.perfil === "COLABORADOR" ? await findFornecedorConversa(prisma, user.id) : null;
+    const conversa = existing ?? await prisma.chatConversa.upsert({
       where: { chave },
       create: {
         chave,
@@ -198,14 +199,7 @@ export async function POST(request: NextRequest) {
 
   if ((isInternalPerfil(user.perfil) && target.perfil === "COLABORADOR") || (user.perfil === "COLABORADOR" && isInternalPerfil(target.perfil))) {
     const fornecedorId = user.perfil === "COLABORADOR" ? user.id : target.id;
-    const existing = await prisma.chatConversa.findFirst({
-      where: {
-        participantes: { some: { usuarioId: fornecedorId } },
-        AND: [{ participantes: { some: { usuario: { perfil: { in: ["MEDICAO", "ADMIN", "FINANCEIRO"] } } } } }],
-      },
-      select: { id: true },
-      orderBy: { updatedAt: "desc" },
-    });
+    const existing = await findFornecedorConversa(prisma, fornecedorId);
     if (existing) {
       await prisma.chatParticipante.upsert({
         where: { conversaId_usuarioId: { conversaId: existing.id, usuarioId: user.id } },
