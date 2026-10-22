@@ -4,37 +4,33 @@ atualizado: 2026-10-21
 # Status
 
 ## Em andamento
-- **Timesheet ATO** (folha de apropriação de horas no portal e painel da medição): [spec](specs/timesheet-ato.md), [plano](specs/timesheet-ato-plano.md) e [módulo](modulos/timesheet.md). Fases A a D concluídas em 2026-10-21 e commitadas em e94c195 (sem push): schema e cálculo, folha no portal, painel da medição, XLSX e impressão, E2E e as correções do `/review` e do `/ponytail-review`. As duas migrations novas (`20261022010132_timesheet_ato` e `20261022021306_timesheet_audit_index`, que só criam tabelas e um índice) estão aplicadas no banco de teste `medicoes_e2e_bm` e no DEV (porta 3000, desde 2026-10-22 UTC); a produção não tem. No DEV, nenhum dos 63 Profissionais ativos tem `status_colaborador = 'ATO'`, então ninguém vê a aba sem habilitação manual da medição. Conferir o mesmo na produção antes de usar. Verificado no fim: `tsc` ok, `test:targeted` 586/586, E2E completo 223/223. Próximo: push e deploy só com pedido do usuário; o deploy exige backup e `migrate deploy`.
-- **Layout: tema claro/escuro e motion** ([spec](specs/layout-tema-motion.md); planos do [M1](specs/layout-tema-motion-plano.md), [M2](specs/layout-tema-motion-m2-plano.md) e [M3](specs/layout-tema-motion-m3-plano.md)):
-  - M1 (fundação) commitado em a516126; M2 (login e dashboard) em ee6d375; correção da corrida do login no E2E em 29384c5. Nada enviado ao GitHub.
-  - M3 (painéis dos setores) em andamento, sem commit: T1 (painel lateral com entrada e saída) e T2 (`Modal` único, 19 modais) feitas. `test:targeted` 533/533, E2E 208/208 em duas rodadas seguidas.
-  - O E2E roda com `reducedMotion: "reduce"` (`playwright.config.ts`).
-  - M3 (7fb1499) e M4 (portal do fornecedor) commitados na release, sem push. As quatro etapas do layout (M1 a M4) estão concluídas.
-- **P2 — P0 como único ID do fornecedor** ([spec](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)). T1 a T6 concluídas. **Produção migrada e implantada em 2026-10-18 (UTC)** com 2e1a9a4: 55/55 migrados, medição ok antes e depois do deploy, smoke ok ([plano, T6](specs/p2-vinculo-login-profissional-plano.md), [runbook](../runbook-p0-pre-producao.md)). O servidor que as notas chamavam de pré-produção é a produção ([decisão 013](decisoes/013-servidor-unico-e-producao.md)); não há outra migração a fazer.
-  - Ordem combinada em 2026-10-17: tudo no ambiente local primeiro. O ensaio com dados reais roda numa cópia local de um backup da produção; o servidor só é tocado na T6.
-  - Tudo enviado ao GitHub em 2026-10-17: `release/2026-10-02-import-identities` em 6fec06d (spec, T1 a T5, E2E do financeiro, ensaio e runbook). Candidato a `APPROVED_SHA` do runbook: este commit ou o seguinte, que só atualiza o status. `layout2.0` continua em 58375bb.
-- **Produção** (`192.168.15.101:3020`, SSH `medicoes-preprod`, `/opt/sistema-gestao-medicoes`; chamada de pré-produção até 2026-10-19, ver [decisão 013](decisoes/013-servidor-unico-e-producao.md)) roda 2c3862c desde 2026-10-19 (UTC): layout M1 a M4, correções de bug, achados do review e lacunas tratadas; só o web reconstruído (sem migration nem mudança no ETL desde b0c1417). Rollback: imagem `local/medicoes-web-rollback:20261019T014421Z` + `~/backups-medicoes/deploy_20261019T014421Z/` (dump, `deploy.env`, logs). Deploy anterior (b0c1417): `local/medicoes-{web,etl}-rollback:20261019T005956Z` + `~/backups-medicoes/deploy_20261019T005956Z/` (com o `.env` anterior e o diff local do compose, desfeito por ser redundante com `WEB_PORT=3020`). `ALLOW_DATABASE_RESET` saiu do `.env`. Health e login ok; smoke funcional confirmado pelo usuário em 2026-10-19. Antes, rodava 2e1a9a4 (rollback `:20261018T011856Z` + `~/backups-medicoes/p0_20261018T011856Z/`). Ficou lá um fornecedor de teste do smoke da P0, com medição.
-- Produção: o volume antigo `projetocrud-medio_postgres_data` não é usado (o banco está no `_v2`); avaliar a remoção fora de janela, com backup.
-- E2E instável em 2026-10-18, depois do M2. A causa principal foi achada e corrigida:
-  - `LoginPage.login` (`e2e/pages/login-page.ts`) devolvia o controle logo após o POST, mas o formulário ainda faz `window.location.assign("/")`. O `page.goto` seguinte corria contra essa navegação: dava `net::ERR_ABORTED` ou recarregava a tela no meio do teste. O login mais pesado do M2 alargou essa janela.
-  - Agora o helper espera sair de `/login`, exceto em falha ou troca de senha. O teste de regressão em `e2e/login.spec.ts` falhava 3/3 antes e passa 5/5 depois. O seletor de célula do boletim em `e2e/workflow-happy-path.spec.ts` ganhou `exact: true`.
-  - Resultado: 208/208, 207/208 e 208/208 em três rodadas seguidas. A falha que sobrou é outra: `ECONNRESET` num `page.request.post("/api/auth/logout")` (`hotfix-mascara-grafico-filtros.spec.ts:168`).
-  - O `next dev` do webServer registra de 7 a 28 `uncaughtException: Error: aborted` (ECONNRESET) por rodada, vindos de requisições canceladas nas trocas de página (polling). Suspeita, não confirmada: o servidor de dev sob carga. Rodar o E2E contra `next build` + `next start` resolveria. Não investigado.
-  - 2026-10-18: `tests/migrar-codigo-p0.test.ts` falhou uma vez no `test:targeted` (3 testes: aplicar, medir e reverter P0). Passou isolado (16/16) e em duas rodadas seguidas da suíte (537/537). Suspeita, não confirmada: o `tsx --test` roda os arquivos em paralelo e outro teste de banco mexe nas mesmas linhas. Não investigado.
-  - 2026-10-18: `hotfix-mascara-grafico-filtros.spec.ts:152` (popovers de filtro dentro da viewport) falhou uma vez na suíte completa e passou isolado (4/4) e de novo junto do happy path. Na mesma rodada, `workflow-happy-path` falhou por um localizador ambíguo (`getByText(/BOLETIM DE MEDIÇÃO/i)` também casava com o título do visualizador); trocado pela célula do BM, como o outro passo do mesmo spec já fazia.
-  - 2026-10-18 (checkpoint B do M4): falhas intermitentes isoladas em `portal-fornecedor-redesign:162` e `importacao-identidades:128`, uma em cada rodada; repetidos isolados, passaram (44/44 e 16/16).
-- Intermitência vista em 2026-10-18: numa rodada de `test:targeted` logo depois do E2E, 2 testes de `tests/migrar-codigo-p0.test.ts` (medir e reverter) falharam. Passaram isolados (16/16) e em duas rodadas completas seguidas (520/520). Suspeita: estado residual do E2E no banco compartilhado. Não investigado.
-- Testes em 2026-10-17, com a T5 no ambiente local: `test:targeted` 506/506, `pytest etl/` 44/44 e E2E 207/207 em duas rodadas seguidas, no `medicoes_e2e_bm`, depois de `npm run test:e2e:seed` nesse banco.
-- Integração em `layout2.0`/`release/*`; `main` (13b7cd7) está 85 commits atrás.
+- **Timesheet ATO**: implementado e enviado ao GitHub em 2026-10-21 (código e94c195; cérebro nos commits seguintes). Ver [spec](specs/timesheet-ato.md), [plano](specs/timesheet-ato-plano.md) e [módulo](modulos/timesheet.md). O fornecedor ATO preenche a folha 21→20 no portal; a medição acompanha, libera o preenchimento, reabre, cadastra feriados estaduais e municipais, configura o cabeçalho e exporta em XLSX ou PDF.
+  - As migrations `20261022010132_timesheet_ato` e `20261022021306_timesheet_audit_index` só criam tabelas e um índice.
+  - Aplicadas no banco de teste `medicoes_e2e_bm` e no Docker de desenvolvimento (porta 3000). **A produção ainda não tem.**
+  - No DEV, nenhum dos 63 Profissionais ativos tem `status_colaborador = 'ATO'`: ninguém vê a aba até a medição habilitar o fornecedor.
+  - Última verificação: `tsc` ok, `test:targeted` 586/586, E2E completo 223/223.
+- **Produção** (`192.168.15.101:3020`, SSH `medicoes-preprod`, `/opt/sistema-gestao-medicoes`; [decisão 013](decisoes/013-servidor-unico-e-producao.md)): roda 2c3862c desde 2026-10-19 (UTC), com layout M1 a M4, P2 (P0 como único ID) e as correções de 2026-10-19. Smoke confirmado pelo usuário.
+  - Rollback: imagem `local/medicoes-web-rollback:20261019T014421Z` + `~/backups-medicoes/deploy_20261019T014421Z/` no servidor.
+  - Ficou lá um fornecedor de teste do smoke da P0, com medição. O volume antigo `projetocrud-medio_postgres_data` não é usado (o banco está no `_v2`); avaliar a remoção fora de janela, com backup.
+- **Concluídos e na produção**: layout M1 a M4 ([spec](specs/layout-tema-motion.md)) e a P2 ([spec](specs/p2-vinculo-login-profissional.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)).
+- **Branches**: integração em `release/2026-10-02-import-identities` (e `layout2.0`, parada em 58375bb). A `main` está mais de 85 commits atrás e nunca é base.
+- **Ambiente noutra máquina**: ver [ambiente](ambiente.md).
 
 ## Próximos passos
-1. (feito) Fast-forward de `layout2.0`.
-2. P1 resolvidas em 2026-10-16, incluindo os achados da revisão da P1 4 (cadastro exibido pelo escopo, conferência por `profissionalId`, login ambíguo, escopo único em Minhas Medições) e o bloqueio da troca de nome ([decisão 011](decisoes/011-nome-do-fornecedor-so-pelo-administrativo.md)). A P2 de [pendências](pendencias.md) (P0 como único ID: [spec](specs/p2-vinculo-login-profissional.md), [plano](specs/p2-vinculo-login-profissional-plano.md), [decisão 012](decisoes/012-p0-como-id-do-fornecedor.md)) foi concluída e está na produção desde 2026-10-18 (UTC).
-3. Fechar os itens abertos de `docs/plano-pre-deploy-producao.md` §7 (os checkboxes de §4 estão desatualizados: auditoria e ensaio feitos em 2026-09-30).
-4. Criar rotina de backup automática (hoje só há `pg_dump` manual nos runbooks).
-5. Definir o fluxo manual para corrigir valores de BM aprovado ou pago (a planilha só reporta a divergência).
-6. Produção, já autorizado: limpar `senha_temporaria` antiga (`UPDATE usuarios SET senha_temporaria = NULL`) e rodar `diagnose_identities.py` na planilha real.
-7. Atualizar `docker-compose.prod.yml` para o Resend, `docs/database-source-of-truth.md` e `RELATORIO-EXCLUSAO-DEFINITIVA-FORNECEDORES.md`.
+1. **Timesheet na produção** (só com pedido do usuário):
+   - `pg_dump` e imagens de rollback;
+   - `migrate deploy` das duas migrations novas e rebuild do web;
+   - conferir quantos fornecedores têm status ATO e combinar com a medição quem habilitar.
+2. **Timesheet, fase 2** (fora do escopo atual):
+   - envio ao gestor do contrato e registro da aprovação pela plataforma;
+   - lançamento do total de horas na medição/BM;
+   - aviso quando um feriado é excluído depois do envio;
+   - folha reaberta de ciclo passado alcançável pelo fornecedor.
+3. Criar rotina de backup automática (hoje só há `pg_dump` manual nos runbooks).
+4. Definir o fluxo manual para corrigir valores de BM aprovado ou pago (a planilha só reporta a divergência).
+5. Produção, já autorizado: limpar `senha_temporaria` antiga (`UPDATE usuarios SET senha_temporaria = NULL`) e rodar `diagnose_identities.py` na planilha real.
+6. Atualizar `docker-compose.prod.yml` para o Resend, `docs/database-source-of-truth.md` e `RELATORIO-EXCLUSAO-DEFINITIVA-FORNECEDORES.md`.
+7. Revisar `docs/plano-pre-deploy-producao.md` §7: quase tudo foi feito na P2; marcar o que resta (validação do Cristiano pela área de negócio) e arquivar.
 
 ## Bloqueios
 - `npm run lint` não roda (não há `eslint.config.*`). Use `npx tsc --noEmit`.
