@@ -21,16 +21,16 @@ tags: [modulo]
 - Habilitado = `TimesheetConfig.habilitado`, se a medição definiu; senão `Profissional.statusColaborador = 'ATO'`. Profissional excluído nunca é habilitado.
 - O fornecedor vem só de `getColaboradorEscopo(user.usuario)`. Quem não é habilitado recebe 404 antes de qualquer validação.
 - As horas não ficam gravadas: são recalculadas na leitura. Um feriado cadastrado depois muda a folha, inclusive a enviada.
-- O fornecedor só lança e envia no ciclo ativo da medição; um ciclo passado dá 403. O portal mostra esse mesmo ciclo, então trocar o ciclo ativo cedo ou tarde demais muda o que o fornecedor alcança.
+- O fornecedor só lança e envia no ciclo publicado do timesheet (`getCicloTimesheet` em `lib/ciclo-ativo.ts`: `ativoTimesheet`, senão o ciclo publicado do portal); outro ciclo dá 403 e a folha dele fica só leitura. O portal abre nesse mesmo ciclo. A medição publica no topo do painel Timesheet, com o controle de Fornecedores (`components/fornecedores/ciclo-publicado.tsx`, variante `timesheet`), só entre ciclos cadastrados; para abrir um ciclo antes da importação, crie-o em Gerenciar ciclos. Ver [spec](../specs/timesheet-ciclo-publicado.md).
 - Liberação por ciclo (`TimesheetCiclo`; sem linha = `DIA_A_DIA`): em `DIA_A_DIA` só vale até hoje.
 - Folha `ENVIADA` recusa gravação (409) até a medição reabrir.
-- A auditoria vai para `AdminAuditLog`, na mesma transação da mudança, com estes `targetType`: `TIMESHEET_FOLHA` (dias, envio, reabertura), `TIMESHEET_CICLO` (liberação), `FERIADO` e `PROFISSIONAL` (configuração).
+- A auditoria vai para `AdminAuditLog`, na mesma transação da mudança, com estes `targetType`: `TIMESHEET_FOLHA` (dias, envio, reabertura), `TIMESHEET_CICLO` (liberação e `TIMESHEET_CICLO_PUBLICADO`), `FERIADO` e `PROFISSIONAL` (configuração).
 - Rotas da medição: `requireAdmin` em todos os handlers (teste por regex em `tests/timesheet-medicao.test.ts`). O `profissionalId` da URL é validado como UUID.
 - As FKs para o Profissional são `RESTRICT`. A limpeza de órfãos da exclusão de ciclo e o seed E2E apagam ou preservam o timesheet antes de tocar no Profissional.
 - Feriado manual por contrato ([spec](../specs/timesheet-feriados-por-contrato.md)): sem contrato vale para todos; com contrato, só para quem tem esse contrato em `TimesheetConfig.contratoId`. Quem não tem contrato recebe só os gerais. `feriadosDoPeriodo` devolve todos; cada folha filtra com `feriadosDoContrato`. Uma data não pode ter dois feriados que alcancem o mesmo fornecedor (409); dois contratos diferentes podem. Trocar o contrato do fornecedor muda os feriados da folha, inclusive da enviada. Excluir o contrato exclui os feriados dele (`CASCADE`).
 - Excluir um feriado recalcula uma folha já enviada sem nenhum aviso; só a criação depois do envio gera aviso (`feriadoAposEnvio`).
 - Não use `toISOString()` para a data de "hoje": é UTC e muda de dia às 21:00 de Brasília.
 
-**Produção:** desde 2026-10-22 (bf53ea0). Nenhum fornecedor tem status ATO pela importação, então a habilitação é manual (configuração por fornecedor). Feriado por contrato (migration `20261022180000_timesheet_feriado_contrato`): ainda não implantado.
+**Produção:** desde 2026-10-22 (bf53ea0). Nenhum fornecedor tem status ATO pela importação, então a habilitação é manual (configuração por fornecedor). Feriado por contrato (migration `20261022180000_timesheet_feriado_contrato`) e ciclo publicado do timesheet (`20261022200000_timesheet_ciclo_publicado`): ainda não implantados.
 
 **Depende de:** [Ciclos](ciclos.md), [Portal do fornecedor](portal-fornecedor.md), [Autenticação](autenticacao.md)

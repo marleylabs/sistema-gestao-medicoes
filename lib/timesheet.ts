@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { cicloToDates, isCicloValido } from "@/lib/ciclo";
 import { feriadosNacionaisNoPeriodo } from "@/lib/feriados";
 import { calcularDia, diasDoCiclo, isoDate, somarHoras, tipoDoDia, validarDia, type HorariosDia } from "@/lib/timesheet-calculo";
-import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
+import { getCicloTimesheet } from "@/lib/ciclo-ativo";
 import type { AuthUser } from "@/lib/session";
 
 /**
@@ -121,11 +121,11 @@ export async function getLiberacao(ciclo: string): Promise<Liberacao> {
 }
 
 /**
- * O fornecedor só lança no ciclo em andamento (o ciclo ativo da medição). Um ciclo passado já foi
+ * O fornecedor só lança no ciclo em andamento (o publicado no timesheet; sem ele, o do portal). Um ciclo passado já foi
  * exportado e enviado ao gestor: mudar horas lá alteraria o que foi reportado.
  */
 async function exigirCicloEmAndamento(ciclo: string, cicloAtivo?: string) {
-  if (ciclo !== (cicloAtivo ?? (await getCicloAtivoMedicao()))) throw new TimesheetError("Só o ciclo em andamento aceita lançamentos.", 403);
+  if (ciclo !== (cicloAtivo ?? (await getCicloTimesheet()))) throw new TimesheetError("Só o ciclo em andamento aceita lançamentos.", 403);
 }
 
 function diaLiberado(data: string, liberacao: Liberacao, hoje: string) {

@@ -6,6 +6,7 @@ import { AlertTriangle, RefreshCw, Search, Trash2, UserPlus } from "lucide-react
 import clsx from "clsx";
 import { Aba, Badge, Button, Card, Carregando, Field, IconButton, Input, PageHeader, Select, Toast, classeLinha } from "@/components/ui";
 import { ErroDialogo, PortalDialog } from "@/components/portal-fornecedor";
+import { CicloPublicadoControl, type CicloPortalEntry } from "@/components/fornecedores/ciclo-publicado";
 import { TimesheetDrawer, type AbaDrawer, type Contrato } from "@/components/timesheet/timesheet-drawer";
 import { erroDaApi } from "@/components/timesheet/folha-timesheet";
 import { diasDoCiclo, formatarData, formatarDuracao } from "@/lib/timesheet-calculo";
@@ -27,7 +28,9 @@ const dataHora = (v: string | null) => (v ? new Intl.DateTimeFormat("pt-BR", { d
  * Painel "Timesheet" da medição (spec docs/brain/specs/timesheet-ato.md): acompanhamento das folhas
  * do ciclo, liberação do preenchimento, feriados estaduais/municipais e o detalhe de cada fornecedor.
  */
-export function TimesheetWorkspace({ ciclos, ciclo, onCicloChange }: { ciclos: Array<{ ciclo: string }>; ciclo: string; onCicloChange: (ciclo: string) => void }) {
+export function TimesheetWorkspace({ ciclos, ciclo, onCicloChange, onPublicarCiclo }: {
+  ciclos: CicloPortalEntry[]; ciclo: string; onCicloChange: (ciclo: string) => void; onPublicarCiclo: (ciclo: string) => Promise<string | null>;
+}) {
   const [aba, setAba] = useState<"acompanhamento" | "feriados">("acompanhamento");
   const [dados, setDados] = useState<AcompanhamentoCiclo | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -79,7 +82,12 @@ export function TimesheetWorkspace({ ciclos, ciclo, onCicloChange }: { ciclos: A
   return (
     <div className="grid min-w-0 gap-6" data-testid="timesheet-workspace">
       <div className="flex flex-col justify-between gap-4 border-b border-[var(--border)] pb-5 sm:flex-row sm:items-end">
-        <PageHeader eyebrow="Medição" title="Timesheet ATO" description="Acompanhe quem está preenchendo a folha de horas do ciclo, libere o preenchimento e cadastre os feriados locais." />
+        <div className="grid min-w-0 gap-3">
+          <PageHeader eyebrow="Medição" title="Timesheet ATO" description="Acompanhe quem está preenchendo a folha de horas do ciclo, libere o preenchimento e cadastre os feriados locais." />
+          {ciclos.length > 0 && (
+            <CicloPublicadoControl variante="timesheet" ciclos={ciclos} cicloSelecionado={cicloPedido ?? ""} podePublicar onPublicar={onPublicarCiclo} />
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <div className="w-[150px]">
             <Select value={cicloAtual} onChange={(e) => onCicloChange(e.target.value)} aria-label="Ciclo">

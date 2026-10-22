@@ -134,6 +134,20 @@ export async function definirLiberacao(input: { ciclo: unknown; liberacao: unkno
   });
 }
 
+/** Publica o ciclo que o fornecedor preenche no timesheet (spec timesheet-ciclo-publicado). Só ciclos cadastrados. */
+export async function publicarCicloTimesheet(input: { ciclo: unknown; ator: Ator }) {
+  const ciclo = exigirCiclo(input.ciclo);
+  await prisma.$transaction(async (tx) => {
+    if (!(await tx.mapaPagamentoContexto.findUnique({ where: { ciclo }, select: { ciclo: true } }))) throw new TimesheetError("Ciclo não encontrado.", 404);
+    const antes = await tx.mapaPagamentoContexto.findFirst({ where: { ativoTimesheet: true }, select: { ciclo: true } });
+    await tx.mapaPagamentoContexto.updateMany({ where: { ativoTimesheet: true }, data: { ativoTimesheet: false } });
+    await tx.mapaPagamentoContexto.update({ where: { ciclo }, data: { ativoTimesheet: true } });
+    await tx.adminAuditLog.create({
+      data: auditoria(input.ator, "TIMESHEET_CICLO_PUBLICADO", null, null, { antes: antes?.ciclo ?? null, depois: ciclo }, "TIMESHEET_CICLO"),
+    });
+  });
+}
+
 // ─── Feriados manuais ────────────────────────────────────────────────────────
 
 /** `contratoId` vazio = vale para todos os contratos. Uma data não pode ter dois feriados que alcancem o mesmo fornecedor. */

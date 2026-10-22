@@ -6,7 +6,7 @@ import { Globe2 } from "lucide-react";
 import { Button, Modal, Select } from "@/components/ui";
 import { formatCicloLabel } from "@/lib/ciclo";
 
-export type CicloPortalEntry = { ciclo: string; mesReferencia: string | null; ativoMedicao?: boolean };
+export type CicloPortalEntry = { ciclo: string; mesReferencia: string | null; ativoMedicao?: boolean; ativoTimesheet?: boolean };
 
 function rotulo(ciclo: string) {
   try {
@@ -27,6 +27,31 @@ export function cicloPublicadoDoPortal(ciclos: CicloPortalEntry[]) {
   return maisRecente ? { ciclo: maisRecente.ciclo, automatico: true } : null;
 }
 
+/** Ciclo publicado no timesheet (spec timesheet-ciclo-publicado): o marcado, senão segue o do portal. */
+export function cicloPublicadoDoTimesheet(ciclos: CicloPortalEntry[]) {
+  const marcado = ciclos.find((c) => c.ativoTimesheet);
+  if (marcado) return { ciclo: marcado.ciclo, automatico: false };
+  const portal = cicloPublicadoDoPortal(ciclos);
+  return portal ? { ciclo: portal.ciclo, automatico: true } : null;
+}
+
+const TEXTOS = {
+  portal: {
+    titulo: "Portal dos fornecedores",
+    automatico: "automático — ciclo mais recente",
+    descricao: "Os fornecedores passarão a visualizar no portal os BMs correspondentes ao ciclo escolhido.",
+    continua: "o portal continua no ciclo",
+    rotulo: "Publicar ciclo no portal",
+  },
+  timesheet: {
+    titulo: "Timesheet dos fornecedores",
+    automatico: "segue o ciclo do portal",
+    descricao: "Os fornecedores passarão a preencher o timesheet do ciclo escolhido. A folha do ciclo anterior fica só para leitura.",
+    continua: "o timesheet continua no ciclo",
+    rotulo: "Publicar ciclo no timesheet",
+  },
+};
+
 /**
  * Controle compacto "Portal dos fornecedores · Ciclo publicado". Separa o CICLO SELECIONADO (o que a
  * equipe está consultando nesta tela) do CICLO PUBLICADO (o que o fornecedor vê no portal): trocar o
@@ -38,13 +63,17 @@ export function CicloPublicadoControl({
   cicloSelecionado,
   podePublicar,
   onPublicar,
+  variante = "portal",
 }: {
   ciclos: CicloPortalEntry[];
   cicloSelecionado: string;
   podePublicar: boolean;
   onPublicar: (ciclo: string) => Promise<string | null>;
+  /** "timesheet": o mesmo controle para o ciclo que o fornecedor preenche no timesheet. */
+  variante?: keyof typeof TEXTOS;
 }) {
-  const publicado = cicloPublicadoDoPortal(ciclos);
+  const textos = TEXTOS[variante];
+  const publicado = variante === "timesheet" ? cicloPublicadoDoTimesheet(ciclos) : cicloPublicadoDoPortal(ciclos);
   const [aberto, setAberto] = useState(false);
   const [novo, setNovo] = useState("");
   const [publicando, setPublicando] = useState(false);
@@ -82,16 +111,16 @@ export function CicloPublicadoControl({
     <>
       <div
         className="flex w-fit min-w-0 max-w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2"
-        data-testid="ciclo-publicado"
+        data-testid={variante === "timesheet" ? "ciclo-publicado-timesheet" : "ciclo-publicado"}
       >
         <span className="flex items-center gap-1.5 text-[12px] text-[var(--muted-foreground)]">
           <Globe2 size={14} className="shrink-0" />
-          Portal dos fornecedores
+          {textos.titulo}
         </span>
         <span className="flex items-center gap-1.5 text-[13px] text-[var(--foreground)]">
           <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--success)]" aria-hidden="true" />
           Ciclo publicado: <strong className="font-technical font-semibold">{publicado?.ciclo ?? "–"}</strong>
-          {publicado?.automatico && <span className="text-[11px] text-[var(--muted-foreground)]">(automático — ciclo mais recente)</span>}
+          {publicado?.automatico && <span className="text-[11px] text-[var(--muted-foreground)]">({textos.automatico})</span>}
         </span>
         {podePublicar && ciclos.length > 0 && (
           <button type="button" onClick={abrir} className="text-[12px] font-semibold text-[var(--primary)] underline-offset-2 hover:underline">
@@ -100,18 +129,18 @@ export function CicloPublicadoControl({
         )}
         {divergente && (
           <span className="basis-full text-[11px] text-[var(--muted-foreground)]" data-testid="ciclo-publicado-aviso">
-            Você está consultando o ciclo {selecionadoReal}; o portal continua no ciclo {publicado?.ciclo}.
+            Você está consultando o ciclo {selecionadoReal}; {textos.continua} {publicado?.ciclo}.
           </span>
         )}
       </div>
 
       <AnimatePresence>
       {aberto && (
-        <Modal key="publicar-ciclo" role="alertdialog" rotulo="Publicar ciclo no portal" className="flex w-full flex-col overflow-hidden sm:w-[440px] sm:max-w-[90vw]">
+        <Modal key="publicar-ciclo" role="alertdialog" rotulo={textos.rotulo} className="flex w-full flex-col overflow-hidden sm:w-[440px] sm:max-w-[90vw]">
             <div className="border-b border-[var(--border)] px-5 py-4">
               <h2 className="text-sm font-bold text-[var(--foreground)]">{novo ? `Publicar ciclo ${novo}?` : "Publicar ciclo"}</h2>
               <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                Os fornecedores passarão a visualizar no portal os BMs correspondentes ao ciclo escolhido.
+                {textos.descricao}
               </p>
             </div>
             <div className="grid gap-3 px-5 py-4">
@@ -121,7 +150,7 @@ export function CicloPublicadoControl({
               </div>
               <label className="grid gap-1 text-label text-[var(--muted-foreground)]">
                 Novo ciclo
-                <Select value={novo} onChange={(e) => setNovo(e.target.value)} aria-label="Novo ciclo publicado">
+                <Select value={novo} onChange={(e) => setNovo(e.target.value)} aria-label={variante === "timesheet" ? "Novo ciclo do timesheet" : "Novo ciclo publicado"}>
                   {opcoes.map((c) => <option key={c.ciclo} value={c.ciclo}>{rotulo(c.ciclo)}</option>)}
                 </Select>
               </label>

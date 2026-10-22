@@ -54,4 +54,5 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [Timesheet ATO](specs/timesheet-ato.md): folha de apropriação de horas no portal, cálculo HN/HE 50%/HE 100%, feriados, acompanhamento da medição e exportação (implementada)
 - [Plano do Timesheet ATO](specs/timesheet-ato-plano.md): schema → cálculo → folha no portal → feriados → acompanhamento → configuração → XLSX/PDF → E2E (concluído; na produção desde 2026-10-22)
 - [Timesheet: feriados por contrato](specs/timesheet-feriados-por-contrato.md): feriado manual geral ou de um contrato, filtro por contrato na aba Feriados; spec e plano juntos (implementada, não implantada)
+- [Timesheet: ciclo publicado próprio](specs/timesheet-ciclo-publicado.md): a medição publica o ciclo do timesheet separado do ciclo do portal, para o preenchimento não começar atrasado (implementada, não implantada)
 - [Plano do M4 portal do fornecedor](specs/layout-tema-motion-m4-plano.md): Minhas Medições e NF → diálogos → ação principal em destaque → motion expressivo → chat (concluído)

@@ -17,6 +17,7 @@ const ATO = { usuario: "P0909973", nome: "E2E Timesheet Medicao ATO" };
 const SENHA = `E2e-${randomBytes(6).toString("hex")}`;
 const FERIADO_NOME = "E2E Timesheet Feriado";
 const CONTRATO_NOME = "E2E Timesheet Outro Contrato";
+const CICLO_TIMESHEET = "2001"; // antigo: não vira o "mais recente" automático de outras specs
 
 const scrypt = promisify(scryptCallback);
 async function hashPassword(password: string) {
@@ -35,6 +36,7 @@ async function limpar() {
   const p = await prisma.profissional.findUnique({ where: { codigo: ATO.usuario }, select: { id: true } });
   await prisma.feriado.deleteMany({ where: { nome: FERIADO_NOME } });
   await prisma.contrato.deleteMany({ where: { nome: CONTRATO_NOME } }); // leva junto o feriado dele (CASCADE)
+  await prisma.mapaPagamentoContexto.deleteMany({ where: { ciclo: CICLO_TIMESHEET } });
   await prisma.adminAuditLog.deleteMany({ where: { OR: [{ adminUsuario: ATO.usuario }, { targetCodigo: ATO.usuario }] } });
   if (p) {
     await prisma.timesheetFolha.deleteMany({ where: { profissionalId: p.id } });
@@ -180,5 +182,30 @@ test.describe.serial("Timesheet ATO no painel da medição", () => {
 
     const r = await fornecedor.put("/api/colaborador/timesheet/dia", { data: { ciclo, data: dias[1], entrada1: "08:00", saida1: "12:00" } });
     expect(r.status()).toBe(200);
+  });
+
+  test("publicar um ciclo no timesheet muda o ciclo que o fornecedor preenche, sem mexer no portal", async ({ page }) => {
+    const portalAntes = (await prisma.mapaPagamentoContexto.findFirst({ where: { ativoMedicao: true }, select: { ciclo: true } }))?.ciclo ?? null;
+    const timesheetAntes = (await prisma.mapaPagamentoContexto.findFirst({ where: { ativoTimesheet: true }, select: { ciclo: true } }))?.ciclo ?? null;
+    await prisma.mapaPagamentoContexto.create({ data: { ciclo: CICLO_TIMESHEET } });
+    try {
+      await entrarComoMedicao(page);
+      const controle = page.getByTestId("ciclo-publicado-timesheet");
+      await controle.getByRole("button", { name: "Alterar" }).click();
+      const dialogo = page.getByRole("alertdialog", { name: "Publicar ciclo no timesheet" });
+      await dialogo.getByLabel("Novo ciclo do timesheet").selectOption(CICLO_TIMESHEET);
+      await dialogo.getByRole("button", { name: "Publicar ciclo" }).click();
+      await expect(dialogo).toBeHidden();
+      await expect(controle).toContainText(`Ciclo publicado: ${CICLO_TIMESHEET}`);
+
+      const folha = await (await fornecedor.get("/api/colaborador/timesheet")).json() as { ciclo: string };
+      expect(folha.ciclo).toBe(CICLO_TIMESHEET);
+      const antigo = await fornecedor.put("/api/colaborador/timesheet/dia", { data: { ciclo, data: dias[1], entrada1: "08:00", saida1: "12:00" } });
+      expect(antigo.status()).toBe(403);
+      expect((await prisma.mapaPagamentoContexto.findFirst({ where: { ativoMedicao: true }, select: { ciclo: true } }))?.ciclo ?? null).toBe(portalAntes);
+    } finally {
+      await prisma.mapaPagamentoContexto.deleteMany({ where: { ciclo: CICLO_TIMESHEET } });
+      if (timesheetAntes) await prisma.mapaPagamentoContexto.updateMany({ where: { ciclo: timesheetAntes }, data: { ativoTimesheet: true } });
+    }
   });
 });

@@ -415,6 +415,8 @@ model MapaPagamentoContexto {
   atoLabel       String?   @map("ato_label")
   atoCiclo       String?   @map("ato_ciclo")
   ativoMedicao   Boolean   @default(false) @map("ativo_medicao")
+  /// Ciclo publicado no timesheet (spec timesheet-ciclo-publicado); nenhum = segue `ativoMedicao`.
+  ativoTimesheet Boolean   @default(false) @map("ativo_timesheet")
   contratos      Json      @default("[]")
   rateio         Json      @default("[]")
   updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz

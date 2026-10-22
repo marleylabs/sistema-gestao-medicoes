@@ -57,7 +57,7 @@ const TITLES: Record<Section, string> = {
 
 const CICLO_GERAL = "GERAL";
 
-type CicloEntry = { ciclo: string; mesReferencia: string | null; ativoMedicao?: boolean; updatedAt: string };
+type CicloEntry = { ciclo: string; mesReferencia: string | null; ativoMedicao?: boolean; ativoTimesheet?: boolean; updatedAt: string };
 
 export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; permissoesExtras?: string[] }) {
   const [dashboard, setDashboard]           = useState<DashboardData | null>(null);
@@ -274,15 +274,15 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
    * Antes ficava no Histórico ("Ativar medição"); agora é acionada pelo controle "Ciclo publicado"
    * em /fornecedores. Devolve a mensagem de erro (exibida na confirmação) ou null.
    */
-  async function publicarCicloPortal(ciclo: string): Promise<string | null> {
+  async function publicarCicloPortal(ciclo: string, action: "set_ativo_medicao" | "set_ativo_timesheet" = "set_ativo_medicao"): Promise<string | null> {
     const res = await fetch("/api/ciclos", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "set_ativo_medicao", ciclo }),
+      body: JSON.stringify({ action, ciclo }),
     });
     if (!res.ok) {
       const p = await res.json().catch(() => ({}));
-      return p.error ?? "Não foi possível publicar o ciclo no portal.";
+      return p.error ?? "Não foi possível publicar o ciclo.";
     }
     await loadCiclos();
     return null;
@@ -871,7 +871,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
 
       {section === "timesheet" && isAdmin && (
         <PageContainer className="grid gap-6 pb-24">
-          <TimesheetWorkspace ciclos={ciclos} ciclo={activeCiclo} onCicloChange={handleCicloChange} />
+          <TimesheetWorkspace ciclos={ciclos} ciclo={activeCiclo} onCicloChange={handleCicloChange} onPublicarCiclo={(c) => publicarCicloPortal(c, "set_ativo_timesheet")} />
         </PageContainer>
       )}
 

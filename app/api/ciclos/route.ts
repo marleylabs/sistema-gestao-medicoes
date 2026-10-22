@@ -3,6 +3,8 @@ import { requireAdmin } from "@/lib/admin";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cicloToDates, cicloToMesReferencia } from "@/lib/ciclo";
+import { respostaTimesheetErro } from "@/lib/timesheet";
+import { publicarCicloTimesheet } from "@/lib/timesheet-medicao";
 import { coletarCandidatosLimpezaCiclo, deleteOrphanProfessionalsAfterCycleRemoval, deleteOrphanProjectsAfterCycleRemoval } from "@/lib/ciclo-cleanup";
 
 export async function GET() {
@@ -14,6 +16,7 @@ export async function GET() {
       ciclo: true,
       mesReferencia: true,
       ativoMedicao: true,
+      ativoTimesheet: true,
       updatedAt: true,
     },
     orderBy: { ciclo: "desc" },
@@ -60,6 +63,14 @@ export async function PATCH(request: NextRequest) {
   const ciclo = typeof payload?.ciclo === "string" ? payload.ciclo.trim() : "";
   const action = typeof payload?.action === "string" ? payload.action : "";
 
+  if (action === "set_ativo_timesheet") {
+    try {
+      await publicarCicloTimesheet({ ciclo, ator: admin.user });
+      return NextResponse.json({ ciclo, ativoTimesheet: true });
+    } catch (e) {
+      return respostaTimesheetErro(e);
+    }
+  }
   if (action !== "set_ativo_medicao") {
     return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
   }

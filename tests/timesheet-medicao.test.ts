@@ -237,3 +237,32 @@ test("feriado por contrato: vale só para o contrato da configuração; conflito
   await db.contrato.delete({ where: { id: contrato2 } });
   assert.equal(await db.feriado.count({ where: { nome: "Feriado C2" } }), 0, "excluir o contrato exclui os feriados dele");
 });
+
+test("ciclo publicado no timesheet: só ciclo cadastrado, trava o lançamento no publicado e volta a seguir o portal", async () => {
+  // Ciclos antigos (2001/2002) para não virarem o "mais recente" automático de outros testes.
+  const { getCicloAtivoMedicao, getCicloTimesheet } = await import("../lib/ciclo-ativo");
+  const anterior = (await db.mapaPagamentoContexto.findFirst({ where: { ativoTimesheet: true }, select: { ciclo: true } }))?.ciclo ?? null;
+  await db.mapaPagamentoContexto.deleteMany({ where: { ciclo: { in: ["2001", "2002"] } } });
+  await db.mapaPagamentoContexto.createMany({ data: [{ ciclo: "2001" }, { ciclo: "2002" }] });
+  try {
+    await rejeita(med.publicarCicloTimesheet({ ciclo: "2003", ator }), 404);
+    await rejeita(med.publicarCicloTimesheet({ ciclo: "26XX", ator }), 400);
+    await med.publicarCicloTimesheet({ ciclo: "2001", ator });
+    await med.publicarCicloTimesheet({ ciclo: "2002", ator });
+    assert.equal(await getCicloTimesheet(), "2002");
+    assert.equal(await db.mapaPagamentoContexto.count({ where: { ativoTimesheet: true } }), 1, "só um ciclo publicado");
+    const publicacoes = await db.adminAuditLog.findMany({ where: { adminUsuario: ator.usuario, action: "TIMESHEET_CICLO_PUBLICADO" }, orderBy: { createdAt: "asc" }, select: { metadata: true } });
+    assert.deepEqual(publicacoes.at(-1)?.metadata, { antes: "2001", depois: "2002" });
+
+    // Sem `cicloAtivo` explícito, a trava usa o ciclo publicado no timesheet.
+    await rejeita(ts.salvarDia({ profissionalId: ids.ato, ciclo: "2001", dia: dia("2020-01-06"), ator, hoje: "2020-01-20" }), 403, /ciclo em andamento/);
+    await ts.salvarDia({ profissionalId: ids.ato, ciclo: "2002", dia: dia("2020-01-27"), ator, hoje: "2020-02-20" });
+
+    await db.mapaPagamentoContexto.update({ where: { ciclo: "2002" }, data: { ativoTimesheet: false } });
+    assert.equal(await getCicloTimesheet(), await getCicloAtivoMedicao(), "sem publicado, segue o portal");
+  } finally {
+    await db.timesheetFolha.deleteMany({ where: { profissionalId: ids.ato, ciclo: { in: ["2001", "2002"] } } });
+    await db.mapaPagamentoContexto.deleteMany({ where: { ciclo: { in: ["2001", "2002"] } } });
+    if (anterior) await db.mapaPagamentoContexto.updateMany({ where: { ciclo: anterior }, data: { ativoTimesheet: true } });
+  }
+});
