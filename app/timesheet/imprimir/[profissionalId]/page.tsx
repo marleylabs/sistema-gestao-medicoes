@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import { notFound, redirect } from "next/navigation";
 import clsx from "clsx";
@@ -15,6 +16,12 @@ import { BotaoImprimir } from "@/components/timesheet/botao-imprimir";
  * Documento sempre claro, independente do tema; cores com `print-color-adjust: exact`.
  */
 
+export const metadata: Metadata = { title: "Folha de Apropriação de Horas" }; // nome sugerido do PDF ao salvar
+
+// O papel não pode depender da configuração da impressora: A4 retrato, margens fixas e fundo branco
+// (o tema pinta o <html>). Única CSS da página: @page não tem utilitário no Tailwind.
+const CSS_IMPRESSAO = "@page { size: A4 portrait; margin: 10mm 8mm 10mm 12mm; } @media print { html, body { background: #fff !important; } }";
+
 const SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 const exato = "[print-color-adjust:exact]";
 
@@ -30,7 +37,7 @@ function Campo({ rotulo, valor, className }: { rotulo: string; valor: string | n
 function Assinatura({ papel, nome, data }: { papel: string; nome: string; data: string }) {
   return (
     <div className="grid gap-0.5">
-      <div className="mb-1 h-7 border-b border-slate-400" />
+      <div className="mb-1 h-6 border-b border-slate-400" />
       <p className="text-[8.5px] font-semibold text-slate-900">{nome || "—"}</p>
       <p className="text-[7px] text-slate-500">{papel} · em {data}</p>
     </div>
@@ -72,8 +79,9 @@ export default async function ImprimirTimesheet({
 
   return (
     <main className="min-h-screen bg-white p-6 text-slate-900 print:min-h-0 print:p-0" data-testid="timesheet-impressao">
+      <style>{CSS_IMPRESSAO}</style>
       <div className="mb-4 flex items-center justify-between print:hidden">
-        <p className="text-sm text-neutral-600">No diálogo de impressão, escolha A4 retrato, margens padrão e &quot;Salvar como PDF&quot;.</p>
+        <p className="text-sm text-neutral-600">A folha já sai em A4 retrato. No diálogo de impressão, escolha &quot;Salvar como PDF&quot; e deixe a escala no padrão (100%).</p>
         <BotaoImprimir />
       </div>
 
@@ -140,7 +148,7 @@ export default async function ImprimirTimesheet({
               return (
                 <tr
                   key={d.data}
-                  className={clsx("h-[19px]", destaque && `bg-[#E6F4EA] ${exato}`)}
+                  className={clsx("h-[18px]", destaque && `bg-[#E6F4EA] ${exato}`)}
                   data-testid={destaque ? "timesheet-impressao-dia-destaque" : undefined}
                 >
                   <td className={clsx(td, "border-l-[3px] text-left", destaque ? "border-l-[#15803D]" : "border-l-transparent")}>
@@ -195,7 +203,7 @@ export default async function ImprimirTimesheet({
         </section>
 
         {/* Assinaturas e observações */}
-        <section className="grid grid-cols-2 gap-10 pt-2">
+        <section className="grid grid-cols-2 gap-10 pt-1">
           <Assinatura papel="Colaborador" nome={folha.fornecedor.nome} data={hoje} />
           <Assinatura papel="Visto fiscalização da VALE" nome={cab.fiscal ?? ""} data={hoje} />
         </section>
