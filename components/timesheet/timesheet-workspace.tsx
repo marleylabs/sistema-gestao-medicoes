@@ -338,7 +338,7 @@ function CalendarioFeriados({ ciclo, periodo, feriados: todos, onMudou }: { cicl
                   nacional && "cursor-default border-[var(--error)]/30 bg-[var(--error-soft)] text-[var(--error)]",
                   f && !nacional && "border-[var(--warning)]/40 bg-[var(--warning-soft)] text-[var(--warning)] hover:border-[var(--warning)]",
                   !f && "border-[var(--border)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]",
-                  !f && (semana === 0 || semana === 6) && "bg-[var(--surface-muted)] text-[var(--muted-foreground)]",
+                  !f && (semana === 0 || semana === 6) && "border-[var(--success)]/30 bg-[var(--success-soft)] text-[var(--success)]",
                   !f && semana !== 0 && semana !== 6 && "text-[var(--foreground)]",
                 )}
               >

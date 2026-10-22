@@ -292,12 +292,25 @@ export function TabelaDiasTimesheet({ dias, enviada, onEditar }: { dias: Dia[]; 
           <tbody>
             {dias.map((dia) => {
               const { curto, semana } = rotuloDia(dia);
+              // Sábado, domingo e feriado em verde (faixa + marcador + dia da semana), também no PDF de impressão.
+              const destaque = dia.tipo !== "UTIL";
               return (
-                <tr key={dia.data} data-testid={`timesheet-dia-${dia.data}`} className={clsx("border-t border-[var(--border)]", dia.tipo !== "UTIL" && "bg-[var(--surface-muted)]")}>
-                  <th scope="row" className="whitespace-nowrap px-3 py-2 font-medium text-[var(--foreground)]">
+                <tr
+                  key={dia.data}
+                  data-testid={`timesheet-dia-${dia.data}`}
+                  data-destaque={destaque || undefined}
+                  className={clsx("border-t border-[var(--border)]", destaque && "bg-[var(--success-soft)]")}
+                >
+                  <th
+                    scope="row"
+                    className={clsx(
+                      "whitespace-nowrap border-l-[3px] px-3 py-2 font-medium text-[var(--foreground)]",
+                      destaque ? "border-l-[var(--success)]" : "border-l-transparent",
+                    )}
+                  >
                     <span className="tabular-nums">{curto}</span>{" "}
-                    <span className="text-[12px] font-normal capitalize text-[var(--muted-foreground)]">{semana}</span>
-                    {dia.feriado && <Badge variant="danger" className="ml-2">{dia.feriado}</Badge>}
+                    <span className={clsx("text-[12px] capitalize", destaque ? "font-semibold text-[var(--success)]" : "font-normal text-[var(--muted-foreground)]")}>{semana}</span>
+                    {dia.feriado && <Badge variant="success" className="ml-2">{dia.feriado}</Badge>}
                   </th>
                   {onEditar && (
                     <td className="px-1 py-1.5">
