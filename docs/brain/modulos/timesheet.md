@@ -30,4 +30,6 @@ tags: [modulo]
 - Excluir um feriado recalcula uma folha já enviada sem nenhum aviso; só a criação depois do envio gera aviso (`feriadoAposEnvio`).
 - Não use `toISOString()` para a data de "hoje": é UTC e muda de dia às 21:00 de Brasília.
 
+**Produção:** desde 2026-10-22 (bf53ea0). Nenhum fornecedor tem status ATO pela importação, então a habilitação é manual (configuração por fornecedor).
+
 **Depende de:** [Ciclos](ciclos.md), [Portal do fornecedor](portal-fornecedor.md), [Autenticação](autenticacao.md)

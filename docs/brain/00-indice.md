@@ -52,5 +52,5 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [Plano do M2 login e dashboard](specs/layout-tema-motion-m2-plano.md): AnimatedText em CSS → login → gráficos no tema → KPIs e cascata (concluído em 2026-10-18)
 - [Plano do M3 painéis dos setores](specs/layout-tema-motion-m3-plano.md): painel lateral → Modal único → abas → Toast → Skeleton → realce de linha (concluído em 7fb1499)
 - [Timesheet ATO](specs/timesheet-ato.md): folha de apropriação de horas no portal, cálculo HN/HE 50%/HE 100%, feriados, acompanhamento da medição e exportação (implementada)
-- [Plano do Timesheet ATO](specs/timesheet-ato-plano.md): schema → cálculo → folha no portal → feriados → acompanhamento → configuração → XLSX/PDF → E2E (concluído em e94c195; produção pendente)
+- [Plano do Timesheet ATO](specs/timesheet-ato-plano.md): schema → cálculo → folha no portal → feriados → acompanhamento → configuração → XLSX/PDF → E2E (concluído; na produção desde 2026-10-22)
 - [Plano do M4 portal do fornecedor](specs/layout-tema-motion-m4-plano.md): Minhas Medições e NF → diálogos → ação principal em destaque → motion expressivo → chat (concluído)
