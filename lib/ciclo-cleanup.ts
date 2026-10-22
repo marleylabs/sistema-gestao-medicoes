@@ -45,7 +45,7 @@ export async function coletarCandidatosLimpezaCiclo(tx: CleanupTransaction, cicl
  * A existência de CadastroFornecedor é um vínculo administrativo conhecido e, portanto, protege
  * a identidade canônica mesmo quando o cadastro está inativo ou ainda não possui
  * medição/pagamento. `ativo` controla participação operacional, não existência da identidade.
- * Aliases (identidade curada — a FK é ON DELETE CASCADE) e um Usuario com o mesmo código também
+ * Aliases (identidade curada — a FK é ON DELETE CASCADE), timesheet (FK RESTRICT) e um Usuario com o mesmo código também
  * protegem. Tombstones e todas as referências históricas continuam preservados.
  */
 export async function deleteOrphanProfessionalsAfterCycleRemoval(tx: CleanupTransaction, candidatos: string[]) {
@@ -92,6 +92,8 @@ export async function deleteOrphanProfessionalsAfterCycleRemoval(tx: CleanupTran
       select 1 from divergencias_medicao d
       where upper(trim(d.colaborador_codigo)) = upper(trim(p.codigo))
     )
+    and not exists (select 1 from timesheet_configs tc where tc.profissional_id = p.id)
+    and not exists (select 1 from timesheet_folhas tf where tf.profissional_id = p.id)
   `;
 }
 

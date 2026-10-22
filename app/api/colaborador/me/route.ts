@@ -9,6 +9,7 @@ import { getCicloAtivoMedicao } from "@/lib/ciclo-ativo";
 import { toColaboradorCodigo } from "@/lib/usuario-format";
 import { getColaboradorEscopo } from "@/lib/colaborador-alias";
 import { getDocumentosMedidos } from "@/lib/documentos-medidos";
+import { timesheetHabilitado } from "@/lib/timesheet";
 
 function dateOnly(value: Date | null) {
   return value?.toISOString().slice(0, 10) ?? null;
@@ -47,6 +48,7 @@ export async function GET() {
         email: true,
         funcao: true,
         statusColaborador: true,
+        timesheetConfig: { select: { habilitado: true } },
       },
     }) : null,
     prisma.mapaPagamentoItem.findFirst({
@@ -125,6 +127,7 @@ export async function GET() {
       email: cadastroEmail || decryptSensitive(profissional?.email),
       funcao: cadastroFornecedor?.cargo || profissional?.funcao || null,
       statusColaborador: profissional?.statusColaborador ?? null,
+      timesheetHabilitado: !!profissional && timesheetHabilitado(profissional),
     },
     alocacao: pagamento
       ? {

@@ -229,6 +229,8 @@ model Profissional {
   medicoesComoProfissional Medicao[] @relation("MedicoesProfissional")
   aliases                  ProfissionalAlias[]
   identidadesImportacao    ImportacaoIdentidade[]
+  timesheetConfig          TimesheetConfig?
+  timesheetFolhas          TimesheetFolha[]
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
@@ -484,6 +486,8 @@ model Contrato {
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt  DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
+  timesheetConfigs TimesheetConfig[]
+
   @@index([ativo], map: "idx_contratos_ativo")
   @@map("contratos")
 }
@@ -536,6 +540,8 @@ model AdminAuditLog {
   @@index([action], map: "idx_admin_audit_logs_action")
   @@index([targetCodigo], map: "idx_admin_audit_logs_target_codigo")
   @@index([createdAt(sort: Desc)], map: "idx_admin_audit_logs_created_at")
+  /// Histórico de um alvo (ex.: folha de timesheet): cada dia salvo grava uma linha.
+  @@index([targetType, targetId, createdAt(sort: Desc)], map: "idx_admin_audit_logs_target")
   @@map("admin_audit_logs")
 }
 
@@ -574,4 +580,99 @@ model EtlExecucao {
 
   @@index([ciclo], map: "idx_etl_execucoes_ciclo")
   @@map("etl_execucoes")
+}
+
+/// Feriado estadual ou municipal cadastrado pela medição. Os nacionais não ficam aqui: são
+/// calculados em `lib/feriados.ts`. Vale para todos os fornecedores (spec timesheet-ato).
+model Feriado {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  data          DateTime @unique @db.Date
+  nome          String
+  /// ESTADUAL | MUNICIPAL
+  abrangencia   String
+  createdById   String?  @map("created_by_id") @db.Uuid
+  createdByNome String?  @map("created_by_nome")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("feriados")
+}
+
+/// Configuração do timesheet ATO por fornecedor, feita pela medição: sobrescrita da habilitação
+/// (`habilitado` null = segue `Profissional.statusColaborador = 'ATO'`) e dados do cabeçalho.
+model TimesheetConfig {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profissionalId String       @unique @map("profissional_id") @db.Uuid
+  profissional   Profissional @relation(fields: [profissionalId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  habilitado     Boolean?
+  contratoId     String?      @map("contrato_id") @db.Uuid
+  contrato       Contrato?    @relation(fields: [contratoId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  funcao         String?
+  itemPq         String?      @map("item_pq")
+  local          String?
+  area           String?
+  numeroSe       String?      @map("numero_se")
+  docNumero      String?      @map("doc_numero")
+  updatedById    String?      @map("updated_by_id") @db.Uuid
+  updatedByNome  String?      @map("updated_by_nome")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("timesheet_configs")
+}
+
+/// Regra de liberação do preenchimento de um ciclo, para todos os fornecedores.
+/// Sem linha = DIA_A_DIA.
+model TimesheetCiclo {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ciclo         String   @unique
+  /// DIA_A_DIA | CICLO
+  liberacao     String   @default("DIA_A_DIA")
+  updatedById   String?  @map("updated_by_id") @db.Uuid
+  updatedByNome String?  @map("updated_by_nome")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("timesheet_ciclos")
+}
+
+/// Folha de apropriação de horas de um fornecedor num ciclo. As horas não ficam gravadas:
+/// são calculadas na leitura a partir dos dias e dos feriados.
+model TimesheetFolha {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profissionalId String         @map("profissional_id") @db.Uuid
+  profissional   Profissional   @relation(fields: [profissionalId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  ciclo          String
+  /// ABERTA | ENVIADA
+  status         String         @default("ABERTA")
+  enviadaAt      DateTime?      @map("enviada_at") @db.Timestamptz
+  enviadaPorId   String?        @map("enviada_por_id") @db.Uuid
+  reabertaAt     DateTime?      @map("reaberta_at") @db.Timestamptz
+  reabertaPorId  String?        @map("reaberta_por_id") @db.Uuid
+  dias           TimesheetDia[]
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([profissionalId, ciclo])
+  @@index([ciclo], map: "idx_timesheet_folhas_ciclo")
+  @@map("timesheet_folhas")
+}
+
+/// Um dia da folha. Horários em minutos desde 00:00 (entrada/saída da manhã e da tarde).
+model TimesheetDia {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  folhaId       String         @map("folha_id") @db.Uuid
+  folha         TimesheetFolha @relation(fields: [folhaId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  data          DateTime       @db.Date
+  entrada1      Int?           @map("entrada_1")
+  saida1        Int?           @map("saida_1")
+  entrada2      Int?           @map("entrada_2")
+  saida2        Int?           @map("saida_2")
+  projetoPep    String?        @map("projeto_pep")
+  descricao     String?
+  solicitante   String?
+  updatedById   String?        @map("updated_by_id") @db.Uuid
+  updatedByNome String?        @map("updated_by_nome")
+  updatedAt     DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([folhaId, data])
+  @@map("timesheet_dias")
 }

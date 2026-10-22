@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Bell,
   BellRing,
+  CalendarClock,
   Download,
   FileSearch,
   FileText,
@@ -29,6 +30,7 @@ import { AdministrativoPanel } from "@/components/administrativo-panel";
 import { IdentidadesDoCicloPanel, PendenciasEstruturais, type EtlUnresolvedIdentity } from "@/components/importacao/identidades-pendentes";
 import { HistoricoWorkspace } from "@/components/historico/historico-workspace";
 import { EvidenciasWorkspace } from "@/components/evidencias/evidencias-workspace";
+import { TimesheetWorkspace } from "@/components/timesheet/timesheet-workspace";
 import { useViewportAlign } from "@/components/use-viewport-align";
 import { Badge, Button, Card, FilterButton, FilterChip, IconButton, PageContainer, PageHeader, Select } from "@/components/ui";
 import type { ContratoResumo, DashboardData, MapaPagamentoItem, Profissional } from "@/components/types";
@@ -37,7 +39,7 @@ import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "@/lib/presence";
 import type { AuthUser } from "@/lib/session";
 import { indexSgcStatusByColaborador, type SgcStatusApiEntry, type SgcStatusEntry } from "@/lib/sgc-display-status";
 
-type Section = "visao" | "fornecedores" | "historico" | "importar" | "evidencias" | "financeiro" | "administrativo";
+type Section = "visao" | "fornecedores" | "historico" | "importar" | "evidencias" | "timesheet" | "financeiro" | "administrativo";
 
 /** Única seção com rota própria; as demais continuam em /?section=. */
 const FORNECEDORES_PATH = "/fornecedores";
@@ -48,6 +50,7 @@ const TITLES: Record<Section, string> = {
   historico: "Histórico",
   importar: "Importar Planilha",
   evidencias: "Evidências",
+  timesheet: "Timesheet",
   financeiro: "Financeiro",
   administrativo: "Administrativo",
 };
@@ -110,10 +113,10 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
     : isAdministrativo
     ? (["administrativo", "financeiro", ...(temAcessoHistoricoExtra ? ["historico" as const] : [])])
     : isMedicao
-    ? (["visao", "fornecedores", "importar", "evidencias", ...(temAcessoAdministrativoExtra ? ["administrativo" as const] : []), ...(temAcessoHistoricoExtra ? ["historico" as const] : [])])
+    ? (["visao", "fornecedores", "importar", "evidencias", "timesheet", ...(temAcessoAdministrativoExtra ? ["administrativo" as const] : []), ...(temAcessoHistoricoExtra ? ["historico" as const] : [])])
     : isFullAdmin
-    ? ["administrativo", "evidencias", "financeiro", "fornecedores", "historico", "importar", "visao"]
-    : ["evidencias", "financeiro", "fornecedores", "historico", "importar", "visao"];
+    ? ["administrativo", "evidencias", "financeiro", "fornecedores", "historico", "importar", "timesheet", "visao"]
+    : ["evidencias", "financeiro", "fornecedores", "historico", "importar", "timesheet", "visao"];
   const sectionParam = currentSearchParams.get("section") as Section | null;
   const defaultSection: Section = isFinanceiro ? "financeiro" : isAdministrativo ? "administrativo" : "visao";
   const naRotaFornecedores = pathname === FORNECEDORES_PATH;
@@ -456,6 +459,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
         { id: "visao",      label: "Visão Geral", icon: <LayoutDashboard size={17} /> },
         { id: "fornecedores", label: "Fornecedores", icon: <Users size={17} /> },
         { id: "evidencias", label: "Evidências",  icon: <FileSearch size={17} /> },
+        { id: "timesheet",  label: "Timesheet",   icon: <CalendarClock size={17} /> },
         ...(temAcessoAdministrativoExtra ? [navItemAdministrativoExtra] : []),
         ...(temAcessoHistoricoExtra ? [navItemHistoricoExtra] : []),
         { id: "importar",   label: "Importar Planilha", icon: <Upload size={17} />, bottom: true },
@@ -465,6 +469,7 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
         { id: "fornecedores", label: "Fornecedores",    icon: <Users size={17} /> },
         { id: "administrativo", label: "Administrativo", icon: <FileText size={17} /> },
         { id: "evidencias", label: "Evidências",        icon: <FileSearch size={17} /> },
+        { id: "timesheet",  label: "Timesheet",         icon: <CalendarClock size={17} /> },
         { id: "financeiro", label: "Financeiro",        icon: <Wallet size={17} /> },
         { id: "historico",  label: "Histórico",         icon: <History size={17} /> },
         { id: "importar",   label: "Importar Planilha", icon: <Upload size={17} />, bottom: true },
@@ -861,6 +866,12 @@ export function MedicoesApp({ user, permissoesExtras = [] }: { user: AuthUser; p
       {section === "evidencias" && isAdmin && (
         <PageContainer className="grid gap-6 pb-24">
           <EvidenciasWorkspace ciclos={ciclos} ciclo={activeCiclo} onCicloChange={handleCicloChange} />
+        </PageContainer>
+      )}
+
+      {section === "timesheet" && isAdmin && (
+        <PageContainer className="grid gap-6 pb-24">
+          <TimesheetWorkspace ciclos={ciclos} ciclo={activeCiclo} onCicloChange={handleCicloChange} />
         </PageContainer>
       )}
 

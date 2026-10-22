@@ -55,6 +55,9 @@ async function limparFornecedorPorPrefixo(prefixo: string) {
     where: { OR: [{ projetistaCodigo: { startsWith: prefixo, mode: "insensitive" } }, { projetistaCodigo: { in: codigos } }, { responsavel: { startsWith: prefixo } }] },
   });
   await prisma.cadastroFornecedor.deleteMany({ where: { responsavel: { startsWith: prefixo } } });
+  // Timesheet tem FK RESTRICT para o Profissional: sai antes dele.
+  await prisma.timesheetFolha.deleteMany({ where: { profissional: doPrefixo } });
+  await prisma.timesheetConfig.deleteMany({ where: { profissional: doPrefixo } });
   await prisma.profissional.deleteMany({ where: doPrefixo });
   await prisma.usuario.deleteMany({ where: { nome: { startsWith: prefixo } } });
 }
@@ -116,6 +119,8 @@ async function main() {
     await prisma.cadastroFornecedor.deleteMany({ where: { colaboradorCodigo: { in: workflowCodigos } } });
   }
   if (workflowProfissionalIds.length > 0) {
+    await prisma.timesheetFolha.deleteMany({ where: { profissionalId: { in: workflowProfissionalIds } } });
+    await prisma.timesheetConfig.deleteMany({ where: { profissionalId: { in: workflowProfissionalIds } } });
     await prisma.profissional.deleteMany({ where: { id: { in: workflowProfissionalIds } } });
   }
   if (workflowProjetoIds.length > 0) {
@@ -219,6 +224,7 @@ async function main() {
   for (const prefixo of [
     "Fornecedor Dedupe E2E", "Fornecedor Repeticao E2E", "Fornecedor CNPJ Compartilhado", "E2E BulkDelete",
     "E2E Exclusao Reimportacao", "E2E Duplicado Legado", "E2E Sem Botao Exclusao", "E2E Cenario Completo L",
+    "E2E Timesheet",
   ]) {
     await limparFornecedorPorPrefixo(prefixo);
   }

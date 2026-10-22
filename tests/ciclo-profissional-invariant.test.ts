@@ -14,7 +14,7 @@ test("limpeza de ciclos protege Profissional vinculado a qualquer CadastroFornec
 });
 
 test("limpeza continua exigindo ausência das referências históricas e operacionais", () => {
-  for (const table of ["medicoes", "mapa_pagamento_itens", "bm_aux_medicoes", "sgc_aprovacoes_medicao", "sgc_logs", "divergencias_medicao"]) {
+  for (const table of ["medicoes", "mapa_pagamento_itens", "bm_aux_medicoes", "sgc_aprovacoes_medicao", "sgc_logs", "divergencias_medicao", "timesheet_configs", "timesheet_folhas"]) {
     assert.match(cleanupSource, new RegExp(`from ${table}`));
   }
   assert.match(cleanupSource, /p\.deleted_at is null/);

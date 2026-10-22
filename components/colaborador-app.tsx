@@ -24,12 +24,14 @@ import {
   Trash2,
   UploadCloud,
   X,
+  CalendarClock,
 } from "lucide-react";
 import { BoletimMedicao, type BmData } from "@/components/boletim-medicao";
 import { AppShell } from "@/components/app-shell";
 import { AccountMenu } from "@/components/account-menu";
 import { GeneralChatWidget } from "@/components/general-chat-widget";
 import { MinhasMedicoes, type MedicaoAprovada } from "@/components/minhas-medicoes";
+import { FolhaTimesheetFornecedor } from "@/components/timesheet/folha-timesheet";
 import {
   AprovarBoletimDialog,
   BoletimResumoPortal,
@@ -67,7 +69,7 @@ type ColaboradorData = {
   cicloAtivo: string;
   usuario: {
     codigo: string; nome: string; cpf: string | null; cnpj: string | null;
-    avatarUrl: string | null; razaoSocial: string | null; email: string | null; funcao: string | null; statusColaborador: string | null;
+    avatarUrl: string | null; razaoSocial: string | null; email: string | null; funcao: string | null; statusColaborador: string | null; timesheetHabilitado: boolean;
   };
   alocacao: { ato: string | null; intrSossego: number; salobo: number; acg: number; escadasAlumar: number; } | null;
   pagamento: {
@@ -172,7 +174,7 @@ function displayEmail(value: string | null | undefined) {
 // ─── ColaboradorApp ───────────────────────────────────────────────────────────
 
 
-type Section = "portal" | "medicoes";
+type Section = "portal" | "medicoes" | "timesheet";
 
 export function ColaboradorApp({ user }: { user: AuthUser }) {
   const [section, setSection]               = useState<Section>("portal");
@@ -625,12 +627,13 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
   const navItems = [
     { id: "portal",   label: "Portal",           icon: <LayoutDashboard size={17} /> },
     { id: "medicoes", label: "Minhas Medições",  icon: <History size={17} /> },
+    ...(data.usuario.timesheetHabilitado ? [{ id: "timesheet", label: "Timesheet", icon: <CalendarClock size={17} /> }] : []),
   ];
 
   const aguardando = data.sgc.status === "AGUARDANDO_ENVIO";
   const precisaConferencia = data.sgc.status === "PENDENTE" && data.sgc.statusConferencia !== "CONCLUIDA";
 
-  const TITLES: Record<Section, string> = { portal: "Portal do Fornecedor", medicoes: "Minhas Medições" };
+  const TITLES: Record<Section, string> = { portal: "Portal do Fornecedor", medicoes: "Minhas Medições", timesheet: "Timesheet" };
 
   return (
     <AppShell activeSection={section} onNavigate={(id) => setSection(id as Section)} navItems={navItems} pageTitle={TITLES[section]} sidebarFooter={<AccountMenu user={user} roleLabel="Fornecedor" onLogout={logout} compact />}>
@@ -640,7 +643,7 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
         <PageHeader
           eyebrow="Fornecedor"
           title={TITLES[section]}
-          description={section === "portal" ? "Acompanhe seu BM, nota fiscal, pagamento e comprovante." : "Acompanhe seus boletins, valores e pagamentos."}
+          description={section === "portal" ? "Acompanhe seu BM, nota fiscal, pagamento e comprovante." : section === "timesheet" ? "Lance as horas trabalhadas em cada dia do ciclo." : "Acompanhe seus boletins, valores e pagamentos."}
         />
 
         {/* ── Portal ── */}
@@ -1096,6 +1099,9 @@ export function ColaboradorApp({ user }: { user: AuthUser }) {
             onRecarregar={loadMedicoes}
           />
         )}
+
+        {/* ── Timesheet (só para quem a medição habilitou ou é ATO) ── */}
+        {section === "timesheet" && data.usuario.timesheetHabilitado && <FolhaTimesheetFornecedor />}
     </PageContainer>
       {section === "portal" && data.sgc.status === "REVISAO_SOLICITADA" && (
         <RevisionChatWidget

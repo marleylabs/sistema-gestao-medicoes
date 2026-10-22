@@ -411,7 +411,7 @@ export function DocumentosMedicaoPortal({
 
 // ─── Diálogos ─────────────────────────────────────────────────────────────────
 
-function PortalDialog({
+export function PortalDialog({
   titulo,
   descricao,
   role = "dialog",
@@ -450,7 +450,7 @@ function PortalDialog({
   );
 }
 
-function ErroDialogo({ erro }: { erro: string | null }) {
+export function ErroDialogo({ erro }: { erro: string | null }) {
   if (!erro) return null;
   return (
     <p role="alert" className="rounded-lg border border-[var(--error)]/30 bg-[var(--error-soft)] px-3 py-2 text-[13px] font-medium text-[var(--error)]">
