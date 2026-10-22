@@ -42,6 +42,12 @@ export async function requireAdministrativo() {
   return { user, response: null };
 }
 
+/** Cadastro de contratos: Medição e ADMIN (requireAdmin) ou quem entra no Administrativo. */
+export async function requireContratos() {
+  const admin = await requireAdmin();
+  return admin.response && admin.user ? requireAdministrativo() : admin;
+}
+
 export async function requireHistorico() {
   const user = await getCurrentUser();
   if (!user) {

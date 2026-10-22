@@ -35,7 +35,7 @@ export function AdministrativoKpis({ items, loading = false }: { items: Cadastro
   );
 }
 
-function StatusBadge({ ativo }: { ativo: boolean }) {
+export function StatusBadge({ ativo }: { ativo: boolean }) {
   return <Badge variant={ativo ? "success" : "neutral"}>{ativo ? "Ativo" : "Inativo"}</Badge>;
 }
 
@@ -53,14 +53,14 @@ function CondicaoCell({ item }: { item: CadastroFornecedor }) {
   );
 }
 
-function openOnKey(event: KeyboardEvent<HTMLElement>, open: () => void) {
+export function openOnKey(event: KeyboardEvent<HTMLElement>, open: () => void) {
   if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
     event.preventDefault();
     open();
   }
 }
 
-function Th({ children, className = "" }: { children?: ReactNode; className?: string }) {
+export function Th({ children, className = "" }: { children?: ReactNode; className?: string }) {
   return <th className={`text-table-header border-b border-[var(--border)] px-3 py-2.5 text-left text-[var(--muted-foreground)] xl:px-4 ${className}`}>{children}</th>;
 }
 

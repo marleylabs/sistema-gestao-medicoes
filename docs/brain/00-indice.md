@@ -21,7 +21,7 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [Cadastro de fornecedores](modulos/cadastro-fornecedores.md): Consulta PJ, inativação, exclusão definitiva
 - [Identidades e aliases](modulos/identidades-importacao.md): resolver de identidade, pendências
 - [ETL](modulos/etl.md): importação de planilhas em Python
-- [Contratos](modulos/contratos.md): contratos e participação por fornecedor
+- [Contratos](modulos/contratos.md): cadastro de contratos no Administrativo e participação por fornecedor
 - [Histórico e dashboard](modulos/historico-dashboard.md): histórico, evidências, dashboard
 - [Chat](modulos/chat.md): conversas, anexos, presença (polling)
 - [E-mail](modulos/email.md): notificações via Resend, modo teste, EmailLog
@@ -55,4 +55,5 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [Plano do Timesheet ATO](specs/timesheet-ato-plano.md): schema → cálculo → folha no portal → feriados → acompanhamento → configuração → XLSX/PDF → E2E (concluído; na produção desde 2026-10-22)
 - [Timesheet: feriados por contrato](specs/timesheet-feriados-por-contrato.md): feriado manual geral ou de um contrato, filtro por contrato na aba Feriados; spec e plano juntos (implementada, não implantada)
 - [Timesheet: ciclo publicado próprio](specs/timesheet-ciclo-publicado.md): a medição publica o ciclo do timesheet separado do ciclo do portal, para o preenchimento não começar atrasado (implementada, não implantada)
+- [Cadastro de contratos](specs/contratos-cadastro.md): aba Contratos no Administrativo (nº, nome, gestor, fiscal, vigência e valor), só inativação, auditoria (implementada, não implantada)
 - [Plano do M4 portal do fornecedor](specs/layout-tema-motion-m4-plano.md): Minhas Medições e NF → diálogos → ação principal em destaque → motion expressivo → chat (concluído)

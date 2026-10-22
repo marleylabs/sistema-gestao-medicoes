@@ -13,6 +13,7 @@ import { compactId, digitsOnly, displayText, type CadastroFornecedor, type Funci
 import { FornecedorEditor, FuncionarioCreatePanel } from "@/components/administrativo/fornecedor-editor";
 import { FornecedorDetalhe, FuncionarioDetalhe } from "@/components/administrativo/detalhes";
 import { AdministrativoKpis, FornecedoresCadastroTable, FuncionariosTable } from "@/components/administrativo/listagem";
+import { ContratosCadastro } from "@/components/administrativo/contratos";
 import { ImportarConsultaPanel, type ImportAtencaoDetalhe, type ImportResult } from "@/components/administrativo/importar-panel";
 import { PrimeiroAcessoLoteDialog } from "@/components/administrativo/primeiro-acesso-lote-dialog";
 import { BulkSelectionBar } from "@/components/bulk-selection-bar";
@@ -728,7 +729,7 @@ function ConfirmAcaoModal({
   );
 }
 
-type Aba = "fornecedores" | "funcionarios";
+type Aba = "fornecedores" | "funcionarios" | "contratos";
 type StatusFiltro = "ativos" | "inativos" | "todos";
 
 /** Filtros secundários (popover discreto) — a toolbar fica só com busca + status. */
@@ -884,6 +885,7 @@ export function AdministrativoPanel({
   const [resolverItem, setResolverItem] = useState<(ImportAtencaoDetalhe & { categoria: string }) | null>(null);
 
   const [aba, setAba] = useState<Aba>("fornecedores");
+  const [contratosTotal, setContratosTotal] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   // Mesmo padrão de antes: inativos ocultos por padrão entre fornecedores; funcionários todos.
   const [statusFornecedor, setStatusFornecedor] = useState<StatusFiltro>("ativos");
@@ -1274,14 +1276,18 @@ export function AdministrativoPanel({
           <IconButton onClick={load} title="Atualizar" disabled={loading}>
             <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
           </IconButton>
-          <Button variant="secondary" onClick={() => setPainel({ tipo: "importar" })}>
-            <FileSpreadsheet size={15} />
-            Importar Consulta PJ
-          </Button>
-          <Button onClick={() => setPainel({ tipo: criarFuncionario ? "novo-funcionario" : "novo-fornecedor" })}>
-            <Plus size={15} />
-            {criarFuncionario ? "Novo funcionário" : "Novo fornecedor"}
-          </Button>
+          {aba !== "contratos" && (
+            <>
+              <Button variant="secondary" onClick={() => setPainel({ tipo: "importar" })}>
+                <FileSpreadsheet size={15} />
+                Importar Consulta PJ
+              </Button>
+              <Button onClick={() => setPainel({ tipo: criarFuncionario ? "novo-funcionario" : "novo-fornecedor" })}>
+                <Plus size={15} />
+                {criarFuncionario ? "Novo funcionário" : "Novo fornecedor"}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1309,12 +1315,14 @@ export function AdministrativoPanel({
             {([
               ["fornecedores", "Fornecedores", items.length],
               ["funcionarios", "Funcionários", funcionarios.length],
+              ["contratos", "Contratos", contratosTotal ?? ""],
             ] as const).map(([value, label, count]) => (
               <Aba key={value} grupo="aba-cadastro" ativa={aba === value} onClick={() => { setAba(value); clearSelection(); }}>
                 {label} <span className="font-technical text-[11px] text-[var(--muted-foreground)]">{count}</span>
               </Aba>
             ))}
           </div>
+          {aba !== "contratos" && (
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
             <span className="relative min-w-0 sm:w-[340px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[var(--muted-foreground)]" size={14} />
@@ -1351,9 +1359,11 @@ export function AdministrativoPanel({
             />
             </div>
           </div>
+          )}
         </div>
         {/* Recorte só abaixo da barra: o popover de Filtros mora nela e precisa sair do card. */}
         <div className="overflow-hidden rounded-b-[10px]">
+        {aba === "contratos" ? <ContratosCadastro onTotal={setContratosTotal} /> : (<>
 
         {filtroChips.length > 0 && (
           <div className="flex flex-wrap gap-1.5 border-b border-[var(--border)] px-5 py-2.5">
@@ -1425,6 +1435,7 @@ export function AdministrativoPanel({
           </span>
           {loading && totalAba > 0 && <span>Atualizando…</span>}
         </div>
+        </>)}
         </div>
       </Card>
 

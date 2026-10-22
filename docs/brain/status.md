@@ -10,6 +10,7 @@ atualizado: 2026-10-22
   - Verificação antes do push: `tsc` ok, `test:targeted` 589/589 (com a correção do chat mesclada), E2E completo 223/223 (antes da mesclagem). Smoke funcional na produção: ainda não feito pelo usuário.
 - **Timesheet, feriados por contrato** (2026-10-22, enviado ao GitHub, não implantado): o feriado manual pode ser geral ou de um contrato, e a aba Feriados filtra por contrato. Ver [spec](specs/timesheet-feriados-por-contrato.md). Migration nova `20261022180000_timesheet_feriado_contrato` (só acrescenta coluna e índices; os feriados atuais ficam gerais), aplicada só no banco de teste `medicoes_e2e_bm`. Verificação: `tsc` ok, `test:targeted` 590/590, E2E das duas specs do timesheet 8/8.
 - **Timesheet, ciclo publicado próprio** (2026-10-22, enviado ao GitHub, não implantado): a medição publica no painel Timesheet o ciclo que o fornecedor preenche, separado do ciclo do portal (ex.: pagamento no 2609, timesheet no 2610). Sem publicação, segue o portal. Ver [spec](specs/timesheet-ciclo-publicado.md). Migration `20261022200000_timesheet_ciclo_publicado` (coluna `ativo_timesheet` e índice único parcial), aplicada só no banco de teste. Verificação: `tsc` ok, `test:targeted` 591/591, E2E de timesheet, ciclos e ciclo publicado 28/28.
+- **Cadastro de contratos no Administrativo** (2026-10-22, enviado ao GitHub, não implantado): aba Contratos com nº, nome, gestor, fiscal, vigência e valor contratual; só inativação (a rota DELETE saiu); auditoria; valor em `Decimal`. O `ContratosPanel` antigo, sem uso, foi apagado. Sem migration. Ver [spec](specs/contratos-cadastro.md). Verificação: `tsc` ok, `test:targeted` 594/594, E2E de contratos, Administrativo e timesheet 14/14.
 - **Produção** (`192.168.15.101:3020`, `/opt/sistema-gestao-medicoes`; [decisão 013](decisoes/013-servidor-unico-e-producao.md)): roda bf53ea0 desde 2026-10-22 02:55 (UTC). Só o web foi recriado; o ETL e o Postgres ficaram intactos (o ETL não muda desde f856767). Inclui layout M1 a M4, P2, as correções de 2026-10-19, o chat sem duplicata e o Timesheet ATO. O alias SSH depende do notebook: `medicoes-preprod` num, `medicoes-prod` (só pela VPN) no outro. O servidor também hospeda outros sistemas (extrato-mensal, projeto-raio, projeta-hub): recrie só os serviços do medicoes.
   - Health 200, login 200, API do timesheet 401 sem sessão, 0 linhas de erro no log do web.
   - Rollback: imagem `local/medicoes-web-rollback:20261022T025047Z` + `~/backups-medicoes/deploy_20261022T025047Z/` (`postgres.dump` com sha256 e listagem de 22 tabelas, `deploy.env` com o SHA anterior d78535d, `build.log`, `migrate.log`, `web.log`). As tabelas novas não atrapalham a imagem anterior, então o rollback do web dispensa desfazer a migration.
@@ -23,7 +24,7 @@ atualizado: 2026-10-22
 1. **Timesheet na produção** (implantado em 2026-10-22):
    - smoke funcional pelo usuário;
    - a medição habilita os fornecedores ATO (hoje nenhum tem o status pela importação) e configura o cabeçalho de cada um.
-2. **Feriados por contrato e ciclo publicado do timesheet**: deploy (web + `migrate deploy` das duas migrations novas, com backup antes, como no deploy de bf53ea0). Depois, a medição define o contrato de cada fornecedor ATO na configuração; sem isso ele só recebe os feriados gerais.
+2. **Feriados por contrato, ciclo publicado do timesheet e cadastro de contratos**: deploy (web + `migrate deploy` das duas migrations novas, com backup antes, como no deploy de bf53ea0). Depois, a medição define o contrato de cada fornecedor ATO na configuração; sem isso ele só recebe os feriados gerais.
 3. **Timesheet, fase 2** (fora do escopo atual):
    - envio ao gestor do contrato e registro da aprovação pela plataforma;
    - lançamento do total de horas na medição/BM;
@@ -51,8 +52,8 @@ atualizado: 2026-10-22
 - `npm run build` e o Playwright compartilham `.next`: rode `rm -rf .next` depois do build.
 
 ## Últimas mudanças (máx. 5, mais recente primeiro)
+- 2026-10-22: cadastro de contratos na aba Contratos do Administrativo (só inativação, auditoria, valor em `Decimal`); enviado ao GitHub, não implantado.
 - 2026-10-22: ciclo publicado próprio do timesheet (a medição abre o ciclo seguinte para preenchimento antes de fechar o pagamento do atual), com migration nova; enviado ao GitHub, não implantado.
 - 2026-10-22: feriados do timesheet por contrato (geral ou de um contrato, filtro na aba Feriados), com migration nova; enviado ao GitHub, não implantado.
 - 2026-10-22 (UTC): deploy de bf53ea0 na produção (Timesheet ATO + 2 migrations), com backup e rollback; DEV reconstruído com o mesmo commit.
 - 2026-10-21: Timesheet ATO implementado (fases A a D, commit e94c195, enviado ao GitHub; produção pendente). O fornecedor ATO preenche a folha 21→20 no portal; a medição acompanha, libera o preenchimento, reabre, cadastra feriados estaduais e municipais, configura o cabeçalho e exporta em XLSX ou PDF. Ver [módulo](modulos/timesheet.md).
-- 2026-10-19: chat duplicado corrigido (d78535d), implantado na produção e duplicata existente mesclada (ver Produção).

@@ -208,7 +208,7 @@ export function TimesheetDrawer({
           <PanelSection title="Cabeçalho da folha">
             <ErroDialogo erro={erroAcao} />
             {salvoEm && <p role="status" className="text-[13px] font-medium text-[var(--success)]">Configuração salva.</p>}
-            <Field label="Contrato (nº e fiscal vêm do cadastro do contrato)">
+            <Field label="Contrato (nº e fiscal vêm de Administrativo → Contratos)">
               <Select value={form.contratoId} onChange={(e) => setForm({ ...form, contratoId: e.target.value })}>
                 <option value="">Sem contrato</option>
                 {contratos.filter((c) => c.ativo || c.id === form.contratoId).map((c) => (
