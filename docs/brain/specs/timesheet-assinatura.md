@@ -4,7 +4,7 @@ tags: [spec]
 ---
 # Timesheet: assinatura eletrônica da folha (fiscal e colaborador)
 
-Continuação da [aprovação pelo fiscal](timesheet-aprovacao-fiscal.md). Spec e plano juntos. Status: **implementada em 2026-10-23, não implantada**. Decisão: [014](../decisoes/014-assinatura-eletronica-propria.md).
+Continuação da [aprovação pelo fiscal](timesheet-aprovacao-fiscal.md). Spec e plano juntos. Status: **implementada e na produção desde 2026-10-23** (c04b28b). Decisão: [014](../decisoes/014-assinatura-eletronica-propria.md).
 
 ## Objetivo
 O fiscal e o colaborador assinam a folha de timesheet dentro da própria plataforma, com rastreabilidade (quem, quando, de onde e sobre qual conteúdo). A assinatura aparece no espaço acima do nome, no fim da folha (tela e PDF), e no texto do XLSX.
