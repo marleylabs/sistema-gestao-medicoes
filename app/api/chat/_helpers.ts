@@ -54,13 +54,11 @@ export async function joinSharedFornecedorChats(user: AuthUser) {
     take: 200,
   });
 
-  for (const conversa of conversas) {
-    await prisma.chatParticipante.upsert({
-      where: { conversaId_usuarioId: { conversaId: conversa.id, usuarioId: user.id } },
-      create: { conversaId: conversa.id, usuarioId: user.id },
-      update: {},
-    });
-  }
+  // ON CONFLICT DO NOTHING: upsert não é atômico e requisições paralelas do mesmo usuário davam P2002.
+  await prisma.chatParticipante.createMany({
+    data: conversas.map((conversa) => ({ conversaId: conversa.id, usuarioId: user.id })),
+    skipDuplicates: true,
+  });
 }
 
 export async function importSgcChatsForUser(user: AuthUser) {

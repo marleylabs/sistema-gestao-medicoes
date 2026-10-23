@@ -19,6 +19,7 @@ tags: [modulo]
 - Os anexos ficam em `Bytes` no banco. `ChatMensagem.origem` é único e serve de idempotência para mensagens do sistema.
 - Cada fornecedor tem uma única conversa com a equipe interna. Todo caminho que cria conversa com fornecedor (POST de `/api/chat/conversas`, importação do SGC) reusa `findFornecedorConversa` (`lib/chat-teams.ts`), que ignora as equipes desabilitadas.
 - Duplicatas antigas: `scripts/mesclar-chat-duplicado.ts` mantém a conversa mais recente de cada fornecedor e move para ela as mensagens e os participantes das outras.
+- `GET /api/chat/conversas` roda em paralelo para o mesmo usuário (a tela dispara mais de uma). O `upsert` do Prisma não é atômico: dois pedidos inserem a mesma linha e um cai em P2002 (500). Inserção idempotente usa `createMany({ skipDuplicates: true })` (ON CONFLICT DO NOTHING) ou trata P2002 como sucesso, como em `joinSharedFornecedorChats` e `importSgcChatsForUser`. Testes: `tests/chat-join-shared-concurrency.test.ts`, `tests/chat-import-concurrency.test.ts`.
 - Excluir um usuário apagaria o chat em cascata; por isso o fornecedor é só soft-deleted.
 
 **Depende de:** [Autenticação](autenticacao.md)
