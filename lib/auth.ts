@@ -73,6 +73,12 @@ export async function verifyPassword(password: string, storedHash: string) {
   return expectedHash.length === actualHash.length && timingSafeEqual(expectedHash, actualHash);
 }
 
+/** Reconfirma a senha do usuário da sessão (assinatura eletrônica): o hash não sai de lib/auth. Inativo nunca confere. */
+export async function senhaDoUsuarioConfere(usuarioId: string, senha: string) {
+  const usuario = await prisma.usuario.findUnique({ where: { id: usuarioId }, select: { senhaHash: true, ativo: true } });
+  return !!usuario?.ativo && (await verifyPassword(senha, usuario.senhaHash));
+}
+
 export async function ensureBootstrapAdmin() {
   await migrateAccessUsernames();
 

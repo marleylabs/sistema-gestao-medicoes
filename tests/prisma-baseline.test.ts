@@ -8,7 +8,7 @@ const BASE = "20260902000000_baseline_legado";
 const base = fs.readFileSync(path.join(MIGRATIONS, BASE, "migration.sql"), "utf8");
 const migrations = fs.readdirSync(MIGRATIONS).filter((d) => /^\d{14}_/.test(d)).sort();
 
-test("migration base é a PRIMEIRA do histórico e as 13 incrementais vêm depois, na ordem", () => {
+test("migration base é a PRIMEIRA do histórico e as 14 incrementais vêm depois, na ordem", () => {
   assert.equal(migrations[0], BASE);
   assert.deepEqual(migrations.slice(1), [
     "20260903160000_profissional_exclusao_definitiva",
@@ -24,6 +24,7 @@ test("migration base é a PRIMEIRA do histórico e as 13 incrementais vêm depoi
     "20261022200000_timesheet_ciclo_publicado",
     "20261022220000_timesheet_aprovacao_fiscal",
     "20261023120000_fiscal_cadastro_campos",
+    "20261023150000_timesheet_assinatura",
   ]);
 });
 

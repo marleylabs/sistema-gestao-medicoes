@@ -1,11 +1,12 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { cicloToDates, isCicloValido } from "@/lib/ciclo";
 import { feriadosNacionaisNoPeriodo } from "@/lib/feriados";
-import { calcularDia, diasDoCiclo, isoDate, somarHoras, tipoDoDia, validarDia, type HorariosDia } from "@/lib/timesheet-calculo";
+import { calcularDia, diasDoCiclo, isoDate, somarHoras, tipoDoDia, validarDia, type HorariosDia, type HorasDia } from "@/lib/timesheet-calculo";
 import { getCicloTimesheet } from "@/lib/ciclo-ativo";
 import type { AuthUser } from "@/lib/session";
 
@@ -16,7 +17,7 @@ import type { AuthUser } from "@/lib/session";
  */
 
 export class TimesheetError extends Error {
-  constructor(message: string, readonly status: 400 | 403 | 404 | 409) {
+  constructor(message: string, readonly status: 400 | 403 | 404 | 409 | 429) {
     super(message);
     this.name = "TimesheetError";
   }
@@ -157,6 +158,11 @@ export async function carregarFolha(profissionalId: string | null, cicloParam: u
             aprovacao: true, aprovacaoMotivo: true, aprovacaoPorNome: true, aprovacaoEm: true,
           },
         },
+        // Só as ativas; o IP fica de fora (só a verificação interna o mostra).
+        assinaturas: {
+          where: { encerradaEm: null },
+          select: { papel: true, nome: true, assinadoEm: true, metodo: true, codigo: true, hashConteudo: true, imagem: true },
+        },
       },
     }),
     prisma.timesheetConfig.findUnique({
@@ -205,6 +211,17 @@ export async function carregarFolha(profissionalId: string | null, cicloParam: u
     };
   });
 
+  const conteudoHash = hashConteudoFolha(ciclo, profissional.codigo, dias);
+  const assinatura = (papel: "FISCAL" | "COLABORADOR") => {
+    const a = folha?.assinaturas.find((x) => x.papel === papel);
+    return a ? {
+      nome: a.nome, assinadoEm: a.assinadoEm.toISOString(), metodo: a.metodo, codigo: a.codigo,
+      imagem: `data:image/png;base64,${Buffer.from(a.imagem).toString("base64")}`,
+      // Spec timesheet-assinatura, regra 4: a assinatura continua, mas avisa que o conteúdo mudou depois dela.
+      alterada: a.hashConteudo !== conteudoHash,
+    } : null;
+  };
+
   return {
     ciclo,
     periodo: { inicio: atoInicio, fim: atoFim },
@@ -226,10 +243,31 @@ export async function carregarFolha(profissionalId: string | null, cicloParam: u
     dias,
     // Horas reprovadas pelo fiscal não entram nos totais; a linha do dia segue mostrando o lançado.
     totais: somarHoras(dias.filter((d) => d.aprovacao !== "REPROVADO").map((d) => d.horas)),
+    conteudoHash,
+    assinaturas: { fiscal: assinatura("FISCAL"), colaborador: assinatura("COLABORADOR") },
   };
 }
 
 export type FolhaTimesheet = Awaited<ReturnType<typeof carregarFolha>>;
+
+/**
+ * SHA-256 do conteúdo que a assinatura cobre: horários, textos, decisões do fiscal e horas calculadas de cada dia
+ * (um feriado novo muda as horas e, portanto, o hash). A ordem dos campos é fixa.
+ */
+type TextoOuNulo = string | null;
+export function hashConteudoFolha(
+  ciclo: string, codigo: TextoOuNulo,
+  dias: Array<{
+    data: string; entrada1: TextoOuNulo; saida1: TextoOuNulo; entrada2: TextoOuNulo; saida2: TextoOuNulo;
+    projetoPep: TextoOuNulo; descricao: TextoOuNulo; solicitante: TextoOuNulo; aprovacao: TextoOuNulo; aprovacaoMotivo: TextoOuNulo; horas: HorasDia;
+  }>,
+) {
+  const linhas = dias.map((d) => [
+    d.data, d.entrada1, d.saida1, d.entrada2, d.saida2, d.projetoPep, d.descricao, d.solicitante,
+    d.aprovacao, d.aprovacaoMotivo, d.horas.hn, d.horas.he50, d.horas.he100, d.horas.total,
+  ]);
+  return createHash("sha256").update(JSON.stringify([ciclo, codigo, linhas])).digest("hex");
+}
 
 export function auditoria(
   ator: Ator, action: string, targetId: string | null, codigo: string | null, metadata: Record<string, unknown>, targetType = "TIMESHEET_FOLHA",
@@ -309,23 +347,10 @@ export async function salvarDia(input: { profissionalId: string | null; ciclo: u
   }
 }
 
-/** Fornecedor fecha a folha do ciclo: fica só leitura até a medição reabrir. */
-export async function enviarFolha(input: { profissionalId: string | null; ciclo: unknown; ator: Ator; cicloAtivo?: string }) {
-  const ciclo = exigirCiclo(input.ciclo);
-  const profissional = await exigirHabilitado(input.profissionalId);
-  await exigirCicloEmAndamento(ciclo, input.cicloAtivo);
-  await prisma.$transaction(async (tx) => {
-    const folha = await tx.timesheetFolha.findUnique({
-      where: { profissionalId_ciclo: { profissionalId: profissional.id, ciclo } },
-      // Dia salvo em branco não conta: precisa de ao menos um período lançado.
-      select: { id: true, _count: { select: { dias: { where: { OR: [{ entrada1: { not: null } }, { entrada2: { not: null } }] } } } } },
-    });
-    if (!folha || folha._count.dias === 0) throw new TimesheetError("Preencha ao menos um dia antes de enviar.", 400);
-    const enviada = await tx.timesheetFolha.updateMany({
-      where: { id: folha.id, status: "ABERTA" },
-      data: { status: "ENVIADA", enviadaAt: new Date(), enviadaPorId: input.ator.id },
-    });
-    if (enviada.count === 0) throw new TimesheetError("A folha já foi enviada.", 409);
-    await tx.adminAuditLog.create({ data: auditoria(input.ator, "TIMESHEET_ENVIADA", folha.id, profissional.codigo, { ciclo }) });
-  });
+/** Valida o fornecedor e o ciclo do envio (o envio em si, com a assinatura, fica em `lib/timesheet-assinatura.ts`). */
+export async function exigirEnvioPermitido(profissionalId: string | null, cicloParam: unknown, cicloAtivo?: string) {
+  const ciclo = exigirCiclo(cicloParam);
+  const profissional = await exigirHabilitado(profissionalId);
+  await exigirCicloEmAndamento(ciclo, cicloAtivo);
+  return { ciclo, profissional };
 }

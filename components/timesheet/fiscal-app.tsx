@@ -2,7 +2,7 @@
 
 import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarClock, Check, RefreshCw, Search, X } from "lucide-react";
+import { CalendarClock, Check, PenLine, RefreshCw, Search, Undo2, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { AccountMenu } from "@/components/account-menu";
 import { AdminSidePanel } from "@/components/administrativo/admin-side-panel";
@@ -10,8 +10,10 @@ import { ErroDialogo, PortalDialog } from "@/components/portal-fornecedor";
 import { Badge, Button, Card, Carregando, Field, IconButton, Input, PageContainer, PageHeader, Select, Toast } from "@/components/ui";
 import { ListaFolhas } from "@/components/timesheet/timesheet-workspace";
 import { TabelaDiasTimesheet, TotaisTimesheet, erroDaApi } from "@/components/timesheet/folha-timesheet";
+import { AssinaturasTimesheet, DialogoAssinatura, LinhaResumo, Resumo, VerificarAssinatura } from "@/components/timesheet/assinatura";
 import { formatCicloLabel } from "@/lib/ciclo";
-import { formatarData } from "@/lib/timesheet-calculo";
+import { formatarData, formatarDuracao } from "@/lib/timesheet-calculo";
+import type { EntradaAssinatura } from "@/lib/timesheet-assinatura-texto";
 import type { FolhaTimesheet } from "@/lib/timesheet";
 import type { AcompanhamentoFiscal } from "@/lib/timesheet-fiscal";
 import type { AuthUser } from "@/lib/session";
@@ -124,6 +126,7 @@ export function FiscalApp({ user }: { user: AuthUser }) {
                 <ListaFolhas itens={filtradas} abertoId={aberto?.id ?? null} onAbrir={(f: Item) => setAberto({ id: f.profissionalId, nome: f.nome })} />
               )}
             </Card>
+            <VerificarAssinatura endpoint="/api/fiscal/timesheet/verificar-assinatura" />
           </>
         )}
       </PageContainer>
@@ -134,6 +137,7 @@ export function FiscalApp({ user }: { user: AuthUser }) {
             key={aberto.id}
             profissionalId={aberto.id}
             nome={aberto.nome}
+            nomeFiscal={user.nome}
             ciclo={dados.ciclo}
             onClose={() => setAberto(null)}
             onDecidiu={async (texto) => { setToast(texto); await carregar(); }}
@@ -145,8 +149,8 @@ export function FiscalApp({ user }: { user: AuthUser }) {
   );
 }
 
-function FolhaFiscal({ profissionalId, nome, ciclo, onClose, onDecidiu }: {
-  profissionalId: string; nome: string; ciclo: string; onClose: () => void; onDecidiu: (texto: string) => Promise<void>;
+function FolhaFiscal({ profissionalId, nome, nomeFiscal, ciclo, onClose, onDecidiu }: {
+  profissionalId: string; nome: string; nomeFiscal: string; ciclo: string; onClose: () => void; onDecidiu: (texto: string) => Promise<void>;
 }) {
   const [folha, setFolha] = useState<FolhaTimesheet | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -155,6 +159,7 @@ function FolhaFiscal({ profissionalId, nome, ciclo, onClose, onDecidiu }: {
   const [motivo, setMotivo] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [erroAcao, setErroAcao] = useState<string | null>(null);
+  const [assinatura, setAssinatura] = useState<"assinar" | "revogar" | null>(null);
 
   const carregar = useCallback(async () => {
     const res = await fetch(`/api/fiscal/timesheet/${profissionalId}?ciclo=${encodeURIComponent(ciclo)}`, { cache: "no-store" });
@@ -176,7 +181,30 @@ function FolhaFiscal({ profissionalId, nome, ciclo, onClose, onDecidiu }: {
     await onDecidiu(`${datas.length} ${datas.length === 1 ? "dia" : "dias"} ${decisao === "APROVADO" ? "aprovado(s)" : "reprovado(s)"}.`);
   }
 
+  async function assinar(entrada: EntradaAssinatura) {
+    setOcupado(true); setErroAcao(null);
+    const res = await fetch(`/api/fiscal/timesheet/${profissionalId}/assinatura`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ciclo, assinatura: entrada }),
+    });
+    setOcupado(false);
+    if (!res.ok) { setErroAcao(await erroDaApi(res, "Não foi possível assinar a folha.")); return; }
+    setAssinatura(null);
+    await carregar();
+    await onDecidiu("Folha assinada.");
+  }
+
+  async function revogar() {
+    setOcupado(true); setErroAcao(null);
+    const res = await fetch(`/api/fiscal/timesheet/${profissionalId}/assinatura?ciclo=${encodeURIComponent(ciclo)}`, { method: "DELETE" });
+    setOcupado(false);
+    if (!res.ok) { setErroAcao(await erroDaApi(res, "Não foi possível revogar a assinatura.")); return; }
+    setAssinatura(null);
+    await carregar();
+    await onDecidiu("Assinatura revogada.");
+  }
+
   const n = selecionadas.size;
+  const lancados = folha?.dias.filter((d) => d.lancado) ?? [];
   return (
     <AdminSidePanel
       size="full"
@@ -184,7 +212,7 @@ function FolhaFiscal({ profissionalId, nome, ciclo, onClose, onDecidiu }: {
       title={nome}
       subtitle={folha ? <span className="font-technical text-[12.5px]">{folha.fornecedor.codigo}</span> : undefined}
       meta={folha && <Badge variant={folha.status === "ENVIADA" ? "success" : "warning"}>{folha.status === "ENVIADA" ? "Enviada" : "Aberta"}</Badge>}
-      escEnabled={!reprovar}
+      escEnabled={!reprovar && !assinatura}
       onClose={onClose}
       testId="fiscal-folha"
       footer={folha ? (
@@ -192,7 +220,7 @@ function FolhaFiscal({ profissionalId, nome, ciclo, onClose, onDecidiu }: {
           <span className="mr-auto text-[13px] text-[var(--muted-foreground)]" aria-live="polite">
             {n ? `${n} ${n === 1 ? "dia selecionado" : "dias selecionados"}` : "Selecione os dias para aprovar ou reprovar."}
           </span>
-          {erroAcao && !reprovar && <span role="alert" className="text-[12px] text-[var(--error)]">{erroAcao}</span>}
+          {erroAcao && !reprovar && !assinatura && <span role="alert" className="text-[12px] text-[var(--error)]">{erroAcao}</span>}
           <Button variant="secondary" className="h-10" disabled={!n || ocupado} onClick={() => { setErroAcao(null); setReprovar(true); }}>
             <X size={15} aria-hidden />
             Reprovar
@@ -227,6 +255,20 @@ function FolhaFiscal({ profissionalId, nome, ciclo, onClose, onDecidiu }: {
               alternarTodas: (datas) => setSelecionadas(new Set(datas)),
             }}
           />
+          <AssinaturasTimesheet
+            assinaturas={folha.assinaturas}
+            acaoFiscal={folha.assinaturas.fiscal ? (
+              <Button variant="secondary" className="h-9 justify-self-start" onClick={() => { setErroAcao(null); setAssinatura("revogar"); }} disabled={ocupado}>
+                <Undo2 size={15} aria-hidden />
+                Revogar assinatura
+              </Button>
+            ) : (
+              <Button className="h-9 justify-self-start" onClick={() => { setErroAcao(null); setAssinatura("assinar"); }} disabled={ocupado || !lancados.length}>
+                <PenLine size={15} aria-hidden />
+                Assinar folha
+              </Button>
+            )}
+          />
         </div>
       )}
 
@@ -251,6 +293,47 @@ function FolhaFiscal({ profissionalId, nome, ciclo, onClose, onDecidiu }: {
             <Field label="Motivo da reprovação">
               <Input autoFocus maxLength={500} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: horário diferente do registro da portaria" />
             </Field>
+          </PortalDialog>
+        )}
+        {assinatura === "assinar" && folha && (
+          <DialogoAssinatura
+            key="assinar-fiscal"
+            titulo="Assinar a folha"
+            descricao="A assinatura fica na folha deste fornecedor durante todo o ciclo. Se a folha mudar depois, aparece um aviso ao lado dela."
+            nomePadrao={nomeFiscal}
+            resumo={
+              <Resumo>
+                <LinhaResumo rotulo="Fornecedor" valor={nome} />
+                <LinhaResumo rotulo="Ciclo" valor={ciclo} />
+                <LinhaResumo rotulo="Dias aprovados · reprovados · pendentes" valor={`${lancados.filter((d) => d.aprovacao === "APROVADO").length} · ${lancados.filter((d) => d.aprovacao === "REPROVADO").length} · ${lancados.filter((d) => !d.aprovacao).length}`} />
+                <LinhaResumo rotulo="Total de horas" valor={formatarDuracao(folha.totais.total)} forte />
+              </Resumo>
+            }
+            rotuloConfirmar="Assinar folha"
+            ocupado={ocupado}
+            erro={erroAcao}
+            onCancelar={() => setAssinatura(null)}
+            onConfirmar={(entrada) => void assinar(entrada)}
+          />
+        )}
+        {assinatura === "revogar" && (
+          <PortalDialog
+            key="revogar-assinatura"
+            role="alertdialog"
+            titulo="Revogar assinatura"
+            descricao="A assinatura sai da folha e fica registrada no histórico. Você pode assinar de novo depois."
+            busy={ocupado}
+            onClose={() => setAssinatura(null)}
+            footer={
+              <>
+                <Button variant="secondary" className="h-10 w-full sm:w-auto" onClick={() => setAssinatura(null)} disabled={ocupado} autoFocus>Cancelar</Button>
+                <Button variant="danger" className="h-10 w-full sm:w-auto" onClick={() => void revogar()} disabled={ocupado} aria-busy={ocupado}>
+                  {ocupado ? "Revogando..." : "Revogar assinatura"}
+                </Button>
+              </>
+            }
+          >
+            <ErroDialogo erro={erroAcao} />
           </PortalDialog>
         )}
       </AnimatePresence>

@@ -2,12 +2,14 @@
 
 import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
-import { CopyPlus, Lock, PencilLine, Send } from "lucide-react";
+import { AlertTriangle, ArrowRight, CopyPlus, Lock, PencilLine, Send } from "lucide-react";
 import clsx from "clsx";
 import { Badge, Button, Card, Carregando, Field, Input, Toast } from "@/components/ui";
 import { ErroDialogo, PortalDialog } from "@/components/portal-fornecedor";
+import { AssinaturasTimesheet, DialogoAssinatura, LinhaResumo, Resumo } from "@/components/timesheet/assinatura";
 import { formatCicloLabel } from "@/lib/ciclo";
 import type { FolhaTimesheet } from "@/lib/timesheet";
+import type { EntradaAssinatura } from "@/lib/timesheet-assinatura-texto";
 import { formatarData, formatarDuracao } from "@/lib/timesheet-calculo";
 
 type Dia = FolhaTimesheet["dias"][number];
@@ -49,7 +51,9 @@ export function FolhaTimesheetFornecedor() {
   const [edicao, setEdicao] = useState<Edicao | null>(null);
   const [erroEdicao, setErroEdicao] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
-  const [confirmarEnvio, setConfirmarEnvio] = useState(false);
+  // Envio em duas etapas (spec timesheet-assinatura, regra 7): revisar os dias úteis vazios e confirmar; depois assinar.
+  const [etapaEnvio, setEtapaEnvio] = useState<"revisao" | "assinatura" | null>(null);
+  const [revisado, setRevisado] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -102,22 +106,22 @@ export function FolhaTimesheetFornecedor() {
     await carregar();
   }
 
-  async function enviar() {
+  async function enviar(assinatura: EntradaAssinatura) {
     if (!folha) return;
     setSalvando(true);
     setErroEnvio(null);
     const res = await fetch("/api/colaborador/timesheet/enviar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ciclo: folha.ciclo }),
+      body: JSON.stringify({ ciclo: folha.ciclo, assinatura }),
     });
     setSalvando(false);
     if (!res.ok) {
       setErroEnvio(await erroDaApi(res, "Não foi possível enviar a folha."));
       return;
     }
-    setConfirmarEnvio(false);
-    setToast("Folha enviada para a medição.");
+    setEtapaEnvio(null);
+    setToast("Folha assinada e enviada. Se precisar corrigir, fale com a equipe de medição.");
     await carregar();
   }
 
@@ -133,6 +137,8 @@ export function FolhaTimesheetFornecedor() {
 
   const enviada = folha.status === "ENVIADA";
   const preenchidos = folha.dias.filter((d) => !vazio(d)).length;
+  // Sábado, domingo e feriado podem ficar vazios; só dia útil sem lançamento entra no aviso.
+  const uteisVazios = folha.dias.filter((d) => d.tipo === "UTIL" && !d.lancado);
   const cab = folha.cabecalho;
   const infos = [
     ["Contrato", cab.contratoNumero ?? cab.contratoNome],
@@ -153,7 +159,7 @@ export function FolhaTimesheetFornecedor() {
             </h2>
             <p className="mt-1 text-[12px] text-[var(--muted-foreground)]">
               {enviada
-                ? "Folha enviada. Para corrigir algum dia, peça à equipe de medição para reabrir."
+                ? "Folha assinada e enviada. Para corrigir algum dia, entre em contato com a equipe de medição."
                 : folha.liberacao === "CICLO"
                   ? "Todos os dias do ciclo estão liberados para preenchimento."
                   : "Você pode preencher o dia de hoje e os dias anteriores do ciclo."}
@@ -175,11 +181,12 @@ export function FolhaTimesheetFornecedor() {
 
       <TotaisTimesheet totais={folha.totais} />
       <TabelaDiasTimesheet dias={folha.dias} enviada={enviada} onEditar={abrir} />
+      <AssinaturasTimesheet assinaturas={folha.assinaturas} />
 
       {!enviada && (
         <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
           <p className="text-[12px] text-[var(--muted-foreground)] sm:mr-auto">{preenchidos} de {folha.dias.length} dias preenchidos.</p>
-          <Button className="h-10" disabled={preenchidos === 0} onClick={() => { setErroEnvio(null); setConfirmarEnvio(true); }}>
+          <Button className="h-10" disabled={preenchidos === 0} onClick={() => { setErroEnvio(null); setRevisado(false); setEtapaEnvio("revisao"); }}>
             <Send size={15} aria-hidden />
             Enviar folha
           </Button>
@@ -223,30 +230,66 @@ export function FolhaTimesheetFornecedor() {
             <Field label="Solicitante"><Input maxLength={200} value={edicao.solicitante} onChange={(e) => setEdicao({ ...edicao, solicitante: e.target.value })} /></Field>
           </PortalDialog>
         )}
-        {confirmarEnvio && (
+        {etapaEnvio === "revisao" && (
           <PortalDialog
-            key="enviar-folha"
+            key="revisar-folha"
             role="alertdialog"
-            titulo="Enviar folha"
-            descricao="Depois de enviada, a folha fica só para leitura. Para corrigir, a equipe de medição precisa reabrir."
-            busy={salvando}
-            onClose={() => setConfirmarEnvio(false)}
+            titulo="Revisar a folha antes de enviar"
+            descricao="Confira os lançamentos. Depois de enviada, a folha fica só para leitura."
+            busy={false}
+            onClose={() => setEtapaEnvio(null)}
             footer={
               <>
-                <Button variant="secondary" className="h-10 w-full sm:w-auto" onClick={() => setConfirmarEnvio(false)} disabled={salvando} autoFocus>Cancelar</Button>
-                <Button className="h-10 w-full sm:w-auto" onClick={() => void enviar()} disabled={salvando} aria-busy={salvando}>
-                  <Send size={15} aria-hidden />
-                  {salvando ? "Enviando..." : "Enviar folha"}
+                <Button variant="secondary" className="h-10 w-full sm:w-auto" onClick={() => setEtapaEnvio(null)} autoFocus>Voltar e corrigir</Button>
+                <Button className="h-10 w-full sm:w-auto" onClick={() => { setErroEnvio(null); setEtapaEnvio("assinatura"); }} disabled={!revisado}>
+                  Continuar para a assinatura
+                  <ArrowRight size={15} aria-hidden />
                 </Button>
               </>
             }
           >
-            <ErroDialogo erro={erroEnvio} />
-            <p className="text-[13px] text-[var(--foreground)]">
-              {preenchidos} de {folha.dias.length} dias preenchidos · total de <strong className="tabular-nums">{formatarDuracao(folha.totais.total)}</strong> horas
-              {" "}(normal {formatarDuracao(folha.totais.hn)}, HE 50% {formatarDuracao(folha.totais.he50)}, HE 100% {formatarDuracao(folha.totais.he100)}).
-            </p>
+            <Resumo>
+              <LinhaResumo rotulo="Fornecedor" valor={folha.fornecedor.nome} />
+              <LinhaResumo rotulo="Ciclo" valor={`${folha.ciclo} · ${formatarData(folha.periodo.inicio)} a ${formatarData(folha.periodo.fim)}`} />
+              <LinhaResumo rotulo="Dias preenchidos" valor={`${preenchidos} de ${folha.dias.length}`} />
+              <LinhaResumo rotulo="Normal · HE 50% · HE 100%" valor={`${formatarDuracao(folha.totais.hn)} · ${formatarDuracao(folha.totais.he50)} · ${formatarDuracao(folha.totais.he100)}`} />
+              <LinhaResumo rotulo="Total de horas" valor={formatarDuracao(folha.totais.total)} forte />
+            </Resumo>
+            {uteisVazios.length > 0 ? (
+              <div role="alert" className="grid gap-1.5 rounded-lg border border-[var(--warning)]/35 bg-[var(--warning-soft)] px-3 py-2.5 text-[13px] text-[var(--warning)]" data-testid="timesheet-uteis-vazios">
+                <p className="flex items-start gap-2 font-semibold">
+                  <AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden />
+                  {uteisVazios.length === 1 ? "1 dia útil está sem lançamento:" : `${uteisVazios.length} dias úteis estão sem lançamento:`}
+                </p>
+                <p className="pl-6 tabular-nums">{uteisVazios.map((d) => `${rotuloDia(d).curto} (${rotuloDia(d).semana})`).join(", ")}</p>
+              </div>
+            ) : (
+              <p className="text-[13px] text-[var(--muted-foreground)]">Todos os dias úteis do ciclo têm lançamento. Sábados, domingos e feriados podem ficar vazios.</p>
+            )}
+            <label className="flex items-start gap-2.5 text-[13px] font-medium text-[var(--foreground)]">
+              <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--primary)]" checked={revisado} onChange={(e) => setRevisado(e.target.checked)} />
+              {uteisVazios.length > 0 ? "Revisei a folha e confirmo os lançamentos, mesmo com os dias úteis vazios acima." : "Revisei a folha e confirmo os lançamentos."}
+            </label>
           </PortalDialog>
+        )}
+        {etapaEnvio === "assinatura" && (
+          <DialogoAssinatura
+            key="assinar-folha"
+            titulo="Assinar e enviar a folha"
+            descricao="Depois de enviada, a folha fica só para leitura. Se precisar corrigir algum dia, entre em contato com a equipe de medição."
+            nomePadrao={folha.fornecedor.nome}
+            resumo={
+              <Resumo>
+                <LinhaResumo rotulo="Ciclo" valor={folha.ciclo} />
+                <LinhaResumo rotulo="Total de horas" valor={formatarDuracao(folha.totais.total)} forte />
+              </Resumo>
+            }
+            rotuloConfirmar="Assinar e enviar"
+            ocupado={salvando}
+            erro={erroEnvio}
+            onCancelar={() => setEtapaEnvio(null)}
+            onConfirmar={(assinatura) => void enviar(assinatura)}
+          />
         )}
       </AnimatePresence>
       <Toast mensagem={toast} />

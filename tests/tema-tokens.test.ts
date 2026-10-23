@@ -65,8 +65,10 @@ function fontes(dir: string): string[] {
   });
 }
 
-// Exceções com motivo: o boletim e a folha de timesheet para impressão replicam a planilha impressa (papel branco nos dois temas); o ícone da sidebar fica sobre fundo sempre escuro.
+// Exceções com motivo: o boletim e a folha de timesheet para impressão replicam a planilha impressa (papel branco nos dois temas); o ícone da sidebar fica sobre fundo sempre escuro;
+// o quadro e a imagem da assinatura são papel branco nos dois temas, para o traço escuro sair igual no PDF.
 const EXCECOES_COR: Record<string, RegExp> = {
+  "components/timesheet/assinatura.tsx": /bg-white/,
   "components/boletim-medicao.tsx": /.*/,
   "app/timesheet/imprimir/[profissionalId]/page.tsx": /.*/,
   "components/app-shell.tsx": /text-\[#ef8d8d\]/,

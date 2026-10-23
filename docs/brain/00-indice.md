@@ -41,6 +41,7 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [011 Nome do fornecedor só pelo Administrativo](decisoes/011-nome-do-fornecedor-so-pelo-administrativo.md): o nome é o elo com o cadastro; o fornecedor não o altera
 - [012 P0 como ID do fornecedor](decisoes/012-p0-como-id-do-fornecedor.md): login = código do Profissional = código do cadastro; código antigo vira alias
 - [013 Servidor único é a produção](decisoes/013-servidor-unico-e-producao.md): 192.168.15.101:3020 é a produção; "pré-produção" nas notas antigas é ela
+- [014 Assinatura eletrônica própria](decisoes/014-assinatura-eletronica-propria.md): a folha de timesheet é assinada na plataforma (senha, hash, código), não pelo gov.br, provedor ou ICP-Brasil
 
 ## Specs
 - [P1 escopo do fornecedor por identidade](specs/p1-escopo-fornecedor-por-identidade.md): lista de aliases do portal só com valores que resolvem para o próprio Profissional (implementada)
@@ -57,5 +58,6 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [Timesheet: ciclo publicado próprio](specs/timesheet-ciclo-publicado.md): a medição publica o ciclo do timesheet separado do ciclo do portal, para o preenchimento não começar atrasado (implementada, não implantada)
 - [Cadastro de contratos](specs/contratos-cadastro.md): aba Contratos no Administrativo (nº, nome, gestor, fiscal, vigência e valor), só inativação, auditoria (implementada, não implantada)
 - [Timesheet: aprovação pelo fiscal](specs/timesheet-aprovacao-fiscal.md): perfil FISCAL (P0, aba Fiscais), fiscal no contrato, aprovação/reprovação por dia em lote, tela própria e brechas de "não é COLABORADOR" fechadas; spec e plano juntos (implementada, não implantada)
+- [Timesheet: assinatura eletrônica](specs/timesheet-assinatura.md): fiscal e colaborador assinam a folha na plataforma (desenho ou nome digitado, senha, hash, código), revisão dos dias úteis vazios antes do envio; spec e plano juntos (implementada, não implantada)
 - [Fiscal: cadastro e acesso ao portal](specs/fiscal-cadastro-acesso.md): telefone, empresa, cargo e matrícula, edição auditada sem valores e seção "Acesso ao portal" com Redefinir senha (ADMIN); spec e plano juntos (implementada, não implantada)
 - [Plano do M4 portal do fornecedor](specs/layout-tema-motion-m4-plano.md): Minhas Medições e NF → diálogos → ação principal em destaque → motion expressivo → chat (concluído)

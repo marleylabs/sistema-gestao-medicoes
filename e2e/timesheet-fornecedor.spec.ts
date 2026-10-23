@@ -138,11 +138,36 @@ test.describe.serial("Timesheet ATO no portal do fornecedor", () => {
     await expect(dialogo.getByRole("alert")).toContainText("A saída da manhã deve ser depois da entrada.");
     await dialogo.getByRole("button", { name: "Cancelar" }).click();
 
+    // Revisão (spec timesheet-assinatura, regra 7): lista os dias úteis vazios e só continua depois da confirmação.
     await page.getByRole("button", { name: "Enviar folha" }).click();
-    const confirmar = page.getByRole("alertdialog", { name: "Enviar folha" });
-    await expect(confirmar).toContainText("2 de");
-    await confirmar.getByRole("button", { name: "Enviar folha" }).click();
-    await expect(confirmar).toBeHidden();
+    const revisar = page.getByRole("alertdialog", { name: "Revisar a folha antes de enviar" });
+    await expect(revisar).toContainText("2 de");
+    const uteisVazios = dados.dias.filter((d) => d.tipo === "UTIL").length - 2;
+    await expect(revisar.getByTestId("timesheet-uteis-vazios")).toContainText(`${uteisVazios} dias úteis estão sem lançamento`);
+    const continuar = revisar.getByRole("button", { name: "Continuar para a assinatura" });
+    await expect(continuar).toBeDisabled();
+    await revisar.getByRole("checkbox", { name: /Revisei a folha/ }).check();
+    await continuar.click();
+
+    // Assinatura desenhada com o mouse + senha; envio e assinatura são um só ato.
+    const assinar = page.getByRole("dialog", { name: "Assinar e enviar a folha" });
+    await expect(assinar).toContainText("entre em contato com a equipe de medição");
+    const confirmar = assinar.getByRole("button", { name: "Assinar e enviar" });
+    await expect(confirmar).toBeDisabled();
+    const quadro = await assinar.getByTestId("assinatura-quadro").boundingBox();
+    await page.mouse.move(quadro!.x + 40, quadro!.y + quadro!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(quadro!.x + 120, quadro!.y + 30, { steps: 5 });
+    await page.mouse.move(quadro!.x + 220, quadro!.y + quadro!.height - 30, { steps: 5 });
+    await page.mouse.up();
+    await assinar.getByLabel("Sua senha").fill("senha-errada");
+    await confirmar.click();
+    await expect(assinar.getByRole("alert")).toContainText("Senha incorreta.");
+    await assinar.getByLabel("Sua senha").fill(SENHA);
+    await confirmar.click();
+    await expect(assinar).toBeHidden();
+    await expect(page.getByTestId("timesheet-assinatura-colaborador")).toContainText(ATO.nome);
+    await expect(page.getByTestId("timesheet-assinatura-colaborador")).toContainText(/código TS-[A-Z2-9]{4}-[A-Z2-9]{4}/);
 
     const folha = page.getByTestId("timesheet-fornecedor");
     await expect(folha.getByText("Enviada", { exact: true })).toBeVisible();

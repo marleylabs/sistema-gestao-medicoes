@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test, { after, before } from "node:test";
 import { prismaTest as db, assertConnectedToE2eDatabase } from "../lib/prisma-test";
+import { assinaturaDeTeste } from "./support/assinatura-png";
 
 // T3 do Timesheet ATO (docs/brain/specs/timesheet-ato-plano.md): folha no banco de teste.
 // Ciclo 3905 (21/04/2039 a 20/05/2039) para não colidir com dados de outros testes; tem 21/04 e 01/05.
@@ -11,6 +12,8 @@ const ator = { id: "00000000-0000-4000-8000-0000000000a1", usuario: `TESTE-${suf
 const FERIADO_MANUAL = "2039-05-13";
 
 type Lib = typeof import("../lib/timesheet");
+type Ass = typeof import("../lib/timesheet-assinatura");
+let ass: Ass;
 let ts: Lib;
 const ids: Record<"ato" | "outroAto" | "semStatus" | "habilitadoManual" | "desabilitado" | "excluido", string> = {
   ato: "", outroAto: "", semStatus: "", habilitadoManual: "", desabilitado: "", excluido: "",
@@ -30,6 +33,7 @@ before(async () => {
     return request === "server-only" ? {} : originalLoad.call(this, request, ...args);
   };
   ts = await import("../lib/timesheet");
+  ass = await import("../lib/timesheet-assinatura");
   ids.ato = await criarProfissional("ATO", "ATO");
   ids.outroAto = await criarProfissional("OUTRO", "ATO");
   ids.semStatus = await criarProfissional("SEMSTATUS", null);
@@ -163,25 +167,25 @@ test("feriado cadastrado pela medição vira HE 100% no cálculo", async () => {
 
 test("ciclo fora do andamento: o fornecedor não lança nem envia num ciclo passado", async () => {
   await rejeita(ts.salvarDia({ profissionalId: ids.ato, ciclo: CICLO, dia: dia("2039-04-22"), ator, hoje: HOJE, cicloAtivo: "3906" }), 403, /ciclo em andamento/);
-  await rejeita(ts.enviarFolha({ profissionalId: ids.ato, ciclo: CICLO, ator, cicloAtivo: "3906" }), 403, /ciclo em andamento/);
+  await rejeita(ass.enviarFolha({ profissionalId: ids.ato, ciclo: CICLO, ator, cicloAtivo: "3906", assinatura: assinaturaDeTeste() }), 403, /ciclo em andamento/);
   // Sem injeção, vale o ciclo ativo real do banco, que nunca é 3905.
   await rejeita(ts.salvarDia({ profissionalId: ids.ato, ciclo: CICLO, dia: dia("2039-04-22"), ator, hoje: HOJE }), 403);
 });
 
 test("envio: dia salvo em branco não conta como preenchido", async () => {
   await ts.salvarDia({ profissionalId: ids.outroAto, ciclo: CICLO, dia: { data: "2039-04-22" }, ator, hoje: HOJE, cicloAtivo: CICLO });
-  await rejeita(ts.enviarFolha({ profissionalId: ids.outroAto, ciclo: CICLO, ator, cicloAtivo: CICLO }), 400, /ao menos um dia/);
+  await rejeita(ass.enviarFolha({ profissionalId: ids.outroAto, ciclo: CICLO, ator, cicloAtivo: CICLO, assinatura: assinaturaDeTeste() }), 400, /ao menos um dia/);
 });
 
 test("envio: folha vazia não envia; enviada trava a gravação e não reenvia", async () => {
-  await rejeita(ts.enviarFolha({ profissionalId: ids.outroAto, ciclo: CICLO, ator, cicloAtivo: CICLO }), 400, /ao menos um dia/);
-  await ts.enviarFolha({ profissionalId: ids.ato, ciclo: CICLO, ator, cicloAtivo: CICLO });
+  await rejeita(ass.enviarFolha({ profissionalId: ids.outroAto, ciclo: CICLO, ator, cicloAtivo: CICLO, assinatura: assinaturaDeTeste() }), 400, /ao menos um dia/);
+  await ass.enviarFolha({ profissionalId: ids.ato, ciclo: CICLO, ator, cicloAtivo: CICLO, assinatura: assinaturaDeTeste() });
   const folha = await ts.carregarFolha(ids.ato, CICLO, HOJE);
   assert.equal(folha.status, "ENVIADA");
   assert.ok(folha.enviadaEm);
   assert.ok(folha.dias.every((d) => !d.editavel));
   await rejeita(salvar(ids.ato, dia("2039-04-22")), 409);
-  await rejeita(ts.enviarFolha({ profissionalId: ids.ato, ciclo: CICLO, ator, cicloAtivo: CICLO }), 409);
+  await rejeita(ass.enviarFolha({ profissionalId: ids.ato, ciclo: CICLO, ator, cicloAtivo: CICLO, assinatura: assinaturaDeTeste() }), 409);
   assert.equal(await db.adminAuditLog.count({ where: { adminUsuario: ator.usuario, action: "TIMESHEET_ENVIADA" } }), 1);
 });
 

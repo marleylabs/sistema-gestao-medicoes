@@ -73,6 +73,9 @@ export const test = base.extend<{ forEachTest: void }>({
         // 400 de PUT /api/colaborador/timesheet/dia é o retorno CORRETO para horários em ordem
         // inválida — erro exibido no diálogo do dia, intencional em e2e/timesheet-fornecedor.spec.ts.
         if (url.endsWith("/api/colaborador/timesheet/dia") && response.status() === 400) return;
+        // 400 de POST /api/colaborador/timesheet/enviar é o retorno CORRETO para senha errada na assinatura —
+        // erro exibido no diálogo, intencional em e2e/timesheet-fornecedor.spec.ts.
+        if (url.endsWith("/api/colaborador/timesheet/enviar") && response.status() === 400) return;
         // 400 de POST /api/admin/contratos é o retorno CORRETO para término antes do início — erro
         // exibido no painel, intencional em e2e/contratos-administrativo.spec.ts.
         if (url.endsWith("/api/admin/contratos") && response.status() === 400) return;

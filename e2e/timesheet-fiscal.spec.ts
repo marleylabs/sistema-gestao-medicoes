@@ -111,6 +111,19 @@ test.describe.serial("Aprovação das horas pelo fiscal", () => {
     // As 8 h do dia reprovado saem do total (3 dias de 8 h → 16 h).
     await expect(page.getByTestId("timesheet-total-total")).toHaveText("16:00");
 
+    // Assinatura do fiscal (spec timesheet-assinatura): a qualquer momento, aqui com a folha ainda aberta; nome digitado.
+    await folha.getByRole("button", { name: "Assinar folha" }).click();
+    const assinar = page.getByRole("dialog", { name: "Assinar a folha" });
+    await assinar.getByRole("tab", { name: "Digitar nome" }).click();
+    await expect(assinar.getByLabel("Nome para a assinatura")).toHaveValue(FISCAL.nome);
+    await assinar.getByLabel("Sua senha").fill(SENHA);
+    await assinar.getByRole("button", { name: "Assinar folha" }).click();
+    await expect(assinar).toBeHidden();
+    const cartao = folha.getByTestId("timesheet-assinatura-fiscal");
+    await expect(cartao).toContainText(FISCAL.nome);
+    await expect(cartao.getByRole("img", { name: `Assinatura de ${FISCAL.nome}` })).toBeVisible();
+    await expect(cartao.getByRole("button", { name: "Revogar assinatura" })).toBeVisible();
+
     // O fiscal não usa as rotas da medição.
     expect((await page.request.get(`/api/admin/timesheet?ciclo=${ciclo}`)).status()).toBe(403);
   });
@@ -128,6 +141,17 @@ test.describe.serial("Aprovação das horas pelo fiscal", () => {
     await expect(gaveta.getByRole("button", { name: "Aprovar" })).toHaveCount(0);
     expect((await page.request.post(`/api/fiscal/timesheet/x/decisao`, { data: {} })).status()).toBe(403);
 
+    // A gaveta mostra a assinatura do fiscal; a medição confere o código no painel, com o IP.
+    const codigo = (await gaveta.getByTestId("timesheet-assinatura-fiscal").textContent())?.match(/TS-[A-Z2-9]{4}-[A-Z2-9]{4}/)?.[0];
+    expect(codigo).toBeTruthy();
+    await gaveta.getByRole("button", { name: "Fechar" }).first().click();
+    const verificar = page.getByTestId("verificar-assinatura");
+    await verificar.getByLabel("Verificar código de assinatura").fill(codigo!.toLowerCase());
+    await verificar.getByRole("button", { name: "Verificar" }).click();
+    await expect(verificar).toContainText("Válida");
+    await expect(verificar).toContainText(`${FISCAL.nome} (fiscal)`);
+    await expect(verificar).toContainText("Igual ao assinado");
+
     // As exportações levam a coluna "Aprovação" (PDF pela página de impressão; XLSX na coluna M).
     const { id: profissionalId } = await prisma.profissional.findUniqueOrThrow({ where: { codigo: ATO.usuario }, select: { id: true } });
     await page.goto(`/timesheet/imprimir/${profissionalId}?ciclo=${ciclo}`);
@@ -135,6 +159,13 @@ test.describe.serial("Aprovação das horas pelo fiscal", () => {
     await expect(page.getByTestId(`timesheet-impressao-aprovacao-${dias[0]}`)).toHaveText("Aprovado");
     await expect(page.getByTestId(`timesheet-impressao-aprovacao-${dias[2]}`)).toHaveText("Reprovado");
     await expect(page.getByTestId("timesheet-impressao-total")).toContainText("16:00");
+    const assinaturaPdf = page.getByTestId("timesheet-impressao-assinatura-fiscal");
+    await expect(assinaturaPdf.getByRole("img", { name: `Assinatura de ${FISCAL.nome}` })).toBeVisible();
+    await expect(assinaturaPdf).toContainText(`assinado eletronicamente em`);
+    await expect(assinaturaPdf).toContainText(codigo!);
+    // A assinatura não pode empurrar a folha para uma segunda página A4.
+    const pdf = await page.pdf({ preferCSSPageSize: true });
+    expect((pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBe(1);
     await expect(page.getByTestId("timesheet-impressao-motivos")).toContainText(`Reprovado em ${dataBr(dias[2]).slice(0, 5)}: Horário diferente da portaria`);
     const xlsx = await page.request.get(`/api/admin/timesheet/${profissionalId}/xlsx?ciclo=${ciclo}`);
     expect(xlsx.status()).toBe(200);
@@ -149,6 +180,9 @@ test.describe.serial("Aprovação das horas pelo fiscal", () => {
     expect(folha.dias.find((d) => d.data === dias[2])?.aprovacao).toBeNull();
     expect(folha.totais.total, "corrigido (7 h), o dia volta ao total").toBe((8 + 8 + 7) * 60);
     expect(folha.dias.find((d) => d.data === dias[0])?.aprovacao).toBe("APROVADO");
+    // A assinatura do fiscal continua, mas a folha mudou depois dela.
+    const comAssinatura = await (await fornecedor.get("/api/colaborador/timesheet")).json() as { assinaturas: { fiscal: { alterada: boolean } | null } };
+    expect(comAssinatura.assinaturas.fiscal?.alterada).toBe(true);
   });
 
   test("Administrativo cadastra um fiscal e envia o primeiro acesso", async ({ page }) => {

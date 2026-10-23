@@ -119,7 +119,14 @@ export async function reabrirFolha(input: { profissionalId: string; ciclo: unkno
       data: { status: "ABERTA", reabertaAt: new Date(), reabertaPorId: input.ator.id },
     });
     if (reaberta.count === 0) throw new TimesheetError("A folha não está enviada.", 409);
-    await tx.adminAuditLog.create({ data: auditoria(input.ator, "TIMESHEET_REABERTA", folha.id, folha.profissional.codigo, { ciclo }) });
+    // A assinatura do colaborador valia para aquele envio; o próximo pede outra. A do fiscal continua (spec timesheet-assinatura).
+    const encerradas = await tx.timesheetAssinatura.updateMany({
+      where: { folhaId: folha.id, papel: "COLABORADOR", encerradaEm: null },
+      data: { encerradaEm: new Date(), encerradaPorId: input.ator.id, encerramento: "REABERTURA" },
+    });
+    await tx.adminAuditLog.create({
+      data: auditoria(input.ator, "TIMESHEET_REABERTA", folha.id, folha.profissional.codigo, { ciclo, assinaturaColaboradorEncerrada: encerradas.count > 0 }),
+    });
   });
 }
 

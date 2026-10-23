@@ -3,7 +3,8 @@ import Image from "next/image";
 import { notFound, redirect } from "next/navigation";
 import clsx from "clsx";
 import { getCurrentUser } from "@/lib/auth";
-import { carregarFolha, hojeSaoPaulo, TimesheetError } from "@/lib/timesheet";
+import { carregarFolha, hojeSaoPaulo, TimesheetError, type FolhaTimesheet } from "@/lib/timesheet";
+import { dataHoraAssinatura } from "@/lib/timesheet-assinatura-texto";
 import { formatarData, formatarDuracao } from "@/lib/timesheet-calculo";
 import { CONTRATADA, textoAprovacao } from "@/lib/timesheet-export";
 import { exigirUuid, registrarExportacao } from "@/lib/timesheet-medicao";
@@ -34,12 +35,21 @@ function Campo({ rotulo, valor, className }: { rotulo: string; valor: string | n
   );
 }
 
-function Assinatura({ papel, nome, data }: { papel: string; nome: string; data: string }) {
+/** Sem assinatura: linha em branco com a data da exportação. Assinada: o PNG acima da linha e a trilha (spec timesheet-assinatura). */
+function Assinatura({ papel, nome, data, assinatura, testId }: {
+  papel: string; nome: string; data: string; assinatura: FolhaTimesheet["assinaturas"]["fiscal"]; testId: string;
+}) {
   return (
-    <div className="grid gap-0.5">
-      <div className="mb-1 h-6 border-b border-slate-400" />
-      <p className="text-[8.5px] font-semibold text-slate-900">{nome || "—"}</p>
-      <p className="text-[7px] text-slate-500">{papel} · em {data}</p>
+    <div className="grid gap-0.5" data-testid={testId}>
+      <div className="mb-1 flex h-9 items-end border-b border-slate-400">
+        {/* PNG da própria assinatura em data URL: sem otimização de imagem a fazer. */}
+        {assinatura && <img src={assinatura.imagem} alt={`Assinatura de ${assinatura.nome}`} className="h-9 w-auto max-w-full object-contain" />}
+      </div>
+      <p className="text-[8.5px] font-semibold text-slate-900">{assinatura?.nome ?? (nome || "—")}</p>
+      <p className="text-[7px] text-slate-500">
+        {papel} · {assinatura ? `assinado eletronicamente em ${dataHoraAssinatura(assinatura.assinadoEm)} · código ${assinatura.codigo}` : `em ${data}`}
+      </p>
+      {assinatura?.alterada && <p className="text-[6.5px] font-semibold text-red-700">Folha alterada após a assinatura.</p>}
     </div>
   );
 }
@@ -216,8 +226,8 @@ export default async function ImprimirTimesheet({
 
         {/* Assinaturas e observações */}
         <section className="grid grid-cols-2 gap-10 pt-1">
-          <Assinatura papel="Colaborador" nome={folha.fornecedor.nome} data={hoje} />
-          <Assinatura papel="Visto fiscalização da VALE" nome={cab.fiscal ?? ""} data={hoje} />
+          <Assinatura papel="Colaborador" nome={folha.fornecedor.nome} data={hoje} assinatura={folha.assinaturas.colaborador} testId="timesheet-impressao-assinatura-colaborador" />
+          <Assinatura papel="Visto fiscalização da VALE" nome={cab.fiscal ?? ""} data={hoje} assinatura={folha.assinaturas.fiscal} testId="timesheet-impressao-assinatura-fiscal" />
         </section>
         <section className="rounded-md border border-slate-200 px-2.5 py-1.5">
           <p className="text-[6px] font-semibold uppercase tracking-[0.12em] text-slate-500">Observações</p>

@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import test, { after, before } from "node:test";
 import { prismaTest as db, assertConnectedToE2eDatabase } from "../lib/prisma-test";
+import { assinaturaDeTeste } from "./support/assinatura-png";
+import { dataAssinatura } from "../lib/timesheet-assinatura-texto";
 
 // Fase C do Timesheet ATO (docs/brain/specs/timesheet-ato-plano.md, T5–T7): lado da medição.
 // Ciclo 3906 (21/05/2039 a 20/06/2039), separado do 3905 de tests/timesheet.test.ts.
@@ -14,6 +16,8 @@ const FERIADO = "2039-06-08"; // quarta
 const FERIADO2 = "2039-06-09";
 
 type Lib = typeof import("../lib/timesheet");
+type Ass = typeof import("../lib/timesheet-assinatura");
+let ass: Ass;
 type Med = typeof import("../lib/timesheet-medicao");
 let ts: Lib;
 let med: Med;
@@ -33,6 +37,7 @@ before(async () => {
     return request === "server-only" ? {} : originalLoad.call(this, request, ...args);
   };
   ts = await import("../lib/timesheet");
+  ass = await import("../lib/timesheet-assinatura");
   med = await import("../lib/timesheet-medicao");
   ids.ato = await criarProfissional("ATO", "ATO");
   ids.preenchendo = await criarProfissional("PREENCHE", "ATO");
@@ -102,11 +107,11 @@ test("a medição lê a folha de quem foi desabilitado depois de preencher; o fo
 test("reabrir: só folha enviada; depois o fornecedor volta a gravar e reenviar", async () => {
   await rejeita(med.reabrirFolha({ profissionalId: ids.preenchendo, ciclo: CICLO, ator }), 409);
   await rejeita(med.reabrirFolha({ profissionalId: ids.ato, ciclo: CICLO, ator }), 404);
-  await ts.enviarFolha({ profissionalId: ids.preenchendo, ciclo: CICLO, ator, cicloAtivo: CICLO });
+  await ass.enviarFolha({ profissionalId: ids.preenchendo, ciclo: CICLO, ator, cicloAtivo: CICLO, assinatura: assinaturaDeTeste() });
   assert.equal((await minhas()).get(ids.preenchendo)?.status, "ENVIADA");
   await med.reabrirFolha({ profissionalId: ids.preenchendo, ciclo: CICLO, ator });
   await salvar(ids.preenchendo, "2039-05-25");
-  await ts.enviarFolha({ profissionalId: ids.preenchendo, ciclo: CICLO, ator, cicloAtivo: CICLO });
+  await ass.enviarFolha({ profissionalId: ids.preenchendo, ciclo: CICLO, ator, cicloAtivo: CICLO, assinatura: assinaturaDeTeste() });
   const historico = await med.historicoDaFolha(ids.preenchendo, CICLO);
   assert.deepEqual(historico.slice(0, 4).map((h) => h.acao), ["TIMESHEET_ENVIADA", "TIMESHEET_DIA_SALVO", "TIMESHEET_REABERTA", "TIMESHEET_ENVIADA"]);
   assert.equal(historico[1].data, "2039-05-25");
@@ -178,10 +183,14 @@ test("exportação XLSX: preenche o modelo oficial (cabeçalho, dias, total, ass
   assert.ok(entradas.has("xl/richData/rdrichvalue.xml") && entradas.has("xl/media/image1.png"));
   assert.match(entradas.get("xl/workbook.xml")!.toString("utf8"), /<sheets><sheet name="timesheet"[^>]*\/><\/sheets>/);
   assert.deepEqual(
-    ["K4", "M3", "J6", "A7", "J7", "M7", "M8", "A9", "B46", "K46"].map(celula),
-    ["5900128908", "Doc. N.º: ", "Nº da SE: SE-7", folha.fornecedor.nome, "Função: Engenheiro Sênior", "21/05/2039 a 20/06/2039", "Item da PQ:  100", "MINA DO SALOBO", folha.fornecedor.nome, "Visto fiscalização da VALE:  Fiscal Teste"],
+    ["K4", "M3", "J6", "A7", "J7", "M7", "M8", "A9", "K46"].map(celula),
+    ["5900128908", "Doc. N.º: ", "Nº da SE: SE-7", folha.fornecedor.nome, "Função: Engenheiro Sênior", "21/05/2039 a 20/06/2039", "Item da PQ:  100", "MINA DO SALOBO", "Visto fiscalização da VALE:  Fiscal Teste"],
   );
-  assert.deepEqual(["M2", "J48", "N48"].map(celula), Array(3).fill(serial("2039-06-25")), "data da exportação");
+  // A folha foi enviada (e assinada) no teste de reabertura: B46 traz quem assinou, a hora e o código; J48, a data da assinatura.
+  const colab = folha.assinaturas.colaborador!;
+  assert.match(celula("B46"), new RegExp(`^${ator.nome} · assinado eletronicamente às \\d{2}:\\d{2} · código ${colab.codigo}$`));
+  assert.deepEqual(["M2", "N48"].map(celula), Array(2).fill(serial("2039-06-25")), "data da exportação");
+  assert.equal(celula("J48"), serial(dataAssinatura(colab.assinadoEm)), "data da assinatura do colaborador");
   assert.equal(celula("K1"), "", "sem GAXLY");
 
   // 23/05/2039 (segunda) na 3ª linha de dias: 08–12 e 13–20 → 8h normais + 3h HE 50%.

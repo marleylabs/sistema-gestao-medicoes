@@ -7,6 +7,7 @@ import { Aba, Badge, Button, Carregando, Field, Input, Select } from "@/componen
 import { AdminSidePanel, DataItem, PanelSection } from "@/components/administrativo/admin-side-panel";
 import { ErroDialogo, PortalDialog } from "@/components/portal-fornecedor";
 import { TabelaDiasTimesheet, TotaisTimesheet, erroDaApi } from "@/components/timesheet/folha-timesheet";
+import { AssinaturasTimesheet } from "@/components/timesheet/assinatura";
 import { formatarData } from "@/lib/timesheet-calculo";
 import type { FolhaTimesheet } from "@/lib/timesheet";
 
@@ -27,6 +28,8 @@ const ACOES: Record<string, string> = {
   TIMESHEET_EXPORTADA: "Folha exportada",
   TIMESHEET_DIAS_APROVADOS: "Dias aprovados pelo fiscal",
   TIMESHEET_DIAS_REPROVADOS: "Dias reprovados pelo fiscal",
+  TIMESHEET_ASSINADA: "Folha assinada pelo fiscal",
+  TIMESHEET_ASSINATURA_REVOGADA: "Assinatura do fiscal revogada",
 };
 // Mesmo visual do Button "secondary" (components/ui.tsx), em <a> para download e nova aba.
 const LINK_ACAO = "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3.5 text-[12px] font-semibold text-[var(--foreground)] transition-all duration-150 hover:border-[var(--border-strong)] hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/30";
@@ -177,6 +180,7 @@ export function TimesheetDrawer({
           </p>
           <TotaisTimesheet totais={folha.totais} />
           <TabelaDiasTimesheet dias={folha.dias} enviada={enviada} />
+          <AssinaturasTimesheet assinaturas={folha.assinaturas} />
         </div>
       ) : aba === "historico" ? (
         <PanelSection title="Quem preencheu e quando">

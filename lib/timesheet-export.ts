@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createZip, readZipEntries } from "@/lib/xlsx";
 import { formatarData } from "@/lib/timesheet-calculo";
+import { dataAssinatura, dataHoraAssinatura } from "@/lib/timesheet-assinatura-texto";
 import type { FolhaTimesheet } from "@/lib/timesheet";
 
 /**
@@ -81,6 +82,9 @@ export function planilhaTimesheet(folha: FolhaTimesheet, hoje: string): Buffer {
   const original = entradas.get(PLANILHA);
   if (!original) throw new Error("Modelo do timesheet sem a planilha.");
   const c = folha.cabecalho;
+  const { colaborador: col, fiscal: fis } = folha.assinaturas;
+  const trilha = (a: { assinadoEm: string; codigo: string; alterada: boolean }) =>
+    `às ${dataHoraAssinatura(a.assinadoEm).slice(11)} · código ${a.codigo}${a.alterada ? " · folha alterada após a assinatura" : ""}`;
   let xml = colunaAprovacao(original.toString("utf8"));
 
   const cabecalho: Array<[string, Valor | { rico: string }]> = [
@@ -94,10 +98,11 @@ export function planilhaTimesheet(folha: FolhaTimesheet, hoje: string): Buffer {
     ["M7", `${formatarData(folha.periodo.inicio)} a ${formatarData(folha.periodo.fim)}`],
     ["M8", `Item da PQ:  ${c.itemPq ?? ""}`],
     ["A9", c.area ?? null],
-    ["B46", folha.fornecedor.nome],
-    ["K46", `Visto fiscalização da VALE:  ${c.fiscal ?? ""}`],
-    ["J48", serialData(hoje)],
-    ["N48", serialData(hoje)],
+    // Assinada: o nome de quem assinou, a hora e o código (o XLSX não leva a imagem); a data é a da assinatura.
+    ["B46", col ? `${col.nome} · assinado eletronicamente ${trilha(col)}` : folha.fornecedor.nome],
+    ["K46", `Visto fiscalização da VALE:  ${fis ? `${fis.nome} · assinado eletronicamente ${trilha(fis)}` : (c.fiscal ?? "")}`],
+    ["J48", serialData(col ? dataAssinatura(col.assinadoEm) : hoje)],
+    ["N48", serialData(fis ? dataAssinatura(fis.assinadoEm) : hoje)],
   ];
   for (const [ref, valor] of cabecalho) xml = definir(xml, ref, valor);
 

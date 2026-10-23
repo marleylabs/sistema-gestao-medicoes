@@ -9,6 +9,7 @@ import { ErroDialogo, PortalDialog } from "@/components/portal-fornecedor";
 import { CicloPublicadoControl, type CicloPortalEntry } from "@/components/fornecedores/ciclo-publicado";
 import { TimesheetDrawer, type AbaDrawer, type Contrato } from "@/components/timesheet/timesheet-drawer";
 import { erroDaApi } from "@/components/timesheet/folha-timesheet";
+import { VerificarAssinatura } from "@/components/timesheet/assinatura";
 import { diasDoCiclo, formatarData, formatarDuracao } from "@/lib/timesheet-calculo";
 import { isCicloValido } from "@/lib/ciclo";
 import type { AcompanhamentoCiclo } from "@/lib/timesheet-medicao";
@@ -151,6 +152,7 @@ export function TimesheetWorkspace({ ciclos, ciclo, onCicloChange, onPublicarCic
               <ListaFolhas itens={filtradas} abertoId={aberto?.id ?? null} onAbrir={(f) => setAberto({ id: f.profissionalId, nome: f.nome, aba: "folha" })} />
             )}
           </Card>
+          <VerificarAssinatura endpoint="/api/admin/timesheet/verificar-assinatura" />
         </>
       ) : (
         <CalendarioFeriados

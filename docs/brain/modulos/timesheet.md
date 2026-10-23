@@ -20,11 +20,20 @@ tags: [modulo]
 - `lib/timesheet-medicao.ts`: lado da medição (lista do ciclo, histórico, reabertura, liberação, feriados manuais, configuração por fornecedor).
 - `components/timesheet/timesheet-workspace.tsx` e `timesheet-drawer.tsx`: seção "Timesheet" do painel (MEDICAO e ADMIN).
 - `lib/timesheet-fiscal.ts`, `app/api/fiscal/timesheet/`, `components/timesheet/fiscal-app.tsx`: aprovação das horas pelo fiscal do contrato ([spec](../specs/timesheet-aprovacao-fiscal.md)).
+- `lib/timesheet-assinatura.ts`, `lib/timesheet-assinatura-texto.ts` e `components/timesheet/assinatura.tsx`: assinatura eletrônica da folha pelo fiscal e pelo colaborador, e envio assinado ([spec](../specs/timesheet-assinatura.md), [decisão 014](../decisoes/014-assinatura-eletronica-propria.md)).
 - `lib/fiscais.ts`, `components/administrativo/fiscais.tsx`: cadastro do fiscal (telefone cifrado, empresa, cargo, matrícula), edição e "Acesso ao portal" ([spec](../specs/fiscal-cadastro-acesso.md)).
 
 **Regras e armadilhas:**
 - Aprovação por dia: `TimesheetDia.aprovacao` (null = pendente, `APROVADO`, `REPROVADO` com motivo obrigatório). Só o perfil FISCAL decide (`requireFiscal`), e só para fornecedores cujo contrato da configuração tem `fiscalId` = ele; fora do escopo é 404. Pode decidir com a folha aberta ou enviada, mas só dias lançados. `salvarDia` zera a decisão quando o dia muda (regravar igual mantém). Lote: várias datas por chamada, auditoria `TIMESHEET_DIAS_APROVADOS`/`_REPROVADOS` na mesma transação. Medição e fornecedor veem a coluna "Aprovação" só leitura; a lista da medição mostra as contagens.
 - Horas reprovadas pelo fiscal saem dos totais (HN, HE 50%, HE 100% e Total) da folha, da lista da medição, do XLSX e do PDF; a linha do dia continua mostrando o lançado (decisão do usuário em 2026-10-23). Aprovado e pendente contam. São dois cálculos: `carregarFolha` (`lib/timesheet.ts`) e `listarFolhasDoCiclo` (`lib/timesheet-medicao.ts`); mudou a regra, mude os dois. Corrigido pelo fornecedor, o dia volta a pendente e ao total.
+- Assinatura (spec timesheet-assinatura):
+  - **Colaborador:** o envio e a assinatura são um só ato (`enviarFolha` em `lib/timesheet-assinatura.ts`), e não há envio sem assinatura. Antes de assinar, ele revê a folha, com a lista dos dias úteis sem lançamento, e confirma.
+  - **Fiscal:** assina a qualquer momento, e a assinatura vale o ciclo todo. Só quem assinou revoga.
+  - **Reabertura:** encerra só a assinatura do colaborador.
+  - **Folha alterada depois:** a assinatura continua e aparece o aviso, pelo hash.
+  - **Unicidade:** uma assinatura ativa por folha e papel, garantida por um índice parcial que o Prisma não expressa (ver a migration).
+  - **IP:** nunca sai na folha; só a verificação interna o mostra.
+  - **Testes:** usam `tests/support/assinatura-png.ts`.
 - Habilitado = `TimesheetConfig.habilitado`, se a medição definiu; senão `Profissional.statusColaborador = 'ATO'`. Profissional excluído nunca é habilitado.
 - O fornecedor vem só de `getColaboradorEscopo(user.usuario)`. Quem não é habilitado recebe 404 antes de qualquer validação.
 - As horas não ficam gravadas: são recalculadas na leitura. Um feriado cadastrado depois muda a folha, inclusive a enviada.

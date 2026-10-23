@@ -667,6 +667,7 @@ model TimesheetFolha {
   reabertaAt     DateTime?      @map("reaberta_at") @db.Timestamptz
   reabertaPorId  String?        @map("reaberta_por_id") @db.Uuid
   dias           TimesheetDia[]
+  assinaturas    TimesheetAssinatura[]
   createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -700,4 +701,35 @@ model TimesheetDia {
 
   @@unique([folhaId, data])
   @@map("timesheet_dias")
+}
+
+/// Assinatura eletrônica da folha (spec timesheet-assinatura). Uma ativa por folha e papel (índice parcial na
+/// migration, onde encerrada_em é nulo); as encerradas ficam como histórico.
+model TimesheetAssinatura {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  folhaId        String         @map("folha_id") @db.Uuid
+  folha          TimesheetFolha @relation(fields: [folhaId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  /// FISCAL | COLABORADOR
+  papel          String
+  usuarioId      String         @map("usuario_id") @db.Uuid
+  /// Nome de quem assinou, congelado no momento (o fiscal do contrato pode mudar depois).
+  nome           String
+  assinadoEm     DateTime       @default(now()) @map("assinado_em") @db.Timestamptz
+  ip             String?
+  /// DESENHO | DIGITADO
+  metodo         String
+  /// PNG gerado no navegador (traço ou nome digitado), até 100 KB.
+  imagem         Bytes
+  /// SHA-256 do conteúdo da folha no momento (dias, decisões e horas); diferente do atual = folha alterada depois.
+  hashConteudo   String         @map("hash_conteudo")
+  /// Resumo do que foi assinado: totais, contagem de decisões e versão do texto de aceite.
+  resumo         Json
+  codigo         String         @unique
+  encerradaEm    DateTime?      @map("encerrada_em") @db.Timestamptz
+  encerradaPorId String?        @map("encerrada_por_id") @db.Uuid
+  /// REVOGADA (pelo fiscal) | REABERTURA (medição reabriu a folha; só a do colaborador)
+  encerramento   String?
+
+  @@index([folhaId], map: "idx_timesheet_assinaturas_folha_id")
+  @@map("timesheet_assinaturas")
 }

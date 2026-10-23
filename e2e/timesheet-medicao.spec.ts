@@ -6,6 +6,7 @@ import { test, expect } from "./fixtures/test-with-error-guard";
 import { e2eUsers } from "./fixtures";
 import { LoginPage } from "./pages/login-page";
 import { prismaTest as prisma, assertConnectedToE2eDatabase } from "../lib/prisma-test";
+import { dataUrlDeTeste } from "../tests/support/assinatura-png";
 
 /**
  * Timesheet ATO pelo painel da medição (T10 do plano docs/brain/specs/timesheet-ato-plano.md).
@@ -78,7 +79,8 @@ test.beforeAll(async ({ baseURL }) => {
     const r = await fornecedor.put("/api/colaborador/timesheet/dia", { data: { ciclo, data, entrada1: "08:00", saida1: "12:00", entrada2: "13:00", saida2: "17:00", projetoPep: "PEP-E2E" } });
     expect(r.status()).toBe(200);
   }
-  expect((await fornecedor.post("/api/colaborador/timesheet/enviar", { data: { ciclo } })).status()).toBe(200);
+  const assinatura = { imagem: dataUrlDeTeste(), metodo: "DESENHO", senha: SENHA };
+  expect((await fornecedor.post("/api/colaborador/timesheet/enviar", { data: { ciclo, assinatura } })).status()).toBe(200);
 });
 
 test.afterAll(async () => {
