@@ -21,7 +21,7 @@ O fiscal do contrato (cliente) aprova ou reprova as horas de cada dia da folha d
 - Na folha, uma coluna "Aprovação" ao lado de Solicitante com o estado de cada dia, caixas de seleção e uma barra com "Aprovar" e "Reprovar" para as linhas marcadas.
 
 ## Fora do escopo
-- Exportação (XLSX/PDF) pelo fiscal e aprovação da folha inteira como um ato à parte; lançamento das horas aprovadas no BM.
+- Exportação (XLSX/PDF) pelo fiscal (a exportação da medição já traz a coluna de aprovação desde 2026-10-23) e aprovação da folha inteira como um ato à parte; lançamento das horas aprovadas no BM.
 
 ## Segurança (achado no mapeamento)
 Várias checagens tratam "não é COLABORADOR" como equipe interna. Com o perfil FISCAL, elas viram allowlist dos perfis internos: download de NF e de comprovante (`app/api/colaborador/nf/[id]`, `app/api/colaborador/comprovante/[id]`), chat (`canUseChatPerfil`), troca do próprio nome (`podeAlterarProprioNome`), `INTERNAL_PERFIS` e o roteamento da raiz (`app/page.tsx` manda o FISCAL para a tela própria, nunca para o app da medição).

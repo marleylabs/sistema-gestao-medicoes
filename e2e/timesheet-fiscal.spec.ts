@@ -126,6 +126,20 @@ test.describe.serial("Aprovação das horas pelo fiscal", () => {
     await expect(gaveta.getByRole("button", { name: "Aprovar" })).toHaveCount(0);
     expect((await page.request.post(`/api/fiscal/timesheet/x/decisao`, { data: {} })).status()).toBe(403);
 
+    // As exportações levam a coluna "Aprovação" (PDF pela página de impressão; XLSX na coluna M).
+    const { id: profissionalId } = await prisma.profissional.findUniqueOrThrow({ where: { codigo: ATO.usuario }, select: { id: true } });
+    await page.goto(`/timesheet/imprimir/${profissionalId}?ciclo=${ciclo}`);
+    await expect(page.getByTestId("timesheet-impressao").getByRole("columnheader", { name: "Aprovação" })).toBeVisible();
+    await expect(page.getByTestId(`timesheet-impressao-aprovacao-${dias[0]}`)).toHaveText("Aprovado");
+    await expect(page.getByTestId(`timesheet-impressao-aprovacao-${dias[2]}`)).toHaveText("Reprovado");
+    await expect(page.getByTestId("timesheet-impressao-motivos")).toContainText(`Reprovado em ${dataBr(dias[2]).slice(0, 5)}: Horário diferente da portaria`);
+    const xlsx = await page.request.get(`/api/admin/timesheet/${profissionalId}/xlsx?ciclo=${ciclo}`);
+    expect(xlsx.status()).toBe(200);
+    const { readZipEntries } = await import("../lib/xlsx");
+    const planilha = readZipEntries(Buffer.from(await xlsx.body())).get("xl/worksheets/sheet1.xml")!.toString("utf8");
+    expect(planilha).toContain("APROVAÇÃO");
+    expect(planilha).toContain("Reprovado: Horário diferente da portaria");
+
     const r = await fornecedor.put("/api/colaborador/timesheet/dia", { data: { ciclo, data: dias[2], entrada1: "08:00", saida1: "12:00", entrada2: "13:00", saida2: "16:00" } });
     expect(r.status()).toBe(200);
     const folha = await (await fornecedor.get("/api/colaborador/timesheet")).json() as { dias: Array<{ data: string; aprovacao: string | null }> };

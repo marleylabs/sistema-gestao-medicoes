@@ -192,10 +192,26 @@ test("exportação XLSX: preenche o modelo oficial (cabeçalho, dias, total, ass
   const cinza = folha.dias.flatMap((d, i) => (d.tipo === "UTIL" ? [] : [`A${12 + i}:N${12 + i}`])).join(" ");
   assert.match(xml, new RegExp(`<conditionalFormatting sqref="${cinza}"><cfRule [^>]*><formula>TRUE</formula>`));
   assert.equal(celula("A42"), serial("2039-06-20"), "31 dias ocupam as linhas 12–42");
+
+  // Coluna "Aprovação" em M: a descrição passa de K:M a K:L; a assinatura (K46:M46) não muda.
+  assert.equal(celula("M10"), "APROVAÇÃO");
+  assert.deepEqual(["K10:L11", "K12:L12", "K42:L42", "K43:L43", "K46:M46"].map((r) => xml.includes(`<mergeCell ref="${r}"/>`)), [true, true, true, true, true]);
+  assert.doesNotMatch(xml, /<mergeCell ref="K(1\d|[2-3]\d|4[0-3]):M/);
+  assert.equal(celula("M14"), "Pendente", "dia lançado sem decisão");
+  assert.equal(celula(`M${12 + folha.dias.findIndex((d) => !d.lancado)}`), "", "dia sem lançamento fica em branco");
   assert.match(nomeArquivoTimesheet(folha), /^timesheet_3906_PREENCHE-TSM\d+\.xlsx$/);
 
   await med.registrarExportacao({ profissionalId: ids.preenchendo, ciclo: CICLO, formato: "XLSX", ator });
   assert.equal((await med.historicoDaFolha(ids.preenchendo, CICLO))[0].acao, "TIMESHEET_EXPORTADA");
+});
+
+test("exportação: texto da aprovação igual ao da tela", async () => {
+  const { textoAprovacao } = await import("../lib/timesheet-export");
+  const dia = (lancado: boolean, aprovacao: string | null, aprovacaoMotivo: string | null = null) => textoAprovacao({ lancado, aprovacao, aprovacaoMotivo } as Parameters<typeof textoAprovacao>[0]);
+  assert.deepEqual(
+    [dia(false, null), dia(true, null), dia(true, "APROVADO"), dia(true, "REPROVADO", "Sem portaria"), dia(true, "REPROVADO")],
+    ["", "Pendente", "Aprovado", "Reprovado: Sem portaria", "Reprovado"],
+  );
 });
 
 test("rotas da medição: todas exigem requireAdmin antes de qualquer trabalho", () => {

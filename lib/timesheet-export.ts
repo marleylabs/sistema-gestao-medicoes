@@ -46,6 +46,26 @@ function rotuloValor(rotulo: string, valor: string) {
   return { rico: `<r><rPr><b/>${fonte}</rPr><t xml:space="preserve">${escapar(rotulo)}</t></r><r><rPr>${fonte}</rPr><t xml:space="preserve">${escapar(valor)}</t></r>` };
 }
 
+/** Decisão do fiscal em texto, igual à coluna "Aprovação" da tela: dia sem lançamento fica em branco. */
+export function textoAprovacao(d: Pick<FolhaTimesheet["dias"][number], "lancado" | "aprovacao" | "aprovacaoMotivo">) {
+  if (!d.lancado) return "";
+  if (d.aprovacao === "APROVADO") return "Aprovado";
+  if (d.aprovacao === "REPROVADO") return d.aprovacaoMotivo ? `Reprovado: ${d.aprovacaoMotivo}` : "Reprovado";
+  return "Pendente";
+}
+
+/**
+ * Coluna "Aprovação" na coluna M: a descrição, que ocupava K:M, passa a K:L. A célula M de cada dia
+ * recebe o estilo da K (borda à esquerda); 70/73 são os estilos de M sem borda (meio e última linha).
+ */
+function colunaAprovacao(xml: string) {
+  let novo = xml.replace(/<mergeCell ref="K(\d+):M(\d+)"\/>/g, (m, a: string, b: string) => (Number(a) === 46 ? m : `<mergeCell ref="K${a}:L${b}"/>`));
+  for (let l = PRIMEIRA_LINHA; l < PRIMEIRA_LINHA + MAX_DIAS; l++) {
+    novo = novo.replace(new RegExp(`<c r="M${l}" s="(70|73)"`), (_, e: string) => `<c r="M${l}" s="${e === "70" ? 69 : 72}"`);
+  }
+  return definir(novo, "M10", "APROVAÇÃO");
+}
+
 /** Linhas cinza (sábado, domingo e feriado), no lugar da regra do modelo que dependia da aba oculta "dias". */
 function linhasCinza(xml: string, linhas: number[]) {
   const bloco = /<conditionalFormatting sqref="[^"]*">([\s\S]*?)<\/conditionalFormatting>/;
@@ -61,7 +81,7 @@ export function planilhaTimesheet(folha: FolhaTimesheet, hoje: string): Buffer {
   const original = entradas.get(PLANILHA);
   if (!original) throw new Error("Modelo do timesheet sem a planilha.");
   const c = folha.cabecalho;
-  let xml = original.toString("utf8");
+  let xml = colunaAprovacao(original.toString("utf8"));
 
   const cabecalho: Array<[string, Valor | { rico: string }]> = [
     ["M2", serialData(hoje)],
@@ -91,6 +111,7 @@ export function planilhaTimesheet(folha: FolhaTimesheet, hoje: string): Buffer {
       ["F", fracaoDia(d.horas.hn)], ["G", fracaoDia(d.horas.he50)], ["H", fracaoDia(d.horas.he100)], ["I", fracaoDia(d.horas.total)],
       ["J", d.projetoPep ?? (d.feriado ? `Feriado: ${d.feriado}` : null)],
       ["K", d.descricao ?? null],
+      ["M", textoAprovacao(d)],
       ["N", d.solicitante ?? null],
     ];
     for (const [col, valor] of valores) xml = definir(xml, `${col}${l}`, valor);

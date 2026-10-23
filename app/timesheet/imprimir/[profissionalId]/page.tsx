@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { getCurrentUser } from "@/lib/auth";
 import { carregarFolha, hojeSaoPaulo, TimesheetError } from "@/lib/timesheet";
 import { formatarData, formatarDuracao } from "@/lib/timesheet-calculo";
-import { CONTRATADA } from "@/lib/timesheet-export";
+import { CONTRATADA, textoAprovacao } from "@/lib/timesheet-export";
 import { exigirUuid, registrarExportacao } from "@/lib/timesheet-medicao";
 import { BotaoImprimir } from "@/components/timesheet/botao-imprimir";
 
@@ -71,6 +71,11 @@ export default async function ImprimirTimesheet({
   const horas = (min: number) => (min ? formatarDuracao(min) : "–");
   const th = "border-b border-slate-300 px-1 py-1 text-[6px] font-semibold uppercase tracking-[0.08em] text-slate-600";
   const td = "border-b border-slate-200 px-1 text-center";
+  // Na célula só o estado (a coluna é estreita); os motivos vão abaixo da tabela, agrupados: o fiscal reprova em lote com um motivo.
+  const motivos = new Map<string, string[]>();
+  for (const d of folha.dias) {
+    if (d.aprovacao === "REPROVADO" && d.aprovacaoMotivo) motivos.set(d.aprovacaoMotivo, [...(motivos.get(d.aprovacaoMotivo) ?? []), `${d.data.slice(8, 10)}/${d.data.slice(5, 7)}`]);
+  }
   const totais = [
     ["Hora normal", folha.totais.hn],
     ["Hora extra 50%", folha.totais.he50],
@@ -118,10 +123,10 @@ export default async function ImprimirTimesheet({
         {/* Dias. Tamanho nas células: o `table { font-size: 12px }` do globals.css fica fora das camadas do Tailwind. */}
         <table className="w-full table-fixed border-collapse [&_td]:text-[8px] [&_th]:leading-tight">
           <colgroup>
-            <col className="w-[9%]" />
+            <col className="w-[8%]" />
             <col className="w-[6%]" /><col className="w-[6%]" /><col className="w-[6%]" /><col className="w-[6%]" />
             <col className="w-[7%]" /><col className="w-[7%]" /><col className="w-[7%]" /><col className="w-[7%]" />
-            <col className="w-[12%]" /><col className="w-[19%]" /><col className="w-[8%]" />
+            <col className="w-[10%]" /><col className="w-[14%]" /><col className="w-[7%]" /><col className="w-[9%]" />
           </colgroup>
           <thead className={`bg-slate-100 ${exato}`}>
             <tr>
@@ -135,6 +140,7 @@ export default async function ImprimirTimesheet({
               <th rowSpan={2} className={`${th} border-l border-slate-200 text-left`}>Projeto/PEP</th>
               <th rowSpan={2} className={`${th} text-left`}>Descrição dos serviços</th>
               <th rowSpan={2} className={`${th} text-left`}>Solicitante</th>
+              <th rowSpan={2} className={`${th} border-l border-slate-200 text-left`}>Aprovação</th>
             </tr>
             <tr>
               <th className={`${th} border-l border-slate-200`}>Entrada</th><th className={th}>Saída</th>
@@ -168,6 +174,12 @@ export default async function ImprimirTimesheet({
                   </td>
                   <td className={clsx(td, "truncate text-left")}>{d.descricao ?? ""}</td>
                   <td className={clsx(td, "truncate text-left")}>{d.solicitante ?? ""}</td>
+                  <td
+                    className={clsx(td, "truncate border-l border-l-slate-200 text-left", d.aprovacao === "REPROVADO" ? "font-semibold text-red-700" : d.aprovacao === "APROVADO" ? "font-semibold" : "text-slate-400")}
+                    data-testid={`timesheet-impressao-aprovacao-${d.data}`}
+                  >
+                    {d.aprovacao === "REPROVADO" ? "Reprovado" : textoAprovacao(d)}
+                  </td>
                 </tr>
               );
             })}
@@ -177,7 +189,7 @@ export default async function ImprimirTimesheet({
               <td className="border-t-2 border-slate-800 px-1 text-center">{formatarDuracao(folha.totais.he50)}</td>
               <td className="border-t-2 border-slate-800 px-1 text-center">{formatarDuracao(folha.totais.he100)}</td>
               <td className="border-t-2 border-slate-800 px-1 text-center text-[#007E7A]">{formatarDuracao(folha.totais.total)}</td>
-              <td className="border-t-2 border-slate-800" colSpan={3} />
+              <td className="border-t-2 border-slate-800" colSpan={4} />
             </tr>
           </tbody>
         </table>
@@ -209,7 +221,15 @@ export default async function ImprimirTimesheet({
         </section>
         <section className="rounded-md border border-slate-200 px-2.5 py-1.5">
           <p className="text-[6px] font-semibold uppercase tracking-[0.12em] text-slate-500">Observações</p>
-          <div className="h-6" />
+          {motivos.size > 0 ? (
+            <ul className="grid min-h-6 content-start gap-0.5 pt-0.5 text-[7.5px] text-slate-900" data-testid="timesheet-impressao-motivos">
+              {[...motivos].map(([motivo, datas]) => (
+                <li key={motivo}><span className="font-semibold text-red-700">Reprovado em {datas.join(", ")}:</span> {motivo}</li>
+              ))}
+            </ul>
+          ) : (
+            <div className="h-6" />
+          )}
         </section>
         <p className="text-right text-[6px] text-slate-400">Documento gerado pela plataforma em {hoje} · {CONTRATADA}</p>
       </article>
