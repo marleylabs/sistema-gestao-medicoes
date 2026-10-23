@@ -16,11 +16,10 @@ Os dois notebooks em uso diferem em três pontos:
 
 No `Marley`, o Docker Desktop fica em `%LOCALAPPDATA%\Programs\DockerDesktop\Docker Desktop.exe` e pode levar alguns minutos para o motor responder depois de aberto.
 
-## Ao voltar para o `anderson.marley` (pendente desde 2026-10-23)
-O que foi feito no `Marley` em 2026-10-23 (cadastro e acesso do fiscal, aprovação no XLSX e no PDF) está no GitHub até 2173d5c ou depois. No `anderson.marley`:
-1. `git pull` na `release/2026-10-02-import-identities`.
-2. Banco de teste (`medicoes-postgres-test`, porta 15433): com o ambiente de teste exportado (seção 4), `npx prisma migrate deploy` aplica a `20261023120000_fiscal_cadastro_campos` (só colunas nulas em `usuarios`); depois `npm run test:e2e:seed`.
-3. Docker DEV (estava em 0a00791, com 13/13 migrations): backup e imagem de rollback, migrate com `--build` (aplica só a migration acima) e `docker compose up -d --build web` (seção 3, passo 4). Registre no [status](status.md).
+## Ao trocar de notebook
+Antes de sair de uma máquina, faça o push. Na outra, faça o `git pull` na `release/2026-10-02-import-identities`, aplique as migrations novas no banco de teste (seção 4) e atualize o Docker DEV (seção 3, passo 4). Registre no [status](status.md). Última troca: `anderson.marley` em dia com 4d269f2 (2026-10-23).
+
+No `anderson.marley`, o `.env.test` ainda aponta para `medicoes_e2e`, que está abandonado (parado em 2026-09). Exporte `DATABASE_URL_TEST` e `E2E_DATABASE_NAME` para `medicoes_e2e_bm`: as variáveis do processo valem mais que o arquivo.
 
 ## 1. Código
 - Clone `https://github.com/marleylabs/sistema-gestao-medicoes.git` e use a branch `release/2026-10-02-import-identities`. Nunca use a `main` (desatualizada).
