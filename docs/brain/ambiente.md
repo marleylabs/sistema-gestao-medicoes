@@ -1,10 +1,20 @@
 ---
-atualizado: 2026-10-22
+atualizado: 2026-10-23
 tags: [ambiente]
 ---
 # Ambiente de desenvolvimento (máquina nova)
 
 Passo a passo para continuar o projeto em outro notebook com o Claude Code. Os segredos não estão no git: copie-os por um canal seguro, nunca por esta nota.
+
+Os dois notebooks em uso diferem em três pontos:
+
+| | `anderson.marley` | `Marley` |
+|---|---|---|
+| Repositório | `Documents/01 - Desenvolvimento/...` | `Documents/Desenvolvimento/sistema-gestao-medicoes` |
+| Banco de teste | container `medicoes-postgres-test`, porta 15433 | banco `medicoes_e2e_bm` no próprio `medicoes-postgres`, porta 15432 |
+| Alias SSH da produção | `medicoes-prod` (só pela VPN) | `medicoes-preprod` (chave `~/.ssh/medicoes_preprod`, rede local) |
+
+No `Marley`, o Docker Desktop fica em `%LOCALAPPDATA%\Programs\DockerDesktop\Docker Desktop.exe` e pode levar alguns minutos para o motor responder depois de aberto.
 
 ## 1. Código
 - Clone `https://github.com/marleylabs/sistema-gestao-medicoes.git` e use a branch `release/2026-10-02-import-identities`. Nunca use a `main` (desatualizada).
