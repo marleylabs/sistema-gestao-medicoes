@@ -21,7 +21,7 @@ import {
   type Funcionario,
 } from "@/components/administrativo/shared";
 
-function SmallAction({ onClick, children, disabled, title, tone }: { onClick: () => void; children: ReactNode; disabled?: boolean; title?: string; tone?: "danger" }) {
+export function SmallAction({ onClick, children, disabled, title, tone }: { onClick: () => void; children: ReactNode; disabled?: boolean; title?: string; tone?: "danger" }) {
   return (
     <button
       type="button"

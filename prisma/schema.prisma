@@ -25,6 +25,11 @@ model Usuario {
   onlineAt         DateTime? @map("online_at") @db.Timestamptz
   excluidoAt        DateTime? @map("excluido_at") @db.Timestamptz
   email            String?
+  /// Dados do cadastro do fiscal (perfil FISCAL); telefone cifrado como o e-mail.
+  telefone         String?
+  empresa          String?
+  cargo            String?
+  matricula        String?
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 

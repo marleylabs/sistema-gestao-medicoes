@@ -2,11 +2,17 @@
 
 import { AnimatePresence } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRight, Plus, Search, Send } from "lucide-react";
+import { ChevronRight, Edit3, KeyRound, Plus, Search, Send, ShieldCheck, ShieldOff } from "lucide-react";
 import { Badge, Button, Carregando, Field, Input, Select, classeLinha } from "@/components/ui";
-import { AdminSidePanel, DataItem, PanelSection } from "@/components/administrativo/admin-side-panel";
+import { AdminSidePanel, DataItem, PanelSection, SettingRow } from "@/components/administrativo/admin-side-panel";
+import { SmallAction } from "@/components/administrativo/detalhes";
 import { StatusBadge, Th, openOnKey } from "@/components/administrativo/listagem";
+import { maskPhone } from "@/components/administrativo/shared";
+import { PERFIL_LABEL_LOOSE } from "@/lib/perfis";
 import type { FiscalCadastro } from "@/lib/fiscais";
+
+/** Redefinir senha: o modal e a credencial são os do fornecedor e moram no AdministrativoPanel (só ADMIN). */
+type PedirResetSenha = (fiscal: FiscalCadastro, recarregar: () => Promise<void>) => void;
 
 async function erroDaResposta(res: Response, padrao: string) {
   const corpo: unknown = await res.json().catch(() => null);
@@ -15,10 +21,10 @@ async function erroDaResposta(res: Response, padrao: string) {
 
 /**
  * Aba "Fiscais" do Administrativo (spec docs/brain/specs/timesheet-aprovacao-fiscal.md): o fiscal do contrato
- * entra com login P0 e só aprova as horas do timesheet. Cadastro com nome e e-mail; o acesso vai pelo
- * mesmo primeiro acesso dos funcionários. O vínculo com os contratos é feito na aba Contratos.
+ * entra com login P0 e só aprova as horas do timesheet. Cadastro e acesso: docs/brain/specs/fiscal-cadastro-acesso.md.
+ * O vínculo com os contratos é feito na aba Contratos.
  */
-export function FiscaisCadastro({ onTotal }: { onTotal?: (total: number) => void }) {
+export function FiscaisCadastro({ onTotal, onResetSenha, escEnabled }: { onTotal?: (total: number) => void; onResetSenha?: PedirResetSenha; escEnabled?: boolean }) {
   const [lista, setLista] = useState<FiscalCadastro[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
@@ -113,16 +119,46 @@ export function FiscaisCadastro({ onTotal }: { onTotal?: (total: number) => void
 
       <AnimatePresence>
         {painel && (
-          <FiscalPainel key={painel.id ?? "novo"} fiscal={aberto} onClose={() => setPainel(null)} onMudou={async (id) => { await carregar(); setPainel(id ? { id } : null); }} />
+          <FiscalPainel
+            key={painel.id ?? "novo"}
+            fiscal={aberto}
+            onClose={() => setPainel(null)}
+            onMudou={async (id) => { await carregar(); setPainel(id ? { id } : null); }}
+            onResetSenha={onResetSenha && aberto ? () => onResetSenha(aberto, carregar) : undefined}
+            escEnabled={escEnabled}
+          />
         )}
       </AnimatePresence>
     </>
   );
 }
 
-function FiscalPainel({ fiscal, onClose, onMudou }: { fiscal: FiscalCadastro | null; onClose: () => void; onMudou: (id: string | null) => Promise<void> }) {
-  const [nome, setNome] = useState("");
-  const [email, setEmail] = useState("");
+const CAMPOS = [
+  { chave: "nome", rotulo: "Nome", autoComplete: "name" },
+  { chave: "email", rotulo: "E-mail", tipo: "email", autoComplete: "email" },
+  { chave: "telefone", rotulo: "Telefone", tipo: "tel", autoComplete: "tel", inputMode: "tel" },
+  { chave: "empresa", rotulo: "Empresa / órgão", autoComplete: "organization" },
+  { chave: "cargo", rotulo: "Cargo", autoComplete: "organization-title" },
+  { chave: "matricula", rotulo: "Matrícula", autoComplete: "off" },
+] as const;
+type Form = Record<(typeof CAMPOS)[number]["chave"], string>;
+
+function formDe(f: FiscalCadastro | null): Form {
+  return {
+    nome: f?.nome ?? "", email: f?.email ?? "", telefone: maskPhone(f?.telefone),
+    empresa: f?.empresa ?? "", cargo: f?.cargo ?? "", matricula: f?.matricula ?? "",
+  };
+}
+
+function FiscalPainel({ fiscal, onClose, onMudou, onResetSenha, escEnabled }: {
+  fiscal: FiscalCadastro | null;
+  escEnabled?: boolean;
+  onClose: () => void;
+  onMudou: (id: string | null) => Promise<void>;
+  onResetSenha?: () => void;
+}) {
+  const [editando, setEditando] = useState(!fiscal);
+  const [form, setForm] = useState<Form>(() => formDe(fiscal));
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -135,9 +171,14 @@ function FiscalPainel({ fiscal, onClose, onMudou }: { fiscal: FiscalCadastro | n
     return (await res.json()) as { id?: string };
   }
 
-  async function criar() {
-    const r = await chamar("/api/admin/administrativo/fiscais", "POST", { nome, email }, "Não foi possível cadastrar o fiscal.");
-    if (r?.id) await onMudou(r.id);
+  async function salvar() {
+    if (!fiscal) {
+      const r = await chamar("/api/admin/administrativo/fiscais", "POST", form, "Não foi possível cadastrar o fiscal.");
+      if (r?.id) await onMudou(r.id);
+      return;
+    }
+    const r = await chamar(`/api/admin/administrativo/fiscais/${fiscal.id}`, "PATCH", { action: "editar", ...form }, "Não foi possível salvar o fiscal.");
+    if (r) { await onMudou(fiscal.id); setEditando(false); }
   }
   async function enviarAcesso() {
     if (!fiscal) return;
@@ -149,6 +190,12 @@ function FiscalPainel({ fiscal, onClose, onMudou }: { fiscal: FiscalCadastro | n
     const r = await chamar(`/api/admin/administrativo/fiscais/${fiscal.id}`, "PATCH", { ativo: !fiscal.ativo }, "Não foi possível alterar a situação.");
     if (r) await onMudou(fiscal.id);
   }
+  function cancelar() {
+    if (!fiscal) { onClose(); return; }
+    setForm(formDe(fiscal)); setErro(null); setEditando(false);
+  }
+
+  const vazio = (v: string | null) => v || "—";
 
   return (
     <AdminSidePanel
@@ -158,46 +205,99 @@ function FiscalPainel({ fiscal, onClose, onMudou }: { fiscal: FiscalCadastro | n
       meta={fiscal ? <><StatusBadge ativo={fiscal.ativo} />{fiscal.primeiroLogin && <Badge variant="warning">1º acesso pendente</Badge>}</> : undefined}
       onClose={onClose}
       closeDisabled={ocupado}
+      escEnabled={escEnabled}
       testId="administrativo-fiscal-painel"
-      footer={fiscal ? (
+      footer={fiscal && !editando ? (
         <>
-          <Button variant="secondary" className="mr-auto" onClick={() => void alternarAtivo()} disabled={ocupado}>{fiscal.ativo ? "Inativar fiscal" : "Reativar fiscal"}</Button>
-          {fiscal.ativo && fiscal.primeiroLogin && (
-            <Button onClick={() => void enviarAcesso()} disabled={ocupado} aria-busy={ocupado}>
-              <Send size={14} />
-              Enviar primeiro acesso
-            </Button>
-          )}
+          <Button variant="secondary" className="mr-auto" onClick={() => void alternarAtivo()} disabled={ocupado}>
+            {fiscal.ativo ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
+            {fiscal.ativo ? "Inativar fiscal" : "Reativar fiscal"}
+          </Button>
+          <Button onClick={() => { setAviso(null); setEditando(true); }} disabled={ocupado}>
+            <Edit3 size={14} />
+            Editar dados
+          </Button>
         </>
       ) : (
         <>
-          <Button variant="secondary" onClick={onClose} disabled={ocupado}>Cancelar</Button>
-          <Button onClick={() => void criar()} disabled={ocupado || nome.trim().length < 3 || !email.trim()} aria-busy={ocupado}>{ocupado ? "Salvando..." : "Cadastrar fiscal"}</Button>
+          <Button variant="secondary" onClick={cancelar} disabled={ocupado}>Cancelar</Button>
+          <Button onClick={() => void salvar()} disabled={ocupado || form.nome.trim().length < 3 || !form.email.trim()} aria-busy={ocupado}>
+            {ocupado ? "Salvando..." : fiscal ? "Salvar" : "Cadastrar fiscal"}
+          </Button>
         </>
       )}
     >
       {erro && <p role="alert" className="mx-5 mt-4 rounded-lg bg-[var(--error-soft)] px-3 py-2 text-xs font-medium text-[var(--error)] sm:mx-6">{erro}</p>}
       {aviso && <p role="status" className="mx-5 mt-4 rounded-lg bg-[var(--success-soft)] px-3 py-2 text-xs font-medium text-[var(--success)] sm:mx-6">{aviso}</p>}
-      {fiscal ? (
+      {fiscal && !editando ? (
         <>
           <PanelSection title="Dados">
             <dl className="grid gap-3 sm:grid-cols-2">
               <DataItem label="Nome">{fiscal.nome}</DataItem>
-              <DataItem label="Login" technical>{fiscal.usuario}</DataItem>
-              <DataItem label="E-mail" wide>{fiscal.email ?? "—"}</DataItem>
+              <DataItem label="Telefone">{vazio(maskPhone(fiscal.telefone))}</DataItem>
+              <DataItem label="E-mail" wide>{vazio(fiscal.email)}</DataItem>
+              <DataItem label="Empresa / órgão">{vazio(fiscal.empresa)}</DataItem>
+              <DataItem label="Cargo">{vazio(fiscal.cargo)}</DataItem>
+              <DataItem label="Matrícula" technical>{vazio(fiscal.matricula)}</DataItem>
             </dl>
           </PanelSection>
           <PanelSection title="Contratos">
             <p className="text-sm text-[var(--foreground)]">{fiscal.contratos.join(", ") || "Nenhum contrato. Vincule em Administrativo → Contratos."}</p>
           </PanelSection>
+          <PanelSection title="Acesso ao portal">
+            <div className="grid gap-2">
+              <SettingRow
+                label="Login"
+                value={
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-technical text-[12.5px]">{fiscal.usuario}</span>
+                    <span className="text-[12px] text-[var(--muted-foreground)]">{PERFIL_LABEL_LOOSE.FISCAL}</span>
+                    <StatusBadge ativo={fiscal.ativo} />
+                  </span>
+                }
+              />
+              <SettingRow
+                label="Senha"
+                value={fiscal.primeiroLogin ? "Primeiro acesso pendente" : "Definida pelo usuário"}
+                action={
+                  <>
+                    {onResetSenha && <SmallAction onClick={onResetSenha} disabled={ocupado}><KeyRound size={13} />Redefinir senha</SmallAction>}
+                    {fiscal.primeiroLogin && (
+                      <SmallAction
+                        onClick={() => void enviarAcesso()}
+                        disabled={ocupado || !fiscal.ativo || !fiscal.email}
+                        title={!fiscal.ativo ? "Reative o fiscal antes de enviar o acesso." : !fiscal.email ? "Este fiscal não possui e-mail cadastrado." : undefined}
+                      >
+                        <Send size={13} />Enviar primeiro acesso
+                      </SmallAction>
+                    )}
+                  </>
+                }
+              />
+            </div>
+          </PanelSection>
         </>
       ) : (
         <div className="grid gap-4 px-5 py-5 sm:px-6">
-          <p className="text-[12.5px] text-[var(--muted-foreground)]">O login P0 é gerado automaticamente. Depois de cadastrar, envie o primeiro acesso: a senha temporária vai para o e-mail.</p>
-          <Field label="Nome"><Input autoFocus maxLength={200} value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
-          <Field label="E-mail"><Input type="email" maxLength={200} value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+          {!fiscal && <p className="text-[12.5px] text-[var(--muted-foreground)]">O login P0 é gerado automaticamente. Depois de cadastrar, envie o primeiro acesso: a senha temporária vai para o e-mail.</p>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {CAMPOS.map((c) => (
+              <Field key={c.chave} label={c.chave === "nome" || c.chave === "email" ? c.rotulo : `${c.rotulo} (opcional)`}>
+                <Input
+                  autoFocus={c.chave === "nome"}
+                  type={"tipo" in c ? c.tipo : "text"}
+                  inputMode={"inputMode" in c ? c.inputMode : undefined}
+                  autoComplete={c.autoComplete}
+                  maxLength={c.chave === "telefone" ? 15 : 200}
+                  value={form[c.chave]}
+                  onChange={(e) => setForm((f) => ({ ...f, [c.chave]: c.chave === "telefone" ? maskPhone(e.target.value) : e.target.value }))}
+                />
+              </Field>
+            ))}
+          </div>
         </div>
       )}
     </AdminSidePanel>
   );
 }
+

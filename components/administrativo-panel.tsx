@@ -911,7 +911,7 @@ export function AdministrativoPanel({
   // Credencial (senha temporária) exibida SOMENTE logo após criar usuário ou redefinir senha —
   // vive só neste estado em memória, nunca é persistida, e some ao fechar o modal.
   const [credencial, setCredencial] = useState<{ titulo: string; nome: string; email: string | null; usuario?: string; senha: string } | null>(null);
-  const [resetSenhaTarget, setResetSenhaTarget] = useState<{ usuarioId: string; nome: string; email: string | null } | null>(null);
+  const [resetSenhaTarget, setResetSenhaTarget] = useState<{ usuarioId: string; nome: string; email: string | null; depois?: () => Promise<void> } | null>(null);
   const [resettingSenha, setResettingSenha] = useState(false);
   const [primeiroAcessoTarget, setPrimeiroAcessoTarget] = useState<{ usuarioId: string; nome: string; email: string; usuario: string; requestId: string } | null>(null);
   const [enviandoPrimeiroAcesso, setEnviandoPrimeiroAcesso] = useState(false);
@@ -1055,7 +1055,7 @@ export function AdministrativoPanel({
 
   async function confirmarResetSenha() {
     if (!resetSenhaTarget) return;
-    const { usuarioId, nome, email } = resetSenhaTarget;
+    const { usuarioId, nome, email, depois } = resetSenhaTarget;
     setResettingSenha(true);
     try {
       const res = await fetch(`/api/admin/usuarios/${usuarioId}`, {
@@ -1072,7 +1072,7 @@ export function AdministrativoPanel({
       // A senha só existe nesta resposta — mostrada no CredencialModal, nunca persistida.
       setResetSenhaTarget(null);
       setCredencial({ titulo: "Senha redefinida com sucesso", nome, email, senha: payload.senhaTemporaria });
-      await load();
+      await (depois ?? load)();
     } finally {
       setResettingSenha(false);
     }
@@ -1368,7 +1368,7 @@ export function AdministrativoPanel({
         </div>
         {/* Recorte só abaixo da barra: o popover de Filtros mora nela e precisa sair do card. */}
         <div className="overflow-hidden rounded-b-[10px]">
-        {aba === "contratos" ? <ContratosCadastro onTotal={setContratosTotal} /> : aba === "fiscais" ? <FiscaisCadastro onTotal={setFiscaisTotal} /> : (<>
+        {aba === "contratos" ? <ContratosCadastro onTotal={setContratosTotal} /> : aba === "fiscais" ? <FiscaisCadastro onTotal={setFiscaisTotal} escEnabled={!algumModalAberto} onResetSenha={isAdmin ? (f, depois) => setResetSenhaTarget({ usuarioId: f.id, nome: f.nome, email: f.email, depois }) : undefined} /> : (<>
 
         {filtroChips.length > 0 && (
           <div className="flex flex-wrap gap-1.5 border-b border-[var(--border)] px-5 py-2.5">

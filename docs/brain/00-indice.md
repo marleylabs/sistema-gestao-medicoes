@@ -57,4 +57,5 @@ Leia esta lista e abra só o que a tarefa precisa.
 - [Timesheet: ciclo publicado próprio](specs/timesheet-ciclo-publicado.md): a medição publica o ciclo do timesheet separado do ciclo do portal, para o preenchimento não começar atrasado (implementada, não implantada)
 - [Cadastro de contratos](specs/contratos-cadastro.md): aba Contratos no Administrativo (nº, nome, gestor, fiscal, vigência e valor), só inativação, auditoria (implementada, não implantada)
 - [Timesheet: aprovação pelo fiscal](specs/timesheet-aprovacao-fiscal.md): perfil FISCAL (P0, aba Fiscais), fiscal no contrato, aprovação/reprovação por dia em lote, tela própria e brechas de "não é COLABORADOR" fechadas; spec e plano juntos (implementada, não implantada)
+- [Fiscal: cadastro e acesso ao portal](specs/fiscal-cadastro-acesso.md): telefone, empresa, cargo e matrícula, edição auditada sem valores e seção "Acesso ao portal" com Redefinir senha (ADMIN); spec e plano juntos (implementada, não implantada)
 - [Plano do M4 portal do fornecedor](specs/layout-tema-motion-m4-plano.md): Minhas Medições e NF → diálogos → ação principal em destaque → motion expressivo → chat (concluído)

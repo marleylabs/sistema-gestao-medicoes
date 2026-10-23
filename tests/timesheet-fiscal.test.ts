@@ -123,13 +123,44 @@ test("dia alterado pelo fornecedor volta a pendente; regravar igual mantém a de
 test("cadastro: fiscal exige e-mail; contrato só aceita fiscal FISCAL ativo e mostra o nome dele", async () => {
   const { criarFiscal } = await import("../lib/fiscais");
   const { atualizarContrato, ContratoError } = await import("../lib/contratos-cadastro");
-  const r = await criarFiscal({ nome: `Fiscal sem e-mail ${sufixo}`, email: "", ator: medicao });
+  const r = await criarFiscal({ body: { nome: `Fiscal sem e-mail ${sufixo}`, email: "" }, ator: medicao });
   assert.equal(r.ok, false);
 
   await assert.rejects(atualizarContrato({ id: ids.c1, body: { fiscalId: ids.naoFiscal }, ator: medicao }), (e: unknown) => e instanceof ContratoError && e.status === 400);
   const c = await atualizarContrato({ id: ids.c1, body: { fiscalId: ids.f1 }, ator: medicao });
   assert.equal(c.fiscal, `F1 ${sufixo}`);
   assert.equal((await ts.carregarFolha(ids.p1, CICLO, HOJE, { paraMedicao: true })).cabecalho.fiscal, `F1 ${sufixo}`);
+});
+
+// docs/brain/specs/fiscal-cadastro-acesso.md
+test("cadastro: campos opcionais, edição validada e auditoria sem dados pessoais", async () => {
+  const { criarFiscal, atualizarFiscal, listarFiscais } = await import("../lib/fiscais");
+  const ruim = await criarFiscal({ body: { nome: `Fiscal ${sufixo}`, email: "f@example.com", telefone: "123" }, ator: medicao });
+  assert.deepEqual([ruim.ok, ruim.status], [false, 400]);
+
+  const r = await criarFiscal({ body: { nome: `Fiscal ${sufixo}`, email: "f@example.com", telefone: "(31) 99876-5432", empresa: "VALE", cargo: " ", matricula: "M123" }, ator: medicao });
+  assert.ok(r.ok);
+  const id = r.fiscal.id;
+  try {
+    const bruto = await db.usuario.findUniqueOrThrow({ where: { id }, select: { telefone: true, cargo: true } });
+    assert.notEqual(bruto.telefone, "31998765432", "telefone cifrado no banco");
+    assert.equal(bruto.cargo, null, "campo em branco vira null");
+    const listado = (await listarFiscais()).find((f) => f.id === id);
+    assert.deepEqual([listado?.telefone, listado?.empresa, listado?.matricula], ["31998765432", "VALE", "M123"]);
+
+    const base = { nome: `Fiscal ${sufixo}`, email: "f@example.com", telefone: "31998765432", empresa: "VALE", matricula: "M123" };
+    assert.deepEqual(await atualizarFiscal({ id, body: { ...base, email: "x" }, ator: medicao }), { ok: false, status: 400, error: "Informe um e-mail válido: o acesso do fiscal é enviado por e-mail." });
+    assert.deepEqual(await atualizarFiscal({ id: ids.naoFiscal, body: base, ator: medicao }), { ok: false, status: 404, error: "Fiscal não encontrado." }, "só edita perfil FISCAL");
+    const e = await atualizarFiscal({ id, body: { ...base, email: "novo@example.com", cargo: "Gerente" }, ator: medicao });
+    assert.deepEqual(e, { ok: true, campos: ["email", "cargo"] });
+    const log = await db.adminAuditLog.findFirstOrThrow({ where: { action: "FISCAL_ATUALIZADO", targetId: id }, select: { metadata: true } });
+    assert.deepEqual(log.metadata, { campos: ["email", "cargo"] });
+    assert.deepEqual(await atualizarFiscal({ id, body: { ...base, email: "novo@example.com", cargo: "Gerente" }, ator: medicao }), { ok: true, campos: [] });
+    assert.equal(await db.adminAuditLog.count({ where: { action: "FISCAL_ATUALIZADO", targetId: id } }), 1, "sem mudança não audita");
+  } finally {
+    await db.adminAuditLog.deleteMany({ where: { targetId: id } });
+    await db.usuario.delete({ where: { id } });
+  }
 });
 
 test("permissões: só o FISCAL decide; o FISCAL não é equipe interna (NF, comprovante, chat, nome)", async () => {

@@ -148,5 +148,40 @@ test.describe.serial("Aprovação das horas pelo fiscal", () => {
     await expect(painel.getByRole("status")).toContainText("Acesso enviado para fiscal.e2e@example.com");
     const criado = await prisma.usuario.findFirst({ where: { nome: NOVO_FISCAL }, select: { perfil: true, primeiroLogin: true } });
     expect(criado).toMatchObject({ perfil: "FISCAL", primeiroLogin: true });
+
+    // Edição dos dados (docs/brain/specs/fiscal-cadastro-acesso.md); sem ADMIN, não há "Redefinir senha".
+    await expect(painel.getByRole("button", { name: "Redefinir senha" })).toHaveCount(0);
+    await painel.getByRole("button", { name: "Editar dados" }).click();
+    await painel.getByLabel("Telefone").fill("31998765432");
+    await painel.getByLabel("Empresa / órgão").fill("VALE");
+    await painel.getByLabel("Matrícula").fill("M-4471");
+    await painel.getByRole("button", { name: "Salvar" }).click();
+    await expect(painel.getByRole("button", { name: "Editar dados" })).toBeVisible();
+    await expect(painel).toContainText("(31) 99876-5432");
+    await expect(painel).toContainText("VALE");
+    await expect(painel).toContainText("M-4471");
+  });
+
+  test("ADMIN redefine a senha do fiscal pela seção Acesso ao portal", async ({ page }) => {
+    await entrar(page, e2eUsers.admin.usuario, e2eUsers.admin.senha);
+    await page.goto("/?section=administrativo");
+    await page.getByRole("tab", { name: /Fiscais/ }).click();
+    await page.getByLabel(`Abrir fiscal ${FISCAL.nome}`).click();
+    const painel = page.getByTestId("administrativo-fiscal-painel");
+    await expect(painel).toContainText("Definida pelo usuário");
+    await painel.getByRole("button", { name: "Redefinir senha" }).click();
+    const resposta = page.waitForResponse((r) => r.url().includes("/api/admin/usuarios/") && r.request().method() === "PATCH");
+    await page.getByRole("dialog", { name: "Redefinir senha" }).getByRole("button", { name: "Redefinir senha" }).click();
+    const { senhaTemporaria } = await (await resposta).json() as { senhaTemporaria: string };
+    const modal = page.getByTestId("credencial-modal");
+    await expect(modal.getByRole("heading", { name: "Senha redefinida com sucesso" })).toBeVisible();
+    await modal.getByRole("button", { name: "Concluir" }).click();
+    await expect(painel).toContainText("Primeiro acesso pendente");
+    await expect(painel.getByRole("button", { name: "Enviar primeiro acesso" })).toBeVisible();
+
+    const ctx = await playwrightRequest.newContext({ baseURL: new URL(page.url()).origin });
+    expect((await ctx.post("/api/auth/login", { data: { usuario: FISCAL.usuario, senha: senhaTemporaria } })).ok()).toBeTruthy();
+    expect((await ctx.post("/api/auth/login", { data: { usuario: FISCAL.usuario, senha: SENHA } })).ok()).toBeFalsy();
+    await ctx.dispose();
   });
 });

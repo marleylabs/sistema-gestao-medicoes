@@ -20,6 +20,7 @@ tags: [modulo]
 - `lib/timesheet-medicao.ts`: lado da medição (lista do ciclo, histórico, reabertura, liberação, feriados manuais, configuração por fornecedor).
 - `components/timesheet/timesheet-workspace.tsx` e `timesheet-drawer.tsx`: seção "Timesheet" do painel (MEDICAO e ADMIN).
 - `lib/timesheet-fiscal.ts`, `app/api/fiscal/timesheet/`, `components/timesheet/fiscal-app.tsx`: aprovação das horas pelo fiscal do contrato ([spec](../specs/timesheet-aprovacao-fiscal.md)).
+- `lib/fiscais.ts`, `components/administrativo/fiscais.tsx`: cadastro do fiscal (telefone cifrado, empresa, cargo, matrícula), edição e "Acesso ao portal" ([spec](../specs/fiscal-cadastro-acesso.md)).
 
 **Regras e armadilhas:**
 - Aprovação por dia: `TimesheetDia.aprovacao` (null = pendente, `APROVADO`, `REPROVADO` com motivo obrigatório). Só o perfil FISCAL decide (`requireFiscal`), e só para fornecedores cujo contrato da configuração tem `fiscalId` = ele; fora do escopo é 404. Pode decidir com a folha aberta ou enviada, mas só dias lançados. `salvarDia` zera a decisão quando o dia muda (regravar igual mantém). Lote: várias datas por chamada, auditoria `TIMESHEET_DIAS_APROVADOS`/`_REPROVADOS` na mesma transação. Medição e fornecedor veem a coluna "Aprovação" só leitura; a lista da medição mostra as contagens.
