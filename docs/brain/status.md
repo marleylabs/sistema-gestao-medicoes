@@ -59,8 +59,8 @@ atualizado: 2026-10-23
 - `npm run build` e o Playwright compartilham `.next`: rode `rm -rf .next` depois do build.
 
 ## Últimas mudanças (máx. 5, mais recente primeiro)
+- 2026-10-23: horas reprovadas pelo fiscal saem dos totais do timesheet (tela, lista, XLSX e PDF); sem migration, não enviado ao GitHub nem ao DEV.
 - 2026-10-23: notebook `anderson.marley` em 4d269f2: `medicoes_e2e_bm` (15433) e DEV com 14/14 migrations, seed E2E rodado, web DEV reconstruído.
 - 2026-10-23: coluna "Aprovação" do fiscal no XLSX e no PDF do timesheet; enviado ao GitHub (b9e1e10) e no DEV do notebook `Marley`.
 - 2026-10-23: cadastro do fiscal com telefone, empresa, cargo e matrícula, edição e "Acesso ao portal" com redefinição de senha; enviado ao GitHub (ca70ae9), não implantado.
 - 2026-10-23: notebook `Marley` preparado com a8441a7: DEV e banco de teste com 13/13 migrations, web DEV reconstruído, `test:targeted` 599/599, E2E completo 230/230.
-- 2026-10-22: aprovação das horas do timesheet pelo fiscal do contrato (perfil FISCAL, cadastro, tela própria, aprovação em lote); enviado ao GitHub, não implantado.

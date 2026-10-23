@@ -1,5 +1,5 @@
 ---
-atualizado: 2026-10-22
+atualizado: 2026-10-23
 tags: [spec]
 ---
 # Timesheet: aprovação das horas pelo fiscal
@@ -15,6 +15,7 @@ O fiscal do contrato (cliente) aprova ou reprova as horas de cada dia da folha d
 5. **Correção.** Se o fornecedor altera um dia (folha aberta ou reaberta pela medição), a decisão daquele dia volta a Pendente. Dias não alterados mantêm a decisão.
 6. **Permissões.** Só o FISCAL do contrato decide. Medição, ADMIN e o fornecedor veem a coluna de aprovação, mas sem ação. O fiscal não acessa Feriados, publicação de ciclo, liberação do preenchimento (Dia a dia / Ciclo todo), configuração, reabertura nem o restante do sistema.
 7. **Auditoria.** Cada lote grava `TIMESHEET_DIAS_APROVADOS` ou `TIMESHEET_DIAS_REPROVADOS` (`targetType` `TIMESHEET_FOLHA`, com as datas e o motivo) na mesma transação da decisão.
+8. **Desconto no total** (2026-10-23). As horas dos dias reprovados não entram nos totais (tela, lista da medição, XLSX e PDF); a linha do dia continua mostrando o lançado. Aprovados e pendentes contam.
 
 ## Tela do fiscal
 - Entra direto no Timesheet: lista dos fornecedores dele no ciclo (busca, status, contagem de dias pendentes), seletor de ciclo e a folha de cada um.

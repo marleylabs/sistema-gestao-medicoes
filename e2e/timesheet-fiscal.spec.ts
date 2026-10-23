@@ -108,6 +108,8 @@ test.describe.serial("Aprovação das horas pelo fiscal", () => {
     await expect(dialogo).toBeHidden();
     await expect(folha.getByTestId(`timesheet-aprovacao-${dias[2]}`)).toContainText("Reprovado");
     await expect(folha.getByTestId(`timesheet-aprovacao-${dias[2]}`)).toContainText("Horário diferente da portaria");
+    // As 8 h do dia reprovado saem do total (3 dias de 8 h → 16 h).
+    await expect(page.getByTestId("timesheet-total-total")).toHaveText("16:00");
 
     // O fiscal não usa as rotas da medição.
     expect((await page.request.get(`/api/admin/timesheet?ciclo=${ciclo}`)).status()).toBe(403);
@@ -132,6 +134,7 @@ test.describe.serial("Aprovação das horas pelo fiscal", () => {
     await expect(page.getByTestId("timesheet-impressao").getByRole("columnheader", { name: "Aprovação" })).toBeVisible();
     await expect(page.getByTestId(`timesheet-impressao-aprovacao-${dias[0]}`)).toHaveText("Aprovado");
     await expect(page.getByTestId(`timesheet-impressao-aprovacao-${dias[2]}`)).toHaveText("Reprovado");
+    await expect(page.getByTestId("timesheet-impressao-total")).toContainText("16:00");
     await expect(page.getByTestId("timesheet-impressao-motivos")).toContainText(`Reprovado em ${dataBr(dias[2]).slice(0, 5)}: Horário diferente da portaria`);
     const xlsx = await page.request.get(`/api/admin/timesheet/${profissionalId}/xlsx?ciclo=${ciclo}`);
     expect(xlsx.status()).toBe(200);
@@ -142,8 +145,9 @@ test.describe.serial("Aprovação das horas pelo fiscal", () => {
 
     const r = await fornecedor.put("/api/colaborador/timesheet/dia", { data: { ciclo, data: dias[2], entrada1: "08:00", saida1: "12:00", entrada2: "13:00", saida2: "16:00" } });
     expect(r.status()).toBe(200);
-    const folha = await (await fornecedor.get("/api/colaborador/timesheet")).json() as { dias: Array<{ data: string; aprovacao: string | null }> };
+    const folha = await (await fornecedor.get("/api/colaborador/timesheet")).json() as { dias: Array<{ data: string; aprovacao: string | null }>; totais: { total: number } };
     expect(folha.dias.find((d) => d.data === dias[2])?.aprovacao).toBeNull();
+    expect(folha.totais.total, "corrigido (7 h), o dia volta ao total").toBe((8 + 8 + 7) * 60);
     expect(folha.dias.find((d) => d.data === dias[0])?.aprovacao).toBe("APROVADO");
   });
 

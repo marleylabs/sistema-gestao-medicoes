@@ -1,5 +1,5 @@
 ---
-atualizado: 2026-10-22
+atualizado: 2026-10-23
 tags: [modulo]
 ---
 # Timesheet ATO
@@ -24,6 +24,7 @@ tags: [modulo]
 
 **Regras e armadilhas:**
 - Aprovação por dia: `TimesheetDia.aprovacao` (null = pendente, `APROVADO`, `REPROVADO` com motivo obrigatório). Só o perfil FISCAL decide (`requireFiscal`), e só para fornecedores cujo contrato da configuração tem `fiscalId` = ele; fora do escopo é 404. Pode decidir com a folha aberta ou enviada, mas só dias lançados. `salvarDia` zera a decisão quando o dia muda (regravar igual mantém). Lote: várias datas por chamada, auditoria `TIMESHEET_DIAS_APROVADOS`/`_REPROVADOS` na mesma transação. Medição e fornecedor veem a coluna "Aprovação" só leitura; a lista da medição mostra as contagens.
+- Horas reprovadas pelo fiscal saem dos totais (HN, HE 50%, HE 100% e Total) da folha, da lista da medição, do XLSX e do PDF; a linha do dia continua mostrando o lançado (decisão do usuário em 2026-10-23). Aprovado e pendente contam. São dois cálculos: `carregarFolha` (`lib/timesheet.ts`) e `listarFolhasDoCiclo` (`lib/timesheet-medicao.ts`); mudou a regra, mude os dois. Corrigido pelo fornecedor, o dia volta a pendente e ao total.
 - Habilitado = `TimesheetConfig.habilitado`, se a medição definiu; senão `Profissional.statusColaborador = 'ATO'`. Profissional excluído nunca é habilitado.
 - O fornecedor vem só de `getColaboradorEscopo(user.usuario)`. Quem não é habilitado recebe 404 antes de qualquer validação.
 - As horas não ficam gravadas: são recalculadas na leitura. Um feriado cadastrado depois muda a folha, inclusive a enviada.

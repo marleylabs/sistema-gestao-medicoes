@@ -224,7 +224,8 @@ export async function carregarFolha(profissionalId: string | null, cicloParam: u
       docNumero: config?.docNumero ?? null,
     },
     dias,
-    totais: somarHoras(dias.map((d) => d.horas)),
+    // Horas reprovadas pelo fiscal não entram nos totais; a linha do dia segue mostrando o lançado.
+    totais: somarHoras(dias.filter((d) => d.aprovacao !== "REPROVADO").map((d) => d.horas)),
   };
 }
 

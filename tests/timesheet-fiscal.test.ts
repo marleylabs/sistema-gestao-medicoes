@@ -109,6 +109,15 @@ test("decisão em lote: valida entrada, só dias lançados, motivo na reprovaç�
 
   const item = (await med.listarFolhasDoCiclo(CICLO)).folhas.find((f) => f.profissionalId === ids.p1);
   assert.deepEqual(item?.aprovacoes, { aprovados: 2, reprovados: 1, pendentes: 0 });
+
+  // Horas reprovadas saem dos totais (folha, exportação e lista); a linha do dia continua mostrando o lançado.
+  const folha = await ts.carregarFolha(ids.p1, CICLO, HOJE, { paraMedicao: true });
+  const reprovado = folha.dias.find((d) => d.data === "2039-06-24")!;
+  assert.equal(reprovado.horas.total, 480);
+  const somaValidos = folha.dias.filter((d) => d.aprovacao !== "REPROVADO").reduce((t, d) => t + d.horas.total, 0);
+  assert.equal(folha.totais.total, somaValidos);
+  assert.equal(folha.totais.hn + folha.totais.he50 + folha.totais.he100, folha.totais.total);
+  assert.deepEqual(item?.totais, folha.totais);
 });
 
 test("dia alterado pelo fornecedor volta a pendente; regravar igual mantém a decisão", async () => {
@@ -117,6 +126,8 @@ test("dia alterado pelo fornecedor volta a pendente; regravar igual mantém a de
   await salvar(ids.p1, "2039-06-24", "18:00"); // corrigiu o reprovado
   const d24 = await dia(ids.p1, "2039-06-24");
   assert.deepEqual([d24.aprovacao, d24.aprovacaoMotivo, d24.aprovacaoPor], [null, null, null]);
+  const folha = await ts.carregarFolha(ids.p1, CICLO, HOJE, { paraMedicao: true });
+  assert.equal(folha.totais.total, folha.dias.reduce((t, d) => t + d.horas.total, 0), "corrigido, o dia volta ao total");
   assert.equal((await dia(ids.p1, "2039-06-23")).aprovacao, "APROVADO", "os outros dias mantêm a decisão");
 });
 
